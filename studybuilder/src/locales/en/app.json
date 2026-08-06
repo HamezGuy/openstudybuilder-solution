@@ -1236,6 +1236,7 @@
             "randomisation_criteria": "Randomisation Criteria",
             "standarisation_plan": "Standarisation Plan",
             "protocol_elements": "Protocol Elements",
+            "edc_export": "EDC Export",
             "flow_chart": "SoA",
             "objective_endpoints_estimands": "Objectives and Endpoints",
             "study_design": "Study Design",
@@ -1869,6 +1870,27 @@
     },
     "DurationField": {
         "label": "Unit"
+    },
+    "EdcExport": {
+        "title": "EDC Export",
+        "preview_title": "Study bundle preview",
+        "preview_help": "Project this study into the AccuraTrial EDC's StudyBundleV1 import format (.ecrfstudy). The census below names every field-type downgrade or ambiguous visit join - an empty census means the projection was exact.",
+        "preview_action": "Build preview",
+        "download_action": "Download .ecrfstudy",
+        "study_name": "Study name",
+        "visits": "Visits",
+        "forms": "Forms",
+        "assignments": "Visit-form assignments",
+        "census_clean": "Export census is clean: every field type and visit join resolved exactly.",
+        "census_warnings": "{count} export census warning(s) - review before sending:",
+        "send_title": "Send to EDC",
+        "send_help": "Pushes the bundle to the configured EDC (EDC_BASE_URL) with its import API key. A real send lands the study in the EDC's quarantine for review and activation there - nothing goes live unreviewed. Dry-run first; the real send unlocks after a successful dry-run.",
+        "dry_run_action": "Dry-run (validate only)",
+        "send_action": "Send to EDC",
+        "dry_run_result": "Dry-run completed with EDC status {status}.",
+        "send_result": "Send completed with EDC status {status}.",
+        "quarantine_notice": "The study was created in the EDC's quarantine as study {id}. Review and activate it in the EDC.",
+        "edc_response": "Full EDC response"
     },
     "StudyObjectivesTable": {
         "objective_level": "Objective level",

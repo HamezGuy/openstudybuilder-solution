@@ -773,6 +773,15 @@ const routes = [
         },
       },
       {
+        path: ':study_id/edc_export',
+        name: 'EdcExport',
+        component: () => import('../views/studies/EdcExport.vue'),
+        meta: {
+          studyRequired: true,
+          authRequired: true,
+        },
+      },
+      {
         path: ':study_id/study_disclosure/:tab?',
         name: 'StudyDisclosure',
         component: () => import('../views/studies/StudyDisclosure.vue'),

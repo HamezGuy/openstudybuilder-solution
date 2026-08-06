@@ -507,6 +507,11 @@ export const useAppStore = defineStore('app', {
                 },
                 studyRequired: true,
               },
+              {
+                title: i18n.t('Sidebar.study.edc_export'),
+                url: { name: 'EdcExport', params: { study_id: studyId } },
+                studyRequired: true,
+              },
               // {
               //   title: i18n.t('Sidebar.study.crf_specifications'),
               //   url: { name: 'CrfSpecifications' },
