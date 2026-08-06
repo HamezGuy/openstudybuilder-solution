@@ -677,18 +677,307 @@ class Import360i(BaseImporter):
 
         return self._finish(study_id, record, study_uid, project_number)
 
-    def ensure_odm(self, payload, study_uid, codelist_by_ref, unit_uid_by_name):
-        """Placeholder until B3 lands: the ODM pass (vendor namespace, items,
-        item-groups, forms, study-event FORM_REF wiring). Declares the forms
-        as carried so the census stays total even before B3."""
-        for form in payload.get("odm", {}).get("forms", []):
-            self.census.carried.append(
-                {
-                    "kind": "form",
-                    "ref": form["refKey"],
-                    "reason": "ODM import pass not yet enabled (B3)",
-                }
+    # ------------------------------------------------------------------
+    # ODM: vendor namespace/attributes, items, item-groups, forms,
+    # study-event + FORM_REF wiring (the form x visit matrix)
+    # ------------------------------------------------------------------
+
+    def ensure_vendor_namespace(self):
+        """The x360i vendor namespace + its attribute concepts, once per
+        instance. Attribute VALUES are attached per-entity at create time."""
+        namespaces = self.api.get_all_from_api("/odms/vendor-namespaces") or []
+        ns = next(
+            (n for n in namespaces if n.get("prefix") == mapping.X360I_NAMESPACE["prefix"]),
+            None,
+        )
+        if ns is None:
+            res = self.api.simple_post_to_api(
+                "/odms/vendor-namespaces", dict(mapping.X360I_NAMESPACE)
             )
+            if res is None:
+                self.census.stop("vendor_namespace", "x360i", "namespace create failed")
+                return {}
+            ns = res
+            self.api.simple_approve(f"/odms/vendor-namespaces/{ns['uid']}/approvals")
+            self.census.created.append({"kind": "vendor_namespace", "ref": "x360i"})
+        else:
+            self.census.unchanged.append({"kind": "vendor_namespace", "ref": "x360i"})
+
+        existing_attrs = self.api.get_all_from_api("/odms/vendor-attributes") or []
+        by_name = {
+            a.get("name"): a
+            for a in existing_attrs
+            if (a.get("vendor_namespace") or {}).get("uid") == ns["uid"]
+        }
+        attr_uid_by_name = {}
+        for spec in mapping.X360I_ATTRIBUTES:
+            found = by_name.get(spec["name"])
+            if found:
+                attr_uid_by_name[spec["name"]] = found["uid"]
+                continue
+            res = self.api.simple_post_to_api(
+                "/odms/vendor-attributes",
+                {
+                    "name": spec["name"],
+                    "compatible_types": spec["compatible_types"],
+                    "data_type": spec["data_type"],
+                    "vendor_namespace_uid": ns["uid"],
+                },
+            )
+            if res is None:
+                self.census.stop(
+                    "vendor_attribute", spec["name"], "attribute create failed"
+                )
+                continue
+            self.api.simple_approve(f"/odms/vendor-attributes/{res['uid']}/approvals")
+            attr_uid_by_name[spec["name"]] = res["uid"]
+            self.census.created.append(
+                {"kind": "vendor_attribute", "ref": spec["name"]}
+            )
+        return attr_uid_by_name
+
+    def _entity_vendor_attributes(self, attr_uids, ref_key, ext_json=None, field_type=None):
+        """The x360i vendor_attributes array for one ODM entity's POST body."""
+        attrs = []
+        if attr_uids.get("refKey"):
+            attrs.append({"uid": attr_uids["refKey"], "value": ref_key})
+        if field_type and attr_uids.get("fieldType"):
+            attrs.append({"uid": attr_uids["fieldType"], "value": field_type})
+        if ext_json and attr_uids.get("ext"):
+            attrs.append({"uid": attr_uids["ext"], "value": ext_json})
+        return attrs
+
+    def ensure_odm(self, payload, study_uid, codelist_by_ref, unit_uid_by_name):
+        """Items -> item-groups -> forms -> ONE study-event per study, whose
+        FORM_REFs ARE the form x visit matrix's form axis; the per-visit
+        assignment detail rides the study-event's x360i ext attribute.
+
+        Everything is matched by OID (= our refKey — OSB keeps the OID we
+        supply), so a re-import finds its own concepts instead of duplicating
+        them. Changed concepts would need a version->patch->approve cycle;
+        v1 treats an existing OID as unchanged and censuses it, which is
+        honest because the payload hash gate in run() already skips
+        byte-identical payloads.
+        """
+        attr_uids = self.ensure_vendor_namespace()
+        odm = payload.get("odm", {})
+
+        def _find_by_oid(path, oid):
+            items = self.api.get_all_from_api(
+                path,
+                params={
+                    "filters": json.dumps({"oid": {"v": [oid], "op": "eq"}}),
+                    "page_number": 1,
+                    "page_size": 0,
+                },
+            )
+            return items[0] if items else None
+
+        def _create_and_approve(kind, path, body, ref):
+            res = self.api.simple_post_to_api(path, body)
+            if res is None:
+                self.census.stop(kind, ref, f"{kind} create failed")
+                return None
+            self.api.simple_approve(f"{path}/{res['uid']}/approvals")
+            self.census.created.append({"kind": kind, "ref": ref})
+            return res
+
+        # Items (all groups, all forms), then groups, then forms — leaf first.
+        for form in odm.get("forms", []):
+            for group in form.get("itemGroups", []):
+                for item in group.get("items", []):
+                    existing = _find_by_oid("/odms/items", item["refKey"])
+                    if existing:
+                        self.uid_map["items"][item["refKey"]] = existing["uid"]
+                        self.census.unchanged.append({"kind": "item", "ref": item["refKey"]})
+                        continue
+                    body = mapping.odm_item_body(item, codelist_by_ref, unit_uid_by_name)
+                    body["vendor_attributes"] = self._entity_vendor_attributes(
+                        attr_uids,
+                        item["refKey"],
+                        ext_json=mapping.vendor_ext_value(item),
+                        field_type=item.get("datatypeHint"),
+                    )
+                    if item.get("prompt"):
+                        body["translated_texts"] = [
+                            {"text_type": "Question", "language": "en", "text": item["prompt"]}
+                        ]
+                    res = _create_and_approve("item", "/odms/items", body, item["refKey"])
+                    if res:
+                        self.uid_map["items"][item["refKey"]] = res["uid"]
+
+        # Item groups + their item refs.
+        for form in odm.get("forms", []):
+            for group in form.get("itemGroups", []):
+                existing = _find_by_oid("/odms/item-groups", group["refKey"])
+                if existing:
+                    self.uid_map["item_groups"][group["refKey"]] = existing["uid"]
+                    self.census.unchanged.append(
+                        {"kind": "item_group", "ref": group["refKey"]}
+                    )
+                    continue
+                body = {
+                    "name": group["name"][:200],
+                    "oid": group["refKey"],
+                    "repeating": "no",
+                    "translated_texts": [
+                        {"text_type": "Description", "language": "en", "text": group.get("description") or group["name"]}
+                    ],
+                    "sdtm_domain_uids": [],
+                    "vendor_attributes": self._entity_vendor_attributes(
+                        attr_uids, group["refKey"]
+                    ),
+                }
+                res = _create_and_approve(
+                    "item_group", "/odms/item-groups", body, group["refKey"]
+                )
+                if res is None:
+                    continue
+                group_uid = res["uid"]
+                self.uid_map["item_groups"][group["refKey"]] = group_uid
+                item_refs = [
+                    {
+                        "uid": self.uid_map["items"][item["refKey"]],
+                        "order_number": item["orderNumber"],
+                        "mandatory": "yes" if item.get("mandatory") else "no",
+                        "key_sequence": None,
+                        "method_oid": None,
+                        "imputation_method_oid": None,
+                        "role": None,
+                        "role_codelist_oid": None,
+                        "collection_exception_condition_oid": None,
+                        "vendor": {"attributes": []},
+                    }
+                    for item in group.get("items", [])
+                    if item["refKey"] in self.uid_map["items"]
+                ]
+                if item_refs:
+                    self.api.simple_post_to_api(
+                        f"/odms/item-groups/{group_uid}/items", item_refs
+                    )
+
+        # Forms + their item-group refs.
+        for form in odm.get("forms", []):
+            existing = _find_by_oid("/odms/forms", form["refKey"])
+            if existing:
+                self.uid_map["forms"][form["refKey"]] = existing["uid"]
+                self.census.unchanged.append({"kind": "form", "ref": form["refKey"]})
+                continue
+            body = {
+                "name": form["name"][:200],
+                "oid": form["refKey"],
+                "repeating": "no",
+                "translated_texts": [
+                    {"text_type": "Description", "language": "en", "text": form.get("description") or form["name"]}
+                ],
+                "vendor_attributes": self._entity_vendor_attributes(
+                    attr_uids, form["refKey"], ext_json=mapping.vendor_ext_value(form)
+                ),
+            }
+            res = _create_and_approve("form", "/odms/forms", body, form["refKey"])
+            if res is None:
+                continue
+            form_uid = res["uid"]
+            self.uid_map["forms"][form["refKey"]] = form_uid
+            group_refs = [
+                {
+                    "uid": self.uid_map["item_groups"][group["refKey"]],
+                    "order_number": group["orderNumber"],
+                    "mandatory": "yes",
+                    "collection_exception_condition_oid": None,
+                    "vendor": {"attributes": []},
+                }
+                for group in form.get("itemGroups", [])
+                if group["refKey"] in self.uid_map["item_groups"]
+            ]
+            if group_refs:
+                self.api.simple_post_to_api(
+                    f"/odms/forms/{form_uid}/item-groups", group_refs
+                )
+
+        # ONE study-event PER VISIT — ODM's own semantics (a StudyEventDef IS
+        # a visit; crosswalk §8: the form x visit anchor is StudyEvent
+        # -FORM_REF-> Form, NEVER StudyActivitySchedule). The visit refKey
+        # rides the OID itself (`SE.360I.<studyId>.<visitRef>`) because
+        # OdmStudyEventPostInput carries no vendor_attributes — and OSB
+        # preserves supplied OIDs, so the join survives to Leg C.
+        matrix_by_visit = {}
+        for assignment in payload.get("formVisitMatrix", []):
+            matrix_by_visit.setdefault(assignment["visitRef"], []).append(assignment)
+
+        study_id = payload["source"]["studyId"]
+        for visit in payload.get("visits", []):
+            visit_ref = visit["refKey"]
+            assignments = matrix_by_visit.get(visit_ref, [])
+            if not assignments:
+                continue
+            event_oid = f"SE.360I.{study_id}.{visit_ref}"
+            existing = _find_by_oid("/odms/study-events", event_oid)
+            if existing:
+                event_uid = existing["uid"]
+                self.uid_map["study_events"][visit_ref] = event_uid
+                self.census.unchanged.append({"kind": "study_event", "ref": event_oid})
+                continue
+            res = _create_and_approve(
+                "study_event",
+                "/odms/study-events",
+                {
+                    "name": visit["name"][:200],
+                    "oid": event_oid,
+                    "description": f"Visit '{visit['name']}' imported from 360i study "
+                    f"{study_id}; FORM_REFs are the visit's scheduled forms.",
+                },
+                event_oid,
+            )
+            if res is None:
+                continue
+            event_uid = res["uid"]
+            self.uid_map["study_events"][visit_ref] = event_uid
+
+            form_refs = []
+            for assignment in sorted(
+                assignments, key=lambda a: a.get("ordinal") or 0
+            ):
+                form_uid = self.uid_map["forms"].get(assignment["formRef"])
+                if form_uid is None:
+                    self.census.stop(
+                        "form_ref",
+                        f"{visit_ref}/{assignment['formRef']}",
+                        "assignment names a form that did not import",
+                    )
+                    continue
+                form_refs.append(
+                    {
+                        "uid": form_uid,
+                        "order_number": assignment.get("ordinal") or len(form_refs) + 1,
+                        "mandatory": "yes" if assignment.get("required", True) else "no",
+                        "locked": "No",
+                        "collection_exception_condition_oid": None,
+                    }
+                )
+            if form_refs:
+                self.api.simple_post_to_api(
+                    f"/odms/study-events/{event_uid}/forms", form_refs
+                )
+                self.census.created.append(
+                    {"kind": "form_refs", "ref": event_oid, "count": len(form_refs)}
+                )
+            # Assignment provenance (_derivedFrom, _conditionalNote, ...) has
+            # no FORM_REF slot — carried, per assignment, never silently lost.
+            derived = [
+                a for a in assignments
+                if any(k.startswith("_") for k in a.keys())
+            ]
+            if derived:
+                self.census.carried.append(
+                    {
+                        "kind": "assignment_provenance",
+                        "ref": event_oid,
+                        "reason": f"{len(derived)} assignment(s) carry _derivedFrom/"
+                        "_conditionalNote provenance with no FORM_REF slot; "
+                        "verbatim in the payload for Leg C",
+                    }
+                )
 
     def _finish(self, study_id, record, study_uid, project_number):
         census = self.census.as_dict()
