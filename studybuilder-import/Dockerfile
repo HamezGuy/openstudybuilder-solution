@@ -19,15 +19,19 @@ COPY ./Pipfile* ./
 # and create virtual environment according to Pipfile.lock into user's home as root
 RUN apt-get update \
     && apt-get -y upgrade \
-    && apt-get -y install curl \
+    && apt-get -y install curl build-essential \
     && pip install --upgrade pip pipenv wheel \
     && apt-get clean && rm -rf /var/lib/apt/lists \
     && HOME=/home/"$USER" pipenv sync \
     # clean-up
     && rm -rf ~/.cache
 
-## Copy the rest of the application owned by root
-COPY ./ ./
+## Copy the rest of the application owned by the non-root user so it can
+## write runtime artifacts (e.g. sponsor model import log) into the workdir
+COPY --chown=$USER:$USER ./ ./
+
+## Ensure the workdir itself is writable by the non-root user
+RUN chown -R "$USER":"$USER" "$WORKDIR"
 
 ## Run as non-root user
 USER $USER

@@ -1,0 +1,14 @@
+services:
+  import:
+    image: osb-import:latest
+    build: !reset null
+    network_mode: !reset null
+    networks:
+      - osb
+    environment:
+      API_BASE_URL: http://api:5003
+
+networks:
+  osb:
+    name: openstudybuilder-solution_default
+    external: true
