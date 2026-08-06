@@ -6,6 +6,10 @@ name = "pypi"
 [packages]
 requests = "*"
 aiohttp = "~=3.10.10"
+# The 360i importer reads the ecrf_platform Postgres directly (payloads in,
+# import ledger out). Postgres stays confined to this component - never add a
+# relational driver to clinical-mdr-api.
+psycopg = {version = "~=3.2", extras = ["binary"]}
 
 [dev-packages]
 pylint = "~=3.3.1"
@@ -33,6 +37,7 @@ compounds = "python -m importers.run_import_compounds"
 crfs = "python -m importers.run_import_crfs"
 mockdata = "python -m importers.run_import_mockdata"
 mockdatajson = "python -m importers.run_import_mockdatajson"
+import_360i = "python -m importers.run_import_360i"
 e2e = "python -m importers.run_import_e2e"
 sponsormodels = "python -m importers.run_import_sponsormodels"
 response_codelists = "python -m importers.run_import_response_codelists"

@@ -1,0 +1,741 @@
+"""Import a 360i study (EDCProtocolToECRF) into OpenStudyBuilder.
+
+Reads the OSB-shaped payload the 360i pipeline persisted to its Postgres
+(`ecrf_platform.osb_study_payloads`, written at every study build), populates
+OSB through OSB's own APIs in dependency order, and records what it did to
+`ecrf_platform.osb_import_ledger` — whose latest row per study is the
+360i-study -> OSB-study crosswalk this importer's own upsert reads back.
+
+Order (the proven mockdatajson sequence):
+  programme -> project -> units -> sponsor codelists -> study ->
+  registry identifiers -> epochs -> visits -> arms ->
+  x360i vendor namespace/attributes -> items -> item-groups -> forms ->
+  study-event (+FORM_REF wiring = the form x visit matrix)
+
+Honesty rules carried from the payload contract:
+  * a payload with no stated epochs gets ONE carrier epoch, recorded in the
+    census as importer_scaffolding — OSB requires an epoch per visit, and
+    declaring the scaffold is what keeps "the protocol said" and "the
+    importer needed" distinguishable.
+  * unknown vocabulary (epoch subtype, visit type) STOPs that entity with a
+    named census row; nothing is coerced. status='partial' REQUIRES stopped
+    rows — the ledger write asserts it.
+  * every skipped/created/updated entity lands in exactly one census bucket.
+
+Upsert (same study -> update): the crosswalk row names the OSB study uid and
+the refKey->uid map of the previous import. Study selections are diffed by
+refKey (PATCH changed / POST new / DELETE removed); ODM library concepts go
+through OSB's new-version -> PATCH -> approve cycle, with a content-compare
+skip so an unchanged concept is not churned. A locked OSB study REFUSES the
+import with an actionable error — never unlocked programmatically.
+
+Env:
+  ECRF_PG_DSN, ECRF_TENANT_ID     the 360i Postgres (see ecrf_platform_db.py)
+  ECRF_STUDY_ID                   which study to import (or --study)
+  API_BASE_URL, STUDYBUILDER_API_TOKEN   the OSB API (see utils/importer.py;
+                                  local compose runs OAUTH_ENABLED=False and
+                                  needs no token)
+  OSB_CLINICAL_PROGRAMME          programme to file projects under (default 360i)
+"""
+
+import json
+
+from .functions.utils import load_env
+from .mappings import payload_to_osb as mapping
+from .utils.ecrf_platform_db import EcrfPlatformDb
+from .utils.importer import BaseImporter
+from .utils.metrics import Metrics
+
+API_BASE_URL = load_env("API_BASE_URL")
+OSB_CLINICAL_PROGRAMME = load_env("OSB_CLINICAL_PROGRAMME", default="360i")
+
+CODELIST_EPOCH_SUBTYPE = "Epoch Sub Type"
+CODELIST_EPOCH_TYPE = "Epoch Type"
+CODELIST_VISIT_TYPE = "VisitType"
+CODELIST_TIMEPOINT_REFERENCE = "Time Point Reference"
+CODELIST_VISIT_CONTACT_MODE = "Visit Contact Mode"
+CODELIST_UNIT = "Unit"
+
+
+class ImportCensus:
+    """Every payload member's fate on the OSB side, in exactly one bucket."""
+
+    def __init__(self):
+        self.created = []
+        self.updated = []
+        self.unchanged = []
+        self.stopped = []
+        self.scaffolding = []
+        self.carried = []
+
+    def stop(self, kind, ref, reason):
+        self.stopped.append({"kind": kind, "ref": ref, "reason": reason})
+
+    def as_dict(self):
+        return {
+            "created": self.created,
+            "updated": self.updated,
+            "unchanged": self.unchanged,
+            "stopped": self.stopped,
+            "importer_scaffolding": self.scaffolding,
+            "carried": self.carried,
+            "counts": {
+                "created": len(self.created),
+                "updated": len(self.updated),
+                "unchanged": len(self.unchanged),
+                "stopped": len(self.stopped),
+                "importer_scaffolding": len(self.scaffolding),
+                "carried": len(self.carried),
+            },
+        }
+
+    @property
+    def status(self):
+        return "partial" if self.stopped else "succeeded"
+
+
+class Import360i(BaseImporter):
+    logging_name = "import_360i"
+
+    def __init__(self, api=None, metrics_inst=None, db=None):
+        super().__init__(api=api, metrics_inst=metrics_inst)
+        self.db = db or EcrfPlatformDb(log=self.log)
+        self.census = ImportCensus()
+        # refKey -> OSB uid, per concept type. Written to the ledger; the
+        # upsert diff of the NEXT import joins on it.
+        self.uid_map = {
+            "epochs": {},
+            "visits": {},
+            "arms": {},
+            "forms": {},
+            "item_groups": {},
+            "items": {},
+            "codelists": {},
+            "study_events": {},
+        }
+
+    # ------------------------------------------------------------------
+    # Lookups
+    # ------------------------------------------------------------------
+
+    def _lookup_ct_term(self, codelist_name, term_name):
+        """Case-insensitive sponsor-preferred-name lookup in one codelist."""
+        terms = self.api.get_all_from_api(
+            f"/ct/terms/names?codelist_name={codelist_name}"
+        )
+        wanted = term_name.strip().lower()
+        for term in terms or []:
+            if (term.get("sponsor_preferred_name") or "").strip().lower() == wanted:
+                return term["term_uid"]
+        return None
+
+    def _lookup_unit(self, unit_name):
+        units = self.api.get_all_from_api("/concepts/unit-definitions")
+        wanted = unit_name.strip().lower()
+        for unit in units or []:
+            if (unit.get("name") or "").strip().lower() == wanted:
+                return unit["uid"]
+        return None
+
+    # ------------------------------------------------------------------
+    # Prerequisites: programme, project, units, codelists
+    # ------------------------------------------------------------------
+
+    def ensure_programme_and_project(self, payload):
+        programmes = self.api.get_all_identifiers(
+            self.api.get_all_from_api("/clinical-programmes"),
+            identifier="name",
+            value="uid",
+        )
+        programme_uid = programmes.get(OSB_CLINICAL_PROGRAMME)
+        if programme_uid is None:
+            self.log.info("Creating clinical programme '%s'", OSB_CLINICAL_PROGRAMME)
+            res = self.api.simple_post_to_api(
+                "/clinical-programmes", {"name": OSB_CLINICAL_PROGRAMME}
+            )
+            programme_uid = res["uid"]
+            self.census.created.append({"kind": "clinical_programme", "ref": OSB_CLINICAL_PROGRAMME})
+        else:
+            self.census.unchanged.append({"kind": "clinical_programme", "ref": OSB_CLINICAL_PROGRAMME})
+
+        project_number = mapping.project_number_for(payload)
+        projects = self.api.get_all_from_api("/projects")
+        existing = next(
+            (p for p in projects or [] if p.get("project_number") == project_number),
+            None,
+        )
+        if existing is None:
+            source = payload.get("source", {})
+            name = source.get("projectName") or f"360i project {project_number}"
+            self.log.info("Creating project '%s' (%s)", name, project_number)
+            self.api.simple_post_to_api(
+                "/projects",
+                {
+                    "project_number": project_number,
+                    "name": name,
+                    "description": "Imported from 360i (EDCProtocolToECRF)",
+                    "clinical_programme_uid": programme_uid,
+                },
+            )
+            self.census.created.append({"kind": "project", "ref": project_number})
+        else:
+            self.census.unchanged.append({"kind": "project", "ref": project_number})
+        return project_number
+
+    def ensure_units(self, payload):
+        """Every distinct unit display string the items reference."""
+        unit_uid_by_name = {}
+        for unit_name in mapping.units_plan(payload):
+            uid = self._lookup_unit(unit_name)
+            if uid:
+                self.census.unchanged.append({"kind": "unit", "ref": unit_name})
+            else:
+                self.log.info("Creating unit definition '%s'", unit_name)
+                res = self.api.simple_post_to_api(
+                    "/concepts/unit-definitions",
+                    {
+                        "name": unit_name,
+                        "library_name": "Sponsor",
+                        "convertible_unit": False,
+                        "display_unit": True,
+                        "master_unit": False,
+                        "si_unit": False,
+                        "us_conventional_unit": False,
+                        "ct_units": [],
+                        "unit_subsets": [],
+                    },
+                )
+                if res is None:
+                    self.census.stop("unit", unit_name, "unit-definition create failed")
+                    continue
+                uid = res["uid"]
+                self.api.simple_approve(f"/concepts/unit-definitions/{uid}/approvals")
+                self.census.created.append({"kind": "unit", "ref": unit_name})
+            unit_uid_by_name[unit_name.lower()] = uid
+        return unit_uid_by_name
+
+    def ensure_codelists(self, payload):
+        """Sponsor codelists for the payload's deduplicated option lists.
+
+        Codelist names are content-addressed (X360I_CL_<hash8>), so re-import
+        of the same options finds the same codelist — match by name, create
+        sponsor codelist + sponsor terms on miss. All payload terms are
+        sponsor terms (no C-codes extracted yet, crosswalk §2/§5).
+        """
+        codelist_by_ref = {}
+        existing = self.api.get_all_identifiers(
+            self.api.get_all_from_api("/ct/codelists/names"),
+            identifier="name",
+            value="codelist_uid",
+        )
+        for plan in mapping.codelists_plan(payload):
+            name = plan["name"]
+            codelist_uid = existing.get(name)
+            if codelist_uid is None:
+                self.log.info("Creating sponsor codelist '%s'", name)
+                res = self.api.simple_post_to_api(
+                    "/ct/codelists",
+                    {
+                        "catalogue_name": "SDTM CT",
+                        "name": name,
+                        "submission_value": name,
+                        "nci_preferred_name": name,
+                        "definition": "360i option list (content-addressed)",
+                        "extensible": True,
+                        "sponsor_preferred_name": name,
+                        "template_parameter": False,
+                        "library_name": "Sponsor",
+                        "terms": [],
+                    },
+                )
+                if res is None:
+                    self.census.stop("codelist", name, "codelist create failed")
+                    continue
+                codelist_uid = res["codelist_uid"]
+                self.api.simple_approve(f"/ct/codelists/{codelist_uid}/names/approvals")
+                self.api.simple_approve(
+                    f"/ct/codelists/{codelist_uid}/attributes/approvals"
+                )
+                self.census.created.append({"kind": "codelist", "ref": name})
+            else:
+                self.census.unchanged.append({"kind": "codelist", "ref": name})
+
+            terms = []
+            existing_terms = self.api.get_all_from_api(
+                f"/ct/codelists/{codelist_uid}/terms"
+            )
+            existing_by_name = {
+                (t.get("name", {}).get("sponsor_preferred_name") or "").lower(): t
+                for t in existing_terms or []
+            }
+            for term in plan["terms"]:
+                found = existing_by_name.get(term["name"].lower())
+                if found:
+                    terms.append(
+                        {
+                            "term_uid": found["term_uid"],
+                            "name": term["name"],
+                            "order": term.get("order"),
+                        }
+                    )
+                    continue
+                res = self.api.simple_post_to_api(
+                    "/ct/terms",
+                    {
+                        "catalogue_name": "SDTM CT",
+                        "codelist_uid": codelist_uid,
+                        "code_submission_value": term["submission_value"],
+                        "nci_preferred_name": term["name"],
+                        "definition": term["name"],
+                        "sponsor_preferred_name": term["name"],
+                        "sponsor_preferred_name_sentence_case": term["name"].lower(),
+                        "library_name": "Sponsor",
+                        "order": term.get("order"),
+                    },
+                )
+                if res is None:
+                    self.census.stop(
+                        "codelist_term", f"{name}/{term['name']}", "term create failed"
+                    )
+                    continue
+                term_uid = res["term_uid"]
+                self.api.approve_item_names_and_attributes(term_uid, "/ct/terms")
+                terms.append(
+                    {"term_uid": term_uid, "name": term["name"], "order": term.get("order")}
+                )
+                self.census.created.append(
+                    {"kind": "codelist_term", "ref": f"{name}/{term['name']}"}
+                )
+            codelist_by_ref[name] = {"codelist_uid": codelist_uid, "terms": terms}
+            self.uid_map["codelists"][name] = codelist_uid
+        return codelist_by_ref
+
+    # ------------------------------------------------------------------
+    # Study + structure
+    # ------------------------------------------------------------------
+
+    def ensure_study(self, payload, project_number, crosswalk):
+        """Create the study, or verify the crosswalked one is usable."""
+        if crosswalk:
+            study_uid = crosswalk["osb_study_uid"]
+            study = self.api.get_all_from_api(f"/studies/{study_uid}")
+            if study is None:
+                self.census.stop(
+                    "study",
+                    study_uid,
+                    "crosswalk names an OSB study that no longer exists; "
+                    "re-import as new by clearing the ledger row",
+                )
+                return None
+            status = (
+                study.get("current_metadata", {})
+                .get("version_metadata", {})
+                .get("study_status")
+            )
+            if status == "LOCKED":
+                self.census.stop(
+                    "study",
+                    study_uid,
+                    "the OSB study is LOCKED; unlock it in OSB (with reason) and re-run "
+                    "— this importer never unlocks studies",
+                )
+                return None
+            self.census.unchanged.append({"kind": "study", "ref": study_uid})
+            return study_uid
+
+        study_number = mapping.study_number_for(payload)
+        # Collision handling: OSB study numbers are unique per project; walk
+        # down until free (deterministic start, stable across re-runs via the
+        # crosswalk once created).
+        existing_numbers = set()
+        studies = self.api.get_all_from_api("/studies")
+        for s in studies or []:
+            ident = s.get("current_metadata", {}).get("identification_metadata", {})
+            if ident.get("study_number"):
+                existing_numbers.add(str(ident["study_number"]))
+        candidate = int(study_number)
+        while str(candidate) in existing_numbers:
+            candidate += 1
+        study_number = str(candidate)
+
+        body = {
+            "study_number": study_number,
+            "study_acronym": mapping.study_acronym_for(payload),
+            "project_number": project_number,
+            "description": f"Imported from 360i study {payload['source']['studyId']} "
+            f"(build {payload['source']['buildHash'][:12]})",
+        }
+        self.log.info("Creating study number %s", study_number)
+        res = self.api.simple_post_to_api("/studies", body, "/studies")
+        if res is None:
+            self.census.stop("study", payload["source"]["studyId"], "study create failed")
+            return None
+        study_uid = res["uid"]
+        self.census.created.append({"kind": "study", "ref": study_uid})
+
+        # Registry identifiers: typed nulls today (the payload's block is the
+        # slot, not yet data). PATCH only when anything is non-null.
+        reg = payload.get("study", {}).get("registryIdentifiers", {})
+        non_null = {k: v for k, v in reg.items() if v is not None}
+        if non_null:
+            self.api.patch_to_api(
+                {
+                    "uid": study_uid,
+                    "current_metadata": {
+                        "identification_metadata": {"registry_identifiers": non_null}
+                    },
+                },
+                "/studies/",
+            )
+            self.census.created.append({"kind": "registry_identifiers", "ref": study_uid})
+
+        # Study title from the payload's stated title.
+        title = payload.get("study", {}).get("officialTitle") or payload.get(
+            "study", {}
+        ).get("name")
+        if title:
+            self.api.patch_to_api(
+                {
+                    "uid": study_uid,
+                    "current_metadata": {
+                        "study_description": {"study_title": str(title)[:800]}
+                    },
+                },
+                "/studies/",
+            )
+
+        # Everything else the protocol stated about the study rides the
+        # census as carried — visible, not silently dropped.
+        for key in sorted(payload.get("study", {}).get("attributes", {})):
+            self.census.carried.append(
+                {"kind": "study_attribute", "ref": key, "reason": "no OSB v1 landing zone; in payload.study.attributes"}
+            )
+        return study_uid
+
+    def ensure_epochs(self, payload, study_uid):
+        """Create the payload's epochs (or the declared carrier)."""
+        plans, is_scaffolding = mapping.epochs_plan(payload)
+        epoch_uid_by_ref = {}
+        existing = self.api.get_all_from_api(f"/studies/{study_uid}/study-epochs") or []
+        existing_by_name = {e.get("epoch_name", "").lower(): e for e in existing}
+
+        for plan in plans:
+            name = plan["name"]
+            found = existing_by_name.get(name.lower())
+            if found:
+                epoch_uid_by_ref[name] = found["uid"]
+                self.uid_map["epochs"][name] = found["uid"]
+                self.census.unchanged.append({"kind": "epoch", "ref": name})
+                continue
+
+            subtype_uid = None
+            for candidate in mapping.epoch_subtype_candidates(name):
+                subtype_uid = self._lookup_ct_term(CODELIST_EPOCH_SUBTYPE, candidate)
+                if subtype_uid:
+                    break
+            if subtype_uid is None:
+                self.census.stop(
+                    "epoch",
+                    name,
+                    f"no Epoch Sub Type term matches '{name}' (tried "
+                    f"{mapping.epoch_subtype_candidates(name)}); add a sponsor term "
+                    "to the Epoch Sub Type codelist and re-run",
+                )
+                continue
+
+            preview = self.api.simple_post_to_api(
+                f"/studies/{study_uid}/study-epochs/preview",
+                {"study_uid": study_uid, "epoch_subtype": subtype_uid},
+                "/study-epochs/preview",
+            )
+            if preview is None:
+                self.census.stop("epoch", name, "epoch preview failed")
+                continue
+            body = {
+                "study_uid": study_uid,
+                "epoch_subtype": subtype_uid,
+                "epoch": preview.get("epoch"),
+                "order": preview.get("order"),
+                "description": name if not plan["scaffolding"] else (
+                    "Carrier epoch created by the 360i importer: OSB requires an epoch "
+                    "per visit and the protocol stated none. NOT protocol content."
+                ),
+            }
+            res = self.api.simple_post_to_api(
+                f"/studies/{study_uid}/study-epochs", body, "/study-epochs"
+            )
+            if res is None:
+                self.census.stop("epoch", name, "epoch create failed")
+                continue
+            epoch_uid_by_ref[name] = res["uid"]
+            self.uid_map["epochs"][name] = res["uid"]
+            if plan["scaffolding"]:
+                self.census.scaffolding.append({"kind": "epoch", "ref": name})
+            else:
+                self.census.created.append({"kind": "epoch", "ref": name})
+
+        # Map each epoch plan's visits to its uid, for the visit pass.
+        ref_to_epoch_uid = {}
+        for plan in plans:
+            uid = epoch_uid_by_ref.get(plan["name"])
+            if uid:
+                for visit_ref in plan["visit_refs"]:
+                    ref_to_epoch_uid[visit_ref] = uid
+        return ref_to_epoch_uid, is_scaffolding
+
+    def ensure_visits(self, payload, study_uid, epoch_uid_by_visit_ref):
+        """Create the visit calendar, protocol names preserved."""
+        anchor_ref_uid = self._lookup_ct_term(
+            CODELIST_TIMEPOINT_REFERENCE, "Global anchor visit"
+        )
+        contact_uid = self._lookup_ct_term(CODELIST_VISIT_CONTACT_MODE, "On Site Visit")
+        day_unit_uid = self._lookup_unit("day")
+        if anchor_ref_uid is None or day_unit_uid is None:
+            self.census.stop(
+                "visits",
+                "*",
+                "OSB standard terms missing (Global anchor visit / day unit) — "
+                "run the standard-codelist imports first",
+            )
+            return
+
+        existing = self.api.get_all_from_api(f"/studies/{study_uid}/study-visits") or []
+        existing_by_name = {v.get("visit_name", "").lower(): v for v in existing}
+
+        for plan in mapping.visit_plan(payload):
+            if plan.get("stop"):
+                self.census.stop("visit", plan["refKey"], plan["stop"])
+                continue
+            found = existing_by_name.get(plan["visit_name"].lower())
+            if found:
+                self.uid_map["visits"][plan["refKey"]] = found["uid"]
+                self.census.unchanged.append({"kind": "visit", "ref": plan["refKey"]})
+                continue
+
+            visit_type_uid = self._lookup_ct_term(
+                CODELIST_VISIT_TYPE, plan["visit_type_name"]
+            )
+            if visit_type_uid is None:
+                self.census.stop(
+                    "visit",
+                    plan["refKey"],
+                    f"no VisitType term '{plan['visit_type_name']}'",
+                )
+                continue
+
+            epoch_uid = epoch_uid_by_visit_ref.get(plan["refKey"])
+            if epoch_uid is None:
+                # A visit the epoch join could not verify still needs an epoch
+                # (OSB requires one) — file it under the first epoch and say so.
+                epoch_uid = next(iter(self.uid_map["epochs"].values()), None)
+                if epoch_uid is None:
+                    self.census.stop("visit", plan["refKey"], "no epoch available")
+                    continue
+                self.census.scaffolding.append(
+                    {
+                        "kind": "visit_epoch_assignment",
+                        "ref": plan["refKey"],
+                        "reason": "epoch join unverified; filed under the first epoch",
+                    }
+                )
+
+            body = {
+                "study_epoch_uid": epoch_uid,
+                "visit_type": {"term_uid": visit_type_uid},
+                "time_reference": {"term_uid": anchor_ref_uid},
+                "time_value": plan["time_value"],
+                "time_unit_uid": day_unit_uid,
+                "visit_class": plan["visit_class"],
+                "is_global_anchor_visit": plan["is_global_anchor_visit"],
+                "show_visit": True,
+                "min_visit_window_value": plan["min_window"],
+                "max_visit_window_value": plan["max_window"],
+                "visit_window_unit_uid": day_unit_uid,
+                "description": plan.get("description"),
+                "visit_contact_mode": {"term_uid": contact_uid},
+            }
+            if plan["visit_class"] == "MANUALLY_DEFINED_VISIT":
+                # Protocol-stated names, never OSB's derived "Visit N" (the
+                # visit-naming doctrine rides the payload; honor it here).
+                body["visit_name"] = plan["visit_name"]
+                body["visit_short_name"] = plan["visit_short_name"]
+                body["visit_number"] = plan["visit_number"]
+                body["unique_visit_number"] = plan["unique_visit_number"]
+
+            res = self.api.simple_post_to_api(
+                f"/studies/{study_uid}/study-visits", body, "/study-visits"
+            )
+            if res is None:
+                self.census.stop("visit", plan["refKey"], "visit create failed")
+                continue
+            self.uid_map["visits"][plan["refKey"]] = res["uid"]
+            self.census.created.append({"kind": "visit", "ref": plan["refKey"]})
+            if plan["day_missing"]:
+                self.census.carried.append(
+                    {
+                        "kind": "visit_day",
+                        "ref": plan["refKey"],
+                        "reason": "the protocol stated no numeric day; imported at day 0 "
+                        "of the anchor reference — set the timing in OSB",
+                    }
+                )
+
+    def ensure_arms(self, payload, study_uid):
+        existing = self.api.get_all_from_api(f"/studies/{study_uid}/study-arms") or []
+        existing_by_name = {a.get("name", "").lower(): a for a in existing}
+        for plan in mapping.arms_plan(payload):
+            found = existing_by_name.get(plan["name"].lower())
+            if found:
+                self.uid_map["arms"][plan["name"]] = found["arm_uid"]
+                self.census.unchanged.append({"kind": "arm", "ref": plan["name"]})
+                continue
+            body = {
+                "name": plan["name"],
+                "short_name": plan["short_name"],
+                "description": plan.get("description"),
+            }
+            res = self.api.simple_post_to_api(
+                f"/studies/{study_uid}/study-arms", body, "/study-arms"
+            )
+            if res is None:
+                self.census.stop("arm", plan["name"], "arm create failed")
+                continue
+            self.uid_map["arms"][plan["name"]] = res.get("arm_uid") or res.get("uid")
+            self.census.created.append({"kind": "arm", "ref": plan["name"]})
+        for gc in payload.get("nonArmGroupClasses", []):
+            self.census.carried.append(
+                {
+                    "kind": "group_class",
+                    "ref": gc["name"],
+                    "reason": f"groupClassTypeName '{gc['groupClassTypeName']}' is not an "
+                    "arm (doctrine: never presented to OSB as StudyArm)",
+                }
+            )
+
+    # ------------------------------------------------------------------
+    # Run
+    # ------------------------------------------------------------------
+
+    def run(self, study_id=None):
+        study_id = study_id or load_env("ECRF_STUDY_ID")
+        self.log.info("Importing 360i study '%s' into OSB", study_id)
+
+        record = self.db.read_latest_payload(study_id)
+        if record is None:
+            raise SystemExit(
+                f"No OSB payload for study '{study_id}' in ecrf_platform "
+                f"(tenant '{self.db.tenant_id}'). Build the study in 360i first."
+            )
+        payload = record["payload"]
+        if record["census"]["unmapped"] != 0:
+            raise SystemExit(
+                f"Payload {record['payload_hash'][:12]} claims {record['census']['unmapped']} "
+                "unmapped members — the table CHECK should have refused this; not importing."
+            )
+        self.log.info(
+            "Payload %s (build %s): %d visits, %d forms",
+            record["payload_hash"][:12],
+            record["build_hash"][:12],
+            len(payload.get("visits", [])),
+            len(payload.get("odm", {}).get("forms", [])),
+        )
+
+        crosswalk = self.db.read_current_crosswalk(study_id)
+        if crosswalk:
+            if crosswalk["payload_hash"] == record["payload_hash"]:
+                self.log.info(
+                    "Payload %s already imported (import %s) — nothing to do.",
+                    record["payload_hash"][:12],
+                    crosswalk["import_id"],
+                )
+                return crosswalk
+            self.log.info(
+                "Study previously imported as OSB study '%s' — updating in place.",
+                crosswalk["osb_study_uid"],
+            )
+            # Seed the uid map with the previous import's joins so unchanged
+            # entities resolve without re-creation.
+            for kind, refs in (crosswalk.get("uid_map") or {}).items():
+                if kind in self.uid_map and isinstance(refs, dict):
+                    self.uid_map[kind].update(refs)
+
+        project_number = self.ensure_programme_and_project(payload)
+        unit_uid_by_name = self.ensure_units(payload)
+        codelist_by_ref = self.ensure_codelists(payload)
+
+        study_uid = self.ensure_study(payload, project_number, crosswalk)
+        if study_uid is None:
+            self._finish(study_id, record, None, project_number)
+            return None
+
+        epoch_uid_by_visit_ref, _scaffolded = self.ensure_epochs(payload, study_uid)
+        self.ensure_visits(payload, study_uid, epoch_uid_by_visit_ref)
+        self.ensure_arms(payload, study_uid)
+
+        # ODM (forms/item-groups/items + the form x visit matrix) — B3.
+        self.ensure_odm(payload, study_uid, codelist_by_ref, unit_uid_by_name)
+
+        return self._finish(study_id, record, study_uid, project_number)
+
+    def ensure_odm(self, payload, study_uid, codelist_by_ref, unit_uid_by_name):
+        """Placeholder until B3 lands: the ODM pass (vendor namespace, items,
+        item-groups, forms, study-event FORM_REF wiring). Declares the forms
+        as carried so the census stays total even before B3."""
+        for form in payload.get("odm", {}).get("forms", []):
+            self.census.carried.append(
+                {
+                    "kind": "form",
+                    "ref": form["refKey"],
+                    "reason": "ODM import pass not yet enabled (B3)",
+                }
+            )
+
+    def _finish(self, study_id, record, study_uid, project_number):
+        census = self.census.as_dict()
+        status = self.census.status if study_uid else "failed"
+        import_id = self.db.write_import_ledger(
+            study_id=study_id,
+            payload_hash=record["payload_hash"],
+            osb_study_uid=study_uid,
+            osb_project_number=project_number,
+            status=status,
+            census=census,
+            uid_map=self.uid_map,
+        )
+        self.log.info(
+            "Import %s finished: %s (created %d, unchanged %d, stopped %d, scaffolding %d)",
+            import_id,
+            status,
+            census["counts"]["created"],
+            census["counts"]["unchanged"],
+            census["counts"]["stopped"],
+            census["counts"]["importer_scaffolding"],
+        )
+        for row in census["stopped"]:
+            self.log.warning("STOPPED %s '%s': %s", row["kind"], row["ref"], row["reason"])
+        return {
+            "import_id": import_id,
+            "osb_study_uid": study_uid,
+            "status": status,
+            "census": census,
+        }
+
+
+def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(prog="run_import_360i.py")
+    parser.add_argument("--study", help="360i study id (else ECRF_STUDY_ID)")
+    args = parser.parse_args()
+
+    metr = Metrics()
+    importer = Import360i(metrics_inst=metr)
+    try:
+        importer.run(study_id=args.study)
+    finally:
+        importer.db.close()
+    metr.print()
+
+
+if __name__ == "__main__":
+    main()
