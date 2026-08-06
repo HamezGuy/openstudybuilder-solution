@@ -581,6 +581,11 @@ app.include_router(
     prefix="/integrations/ms-graph",
     tags=["MS Graph API integrations"],
 )
+app.include_router(
+    routers.integrations.edc_export.router,
+    prefix="/integrations/edc",
+    tags=["AccuraTrial EDC integration"],
+)
 app.include_router(routers.ddf_router, prefix="/usdm/v4", tags=["USDM endpoints"])
 app.include_router(
     routers.data_suppliers_router, prefix="/data-suppliers", tags=["Data Suppliers"]

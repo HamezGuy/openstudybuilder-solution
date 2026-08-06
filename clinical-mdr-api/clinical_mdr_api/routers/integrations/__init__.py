@@ -1,1 +1,2 @@
+import clinical_mdr_api.routers.integrations.edc_export
 import clinical_mdr_api.routers.integrations.msgraph

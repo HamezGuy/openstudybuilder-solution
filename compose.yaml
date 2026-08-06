@@ -57,6 +57,9 @@ services:
       OAUTH_SWAGGER_APP_ID: "${OAUTH_SWAGGER_APP_ID:-}"
       MS_GRAPH_INTEGRATION_ENABLED: "${MS_GRAPH_INTEGRATION_ENABLED:-}"
       MS_GRAPH_GROUPS_QUERY: "${MS_GRAPH_GROUPS_QUERY:-}"
+      # AccuraTrial EDC push (/integrations/edc); empty = push disabled.
+      EDC_BASE_URL: "${EDC_BASE_URL:-}"
+      EDC_API_KEY: "${EDC_API_KEY:-}"
       UVICORN_PORT: 5003
       UVICORN_ROOT_PATH: "/api"
       # deprecated #

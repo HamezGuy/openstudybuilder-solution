@@ -155,6 +155,11 @@ class Settings(BaseSettings):
     # Third-party Integrations
     ms_graph_integration_enabled: bool = False
     ms_graph_groups_query: str = "``"
+    # AccuraTrial EDC push (/integrations/edc). The key is the EDC's M2M
+    # x-api-key, scoped to forms:import-study-bundle on the EDC side. Both
+    # empty = push disabled; the bundle GET (file download) works regardless.
+    edc_base_url: str = Field(default="", alias="EDC_BASE_URL")
+    edc_api_key: SecretStr = Field(default=SecretStr(""), alias="EDC_API_KEY")
 
     # gzip API responses (Content-Encoding: gzip)
     gzip_response_min_size: int = Field(
