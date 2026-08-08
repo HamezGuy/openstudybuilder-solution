@@ -108,7 +108,12 @@ class EdcExportService:
         )
 
         visits, visit_ref_by_uid, visit_ref_by_name = self._visits(study_uid)
-        forms, form_ref_by_uid, form_ref_by_oid = self._forms()
+        # Scope the form projection to THIS study's own forms (those reachable
+        # from its study-events' FORM_REFs), not every form in the shared ODM
+        # library — otherwise a multi-study instance leaks OSB's baked DDF seed
+        # forms and other studies' forms into the bundle.
+        event_form_uids = self._study_event_form_uids(visit_ref_by_name, visits)
+        forms, form_ref_by_uid, form_ref_by_oid = self._forms(event_form_uids)
         assignments = self._assignments(
             study_uid, visit_ref_by_name, form_ref_by_uid, form_ref_by_oid, visits
         )
@@ -220,25 +225,88 @@ class EdcExportService:
             visits.append(visit)
         return visits, ref_by_uid, ref_by_name
 
-    def _forms(self):
-        """Every ODM form reachable in the library, projected with sections
-        (item groups) and fields (items). refKey = the form's OID when it has
-        one (the 360i importer sets OID = refKey), else a sanitized name."""
-        forms_result = self.form_service.get_all_concepts(page_size=0)
+    def _study_event_form_uids(self, visit_ref_by_name, visits):
+        """OdmForm UIDs reached from THIS study's study-events' FORM_REFs. A
+        study-event belongs to the study when its OID carries a known visit
+        refKey (SE.360I.<studyId>.<visitRef>) or its name equals a visit name
+        (native OSB studies). These are the forms actually scheduled onto the
+        study calendar; forms the study defines but never schedules are added
+        by the x360i stamp in _forms (the direct 360i->EDC path ships those too)."""
+        events_result = self.study_event_service.get_all_odms(page_size=0)
+        events = (
+            events_result.items if hasattr(events_result, "items") else events_result
+        )
+        visit_refs = {v["refKey"] for v in visits}
+        form_uids: set[str] = set()
+        for event_model in events:
+            event = (
+                event_model.model_dump()
+                if hasattr(event_model, "model_dump")
+                else dict(event_model)
+            )
+            oid = event.get("oid") or ""
+            match = X360I_EVENT_OID.match(oid)
+            claims_visit = bool(match and match.group("visit_ref") in visit_refs)
+            if not claims_visit:
+                claims_visit = (event.get("name") or "").strip().lower() in visit_ref_by_name
+            if not claims_visit:
+                continue
+            for form_ref_model in event.get("forms", []) or []:
+                if form_ref_model.get("uid"):
+                    form_uids.add(form_ref_model["uid"])
+        return form_uids
+
+    def _forms(self, event_form_uids=None):
+        """The study's ODM forms, projected with sections (item groups) and
+        fields (items). refKey = the form's OID when it has one (the 360i
+        importer sets OID = refKey), else a sanitized name.
+
+        Scoping: a form is projected when it is reached from this study's
+        study-events (event_form_uids) OR it carries an x360i vendor stamp (a
+        360i-created form, including ones the study defines but never schedules).
+        This excludes OSB's baked DDF seed forms and other unrelated library
+        forms. When event_form_uids is None AND no form carries an x360i stamp
+        (a fully-native OSB study), fall back to projecting the whole library so
+        the bundle is never silently empty."""
+        forms_result = self.form_service.get_all_odms(page_size=0)
         forms_items = (
             forms_result.items if hasattr(forms_result, "items") else forms_result
         )
+        all_forms = [
+            form_model.model_dump()
+            if hasattr(form_model, "model_dump")
+            else dict(form_model)
+            for form_model in forms_items
+        ]
+        event_form_uids = event_form_uids or set()
+
+        def _is_x360i(form):
+            # A 360i-created form carries at least one x360i vendor attribute
+            # (refKey/content/ext); OSB's baked DDF seed forms carry none.
+            return any(
+                attr.get("name") in ("refKey", "content", "ext", "fieldType")
+                for attr in (form.get("vendor_attributes") or [])
+            )
+
+        any_x360i = any(_is_x360i(f) for f in all_forms)
+
+        def _in_scope(form):
+            if form.get("uid") in event_form_uids:
+                return True
+            if _is_x360i(form):
+                return True
+            # Fully-native OSB study (no x360i stamps anywhere, no matching
+            # study-events): don't silently emit an empty bundle — project all.
+            return not any_x360i and not event_form_uids
+
         forms = []
         ref_by_uid: dict[str, str] = {}
         ref_by_oid: dict[str, str] = {}
         used: set[str] = set()
 
-        for form_model in forms_items:
-            form = (
-                form_model.model_dump()
-                if hasattr(form_model, "model_dump")
-                else dict(form_model)
-            )
+        for form in all_forms:
+            if not _in_scope(form):
+                continue
             base = _sanitize_ref(form.get("oid") or form.get("name"))
             ref = base
             n = 2
@@ -385,7 +453,7 @@ class EdcExportService:
         join by study-event name == visit name; ambiguity is censused and the
         assignment still ships (better a nameable guess than a dropped cell).
         """
-        events_result = self.study_event_service.get_all_concepts(page_size=0)
+        events_result = self.study_event_service.get_all_odms(page_size=0)
         events = (
             events_result.items if hasattr(events_result, "items") else events_result
         )
