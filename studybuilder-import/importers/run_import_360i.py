@@ -236,12 +236,16 @@ class Import360i(BaseImporter):
                 res = self.api.simple_post_to_api(
                     "/ct/codelists",
                     {
-                        "catalogue_name": "SDTM CT",
+                        # OSB's CTCodelistCreateInput requires catalogue_names
+                        # (plural array) and is_ordinal — verified against the
+                        # live /ct/codelists schema on the 2026.06 instance.
+                        "catalogue_names": ["SDTM CT"],
                         "name": name,
                         "submission_value": name,
                         "nci_preferred_name": name,
                         "definition": "360i option list (content-addressed)",
                         "extensible": True,
+                        "is_ordinal": False,
                         "sponsor_preferred_name": name,
                         "template_parameter": False,
                         "library_name": "Sponsor",
@@ -282,15 +286,23 @@ class Import360i(BaseImporter):
                 res = self.api.simple_post_to_api(
                     "/ct/terms",
                     {
-                        "catalogue_name": "SDTM CT",
-                        "codelist_uid": codelist_uid,
-                        "code_submission_value": term["submission_value"],
+                        # OSB's CTTermCreateInput (2026.06) takes catalogue_names
+                        # (plural array) and a nested codelists[] with
+                        # codelist_uid/submission_value/order — not the old flat
+                        # catalogue_name/codelist_uid/code_submission_value.
+                        "catalogue_names": ["SDTM CT"],
+                        "codelists": [
+                            {
+                                "codelist_uid": codelist_uid,
+                                "submission_value": term["submission_value"],
+                                "order": term.get("order"),
+                            }
+                        ],
                         "nci_preferred_name": term["name"],
                         "definition": term["name"],
                         "sponsor_preferred_name": term["name"],
                         "sponsor_preferred_name_sentence_case": term["name"].lower(),
                         "library_name": "Sponsor",
-                        "order": term.get("order"),
                     },
                 )
                 if res is None:
@@ -344,23 +356,35 @@ class Import360i(BaseImporter):
             return study_uid
 
         study_number = mapping.study_number_for(payload)
-        # Collision handling: OSB study numbers are unique per project; walk
-        # down until free (deterministic start, stable across re-runs via the
-        # crosswalk once created).
+        # Collision handling: OSB study numbers AND acronyms are unique. Walk
+        # both to a free value (deterministic start, stable across re-runs via
+        # the crosswalk once created).
         existing_numbers = set()
+        existing_acronyms = set()
         studies = self.api.get_all_from_api("/studies")
         for s in studies or []:
             ident = s.get("current_metadata", {}).get("identification_metadata", {})
             if ident.get("study_number"):
                 existing_numbers.add(str(ident["study_number"]))
+            if ident.get("study_acronym"):
+                existing_acronyms.add(str(ident["study_acronym"]))
         candidate = int(study_number)
         while str(candidate) in existing_numbers:
             candidate += 1
         study_number = str(candidate)
 
+        base_acronym = mapping.study_acronym_for(payload)
+        study_acronym = base_acronym
+        n = 2
+        while study_acronym in existing_acronyms:
+            # Keep within OSB's 20-char acronym cap while suffixing.
+            suffix = str(n)
+            study_acronym = base_acronym[: 20 - len(suffix)] + suffix
+            n += 1
+
         body = {
             "study_number": study_number,
-            "study_acronym": mapping.study_acronym_for(payload),
+            "study_acronym": study_acronym,
             "project_number": project_number,
             "description": f"Imported from 360i study {payload['source']['studyId']} "
             f"(build {payload['source']['buildHash'][:12]})",
@@ -483,8 +507,99 @@ class Import360i(BaseImporter):
                     ref_to_epoch_uid[visit_ref] = uid
         return ref_to_epoch_uid, is_scaffolding
 
+    def _current_visits_by_ref(self, study_uid):
+        """Snapshot of OSB's current study-visits keyed by our stamped refKey.
+
+        The refKey->uid join comes from the seeded uid_map (the previous
+        import's ledger). For each ref still present in OSB, expose the
+        payload-plan-shaped compare fields so the pure diff can decide
+        patch/unchanged. Refs whose uid vanished from OSB are dropped (the
+        diff then treats them as create). On first import the uid_map is empty
+        and this returns {} — every plan is a create, as before.
+        """
+        osb_by_uid = {
+            v["uid"]: v
+            for v in (self.api.get_all_from_api(f"/studies/{study_uid}/study-visits") or [])
+        }
+        current = {}
+        for ref, uid in self.uid_map["visits"].items():
+            v = osb_by_uid.get(uid)
+            if v is None:
+                continue
+            current[ref] = {
+                "uid": uid,
+                "visit_name": v.get("visit_name"),
+                "visit_short_name": v.get("visit_short_name"),
+                "visit_number": v.get("visit_number"),
+                "unique_visit_number": v.get("unique_visit_number"),
+                "time_value": v.get("time_value"),
+                "min_window": v.get("min_visit_window_value"),
+                "max_window": v.get("max_visit_window_value"),
+                "visit_class": v.get("visit_class"),
+                "visit_type_name": v.get("visit_type_name"),
+                "is_global_anchor_visit": v.get("is_global_anchor_visit"),
+                "description": v.get("description"),
+            }
+        return current
+
+    def _visit_body(self, plan, study_uid, epoch_uid_by_visit_ref, ctx):
+        """Build the create/edit body for one visit plan, resolving the visit
+        type and epoch. Returns (body, None) or (None, stop_reason)."""
+        # Try each candidate VisitType term name against the seeded CT (the
+        # payload's 'scheduled' has no literal "Visit" term in CDISC CT, so it
+        # falls back to "Treatment"); STOP only if none of the candidates exist.
+        candidates = plan.get("visit_type_names") or [plan.get("visit_type_name")]
+        visit_type_uid = None
+        for cand in candidates:
+            visit_type_uid = self._lookup_ct_term(CODELIST_VISIT_TYPE, cand)
+            if visit_type_uid:
+                break
+        if visit_type_uid is None:
+            return None, f"no VisitType term among {candidates}"
+        epoch_uid = epoch_uid_by_visit_ref.get(plan["refKey"])
+        if epoch_uid is None:
+            epoch_uid = next(iter(self.uid_map["epochs"].values()), None)
+            if epoch_uid is None:
+                return None, "no epoch available"
+            self.census.scaffolding.append(
+                {
+                    "kind": "visit_epoch_assignment",
+                    "ref": plan["refKey"],
+                    "reason": "epoch join unverified; filed under the first epoch",
+                }
+            )
+        body = {
+            "study_epoch_uid": epoch_uid,
+            "visit_type": {"term_uid": visit_type_uid},
+            "time_reference": {"term_uid": ctx["anchor_ref_uid"]},
+            "time_value": plan["time_value"],
+            "time_unit_uid": ctx["day_unit_uid"],
+            "visit_class": plan["visit_class"],
+            "is_global_anchor_visit": plan["is_global_anchor_visit"],
+            "show_visit": True,
+            "min_visit_window_value": plan["min_window"],
+            "max_visit_window_value": plan["max_window"],
+            "visit_window_unit_uid": ctx["day_unit_uid"],
+            "description": plan.get("description"),
+            "visit_contact_mode": {"term_uid": ctx["contact_uid"]},
+        }
+        if plan["visit_class"] == "MANUALLY_DEFINED_VISIT":
+            # Protocol-stated names, never OSB's derived "Visit N" (the
+            # visit-naming doctrine rides the payload; honor it here).
+            body["visit_name"] = plan["visit_name"]
+            body["visit_short_name"] = plan["visit_short_name"]
+            body["visit_number"] = plan["visit_number"]
+            body["unique_visit_number"] = plan["unique_visit_number"]
+        return body, None
+
     def ensure_visits(self, payload, study_uid, epoch_uid_by_visit_ref):
-        """Create the visit calendar, protocol names preserved."""
+        """Reconcile the visit calendar to the payload (create/patch/delete).
+
+        First import: uid_map empty -> the diff is all-create (prior behavior).
+        Re-import of an edited payload: refKey diff drives targeted PATCH of
+        changed windows/timing/names, POST of new visits, DELETE of removed
+        ones — the create-only census-as-unchanged gap this closes.
+        """
         anchor_ref_uid = self._lookup_ct_term(
             CODELIST_TIMEPOINT_REFERENCE, "Global anchor visit"
         )
@@ -498,70 +613,23 @@ class Import360i(BaseImporter):
                 "run the standard-codelist imports first",
             )
             return
+        ctx = {
+            "anchor_ref_uid": anchor_ref_uid,
+            "contact_uid": contact_uid,
+            "day_unit_uid": day_unit_uid,
+        }
 
-        existing = self.api.get_all_from_api(f"/studies/{study_uid}/study-visits") or []
-        existing_by_name = {v.get("visit_name", "").lower(): v for v in existing}
+        current_by_ref = self._current_visits_by_ref(study_uid)
+        diff = mapping.visit_diff(payload, current_by_ref, epoch_uid_by_visit_ref)
 
-        for plan in mapping.visit_plan(payload):
-            if plan.get("stop"):
-                self.census.stop("visit", plan["refKey"], plan["stop"])
+        for plan in diff["stop"]:
+            self.census.stop("visit", plan["refKey"], plan["stop"])
+
+        for plan in diff["create"]:
+            body, stop = self._visit_body(plan, study_uid, epoch_uid_by_visit_ref, ctx)
+            if stop:
+                self.census.stop("visit", plan["refKey"], stop)
                 continue
-            found = existing_by_name.get(plan["visit_name"].lower())
-            if found:
-                self.uid_map["visits"][plan["refKey"]] = found["uid"]
-                self.census.unchanged.append({"kind": "visit", "ref": plan["refKey"]})
-                continue
-
-            visit_type_uid = self._lookup_ct_term(
-                CODELIST_VISIT_TYPE, plan["visit_type_name"]
-            )
-            if visit_type_uid is None:
-                self.census.stop(
-                    "visit",
-                    plan["refKey"],
-                    f"no VisitType term '{plan['visit_type_name']}'",
-                )
-                continue
-
-            epoch_uid = epoch_uid_by_visit_ref.get(plan["refKey"])
-            if epoch_uid is None:
-                # A visit the epoch join could not verify still needs an epoch
-                # (OSB requires one) — file it under the first epoch and say so.
-                epoch_uid = next(iter(self.uid_map["epochs"].values()), None)
-                if epoch_uid is None:
-                    self.census.stop("visit", plan["refKey"], "no epoch available")
-                    continue
-                self.census.scaffolding.append(
-                    {
-                        "kind": "visit_epoch_assignment",
-                        "ref": plan["refKey"],
-                        "reason": "epoch join unverified; filed under the first epoch",
-                    }
-                )
-
-            body = {
-                "study_epoch_uid": epoch_uid,
-                "visit_type": {"term_uid": visit_type_uid},
-                "time_reference": {"term_uid": anchor_ref_uid},
-                "time_value": plan["time_value"],
-                "time_unit_uid": day_unit_uid,
-                "visit_class": plan["visit_class"],
-                "is_global_anchor_visit": plan["is_global_anchor_visit"],
-                "show_visit": True,
-                "min_visit_window_value": plan["min_window"],
-                "max_visit_window_value": plan["max_window"],
-                "visit_window_unit_uid": day_unit_uid,
-                "description": plan.get("description"),
-                "visit_contact_mode": {"term_uid": contact_uid},
-            }
-            if plan["visit_class"] == "MANUALLY_DEFINED_VISIT":
-                # Protocol-stated names, never OSB's derived "Visit N" (the
-                # visit-naming doctrine rides the payload; honor it here).
-                body["visit_name"] = plan["visit_name"]
-                body["visit_short_name"] = plan["visit_short_name"]
-                body["visit_number"] = plan["visit_number"]
-                body["unique_visit_number"] = plan["unique_visit_number"]
-
             res = self.api.simple_post_to_api(
                 f"/studies/{study_uid}/study-visits", body, "/study-visits"
             )
@@ -580,15 +648,61 @@ class Import360i(BaseImporter):
                     }
                 )
 
-    def ensure_arms(self, payload, study_uid):
-        existing = self.api.get_all_from_api(f"/studies/{study_uid}/study-arms") or []
-        existing_by_name = {a.get("name", "").lower(): a for a in existing}
-        for plan in mapping.arms_plan(payload):
-            found = existing_by_name.get(plan["name"].lower())
-            if found:
-                self.uid_map["arms"][plan["name"]] = found["arm_uid"]
-                self.census.unchanged.append({"kind": "arm", "ref": plan["name"]})
+        for entry in diff["patch"]:
+            plan = entry["plan"]
+            body, stop = self._visit_body(plan, study_uid, epoch_uid_by_visit_ref, ctx)
+            if stop:
+                self.census.stop("visit", plan["refKey"], stop)
                 continue
+            body["uid"] = entry["uid"]
+            res = self.api.patch_to_api(body, f"/studies/{study_uid}/study-visits")
+            if res is None:
+                self.census.stop("visit", plan["refKey"], "visit patch failed")
+                continue
+            self.uid_map["visits"][plan["refKey"]] = entry["uid"]
+            self.census.updated.append(
+                {"kind": "visit", "ref": plan["refKey"], "changed": entry["changed"]}
+            )
+
+        for entry in diff["unchanged"]:
+            self.uid_map["visits"][entry["ref"]] = entry["uid"]
+            self.census.unchanged.append({"kind": "visit", "ref": entry["ref"]})
+
+        for entry in diff["delete"]:
+            ok = self.api.simple_delete(
+                f"/studies/{study_uid}/study-visits/{entry['uid']}", "/study-visits"
+            )
+            if not ok:
+                self.census.stop("visit", entry["ref"], "visit delete failed")
+                continue
+            self.uid_map["visits"].pop(entry["ref"], None)
+            self.census.updated.append({"kind": "visit_removed", "ref": entry["ref"]})
+
+    def _current_arms_by_ref(self, study_uid):
+        """OSB study-arms keyed by name (the arm's stable ref), for the diff."""
+        osb_by_uid = {}
+        for a in self.api.get_all_from_api(f"/studies/{study_uid}/study-arms") or []:
+            osb_by_uid[a.get("arm_uid") or a.get("uid")] = a
+        current = {}
+        for ref, uid in self.uid_map["arms"].items():
+            a = osb_by_uid.get(uid)
+            if a is None:
+                continue
+            current[ref] = {
+                "uid": uid,
+                "name": a.get("name"),
+                "short_name": a.get("short_name"),
+                "description": a.get("description"),
+            }
+        return current
+
+    def ensure_arms(self, payload, study_uid):
+        """Reconcile study-arms to the payload (create/patch/delete). Genuine
+        arms only; non-arm group classes ride the census as carried."""
+        current_by_ref = self._current_arms_by_ref(study_uid)
+        diff = mapping.arm_diff(payload, current_by_ref)
+
+        for plan in diff["create"]:
             body = {
                 "name": plan["name"],
                 "short_name": plan["short_name"],
@@ -602,6 +716,38 @@ class Import360i(BaseImporter):
                 continue
             self.uid_map["arms"][plan["name"]] = res.get("arm_uid") or res.get("uid")
             self.census.created.append({"kind": "arm", "ref": plan["name"]})
+
+        for entry in diff["patch"]:
+            plan = entry["plan"]
+            body = {
+                "uid": entry["uid"],
+                "name": plan["name"],
+                "short_name": plan["short_name"],
+                "description": plan.get("description"),
+            }
+            res = self.api.patch_to_api(body, f"/studies/{study_uid}/study-arms")
+            if res is None:
+                self.census.stop("arm", plan["name"], "arm patch failed")
+                continue
+            self.uid_map["arms"][plan["name"]] = entry["uid"]
+            self.census.updated.append(
+                {"kind": "arm", "ref": plan["name"], "changed": entry["changed"]}
+            )
+
+        for entry in diff["unchanged"]:
+            self.uid_map["arms"][entry["ref"]] = entry["uid"]
+            self.census.unchanged.append({"kind": "arm", "ref": entry["ref"]})
+
+        for entry in diff["delete"]:
+            ok = self.api.simple_delete(
+                f"/studies/{study_uid}/study-arms/{entry['uid']}", "/study-arms"
+            )
+            if not ok:
+                self.census.stop("arm", entry["ref"], "arm delete failed")
+                continue
+            self.uid_map["arms"].pop(entry["ref"], None)
+            self.census.updated.append({"kind": "arm_removed", "ref": entry["ref"]})
+
         for gc in payload.get("nonArmGroupClasses", []):
             self.census.carried.append(
                 {
@@ -642,22 +788,39 @@ class Import360i(BaseImporter):
 
         crosswalk = self.db.read_current_crosswalk(study_id)
         if crosswalk:
-            if crosswalk["payload_hash"] == record["payload_hash"]:
+            # The hash-gate no-op is only valid if the crosswalked OSB study
+            # STILL EXISTS. A crosswalk can outlive its OSB study (the instance
+            # was wiped/re-seeded, or the study deleted) — in that case an
+            # identical payload must be RE-IMPORTED fresh, not reported as
+            # "already done". Verify existence before trusting the gate.
+            osb_uid = crosswalk.get("osb_study_uid")
+            osb_study_exists = bool(
+                osb_uid and self.api.get_all_from_api(f"/studies/{osb_uid}")
+            )
+            if not osb_study_exists:
+                self.log.info(
+                    "Crosswalk names OSB study '%s' which no longer exists — "
+                    "re-importing the payload fresh.",
+                    osb_uid,
+                )
+                crosswalk = None
+            elif crosswalk["payload_hash"] == record["payload_hash"]:
                 self.log.info(
                     "Payload %s already imported (import %s) — nothing to do.",
                     record["payload_hash"][:12],
                     crosswalk["import_id"],
                 )
                 return crosswalk
-            self.log.info(
-                "Study previously imported as OSB study '%s' — updating in place.",
-                crosswalk["osb_study_uid"],
-            )
-            # Seed the uid map with the previous import's joins so unchanged
-            # entities resolve without re-creation.
-            for kind, refs in (crosswalk.get("uid_map") or {}).items():
-                if kind in self.uid_map and isinstance(refs, dict):
-                    self.uid_map[kind].update(refs)
+            else:
+                self.log.info(
+                    "Study previously imported as OSB study '%s' — updating in place.",
+                    crosswalk["osb_study_uid"],
+                )
+                # Seed the uid map with the previous import's joins so unchanged
+                # entities resolve without re-creation.
+                for kind, refs in (crosswalk.get("uid_map") or {}).items():
+                    if kind in self.uid_map and isinstance(refs, dict):
+                        self.uid_map[kind].update(refs)
 
         project_number = self.ensure_programme_and_project(payload)
         unit_uid_by_name = self.ensure_units(payload)
@@ -748,19 +911,38 @@ class Import360i(BaseImporter):
         return attrs
 
     def ensure_odm(self, payload, study_uid, codelist_by_ref, unit_uid_by_name):
-        """Items -> item-groups -> forms -> ONE study-event per study, whose
-        FORM_REFs ARE the form x visit matrix's form axis; the per-visit
-        assignment detail rides the study-event's x360i ext attribute.
+        """Items -> item-groups -> forms -> ONE study-event per visit, whose
+        FORM_REFs ARE the form x visit matrix's form axis.
 
-        Everything is matched by OID (= our refKey — OSB keeps the OID we
+        Concepts are matched by OID (= our refKey — OSB keeps the OID we
         supply), so a re-import finds its own concepts instead of duplicating
-        them. Changed concepts would need a version->patch->approve cycle;
-        v1 treats an existing OID as unchanged and censuses it, which is
-        honest because the payload hash gate in run() already skips
-        byte-identical payloads.
+        them. For an EDITED payload, a matched concept whose canonical content
+        changed is reconciled through OSB's version -> PATCH -> approve cycle;
+        a content-identical match is left untouched (censused unchanged) so an
+        unchanged concept is never version-churned. The `x360i:content` vendor
+        attribute stamps the content sha at create/patch time, so the next
+        import's content-compare needs only OSB state, not the payload hash.
         """
         attr_uids = self.ensure_vendor_namespace()
         odm = payload.get("odm", {})
+        # OSB enforces one-item-one-group and rejects an item-ref batch atomically
+        # if any item is already claimed. Resolve each item's single canonical
+        # owner group up front; duplicate (item, group) references are censused as
+        # `carried` so a catch-all group re-listing domain fields can't silently
+        # drop the items that were unique to it (see payload_to_osb.item_group_ownership).
+        ownership = mapping.item_group_ownership(odm)
+        item_owner = ownership["owner"]
+        for dup in ownership["carried"]:
+            self.census.carried.append(
+                {
+                    "kind": "item_ref",
+                    "ref": f"{dup['group']}/{dup['item']}",
+                    "reason": (
+                        f"item {dup['item']} owned by group {dup['owner']} "
+                        f"(OSB one-item-one-group); not re-wired into {dup['group']}"
+                    ),
+                }
+            )
 
         def _find_by_oid(path, oid):
             items = self.api.get_all_from_api(
@@ -773,24 +955,99 @@ class Import360i(BaseImporter):
             )
             return items[0] if items else None
 
-        def _create_and_approve(kind, path, body, ref):
+        def _stamp_content(body, sha):
+            """Add the content sha as an x360i:content vendor attribute so the
+            next import can content-compare from OSB state alone."""
+            if attr_uids.get("content"):
+                body.setdefault("vendor_attributes", []).append(
+                    {"uid": attr_uids["content"], "value": sha}
+                )
+
+        def _existing_content_sha(existing):
+            """Read the x360i:content sha a prior import stamped, if any."""
+            for attr in existing.get("vendor_attributes", []) or []:
+                if attr.get("name") == "content" or attr.get("uid") == attr_uids.get(
+                    "content"
+                ):
+                    return attr.get("value")
+            return None
+
+        def _create_and_approve(kind, path, body, ref, defer_approve=False):
+            # defer_approve=True leaves the new element in Draft so the caller
+            # can attach child refs (ITEM_GROUP_REF / ITEM_REF / FORM_REF) —
+            # OSB only accepts those on a Draft element — then approve via
+            # _approve(). Otherwise approve immediately (leaf concepts).
             res = self.api.simple_post_to_api(path, body)
             if res is None:
                 self.census.stop(kind, ref, f"{kind} create failed")
                 return None
-            self.api.simple_approve(f"{path}/{res['uid']}/approvals")
+            if not defer_approve:
+                self.api.simple_approve(f"{path}/{res['uid']}/approvals")
             self.census.created.append({"kind": kind, "ref": ref})
             return res
+
+        def _approve(path, uid):
+            self.api.simple_approve(f"{path}/{uid}/approvals")
+
+        def _patch_through_version(kind, path, existing, body, ref):
+            """OSB version -> PATCH -> approve for an EDITED concept.
+
+            An approved concept must be drafted (new version) before it accepts
+            a PATCH, then re-approved. Content-compare has already decided this
+            concept changed; this just executes the lifecycle. Returns the uid
+            on success, None on failure (census stopped)."""
+            uid = existing["uid"]
+            status = (existing.get("status") or "").lower()
+            if status not in ("draft",):
+                if self.api.simple_post_to_api(f"{path}/{uid}/versions", {}) is None:
+                    self.census.stop(kind, ref, f"{kind} new-version (draft) failed")
+                    return None
+            body = dict(body)
+            body["uid"] = uid
+            # OSB's ODM *Patch* inputs require these fields that the *Post*
+            # inputs don't: a change_description and the (empty) vendor-element
+            # arrays. Supply them so the PATCH validates.
+            body.setdefault("change_description", "360i re-import: content changed")
+            body.setdefault("vendor_elements", [])
+            body.setdefault("vendor_element_attributes", [])
+            if self.api.patch_to_api(body, path) is None:
+                self.census.stop(kind, ref, f"{kind} patch failed")
+                return None
+            self.api.simple_approve(f"{path}/{uid}/approvals")
+            self.census.updated.append({"kind": kind, "ref": ref})
+            return uid
+
+        def _reconcile(kind, path, ref, body_no_content, defer_approve=False):
+            """Create / patch-through-version / skip one ODM concept by OID.
+
+            body_no_content is the desired body WITHOUT the content stamp; the
+            sha is computed over it, compared against the existing stamp, and
+            appended before the write. Returns (uid, created_bool) or (None, _).
+
+            defer_approve=True: when the concept is newly CREATED, leave it in
+            Draft (the caller must attach child refs then call _approve). Only
+            the create path can defer — a patched-through-version concept is
+            re-approved by _patch_through_version as before.
+            """
+            sha = mapping.content_sha(body_no_content)
+            existing = _find_by_oid(path, ref)
+            if existing is None:
+                body = dict(body_no_content)
+                _stamp_content(body, sha)
+                res = _create_and_approve(kind, path, body, ref, defer_approve=defer_approve)
+                return (res["uid"], True) if res else (None, False)
+            if _existing_content_sha(existing) == sha:
+                self.census.unchanged.append({"kind": kind, "ref": ref})
+                return existing["uid"], False
+            body = dict(body_no_content)
+            _stamp_content(body, sha)
+            uid = _patch_through_version(kind, path, existing, body, ref)
+            return (uid, False) if uid else (None, False)
 
         # Items (all groups, all forms), then groups, then forms — leaf first.
         for form in odm.get("forms", []):
             for group in form.get("itemGroups", []):
                 for item in group.get("items", []):
-                    existing = _find_by_oid("/odms/items", item["refKey"])
-                    if existing:
-                        self.uid_map["items"][item["refKey"]] = existing["uid"]
-                        self.census.unchanged.append({"kind": "item", "ref": item["refKey"]})
-                        continue
                     body = mapping.odm_item_body(item, codelist_by_ref, unit_uid_by_name)
                     body["vendor_attributes"] = self._entity_vendor_attributes(
                         attr_uids,
@@ -802,20 +1059,13 @@ class Import360i(BaseImporter):
                         body["translated_texts"] = [
                             {"text_type": "Question", "language": "en", "text": item["prompt"]}
                         ]
-                    res = _create_and_approve("item", "/odms/items", body, item["refKey"])
-                    if res:
-                        self.uid_map["items"][item["refKey"]] = res["uid"]
+                    uid, _created = _reconcile("item", "/odms/items", item["refKey"], body)
+                    if uid:
+                        self.uid_map["items"][item["refKey"]] = uid
 
         # Item groups + their item refs.
         for form in odm.get("forms", []):
             for group in form.get("itemGroups", []):
-                existing = _find_by_oid("/odms/item-groups", group["refKey"])
-                if existing:
-                    self.uid_map["item_groups"][group["refKey"]] = existing["uid"]
-                    self.census.unchanged.append(
-                        {"kind": "item_group", "ref": group["refKey"]}
-                    )
-                    continue
                 body = {
                     "name": group["name"][:200],
                     "oid": group["refKey"],
@@ -828,13 +1078,24 @@ class Import360i(BaseImporter):
                         attr_uids, group["refKey"]
                     ),
                 }
-                res = _create_and_approve(
-                    "item_group", "/odms/item-groups", body, group["refKey"]
+                # Create as Draft: ITEM_REFs attach only to a Draft element,
+                # so defer approval until after they're wired.
+                uid, created = _reconcile(
+                    "item_group", "/odms/item-groups", group["refKey"], body,
+                    defer_approve=True,
                 )
-                if res is None:
+                if uid is None:
                     continue
-                group_uid = res["uid"]
-                self.uid_map["item_groups"][group["refKey"]] = group_uid
+                self.uid_map["item_groups"][group["refKey"]] = uid
+                # (Re)wire the item refs only when the group was created or
+                # patched — an unchanged group keeps its existing refs.
+                if not created:
+                    continue
+                group_uid = uid
+                # Wire ONLY the items this group canonically owns — a duplicate
+                # reference (already censused `carried` above) would make OSB
+                # reject the whole batch atomically.
+                group_ref = group["refKey"]
                 item_refs = [
                     {
                         "uid": self.uid_map["items"][item["refKey"]],
@@ -850,19 +1111,31 @@ class Import360i(BaseImporter):
                     }
                     for item in group.get("items", [])
                     if item["refKey"] in self.uid_map["items"]
+                    and item_owner.get(item["refKey"]) == group_ref
                 ]
                 if item_refs:
-                    self.api.simple_post_to_api(
-                        f"/odms/item-groups/{group_uid}/items", item_refs
-                    )
+                    # A failed batch would silently orphan every item in this
+                    # group (verified live: item-ref POST is atomic). Check the
+                    # result and STOP-with-census rather than approve an empty
+                    # group — the no-data-loss guarantee must never fail silently.
+                    if (
+                        self.api.simple_post_to_api(
+                            f"/odms/item-groups/{group_uid}/items", item_refs
+                        )
+                        is None
+                    ):
+                        self.census.stop(
+                            "item_group_items",
+                            group_ref,
+                            f"item-ref batch POST failed ({len(item_refs)} items) "
+                            "— group left unwired to avoid a silent empty group",
+                        )
+                        continue
+                # Approve AFTER item refs are attached (Draft -> Final).
+                _approve("/odms/item-groups", group_uid)
 
         # Forms + their item-group refs.
         for form in odm.get("forms", []):
-            existing = _find_by_oid("/odms/forms", form["refKey"])
-            if existing:
-                self.uid_map["forms"][form["refKey"]] = existing["uid"]
-                self.census.unchanged.append({"kind": "form", "ref": form["refKey"]})
-                continue
             body = {
                 "name": form["name"][:200],
                 "oid": form["refKey"],
@@ -874,11 +1147,17 @@ class Import360i(BaseImporter):
                     attr_uids, form["refKey"], ext_json=mapping.vendor_ext_value(form)
                 ),
             }
-            res = _create_and_approve("form", "/odms/forms", body, form["refKey"])
-            if res is None:
+            # Create as Draft: ITEM_GROUP_REFs attach only to a Draft element,
+            # so defer approval until after they're wired.
+            uid, created = _reconcile(
+                "form", "/odms/forms", form["refKey"], body, defer_approve=True
+            )
+            if uid is None:
                 continue
-            form_uid = res["uid"]
-            self.uid_map["forms"][form["refKey"]] = form_uid
+            self.uid_map["forms"][form["refKey"]] = uid
+            if not created:
+                continue
+            form_uid = uid
             group_refs = [
                 {
                     "uid": self.uid_map["item_groups"][group["refKey"]],
@@ -894,6 +1173,8 @@ class Import360i(BaseImporter):
                 self.api.simple_post_to_api(
                     f"/odms/forms/{form_uid}/item-groups", group_refs
                 )
+            # Approve AFTER item-group refs are attached (Draft -> Final).
+            _approve("/odms/forms", form_uid)
 
         # ONE study-event PER VISIT — ODM's own semantics (a StudyEventDef IS
         # a visit; crosswalk §8: the form x visit anchor is StudyEvent
@@ -918,8 +1199,12 @@ class Import360i(BaseImporter):
                 self.uid_map["study_events"][visit_ref] = event_uid
                 self.census.unchanged.append({"kind": "study_event", "ref": event_oid})
                 continue
-            res = _create_and_approve(
-                "study_event",
+            # Create the study-event as a DRAFT (do NOT approve yet): FORM_REFs
+            # can only be attached while the ODM element is in Draft. OSB
+            # rejects `POST .../forms` on an approved element ("ODM element is
+            # not in Draft"), so the order must be create -> wire forms ->
+            # approve.
+            res = self.api.simple_post_to_api(
                 "/odms/study-events",
                 {
                     "name": visit["name"][:200],
@@ -927,12 +1212,13 @@ class Import360i(BaseImporter):
                     "description": f"Visit '{visit['name']}' imported from 360i study "
                     f"{study_id}; FORM_REFs are the visit's scheduled forms.",
                 },
-                event_oid,
             )
             if res is None:
+                self.census.stop("study_event", event_oid, "study_event create failed")
                 continue
             event_uid = res["uid"]
             self.uid_map["study_events"][visit_ref] = event_uid
+            self.census.created.append({"kind": "study_event", "ref": event_oid})
 
             form_refs = []
             for assignment in sorted(
@@ -962,6 +1248,8 @@ class Import360i(BaseImporter):
                 self.census.created.append(
                     {"kind": "form_refs", "ref": event_oid, "count": len(form_refs)}
                 )
+            # Approve the study-event AFTER its FORM_REFs are attached.
+            self.api.simple_approve(f"/odms/study-events/{event_uid}/approvals")
             # Assignment provenance (_derivedFrom, _conditionalNote, ...) has
             # no FORM_REF slot — carried, per assignment, never silently lost.
             derived = [
