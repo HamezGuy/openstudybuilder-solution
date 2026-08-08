@@ -268,10 +268,18 @@ class Import360i(BaseImporter):
             existing_terms = self.api.get_all_from_api(
                 f"/ct/codelists/{codelist_uid}/terms"
             )
-            existing_by_name = {
-                (t.get("name", {}).get("sponsor_preferred_name") or "").lower(): t
-                for t in existing_terms or []
-            }
+            # /ct/codelists/{uid}/terms returns sponsor_preferred_name as a
+            # DIRECT key on this OSB version (verified live: no nested "name"
+            # object); older/full term shapes nest it under "name". Support
+            # both — an empty match-index makes every re-imported term look
+            # new, and the duplicate POSTs then fail the whole import.
+            existing_by_name = {}
+            for t in existing_terms or []:
+                term_name = t.get("sponsor_preferred_name") or (
+                    t.get("name") or {}
+                ).get("sponsor_preferred_name")
+                if term_name:
+                    existing_by_name[term_name.lower()] = t
             for term in plan["terms"]:
                 found = existing_by_name.get(term["name"].lower())
                 if found:
@@ -358,11 +366,16 @@ class Import360i(BaseImporter):
         study_number = mapping.study_number_for(payload)
         # Collision handling: OSB study numbers AND acronyms are unique. Walk
         # both to a free value (deterministic start, stable across re-runs via
-        # the crosswalk once created).
+        # the crosswalk once created). OSB's uniqueness check spans SOFT-DELETED
+        # studies too (verified live: creating with a deleted study's number is
+        # refused), so the walk must read both the active and the deleted lists.
         existing_numbers = set()
         existing_acronyms = set()
-        studies = self.api.get_all_from_api("/studies")
-        for s in studies or []:
+        studies = self.api.get_all_from_api("/studies") or []
+        studies += (
+            self.api.get_all_from_api("/studies", params={"deleted": True}) or []
+        )
+        for s in studies:
             ident = s.get("current_metadata", {}).get("identification_metadata", {})
             if ident.get("study_number"):
                 existing_numbers.add(str(ident["study_number"]))
@@ -793,9 +806,13 @@ class Import360i(BaseImporter):
             # was wiped/re-seeded, or the study deleted) — in that case an
             # identical payload must be RE-IMPORTED fresh, not reported as
             # "already done". Verify existence before trusting the gate.
+            # NB: a direct GET /studies/{uid} still returns 200 for a
+            # SOFT-DELETED study (verified live), so existence must be checked
+            # against the studies LIST, which excludes deleted ones.
             osb_uid = crosswalk.get("osb_study_uid")
+            active_studies = self.api.get_all_from_api("/studies") or []
             osb_study_exists = bool(
-                osb_uid and self.api.get_all_from_api(f"/studies/{osb_uid}")
+                osb_uid and any(s.get("uid") == osb_uid for s in active_studies)
             )
             if not osb_study_exists:
                 self.log.info(

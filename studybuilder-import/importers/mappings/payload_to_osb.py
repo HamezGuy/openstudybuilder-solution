@@ -558,9 +558,11 @@ def item_group_ownership(odm):
 
     Ownership rule (deterministic, favours domain forms over catch-alls): among
     the groups that list an item, prefer the one with the FEWEST shared items
-    (a catch-all is mostly shared items, a domain group mostly unique), then the
-    lowest group orderNumber, then the group refKey — so a shared field like
-    AETERM is owned by Adverse Events, not the Medical History catch-all.
+    (a catch-all is mostly re-listed items, a domain group mostly unique), then
+    the SMALLEST group (a focused domain group beats a large catch-all when the
+    shared counts tie), then the lowest group orderNumber, then the group refKey
+    — so a shared field like AETERM is owned by Adverse Events, not the Medical
+    History catch-all.
     """
     members = {}
     for form in odm.get("forms", []):
@@ -571,17 +573,21 @@ def item_group_ownership(odm):
     group_rank = {}
     for form in odm.get("forms", []):
         for group in form.get("itemGroups", []):
+            items = group.get("items", [])
             shared = sum(
-                1
-                for item in group.get("items", [])
-                if len(members.get(item["refKey"], [])) > 1
+                1 for item in items if len(members.get(item["refKey"], [])) > 1
             )
-            group_rank[group["refKey"]] = (shared, group.get("orderNumber", 0))
+            group_rank[group["refKey"]] = (
+                shared,
+                len(items),
+                group.get("orderNumber", 0),
+            )
 
     owner = {}
     for ref, candidate_groups in members.items():
         owner[ref] = min(
-            candidate_groups, key=lambda g: (group_rank[g][0], group_rank[g][1], g)
+            candidate_groups,
+            key=lambda g: (group_rank[g][0], group_rank[g][1], group_rank[g][2], g),
         )
 
     wired = {}

@@ -334,8 +334,10 @@ def test_content_sha_is_stable_and_order_independent():
 # Medical History "MH_OTHER" catch-all silently dropped all 140 of its items).
 
 def _odm_two_groups():
-    # AE is a domain form (one shared + one unique item); MH_OTHER is a catch-all
-    # (mostly shared items re-listed from other forms, plus one unique item).
+    # AE is a focused domain group (its one shared item AETERM + one unique);
+    # MH_OTHER is a catch-all: it re-lists AETERM and AESER (both owned elsewhere)
+    # plus one item unique to it. The catch-all has MORE shared items than the
+    # domain group, so the primary "fewest shared" rule decides ownership.
     return {
         "forms": [
             {
@@ -343,7 +345,7 @@ def _odm_two_groups():
                 "itemGroups": [
                     {
                         "refKey": "G_AE",
-                        "orderNumber": 1,
+                        "orderNumber": 2,
                         "items": [
                             {"refKey": "AETERM", "orderNumber": 1},
                             {"refKey": "AESER", "orderNumber": 2},
@@ -355,11 +357,15 @@ def _odm_two_groups():
                 "refKey": "F_MH",
                 "itemGroups": [
                     {
-                        "refKey": "G_MH_OTHER",
+                        # Deliberately orderNumber 1 and alphabetically-first refKey
+                        # so ONLY the shared-count rule (not order/name) can keep the
+                        # shared items out of the catch-all.
+                        "refKey": "G_AAA_CATCH",
                         "orderNumber": 1,
                         "items": [
-                            {"refKey": "AETERM", "orderNumber": 1},  # shared w/ AE
-                            {"refKey": "MH_ONLY", "orderNumber": 2},  # unique here
+                            {"refKey": "AETERM", "orderNumber": 1},  # shared, owned by AE
+                            {"refKey": "AESER", "orderNumber": 2},  # shared, owned by AE
+                            {"refKey": "MH_ONLY", "orderNumber": 3},  # unique here
                         ],
                     }
                 ],
@@ -370,31 +376,71 @@ def _odm_two_groups():
 
 def test_ownership_domain_form_wins_over_catch_all():
     plan = mapping.item_group_ownership(_odm_two_groups())
-    # AETERM is shared; the group with FEWER shared items (the AE domain form) owns
-    # it, not the catch-all.
+    # AETERM/AESER are shared; the group with FEWER shared items (the AE domain
+    # group) owns them even though the catch-all sorts first by order and name.
     assert plan["owner"]["AETERM"] == "G_AE"
     assert plan["owner"]["AESER"] == "G_AE"
-    assert plan["owner"]["MH_ONLY"] == "G_MH_OTHER"
+    assert plan["owner"]["MH_ONLY"] == "G_AAA_CATCH"
+
+
+def test_ownership_tie_breaks_to_smaller_group():
+    # Two groups, each with exactly ONE shared item and no other distinguishing
+    # signal on that count: the smaller (more focused) group wins the tie, so a
+    # large catch-all never outranks a focused domain group.
+    odm = {
+        "forms": [
+            {
+                "refKey": "F_D",
+                "itemGroups": [
+                    {
+                        "refKey": "G_DOMAIN",
+                        "orderNumber": 2,
+                        "items": [{"refKey": "X", "orderNumber": 1}],
+                    }
+                ],
+            },
+            {
+                "refKey": "F_C",
+                "itemGroups": [
+                    {
+                        "refKey": "G_AAA_BIG",
+                        "orderNumber": 1,
+                        "items": [
+                            {"refKey": "X", "orderNumber": 1},  # the shared item
+                            {"refKey": "Y", "orderNumber": 2},
+                            {"refKey": "Z", "orderNumber": 3},
+                        ],
+                    }
+                ],
+            },
+        ]
+    }
+    plan = mapping.item_group_ownership(odm)
+    assert plan["owner"]["X"] == "G_DOMAIN"  # smaller group wins the tie
+    assert plan["owner"]["Y"] == "G_AAA_BIG"
+    assert plan["owner"]["Z"] == "G_AAA_BIG"
 
 
 def test_ownership_unique_catch_all_item_still_wires():
     plan = mapping.item_group_ownership(_odm_two_groups())
     # The item unique to the catch-all must still be wired into it — the whole
     # point of the fix (previously the atomic-batch rejection dropped it too).
-    assert "MH_ONLY" in plan["wired"]["G_MH_OTHER"]
+    assert "MH_ONLY" in plan["wired"]["G_AAA_CATCH"]
     # AE keeps both of its items.
     assert plan["wired"]["G_AE"] == ["AETERM", "AESER"]
 
 
 def test_ownership_duplicate_reference_is_carried_not_wired():
     plan = mapping.item_group_ownership(_odm_two_groups())
-    # The duplicate (AETERM re-listed under the catch-all) is censused, never
-    # posted — so the no-data-loss accounting stays honest.
+    # The duplicates (AETERM/AESER re-listed under the catch-all) are censused,
+    # never posted — so the no-data-loss accounting stays honest.
     carried = plan["carried"]
-    assert carried == [
-        {"item": "AETERM", "group": "G_MH_OTHER", "owner": "G_AE"}
-    ]
-    assert "AETERM" not in plan["wired"].get("G_MH_OTHER", [])
+    assert {(c["item"], c["group"], c["owner"]) for c in carried} == {
+        ("AETERM", "G_AAA_CATCH", "G_AE"),
+        ("AESER", "G_AAA_CATCH", "G_AE"),
+    }
+    assert "AETERM" not in plan["wired"].get("G_AAA_CATCH", [])
+    assert "AESER" not in plan["wired"].get("G_AAA_CATCH", [])
 
 
 def test_ownership_every_item_wired_exactly_once():
