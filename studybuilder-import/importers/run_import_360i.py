@@ -549,7 +549,12 @@ class Import360i(BaseImporter):
                 "min_window": v.get("min_visit_window_value"),
                 "max_window": v.get("max_visit_window_value"),
                 "visit_class": v.get("visit_class"),
-                "visit_type_name": v.get("visit_type_name"),
+                # This OSB version nests the type under visit_type (an object
+                # with sponsor_preferred_name); older shapes had a flat
+                # visit_type_name. Read both — a None here makes every visit
+                # look changed and PATCH-storm on each re-import.
+                "visit_type_name": v.get("visit_type_name")
+                or (v.get("visit_type") or {}).get("sponsor_preferred_name"),
                 "is_global_anchor_visit": v.get("is_global_anchor_visit"),
                 "description": v.get("description"),
             }
@@ -821,7 +826,12 @@ class Import360i(BaseImporter):
                     osb_uid,
                 )
                 crosswalk = None
-            elif crosswalk["payload_hash"] == record["payload_hash"]:
+            elif (
+                crosswalk["payload_hash"] == record["payload_hash"]
+                and crosswalk.get("status") == "succeeded"
+            ):
+                # Only a SUCCEEDED import may no-op: a partial one has named
+                # stopped rows — the whole point of re-running is to finish them.
                 self.log.info(
                     "Payload %s already imported (import %s) — nothing to do.",
                     record["payload_hash"][:12],

@@ -459,16 +459,26 @@ def _selection_diff(desired_plans, current_by_ref, key_field, compare_fields):
 
 
 def _norm(value):
-    """Compare-normalize: treat None/"" alike and ints/str-ints alike so a
-    round-trip through OSB (which may echo "0" for 0) doesn't look changed."""
+    """Compare-normalize: treat None/"" alike and numeric representations of
+    the same number alike (1 vs 1.0 vs "1") so a round-trip through OSB — which
+    stores visit numbers as floats and may echo "0" for 0 — doesn't look
+    changed."""
     if value is None:
         return None
     if isinstance(value, bool):
         return value
     if isinstance(value, (int, float)):
-        return str(value)
+        # 1 and 1.0 are the same number; keep a fraction only when real.
+        return str(int(value)) if float(value) == int(value) else str(value)
     text = str(value).strip()
-    return text if text else None
+    if not text:
+        return None
+    # "1.0" from one side vs 1 from the other: normalize numeric strings too.
+    try:
+        num = float(text)
+    except ValueError:
+        return text
+    return str(int(num)) if num == int(num) else str(num)
 
 
 def visit_diff(payload, current_by_ref, epoch_uid_by_ref=None):
