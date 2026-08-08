@@ -1,9 +1,18 @@
-ARG NEO4J_IMAGE=neo4j:enterprise
+# Pinned Neo4j version. MUST be identical for the build-stage tarball (which
+# seeds the store) and the production-stage runtime image (which opens it):
+# Neo4j never downgrades a store to an older kernel, so a floating "latest"
+# that resolves the tarball ahead of the published Docker image leaves the
+# seeded `mdrdb` permanently offline. 2026.06.0 is the newest version present
+# on BOTH dist.neo4j.org and Docker Hub library/neo4j.
+ARG NEO4J_VERSION_PINNED=2026.06.0
+ARG NEO4J_IMAGE=neo4j:${NEO4J_VERSION_PINNED}-enterprise
 ARG PYTHON_IMAGE=python:3.14-slim
 
 # --- Build stage ----
 FROM $PYTHON_IMAGE AS build-stage
 
+# Re-declare after FROM so the pinned version is visible in this stage.
+ARG NEO4J_VERSION_PINNED
 ARG NEO4J_DOWNLOAD_URL=https://dist.neo4j.org/neo4j-enterprise
 ARG NEO4J_DOWNLOAD_FILEEXTENSION=unix.tar.gz
 
@@ -63,8 +72,8 @@ ENV NEO4J_MDR_BOLT_PORT=7687 \
     CDISC_XLS_DIR=CDISC_xls \
     NEO4J_ACCEPT_LICENSE_AGREEMENT=yes
 
-# Install Neo4j from tarball
-RUN export NEO4J_VERSION=$(curl "https://dist.neo4j.org/versions/v2/neo4j-versions.json" | jq -r '."dist-tags" .latest') \
+# Install Neo4j from tarball (pinned — see NEO4J_VERSION_PINNED rationale above).
+RUN export NEO4J_VERSION="$NEO4J_VERSION_PINNED" \
     && curl --fail --location --output neo4j.tar.gz --silent --show-error "$NEO4J_DOWNLOAD_URL-$NEO4J_VERSION-$NEO4J_DOWNLOAD_FILEEXTENSION" \
     && tar --extract --gzip --file neo4j.tar.gz --strip-components=1 \
     && rm neo4j.tar.gz \
@@ -167,6 +176,8 @@ RUN /neo4j/bin/neo4j-admin dbms set-initial-password "$NEO4J_MDR_AUTH_PASSWORD" 
 # Copy database directory from build-stage to the official neo4j docker image
 FROM $NEO4J_IMAGE AS production-stage
 
+# Re-declare after FROM so the pinned version is visible in this stage.
+ARG NEO4J_VERSION_PINNED
 ARG UID=1000
 ARG USER=neo4j
 ARG GROUP=neo4j
@@ -179,8 +190,8 @@ RUN [ "x$UID" = "x1000" ] || { \
     && groupmod --gid "$UID" "neo4j" \
     ;}
 
-# Install APOC plugin
-RUN export NEO4J_VERSION=$(wget "https://dist.neo4j.org/versions/v2/neo4j-versions.json"  -qO - | jq -r '."dist-tags" .latest') \
+# Install APOC plugin (pinned to the same Neo4j version as the store/runtime).
+RUN export NEO4J_VERSION="$NEO4J_VERSION_PINNED" \
     && wget --quiet --timeout 60 --tries 2 --output-document /var/lib/neo4j/plugins/apoc.jar \
     https://github.com/neo4j/apoc/releases/download/$NEO4J_VERSION/apoc-$NEO4J_VERSION-core.jar
 
