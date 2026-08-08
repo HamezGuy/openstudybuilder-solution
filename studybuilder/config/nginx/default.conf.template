@@ -28,6 +28,11 @@ server {
 
     location $API_PATH {
         proxy_pass http://$API_HOST:$API_PORT/;
+        # The EDC export (/integrations/edc/.../study-bundle) walks every ODM
+        # item and takes >60s on a full study; nginx's default 60s
+        # proxy_read_timeout returned 504 while the API was still working.
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
     }
 
     location $CONSUMER_API_PATH {
