@@ -63,6 +63,7 @@ def get_logger():
         print(f"Invalid log level: {loglevel}, defaulting to INFO")
         numeric_level = logging.INFO
     logging.basicConfig()
+    logging.getLogger("neo4j").setLevel(logging.ERROR)
     logger = logging.getLogger("CDISC import")
     logger.setLevel(numeric_level)
     return logger

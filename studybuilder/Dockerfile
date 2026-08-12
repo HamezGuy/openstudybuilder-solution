@@ -1,14 +1,14 @@
 ARG NGINX_IMAGE=nginx:alpine
-ARG NODE_IMAGE=node:lts-alpine
+ARG NODE_IMAGE=node:22-alpine
 
 ## Build stage
-FROM $NODE_IMAGE as build-stage
+FROM $NODE_IMAGE AS build-stage
 
 WORKDIR /app
 
 ## Install Node packages
 COPY ./package*.json ./yarn.lock ./
-RUN yarn install --frozen-lockfile
+RUN corepack enable && yarn install --frozen-lockfile
 
 ## Build the app
 COPY ./ .
@@ -18,7 +18,7 @@ RUN yarn build
 RUN test ! -r /app/config/nginx/default.conf || rm -f /app/config/nginx/default.conf.template*
 
 ## Production stage
-FROM $NGINX_IMAGE as prod-stage
+FROM $NGINX_IMAGE AS prod-stage
 
 COPY --from=build-stage /app/dist /usr/share/nginx/html
 COPY --from=build-stage /app/sbom.md /usr/share/nginx/html

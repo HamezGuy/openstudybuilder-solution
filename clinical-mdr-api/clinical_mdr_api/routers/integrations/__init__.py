@@ -1,2 +1,5 @@
 import clinical_mdr_api.routers.integrations.edc_export
+import clinical_mdr_api.routers.integrations.mapping_context
 import clinical_mdr_api.routers.integrations.msgraph
+import clinical_mdr_api.routers.integrations.proposal_review
+import clinical_mdr_api.routers.integrations.study_authority

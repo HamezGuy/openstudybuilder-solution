@@ -4,6 +4,7 @@ import os
 
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
+from neomodel import db
 
 from clinical_mdr_api.models.system import SystemInformation
 from clinical_mdr_api.services import system as service
@@ -62,6 +63,11 @@ async def get_build_id() -> str:
     status_code=200,
 )
 async def healthcheck():
+    # Readiness, not mere process liveness. The prior endpoint returned OK while
+    # NEO4J_DSN pointed back at the API container itself, so Compose marked the
+    # service healthy and started a UI whose every study request returned 500.
+    # Keep the response tiny, but prove the configured database is reachable.
+    db.cypher_query("RETURN 1 AS ready")
     return "OK"
 
 

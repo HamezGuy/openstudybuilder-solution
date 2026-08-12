@@ -30,7 +30,7 @@ FROM common-stage AS prod-stage
 
 # Remove test directories and byte-code compile application
 RUN echo "Compile prod-stage" 1>&2 \
-    rm -r clinical_mdr_api/tests consumer_api/tests \
+    && rm -r clinical_mdr_api/tests consumer_api/tests \
     && python -m compileall -f -j 0 .
 
 USER $USER
@@ -67,8 +67,8 @@ ENV BUILD_NUMBER="$BUILD_NUMBER" \
 EXPOSE $UVICORN_PORT
 
 # Define a health check to verify that the application is responding at the health check endpoint
-HEALTHCHECK --start-period=60s --timeout=3s --interval=10s --retries=2 CMD \
-    curl --fail --silent --show-error --max-time 2 \
+HEALTHCHECK --start-period=90s --timeout=10s --interval=15s --retries=4 CMD \
+    curl --fail --silent --show-error --max-time 8 \
     "http://localhost:$UVICORN_PORT/$HEALTHCHECK_PATH" > /dev/null || exit 1
 
 # Run the application using Uvicorn

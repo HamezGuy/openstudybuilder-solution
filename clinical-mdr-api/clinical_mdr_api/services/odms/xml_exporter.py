@@ -6,7 +6,6 @@ from xml.sax.saxutils import quoteattr
 
 from fastapi import UploadFile
 from lxml import etree
-from weasyprint import HTML
 
 from clinical_mdr_api.domains._utils import get_iso_lang_data
 from clinical_mdr_api.domains.enums import OdmTranslatedTextTypeEnum
@@ -55,6 +54,22 @@ from clinical_mdr_api.services.odms.data_extractor import OdmDataExtractor
 from clinical_mdr_api.services.odms.xml_stylesheets import OdmXmlStylesheetService
 from clinical_mdr_api.services.utils.odm_xml_mapper import map_xml
 from common.exceptions import BusinessLogicException
+
+
+def _render_html_to_pdf(html: str) -> bytes:
+    """Load WeasyPrint only for the optional PDF rendering path.
+
+    ODM XML generation and unrelated API routes must not require native Pango/
+    GObject libraries at process import time. When PDF output is requested, keep
+    the dependency fail-closed and name the missing rendering capability.
+    """
+    try:
+        from weasyprint import HTML
+    except (ImportError, OSError) as exc:
+        raise BusinessLogicException(
+            msg="ODM PDF rendering is unavailable because WeasyPrint native dependencies are not installed."
+        ) from exc
+    return HTML(string=html).write_pdf()
 
 
 class OdmXmlExporterService:
@@ -171,7 +186,8 @@ class OdmXmlExporterService:
                     xslt, access_control=etree.XSLTAccessControl.DENY_ALL
                 )
 
-                rs = HTML(string=etree.tostring(transform(dom))).write_pdf()
+                rendered_html = etree.tostring(transform(dom)).decode("utf-8")
+                rs = _render_html_to_pdf(rendered_html)
             except Exception as exc:
                 raise BusinessLogicException(msg=exc.args[0]) from exc
 

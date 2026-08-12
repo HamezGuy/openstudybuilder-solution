@@ -3,7 +3,9 @@ from typing import Any
 import pytest
 
 from common.auth.dependencies import dummy_user
-from common.auth.models import User
+from authlib.jose.rfc7519.claims import JWTClaims
+
+from common.auth.models import AccessTokenClaims, Auth, User
 from common.exceptions import ForbiddenException
 
 user_obj = dummy_user()
@@ -35,6 +37,28 @@ def test_user_model_constructor():
     assert _user.email == data["email"]
     assert _user.oid == data["oid"]
     assert _user.roles == data["roles"]
+
+
+def test_auth_projection_preserves_distinct_username_and_email_claims():
+    claims = AccessTokenClaims(
+        iss="https://command-center.example.test",
+        sub="edc:42",
+        aud=["accuratrial-openstudybuilder"],
+        exp=2_000_000_000,
+        iat=1_999_999_000,
+        oid="edc:42",
+        azp="accuratrial-command-center",
+        username="jdoe",
+        preferred_username="jdoe",
+        email="jdoe@example.com",
+        name="Jane Doe",
+        roles={"Study.Read"},
+    )
+    auth = Auth(jwt_claims=JWTClaims(dict(claims), {}), access_token_claims=claims)
+
+    assert auth.user.id() == "edc:42"
+    assert auth.user.username == "jdoe"
+    assert auth.user.email == "jdoe@example.com"
 
 
 def test_has_role():

@@ -98,20 +98,23 @@ def get_users() -> list[UserInfo]:
 @router.patch(
     "/users/{user_id}",
     dependencies=[security, rbac.ADMIN_WRITE],
-    summary="Patch user",
-    description="Set the username and/or email of a user",
-    status_code=200,
+    summary="User identity projection is read-only",
+    description="Identity fields are synchronized from the authoritative Command Center/EDC principal. Edit users there; OpenStudyBuilder keeps only a local authorship projection.",
+    status_code=409,
     responses={
         403: _generic_descriptions.ERROR_403,
         404: _generic_descriptions.ERROR_404,
     },
 )
 def patch_user(user_id: str, payload: UserInfoPatchInput) -> UserInfo:
-    user_repository = UserRepository()
-    user = user_repository.patch_user(user_id, payload)
-    if user:
-        return user
-    raise exceptions.NotFoundException(msg=f"User with ID '{user_id}' doesn't exist.")
+    del payload
+    raise exceptions.AlreadyExistsException(
+        msg=(
+            f"User '{user_id}' is an identity projection and cannot be edited in "
+            "OpenStudyBuilder. Update the authoritative EDC user account; the "
+            "projection refreshes from the next verified Command Center token."
+        )
+    )
 
 
 def _get_all_repos():

@@ -36,7 +36,7 @@ RUN apt-get update \
     build-essential \
     jq \
     gcc \
-    net-tools \ 
+    net-tools \
     && pip install --upgrade pip pipenv wheel \
     && wget -qO - https://packages.adoptium.net/artifactory/api/gpg/key/public | gpg --dearmor | tee /etc/apt/trusted.gpg.d/adoptium.gpg > /dev/null \
     && echo "deb https://packages.adoptium.net/artifactory/deb $(awk -F= '/^VERSION_CODENAME/{print$2}' /etc/os-release) main" | tee /etc/apt/sources.list.d/adoptium.list \
@@ -49,6 +49,7 @@ WORKDIR /neo4j
 ARG NEO4J_server_memory_heap_initial__size="3G"
 ARG NEO4J_server_memory_heap_max__size="3G"
 ARG NEO4J_server_memory_pagecache_size="2G"
+ARG INCLUDE_DUMMY_STUDIES=false
 
 ARG reportDate="2024-01-05 14:54:32 +0100"
 
@@ -133,7 +134,6 @@ RUN /neo4j/bin/neo4j-admin dbms set-initial-password "$NEO4J_MDR_AUTH_PASSWORD" 
     && trap "kill -TERM $neo4j_pid" EXIT \
     # wait until 7474/tcp is open
     && while ! netstat -tna | grep 'LISTEN\>' | grep -q '7474\>'; do sleep 2; done \
-    && set -x \
     # init database
     && cd neo4j-mdr-db && pipenv run init_neo4j \
     # import neodash reports
@@ -142,10 +142,10 @@ RUN /neo4j/bin/neo4j-admin dbms set-initial-password "$NEO4J_MDR_AUTH_PASSWORD" 
     title=`jq -r .title $f`; uuid=`jq -r .uuid $f`; version=`jq -r .version $f`; echo "$title" "$uuid" "$version"; \
     jq -n --slurpfile content $f --arg title "$title" --arg uuid "$uuid" --arg version "$version" --arg date "$reportDate" '. += {"content": $content, "title": $title, "uuid": $uuid, "version": $version, "date": $date, "user": "OpenStudyBuilder@gmail.com"}' > neodash_reports/import/$filename; \
     done \
-    && python -m pipenv run import_reports neodash_reports/import \
-    # TODO let pipenv take care of installing openpyxl
+    && { python -m pipenv run import_reports neodash_reports/import > /tmp/import-reports.log 2>&1 \
+      || { echo "Neodash report import failed:" >&2; tail -n 200 /tmp/import-reports.log >&2; exit 1; }; } \
+    && echo "Neodash reports imported" \
     && cd ../mdr-standards-import \
-    && pipenv install openpyxl \
     && pipenv run import_cdisc_ct_into_cdisc_db \
     && pipenv run import_ct_from_cdisc_db_into_mdr \
     && pipenv run bulk_import_data_models TESTUSER "" \
@@ -155,9 +155,11 @@ RUN /neo4j/bin/neo4j-admin dbms set-initial-password "$NEO4J_MDR_AUTH_PASSWORD" 
     && { cd ../clinical-mdr-api && pipenv run uvicorn --host 127.0.0.1 --port 8000 --log-level info clinical_mdr_api.main:app & api_pid=$! ;} \
     # wait until 8000/tcp is open
     && while ! netstat -tna | grep 'LISTEN\>' | grep -q '8000\>'; do sleep 2; done \
-    && set -x \
     # imports
-    && sleep 10 && cd ../studybuilder-import && pipenv run import_all && pipenv run import_dummydata && pipenv run import_feature_flags \
+    && sleep 10 && cd ../studybuilder-import \
+    && pipenv run import_all \
+    && if [ "$INCLUDE_DUMMY_STUDIES" = "true" ]; then pipenv run import_dummydata; fi \
+    && pipenv run import_feature_flags \
     # stop the api
     && sleep 10 && kill -INT $api_pid && wait $api_pid \
     # get database name

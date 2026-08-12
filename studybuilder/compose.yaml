@@ -3,7 +3,7 @@ services:
     build:
       args:
         NGINX_IMAGE: ${NGINX_IMAGE:-nginx:alpine}
-        NODE_IMAGE: ${NODE_IMAGE:-node:lts-alpine}
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
         PORT: ${UI_PORT:-8080}
       context: .
       dockerfile: Dockerfile

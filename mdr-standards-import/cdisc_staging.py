@@ -51,6 +51,10 @@ def get_logger():
         print(f"Invalid log level: {loglevel}, defaulting to INFO")
         numeric_level = logging.INFO
     logging.basicConfig()
+    # Neo4j emits one full Cypher query for every deprecation notification.
+    # During seeded-image builds this can produce megabytes of logs and sever
+    # the BuildKit status stream without adding actionable information.
+    logging.getLogger("neo4j").setLevel(logging.ERROR)
     logger = logging.getLogger("CDISC staging")
     logger.setLevel(numeric_level)
     return logger

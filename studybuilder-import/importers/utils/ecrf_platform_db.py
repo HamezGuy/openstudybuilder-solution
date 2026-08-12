@@ -28,7 +28,7 @@ import psycopg
 
 from ..functions.utils import load_env
 
-IMPORTER_VERSION = "360i-importer/1.0"
+IMPORTER_VERSION = "360i-importer/1.8"
 
 
 class EcrfPlatformDb:
@@ -166,7 +166,7 @@ class EcrfPlatformDb:
             cur.execute(
                 """
                 SELECT import_id, payload_hash, osb_study_uid, osb_project_number,
-                       status, census, uid_map, imported_at
+                       status, census, uid_map, imported_at, importer_version
                   FROM osb_import_ledger
                  WHERE study_id = %s AND status IN ('succeeded', 'partial')
                        AND osb_study_uid IS NOT NULL
@@ -187,6 +187,7 @@ class EcrfPlatformDb:
             "census": row[5],
             "uid_map": row[6],
             "imported_at": row[7],
+            "importer_version": row[8],
         }
 
     def write_import_ledger(
@@ -202,9 +203,11 @@ class EcrfPlatformDb:
         """Append one import-attempt row. `partial` requires >=1 stopped entry
         in the census — asserted here so a dishonest status cannot land.
         """
-        if status == "partial" and not census.get("stopped"):
+        if status == "partial" and not (
+            census.get("stopped") or census.get("release_blockers")
+        ):
             raise ValueError(
-                "status='partial' requires the census to name what stopped"
+                "status='partial' requires stopped rows or release blockers"
             )
         import_id = str(uuid.uuid4())
         with self.conn.cursor() as cur:

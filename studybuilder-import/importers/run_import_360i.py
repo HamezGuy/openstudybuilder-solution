@@ -38,16 +38,28 @@ Env:
   OSB_CLINICAL_PROGRAMME          programme to file projects under (default 360i)
 """
 
+import base64
+import gzip
+import html
 import json
+import re
+import sys
 
 from .functions.utils import load_env
 from .mappings import payload_to_osb as mapping
-from .utils.ecrf_platform_db import EcrfPlatformDb
+from .utils.ecrf_platform_db import EcrfPlatformDb, IMPORTER_VERSION
 from .utils.importer import BaseImporter
+from .utils.mapping_authority import assert_unsafe_legacy_mutation_allowed
 from .utils.metrics import Metrics
 
-API_BASE_URL = load_env("API_BASE_URL")
 OSB_CLINICAL_PROGRAMME = load_env("OSB_CLINICAL_PROGRAMME", default="360i")
+CARRIER_COMPRESSION_PREFIX = "gzip+base64:"
+CARRIER_CHUNK_PREFIX = "chunk:"
+CARRIER_COMPRESSION_THRESHOLD = 128 * 1024
+CARRIER_EPOCH_DESCRIPTION = (
+    "Carrier epoch created by the 360i importer: OSB requires an epoch per visit "
+    "and the protocol stated none. NOT protocol content."
+)
 
 CODELIST_EPOCH_SUBTYPE = "Epoch Sub Type"
 CODELIST_EPOCH_TYPE = "Epoch Type"
@@ -55,6 +67,97 @@ CODELIST_VISIT_TYPE = "VisitType"
 CODELIST_TIMEPOINT_REFERENCE = "Time Point Reference"
 CODELIST_VISIT_CONTACT_MODE = "Visit Contact Mode"
 CODELIST_UNIT = "Unit"
+CODELIST_STUDY_TYPE = "Study Type"
+CODELIST_TRIAL_PHASE = "Trial Phase"
+CODELIST_CONTROL_TYPE = "Control Type"
+CODELIST_INTERVENTION_MODEL = "Intervention Model"
+CODELIST_TRIAL_BLINDING_SCHEMA = "Trial Blinding Schema"
+CODELIST_SEX_OF_PARTICIPANTS = "Sex of Participants"
+CODELIST_FLOWCHART_GROUP = "Flowchart Group"
+CODELIST_OBJECTIVE_LEVEL = "Objective Level"
+CODELIST_ENDPOINT_LEVEL = "Endpoint Level"
+CODELIST_CRITERIA_TYPE = "Criteria Type"
+
+NATIVE_CODELIST_UIDS = {
+    CODELIST_STUDY_TYPE: "C99077",
+    CODELIST_TRIAL_PHASE: "C66737",
+    CODELIST_CONTROL_TYPE: "C66785",
+    CODELIST_INTERVENTION_MODEL: "C99076",
+    CODELIST_TRIAL_BLINDING_SCHEMA: "C66735",
+    CODELIST_SEX_OF_PARTICIPANTS: "C66732",
+}
+
+NATIVE_TERM_ALIASES = {
+    "study_type_code": {
+        "interventional": "Interventional",
+        "observational": "Observational Study",
+    },
+    "trial_phase_code": {
+        "i": "Phase 1",
+        "phase i": "Phase 1",
+        "ii": "Phase 2",
+        "phase ii": "Phase 2",
+        "iii": "Phase 3",
+        "phase iii": "Phase 3",
+        "iv": "Phase 4",
+        "phase iv": "Phase 4",
+    },
+    "control_type_code": {
+        "placebo": "Placebo",
+        "active": "Active",
+        "historical": "Historical",
+        "uncontrolled": "Uncontrolled",
+    },
+    "intervention_model_code": {
+        "parallel": "Parallel",
+        "crossover": "Crossover",
+        "cross over": "Crossover",
+        "factorial": "Factorial",
+        "single group": "Single Group",
+        "sequential": "Sequential",
+    },
+    "trial_blinding_schema_code": {
+        "open label": "Open Label",
+        "single blind": "Single Blind",
+        "double blind": "Double Blind",
+        "triple blind": "Triple Blind",
+    },
+    "sex_of_participants_code": {
+        "both": "Both",
+        "male": "Male",
+        "female": "Female",
+    },
+}
+
+
+def _encode_carrier(value):
+    """Keep small JSON readable; deterministically compress large carriers."""
+    if not value or value.startswith(
+        (CARRIER_COMPRESSION_PREFIX, CARRIER_CHUNK_PREFIX)
+    ):
+        return value
+    raw = value.encode("utf-8")
+    if len(raw) <= CARRIER_COMPRESSION_THRESHOLD:
+        return value
+    compressed = gzip.compress(raw, compresslevel=9, mtime=0)
+    return CARRIER_COMPRESSION_PREFIX + base64.b64encode(compressed).decode("ascii")
+
+
+def _chunk_carrier(value, available_entities):
+    """Distribute one large encoded carrier across bounded ODM entities."""
+    encoded = _encode_carrier(value)
+    if not encoded or len(encoded) <= CARRIER_COMPRESSION_THRESHOLD:
+        return [encoded] if encoded else []
+    chunk_size = (len(encoded) + available_entities - 1) // available_entities
+    chunks = [
+        encoded[offset : offset + chunk_size]
+        for offset in range(0, len(encoded), chunk_size)
+    ]
+    total = len(chunks)
+    return [
+        f"{CARRIER_CHUNK_PREFIX}{index:04d}/{total:04d}:{chunk}"
+        for index, chunk in enumerate(chunks, start=1)
+    ]
 
 
 class ImportCensus:
@@ -67,9 +170,13 @@ class ImportCensus:
         self.stopped = []
         self.scaffolding = []
         self.carried = []
+        self.release_blockers = []
 
     def stop(self, kind, ref, reason):
         self.stopped.append({"kind": kind, "ref": ref, "reason": reason})
+
+    def block_release(self, kind, ref, reason):
+        self.release_blockers.append({"kind": kind, "ref": ref, "reason": reason})
 
     def as_dict(self):
         return {
@@ -79,6 +186,7 @@ class ImportCensus:
             "stopped": self.stopped,
             "importer_scaffolding": self.scaffolding,
             "carried": self.carried,
+            "release_blockers": self.release_blockers,
             "counts": {
                 "created": len(self.created),
                 "updated": len(self.updated),
@@ -86,12 +194,13 @@ class ImportCensus:
                 "stopped": len(self.stopped),
                 "importer_scaffolding": len(self.scaffolding),
                 "carried": len(self.carried),
+                "release_blockers": len(self.release_blockers),
             },
         }
 
     @property
     def status(self):
-        return "partial" if self.stopped else "succeeded"
+        return "partial" if self.stopped or self.release_blockers else "succeeded"
 
 
 class Import360i(BaseImporter):
@@ -101,6 +210,7 @@ class Import360i(BaseImporter):
         super().__init__(api=api, metrics_inst=metrics_inst)
         self.db = db or EcrfPlatformDb(log=self.log)
         self.census = ImportCensus()
+        self.same_payload_replay = False
         # refKey -> OSB uid, per concept type. Written to the ledger; the
         # upsert diff of the NEXT import joins on it.
         self.uid_map = {
@@ -112,7 +222,20 @@ class Import360i(BaseImporter):
             "items": {},
             "codelists": {},
             "study_events": {},
+            "objectives": {},
+            "endpoints": {},
+            "criteria": {},
+            "timeframes": {},
+            # Protocol SoA row ref -> StudyActivity selection uid, and source
+            # activity::visit ref -> StudyActivitySchedule uid. The owned map
+            # contains ONLY schedules this feature created; re-used external
+            # schedules are never claimed for later deletion.
+            "native_soa_activities": {},
+            "native_soa_schedules": {},
+            "native_soa_owned_schedules": {},
         }
+        self._purpose_template_cache = {}
+        self._purpose_timeframe_cache = {}
 
     # ------------------------------------------------------------------
     # Lookups
@@ -137,6 +260,122 @@ class Import360i(BaseImporter):
                 return unit["uid"]
         return None
 
+    @staticmethod
+    def _semantic_key(value):
+        return re.sub(r"[^a-z0-9]+", " ", str(value or "").casefold()).strip()
+
+    def _lookup_native_ct_term(self, codelist_name, field_name, source_value):
+        """Resolve one source semantic value inside one exact OSB codelist.
+
+        Intelligence Layer values are never accepted as final CT identity. OSB
+        owns the term UID; a missing or ambiguous codelist-scoped lookup blocks
+        the field instead of falling back to a display-label or global match.
+        """
+        source_key = self._semantic_key(source_value)
+        wanted = NATIVE_TERM_ALIASES.get(field_name, {}).get(
+            source_key, str(source_value or "").strip()
+        )
+        wanted_key = self._semantic_key(wanted)
+        codelist_uid = NATIVE_CODELIST_UIDS[codelist_name]
+        terms = self.api.get_all_from_api(
+            "/ct/terms", params={"codelist_uid": codelist_uid, "page_size": 0}
+        ) or []
+        matches = [
+            term
+            for term in terms
+            if self._semantic_key((term.get("name") or {}).get("sponsor_preferred_name"))
+            == wanted_key
+            and str((term.get("name") or {}).get("status") or "").lower() == "final"
+            and str((term.get("attributes") or {}).get("status") or "").lower()
+            == "final"
+        ]
+        unique = {term.get("term_uid"): term for term in matches if term.get("term_uid")}
+        if len(unique) != 1:
+            return None, (
+                f"expected one Final OSB term named '{wanted}' in codelist "
+                f"'{codelist_name}', found {len(unique)}"
+            )
+        term = next(iter(unique.values()))
+        return {
+            "term_uid": term["term_uid"],
+            "sponsor_preferred_name": (term.get("name") or {}).get(
+                "sponsor_preferred_name"
+            ),
+        }, None
+
+    def _lookup_final_ct_term(self, codelist_name, term_name):
+        """Resolve one unique exact Final term from one live OSB codelist."""
+        codelists = self.api.get_all_from_api(
+            "/ct/codelists/names", params={"page_size": 0}
+        ) or []
+        matches = [
+            item
+            for item in codelists
+            if self._semantic_key(item.get("name")) == self._semantic_key(codelist_name)
+            and item.get("codelist_uid")
+        ]
+        unique_codelists = {item["codelist_uid"]: item for item in matches}
+        if len(unique_codelists) != 1:
+            return None, (
+                f"expected one OSB codelist named '{codelist_name}', "
+                f"found {len(unique_codelists)}"
+            )
+        codelist_uid = next(iter(unique_codelists))
+        terms = self.api.get_all_from_api(
+            "/ct/terms", params={"codelist_uid": codelist_uid, "page_size": 0}
+        ) or []
+        wanted = self._semantic_key(term_name)
+        term_matches = [
+            term
+            for term in terms
+            if self._semantic_key((term.get("name") or {}).get("sponsor_preferred_name"))
+            == wanted
+            and str((term.get("name") or {}).get("status") or "").lower() == "final"
+            and str((term.get("attributes") or {}).get("status") or "").lower()
+            == "final"
+            and term.get("term_uid")
+        ]
+        unique_terms = {term["term_uid"]: term for term in term_matches}
+        if len(unique_terms) != 1:
+            return None, (
+                f"expected one Final OSB term named '{term_name}' in codelist "
+                f"'{codelist_name}', found {len(unique_terms)}"
+            )
+        return next(iter(unique_terms.values())), None
+
+    def _lookup_age_year_unit(self):
+        """Resolve the unique governed CDISC year unit in the Age Unit subset."""
+        units = self.api.get_all_from_api("/concepts/unit-definitions") or []
+
+        def term_name(term):
+            return self._semantic_key(
+                term.get("term_name")
+                or term.get("name")
+                or term.get("submission_value")
+            )
+
+        matches = []
+        for unit in units:
+            if str(unit.get("status") or "").lower() != "final":
+                continue
+            subsets = {term_name(term) for term in unit.get("unit_subsets", []) or []}
+            ct_units = unit.get("ct_units", []) or []
+            has_year_ct = any(
+                (term.get("term_uid") == "C29848")
+                or term_name(term) in {"year", "years"}
+                for term in ct_units
+            )
+            if "age unit" in subsets and has_year_ct:
+                matches.append(unit)
+        unique = {unit.get("uid"): unit for unit in matches if unit.get("uid")}
+        if len(unique) != 1:
+            return None, (
+                "expected one Final OSB UnitDefinition for CDISC C29848 in the "
+                f"Age Unit subset, found {len(unique)}"
+            )
+        unit = next(iter(unique.values()))
+        return {"uid": unit["uid"], "name": unit.get("name")}, None
+
     # ------------------------------------------------------------------
     # Prerequisites: programme, project, units, codelists
     # ------------------------------------------------------------------
@@ -153,6 +392,13 @@ class Import360i(BaseImporter):
             res = self.api.simple_post_to_api(
                 "/clinical-programmes", {"name": OSB_CLINICAL_PROGRAMME}
             )
+            if res is None:
+                self.census.stop(
+                    "clinical_programme",
+                    OSB_CLINICAL_PROGRAMME,
+                    "clinical programme create failed",
+                )
+                return None
             programme_uid = res["uid"]
             self.census.created.append({"kind": "clinical_programme", "ref": OSB_CLINICAL_PROGRAMME})
         else:
@@ -168,7 +414,7 @@ class Import360i(BaseImporter):
             source = payload.get("source", {})
             name = source.get("projectName") or f"360i project {project_number}"
             self.log.info("Creating project '%s' (%s)", name, project_number)
-            self.api.simple_post_to_api(
+            res = self.api.simple_post_to_api(
                 "/projects",
                 {
                     "project_number": project_number,
@@ -177,6 +423,9 @@ class Import360i(BaseImporter):
                     "clinical_programme_uid": programme_uid,
                 },
             )
+            if res is None:
+                self.census.stop("project", project_number, "project create failed")
+                return None
             self.census.created.append({"kind": "project", "ref": project_number})
         else:
             self.census.unchanged.append({"kind": "project", "ref": project_number})
@@ -209,7 +458,11 @@ class Import360i(BaseImporter):
                     self.census.stop("unit", unit_name, "unit-definition create failed")
                     continue
                 uid = res["uid"]
-                self.api.simple_approve(f"/concepts/unit-definitions/{uid}/approvals")
+                if not self.api.simple_approve(
+                    f"/concepts/unit-definitions/{uid}/approvals"
+                ):
+                    self.census.stop("unit", unit_name, "unit-definition approval failed")
+                    continue
                 self.census.created.append({"kind": "unit", "ref": unit_name})
             unit_uid_by_name[unit_name.lower()] = uid
         return unit_uid_by_name
@@ -256,10 +509,15 @@ class Import360i(BaseImporter):
                     self.census.stop("codelist", name, "codelist create failed")
                     continue
                 codelist_uid = res["codelist_uid"]
-                self.api.simple_approve(f"/ct/codelists/{codelist_uid}/names/approvals")
-                self.api.simple_approve(
+                names_approved = self.api.simple_approve(
+                    f"/ct/codelists/{codelist_uid}/names/approvals"
+                )
+                attributes_approved = self.api.simple_approve(
                     f"/ct/codelists/{codelist_uid}/attributes/approvals"
                 )
+                if not names_approved or not attributes_approved:
+                    self.census.stop("codelist", name, "codelist approval failed")
+                    continue
                 self.census.created.append({"kind": "codelist", "ref": name})
             else:
                 self.census.unchanged.append({"kind": "codelist", "ref": name})
@@ -319,7 +577,15 @@ class Import360i(BaseImporter):
                     )
                     continue
                 term_uid = res["term_uid"]
-                self.api.approve_item_names_and_attributes(term_uid, "/ct/terms")
+                if not self.api.approve_item_names_and_attributes(
+                    term_uid, "/ct/terms"
+                ):
+                    self.census.stop(
+                        "codelist_term",
+                        f"{name}/{term['name']}",
+                        "term approval failed",
+                    )
+                    continue
                 terms.append(
                     {"term_uid": term_uid, "name": term["name"], "order": term.get("order")}
                 )
@@ -334,11 +600,370 @@ class Import360i(BaseImporter):
     # Study + structure
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _at(value, path):
+        for key in path:
+            if not isinstance(value, dict):
+                return None
+            value = value.get(key)
+        return value
+
+    def _sync_native_study_metadata(self, payload, study_uid, current_metadata):
+        """Resolve and patch exact OSB-owned StudyMetadata fields.
+
+        The payload supplies source semantics only. This method resolves live OSB
+        CT/unit identity, validates the complete patch with ``dry=true``, applies
+        it once, then reads the study back and compares every written property.
+        Missing/ambiguous identities and read-back mismatches are release-blocking
+        census rows, never text fallbacks.
+        """
+        native = payload.get("study", {}).get("nativeMetadata")
+        if not isinstance(native, dict):
+            return False
+
+        for blocker in native.get("blockers", []) or []:
+            self.census.stop(
+                "study_native_metadata",
+                blocker.get("sourceKey") or "?",
+                f"{blocker.get('code') or 'OSB_NATIVE_METADATA_BLOCKED'}: "
+                f"{blocker.get('detail') or 'source value requires review'}",
+            )
+
+        patch_sections = {}
+        expected = []
+
+        def add_term(section_name, target_field, source_value, codelist_name):
+            if source_value is None or str(source_value).strip() == "":
+                return
+            term, error = self._lookup_native_ct_term(
+                codelist_name, target_field, source_value
+            )
+            if error:
+                self.census.stop("study_native_metadata", target_field, error)
+                return
+            patch_sections.setdefault(section_name, {})[target_field] = term
+            expected.append(((section_name, target_field, "term_uid"), term["term_uid"]))
+
+        high = native.get("highLevelStudyDesign") or {}
+        population = native.get("studyPopulation") or {}
+        intervention = native.get("studyIntervention") or {}
+        add_term(
+            "high_level_study_design",
+            "study_type_code",
+            high.get("studyType"),
+            CODELIST_STUDY_TYPE,
+        )
+        add_term(
+            "high_level_study_design",
+            "trial_phase_code",
+            high.get("trialPhase"),
+            CODELIST_TRIAL_PHASE,
+        )
+        add_term(
+            "study_population",
+            "sex_of_participants_code",
+            population.get("sexOfParticipants"),
+            CODELIST_SEX_OF_PARTICIPANTS,
+        )
+        add_term(
+            "study_intervention",
+            "control_type_code",
+            intervention.get("controlType"),
+            CODELIST_CONTROL_TYPE,
+        )
+        add_term(
+            "study_intervention",
+            "intervention_model_code",
+            intervention.get("interventionModel"),
+            CODELIST_INTERVENTION_MODEL,
+        )
+        add_term(
+            "study_intervention",
+            "trial_blinding_schema_code",
+            intervention.get("trialBlindingSchema"),
+            CODELIST_TRIAL_BLINDING_SCHEMA,
+        )
+
+        if isinstance(intervention.get("isTrialRandomised"), bool):
+            value = intervention["isTrialRandomised"]
+            patch_sections.setdefault("study_intervention", {})[
+                "is_trial_randomised"
+            ] = value
+            expected.append((("study_intervention", "is_trial_randomised"), value))
+
+        if isinstance(population.get("healthySubjectIndicator"), bool):
+            value = population["healthySubjectIndicator"]
+            patch_sections.setdefault("study_population", {})[
+                "healthy_subject_indicator"
+            ] = value
+            expected.append((("study_population", "healthy_subject_indicator"), value))
+
+        expected_subjects = population.get("numberOfExpectedSubjects")
+        if isinstance(expected_subjects, int) and not isinstance(expected_subjects, bool):
+            patch_sections.setdefault("study_population", {})[
+                "number_of_expected_subjects"
+            ] = expected_subjects
+            expected.append(
+                (("study_population", "number_of_expected_subjects"), expected_subjects)
+            )
+
+        age_values = {
+            "planned_minimum_age_of_subjects": population.get(
+                "plannedMinimumAgeYears"
+            ),
+            "planned_maximum_age_of_subjects": population.get(
+                "plannedMaximumAgeYears"
+            ),
+        }
+        requested_ages = {
+            key: value
+            for key, value in age_values.items()
+            if value is not None
+        }
+        for key, value in requested_ages.items():
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                self.census.stop(
+                    "study_native_metadata",
+                    key,
+                    f"age must be a non-negative integer number of years, got {value!r}",
+                )
+                continue
+            current_duration = self._at(current_metadata, ("study_population", key))
+            current_unit = (
+                (current_duration or {}).get("duration_unit_code")
+                if isinstance(current_duration, dict)
+                else None
+            )
+            # OSB is authoritative on reimport: when its reviewed numeric value
+            # agrees, preserve its exact unit identity even if the global library
+            # has duplicate year definitions. A new/different age still blocks on
+            # ambiguous library identity.
+            if (
+                isinstance(current_duration, dict)
+                and current_duration.get("duration_value") == value
+                and isinstance(current_unit, dict)
+                and current_unit.get("uid")
+            ):
+                age_unit = {
+                    "uid": current_unit["uid"],
+                    "name": current_unit.get("name"),
+                }
+                error = None
+            else:
+                age_unit, error = self._lookup_age_year_unit()
+            if error:
+                self.census.stop("study_native_metadata", "age_unit", error)
+                continue
+            duration = {
+                "duration_value": value,
+                "duration_unit_code": age_unit,
+            }
+            patch_sections.setdefault("study_population", {})[key] = duration
+            expected.extend(
+                [
+                    (("study_population", key, "duration_value"), value),
+                    (
+                        ("study_population", key, "duration_unit_code", "uid"),
+                        age_unit["uid"],
+                    ),
+                ]
+            )
+
+        if not patch_sections:
+            return False
+
+        if all(
+            self._at(current_metadata, path) == wanted
+            for path, wanted in expected
+        ):
+            self.census.unchanged.append(
+                {
+                    "kind": "study_native_metadata",
+                    "ref": study_uid,
+                    "fields": [".".join(path) for path, _ in expected],
+                }
+            )
+            return False
+
+        body = {
+            "uid": study_uid,
+            "current_metadata": patch_sections,
+        }
+        if self.api.patch_to_api(body, "/studies/", params={"dry": True}) is None:
+            self.census.stop(
+                "study_native_metadata", study_uid, "OSB dry validation rejected the patch"
+            )
+            return False
+        if self.api.patch_to_api(body, "/studies/") is None:
+            self.census.stop(
+                "study_native_metadata", study_uid, "OSB native metadata patch failed"
+            )
+            return False
+
+        read_back = self.api.get_all_from_api(
+            f"/studies/{study_uid}",
+            params={
+                "include_sections": [
+                    "high_level_study_design",
+                    "study_population",
+                    "study_intervention",
+                ]
+            },
+        ) or {}
+        actual_metadata = read_back.get("current_metadata") or {}
+        mismatches = [
+            {
+                "path": ".".join(path),
+                "expected": wanted,
+                "actual": self._at(actual_metadata, path),
+            }
+            for path, wanted in expected
+            if self._at(actual_metadata, path) != wanted
+        ]
+        if mismatches:
+            self.census.stop(
+                "study_native_metadata",
+                study_uid,
+                f"read-after-write reconciliation failed: {json.dumps(mismatches, sort_keys=True)}",
+            )
+            return True
+        self.census.updated.append(
+            {
+                "kind": "study_native_metadata",
+                "ref": study_uid,
+                "fields": [".".join(path) for path, _ in expected],
+            }
+        )
+        return True
+
+    def _sync_study_metadata(self, payload, study_uid, current=None, created=False):
+        """Patch mutable study metadata and account for every failed write."""
+        changed = False
+        current_metadata = (current or {}).get("current_metadata", {})
+        current_ident = current_metadata.get("identification_metadata") or {}
+        current_desc = current_metadata.get("study_description") or {}
+        changed = self._sync_native_study_metadata(
+            payload, study_uid, current_metadata
+        ) or changed
+
+        reg = payload.get("study", {}).get("registryIdentifiers", {})
+        non_null = {key: value for key, value in reg.items() if value is not None}
+        current_registry = current_ident.get("registry_identifiers") or {}
+        if non_null and any(current_registry.get(key) != value for key, value in non_null.items()):
+            result = self.api.patch_to_api(
+                {
+                    "uid": study_uid,
+                    "current_metadata": {
+                        "identification_metadata": {
+                            "registry_identifiers": non_null
+                        }
+                    },
+                },
+                "/studies/",
+            )
+            if result is None:
+                self.census.stop(
+                    "registry_identifiers", study_uid, "registry identifier patch failed"
+                )
+            else:
+                changed = True
+                bucket = self.census.created if created else self.census.updated
+                bucket.append({"kind": "registry_identifiers", "ref": study_uid})
+
+        study_block = payload.get("study", {})
+        title = study_block.get("officialTitle") or study_block.get("name")
+        short_title = study_block.get("shortTitle")
+        current_title = current_desc.get("study_title")
+        source_title = str(title)[:800] if title else None
+        current_short_title = current_desc.get("study_short_title")
+        source_short_title = str(short_title)[:800] if short_title else None
+        placeholder_titles = {
+            str(payload.get("study", {}).get("name") or "").strip().casefold(),
+            "new study",
+        }
+        description_patch = {}
+        if source_title and (
+            not current_title
+            or current_title.strip().casefold() != source_title.strip().casefold()
+        ):
+            if (
+                current_title
+                and current_title.strip().casefold() not in placeholder_titles
+                and not created
+            ):
+                self.census.stop(
+                    "study_title",
+                    study_uid,
+                    "merge required: current OSB title differs from the source proposal; "
+                    "OSB/human value was preserved",
+                )
+            else:
+                description_patch["study_title"] = source_title
+        if source_short_title and (
+            not current_short_title
+            or current_short_title.strip().casefold()
+            != source_short_title.strip().casefold()
+        ):
+            if (
+                current_short_title
+                and current_short_title.strip().casefold() not in placeholder_titles
+                and not created
+            ):
+                self.census.stop(
+                    "study_short_title",
+                    study_uid,
+                    "merge required: current OSB short title differs from the source "
+                    "proposal; OSB/human value was preserved",
+                )
+            else:
+                description_patch["study_short_title"] = source_short_title
+        if description_patch:
+            result = self.api.patch_to_api(
+                {
+                    "uid": study_uid,
+                    "current_metadata": {"study_description": description_patch},
+                },
+                "/studies/",
+            )
+            if result is None:
+                self.census.stop(
+                    "study_title", study_uid, "study title/short-title patch failed"
+                )
+            else:
+                changed = True
+                if not created:
+                    self.census.updated.append(
+                        {
+                            "kind": "study_title",
+                            "ref": study_uid,
+                            "fields": sorted(description_patch),
+                        }
+                    )
+        return changed
+
     def ensure_study(self, payload, project_number, crosswalk):
         """Create the study, or verify the crosswalked one is usable."""
         if crosswalk:
             study_uid = crosswalk["osb_study_uid"]
-            study = self.api.get_all_from_api(f"/studies/{study_uid}")
+            active_studies = self.api.get_all_from_api("/studies") or []
+            if not any(study.get("uid") == study_uid for study in active_studies):
+                self.census.stop(
+                    "study",
+                    study_uid,
+                    "crosswalk names a soft-deleted or inactive OSB study; restore it "
+                    "in OSB or clear the ledger row to import as a new study",
+                )
+                return None
+            study = self.api.get_all_from_api(
+                f"/studies/{study_uid}",
+                params={
+                    "include_sections": [
+                        "high_level_study_design",
+                        "study_population",
+                        "study_intervention",
+                    ]
+                },
+            )
             if study is None:
                 self.census.stop(
                     "study",
@@ -360,7 +985,11 @@ class Import360i(BaseImporter):
                     "— this importer never unlocks studies",
                 )
                 return None
-            self.census.unchanged.append({"kind": "study", "ref": study_uid})
+            changed = self._sync_study_metadata(
+                payload, study_uid, current=study, created=False
+            )
+            if not changed:
+                self.census.unchanged.append({"kind": "study", "ref": study_uid})
             return study_uid
 
         study_number = mapping.study_number_for(payload)
@@ -409,60 +1038,102 @@ class Import360i(BaseImporter):
             return None
         study_uid = res["uid"]
         self.census.created.append({"kind": "study", "ref": study_uid})
+        self._sync_study_metadata(payload, study_uid, created=True)
 
-        # Registry identifiers: typed nulls today (the payload's block is the
-        # slot, not yet data). PATCH only when anything is non-null.
-        reg = payload.get("study", {}).get("registryIdentifiers", {})
-        non_null = {k: v for k, v in reg.items() if v is not None}
-        if non_null:
-            self.api.patch_to_api(
-                {
-                    "uid": study_uid,
-                    "current_metadata": {
-                        "identification_metadata": {"registry_identifiers": non_null}
-                    },
-                },
-                "/studies/",
-            )
-            self.census.created.append({"kind": "registry_identifiers", "ref": study_uid})
-
-        # Study title from the payload's stated title.
-        title = payload.get("study", {}).get("officialTitle") or payload.get(
-            "study", {}
-        ).get("name")
-        if title:
-            self.api.patch_to_api(
-                {
-                    "uid": study_uid,
-                    "current_metadata": {
-                        "study_description": {"study_title": str(title)[:800]}
-                    },
-                },
-                "/studies/",
-            )
-
-        # Everything else the protocol stated about the study rides the
-        # census as carried — visible, not silently dropped.
-        for key in sorted(payload.get("study", {}).get("attributes", {})):
-            self.census.carried.append(
-                {"kind": "study_attribute", "ref": key, "reason": "no OSB v1 landing zone; in payload.study.attributes"}
-            )
         return study_uid
 
     def ensure_epochs(self, payload, study_uid):
-        """Create the payload's epochs (or the declared carrier)."""
+        """Reconcile the payload's epochs (or the declared carrier).
+
+        Existing epochs are updated when their order/description changes.
+        Epochs removed or renamed are returned for deletion after visits have
+        moved off them, because OSB will not delete a referenced epoch.
+        """
         plans, is_scaffolding = mapping.epochs_plan(payload)
         epoch_uid_by_ref = {}
         existing = self.api.get_all_from_api(f"/studies/{study_uid}/study-epochs") or []
         existing_by_name = {e.get("epoch_name", "").lower(): e for e in existing}
+        existing_by_uid = {e.get("uid"): e for e in existing}
+        desired_names = {plan["name"] for plan in plans}
+        if is_scaffolding:
+            # Older importer versions created a fresh carrier on every replay
+            # because OSB derives epoch_name from CT ("Treatment 1", ...).
+            # Retain the carrier that the most visits currently use; this lets
+            # a repair converge without trying to move the whole calendar to
+            # an empty later duplicate (which OSB's epoch chronology rejects).
+            visits = self.api.get_all_from_api(
+                f"/studies/{study_uid}/study-visits"
+            ) or []
+            use_count = {}
+            for visit in visits:
+                epoch_uid = visit.get("study_epoch_uid") or (
+                    visit.get("study_epoch") or {}
+                ).get("uid")
+                if epoch_uid:
+                    use_count[epoch_uid] = use_count.get(epoch_uid, 0) + 1
+            mapped_carrier_uid = self.uid_map["epochs"].get(
+                mapping.CARRIER_EPOCH_NAME
+            )
+            carriers = [
+                epoch
+                for epoch in existing
+                if epoch.get("description") == CARRIER_EPOCH_DESCRIPTION
+            ]
+            if carriers:
+                retained = max(
+                    carriers,
+                    key=lambda epoch: (
+                        use_count.get(epoch.get("uid"), 0),
+                        epoch.get("uid") == mapped_carrier_uid,
+                    ),
+                )
+                self.uid_map["epochs"][
+                    mapping.CARRIER_EPOCH_NAME
+                ] = retained["uid"]
+        stale_epochs = [
+            {"ref": ref, "uid": uid}
+            for ref, uid in self.uid_map["epochs"].items()
+            if ref not in desired_names and uid in existing_by_uid
+        ]
 
         for plan in plans:
             name = plan["name"]
-            found = existing_by_name.get(name.lower())
+            mapped_uid = self.uid_map["epochs"].get(name)
+            found = existing_by_uid.get(mapped_uid) or existing_by_name.get(
+                name.lower()
+            )
             if found:
+                description = (
+                    name
+                    if not plan["scaffolding"]
+                    else CARRIER_EPOCH_DESCRIPTION
+                )
+                changed = []
+                if found.get("order") != plan["order"]:
+                    changed.append("order")
+                if found.get("description") != description:
+                    changed.append("description")
+                if changed:
+                    res = self.api.patch_to_api(
+                        {
+                            "uid": found["uid"],
+                            "study_uid": study_uid,
+                            "order": plan["order"],
+                            "description": description,
+                            "change_description": "360i re-import: epoch changed",
+                        },
+                        f"/studies/{study_uid}/study-epochs",
+                    )
+                    if res is None:
+                        self.census.stop("epoch", name, "epoch patch failed")
+                        continue
+                    self.census.updated.append(
+                        {"kind": "epoch", "ref": name, "changed": changed}
+                    )
+                else:
+                    self.census.unchanged.append({"kind": "epoch", "ref": name})
                 epoch_uid_by_ref[name] = found["uid"]
                 self.uid_map["epochs"][name] = found["uid"]
-                self.census.unchanged.append({"kind": "epoch", "ref": name})
                 continue
 
             subtype_uid = None
@@ -492,10 +1163,9 @@ class Import360i(BaseImporter):
                 "study_uid": study_uid,
                 "epoch_subtype": subtype_uid,
                 "epoch": preview.get("epoch"),
-                "order": preview.get("order"),
+                "order": plan["order"],
                 "description": name if not plan["scaffolding"] else (
-                    "Carrier epoch created by the 360i importer: OSB requires an epoch "
-                    "per visit and the protocol stated none. NOT protocol content."
+                    CARRIER_EPOCH_DESCRIPTION
                 ),
             }
             res = self.api.simple_post_to_api(
@@ -518,7 +1188,45 @@ class Import360i(BaseImporter):
             if uid:
                 for visit_ref in plan["visit_refs"]:
                     ref_to_epoch_uid[visit_ref] = uid
-        return ref_to_epoch_uid, is_scaffolding
+        desired_uids = set(epoch_uid_by_ref.values())
+        if is_scaffolding:
+            # OSB derives the displayed epoch_name from CT ("Treatment 1",
+            # "Treatment 2", ...), so the source carrier name cannot be used
+            # to find old attempts. Remove every duplicate carrier by its
+            # importer-only description after visits have moved to the one
+            # retained uid.
+            stale_by_uid = {entry["uid"]: entry for entry in stale_epochs}
+            for epoch in existing:
+                if (
+                    epoch.get("description") == CARRIER_EPOCH_DESCRIPTION
+                    and epoch.get("uid") not in desired_uids
+                ):
+                    stale_by_uid[epoch["uid"]] = {
+                        "ref": mapping.CARRIER_EPOCH_NAME,
+                        "uid": epoch["uid"],
+                    }
+            stale_epochs = list(stale_by_uid.values())
+        stale_epochs = [
+            entry for entry in stale_epochs if entry["uid"] not in desired_uids
+        ]
+        return ref_to_epoch_uid, is_scaffolding, stale_epochs
+
+    def remove_stale_epochs(self, study_uid, stale_epochs):
+        """Delete prior-import epochs only after visit reconciliation."""
+        for entry in stale_epochs:
+            ok = self.api.simple_delete(
+                f"/studies/{study_uid}/study-epochs/{entry['uid']}",
+                "/study-epochs",
+            )
+            if not ok:
+                self.census.stop(
+                    "epoch", entry["ref"], "removed epoch delete failed"
+                )
+                continue
+            self.uid_map["epochs"].pop(entry["ref"], None)
+            self.census.updated.append(
+                {"kind": "epoch_removed", "ref": entry["ref"]}
+            )
 
     def _current_visits_by_ref(self, study_uid):
         """Snapshot of OSB's current study-visits keyed by our stamped refKey.
@@ -555,6 +1263,8 @@ class Import360i(BaseImporter):
                 # look changed and PATCH-storm on each re-import.
                 "visit_type_name": v.get("visit_type_name")
                 or (v.get("visit_type") or {}).get("sponsor_preferred_name"),
+                "study_epoch_uid": v.get("study_epoch_uid")
+                or (v.get("study_epoch") or {}).get("uid"),
                 "is_global_anchor_visit": v.get("is_global_anchor_visit"),
                 "description": v.get("description"),
             }
@@ -576,7 +1286,7 @@ class Import360i(BaseImporter):
             return None, f"no VisitType term among {candidates}"
         epoch_uid = epoch_uid_by_visit_ref.get(plan["refKey"])
         if epoch_uid is None:
-            epoch_uid = next(iter(self.uid_map["epochs"].values()), None)
+            epoch_uid = next(iter(epoch_uid_by_visit_ref.values()), None)
             if epoch_uid is None:
                 return None, "no epoch available"
             self.census.scaffolding.append(
@@ -611,12 +1321,12 @@ class Import360i(BaseImporter):
         return body, None
 
     def ensure_visits(self, payload, study_uid, epoch_uid_by_visit_ref):
-        """Reconcile the visit calendar to the payload (create/patch/delete).
+        """Reconcile active visits and return stale visits for deferred deletion.
 
         First import: uid_map empty -> the diff is all-create (prior behavior).
         Re-import of an edited payload: refKey diff drives targeted PATCH of
-        changed windows/timing/names, POST of new visits, DELETE of removed
-        ones — the create-only census-as-unchanged gap this closes.
+        changed windows/timing/names and POST of new visits. Removed visits are
+        deleted only after native SoA and ODM dependencies have reconciled.
         """
         anchor_ref_uid = self._lookup_ct_term(
             CODELIST_TIMEPOINT_REFERENCE, "Global anchor visit"
@@ -630,7 +1340,7 @@ class Import360i(BaseImporter):
                 "OSB standard terms missing (Global anchor visit / day unit) — "
                 "run the standard-codelist imports first",
             )
-            return
+            return []
         ctx = {
             "anchor_ref_uid": anchor_ref_uid,
             "contact_uid": contact_uid,
@@ -686,7 +1396,11 @@ class Import360i(BaseImporter):
             self.uid_map["visits"][entry["ref"]] = entry["uid"]
             self.census.unchanged.append({"kind": "visit", "ref": entry["ref"]})
 
-        for entry in diff["delete"]:
+        return diff["delete"]
+
+    def remove_stale_visits(self, study_uid, stale_visits):
+        """Delete visits after owned schedules and ODM event links are removed."""
+        for entry in stale_visits:
             ok = self.api.simple_delete(
                 f"/studies/{study_uid}/study-visits/{entry['uid']}", "/study-visits"
             )
@@ -777,10 +1491,715 @@ class Import360i(BaseImporter):
             )
 
     # ------------------------------------------------------------------
+    # Native Schedule of Activities: governed activity -> study selection -> cell
+    # ------------------------------------------------------------------
+
+    def ensure_native_soa(self, payload, study_uid):
+        """Reconcile the protocol's activity×visit matrix into native OSB SoA.
+
+        Activity concepts are never created here. The pure mapper admits only a
+        unique Final exact-normalized library match. Existing study selections
+        and schedules are reused; only schedules created by this feature are
+        considered owned and removable on a later payload.
+        """
+        section = payload.get("scheduleOfActivities")
+        if section is None:
+            return
+        get_paged = getattr(self.api, "get_all_from_api_paged", None)
+        library_activities = (
+            get_paged("/concepts/activities/activities")
+            if callable(get_paged)
+            else self.api.get_all_from_api(
+                "/concepts/activities/activities", params={"page_size": 0}
+            )
+        ) or []
+        plan = mapping.native_soa_plan(payload, library_activities)
+        if plan is None:
+            return
+
+        source_activity_refs = {
+            str(activity.get("refKey"))
+            for activity in section.get("activities") or []
+            if activity.get("refKey")
+        }
+        for ref in list(self.uid_map["native_soa_activities"]):
+            if ref not in source_activity_refs:
+                self.uid_map["native_soa_activities"].pop(ref, None)
+
+        for blocker in plan["blocked"]:
+            self.census.stop(blocker["kind"], blocker["ref"], blocker["reason"])
+            self.census.block_release(
+                blocker["kind"], blocker["ref"], blocker["reason"]
+            )
+
+        selected = self.api.get_all_from_api(
+            f"/studies/{study_uid}/study-activities", params={"page_size": 0}
+        ) or []
+        selected_by_activity_uid = {}
+        for row in selected:
+            activity_uid = (row.get("activity") or {}).get("uid")
+            if activity_uid:
+                selected_by_activity_uid.setdefault(activity_uid, []).append(row)
+
+        selection_uid_by_ref = {}
+        for activity in plan["activities"]:
+            ref = activity["ref"]
+            flowchart_term, flowchart_error = self._lookup_final_ct_term(
+                CODELIST_FLOWCHART_GROUP, activity["flowchart_group_name"]
+            )
+            if flowchart_error:
+                self.census.stop("study_activity", ref, flowchart_error)
+                self.census.block_release("study_activity", ref, flowchart_error)
+                continue
+            flowchart_uid = flowchart_term["term_uid"]
+            matches = selected_by_activity_uid.get(activity["activity_uid"], [])
+            if len(matches) > 1:
+                reason = "multiple study activity selections reference the exact library activity"
+                self.census.stop("study_activity", ref, reason)
+                self.census.block_release("study_activity", ref, reason)
+                continue
+            if len(matches) == 1:
+                uid = matches[0].get("study_activity_uid")
+                if not uid:
+                    reason = "matched study activity selection has no uid"
+                    self.census.stop("study_activity", ref, reason)
+                    self.census.block_release("study_activity", ref, reason)
+                    continue
+                existing_flowchart_uid = (
+                    matches[0].get("study_soa_group") or {}
+                ).get("soa_group_term_uid")
+                if existing_flowchart_uid != flowchart_uid:
+                    reason = (
+                        "matched study activity has a conflicting or missing "
+                        "Flowchart Group term"
+                    )
+                    self.census.stop("study_activity", ref, reason)
+                    self.census.block_release("study_activity", ref, reason)
+                    continue
+                selection_uid_by_ref[ref] = uid
+                self.uid_map["native_soa_activities"][ref] = uid
+                self.census.unchanged.append(
+                    {"kind": "study_activity", "ref": ref, "uid": uid}
+                )
+                continue
+
+            body = {
+                "activity_uid": activity["activity_uid"],
+                "soa_group_term_uid": flowchart_uid,
+                "show_activity_in_protocol_flowchart": True,
+            }
+            if activity.get("activity_group_uid"):
+                body["activity_group_uid"] = activity["activity_group_uid"]
+            if activity.get("activity_subgroup_uid"):
+                body["activity_subgroup_uid"] = activity["activity_subgroup_uid"]
+            created = self.api.simple_post_to_api(
+                f"/studies/{study_uid}/study-activities", body, "/study-activities"
+            )
+            uid = (created or {}).get("study_activity_uid")
+            if not uid:
+                reason = "study activity selection create failed"
+                self.census.stop("study_activity", ref, reason)
+                self.census.block_release("study_activity", ref, reason)
+                continue
+            selection_uid_by_ref[ref] = uid
+            self.uid_map["native_soa_activities"][ref] = uid
+            self.census.created.append(
+                {"kind": "study_activity", "ref": ref, "uid": uid}
+            )
+
+        current_schedules = self.api.get_all_from_api(
+            f"/studies/{study_uid}/study-activity-schedules"
+        ) or []
+        schedules_by_pair = {}
+        schedules_by_uid = {}
+        for row in current_schedules:
+            uid = row.get("study_activity_schedule_uid")
+            pair = (row.get("study_activity_uid"), row.get("study_visit_uid"))
+            if all(pair):
+                schedules_by_pair.setdefault(pair, []).append(row)
+            if uid:
+                schedules_by_uid[uid] = row
+
+        prior_owned = dict(self.uid_map["native_soa_owned_schedules"])
+        desired_source_refs = {
+            f"{cell.get('activityRef')}::{cell.get('payloadVisitRef')}"
+            for cell in section.get("schedules") or []
+            if cell.get("activityRef") and cell.get("payloadVisitRef")
+        }
+        desired_operational_refs = set()
+        desired_pair_by_ref = {}
+        for schedule in plan["schedules"]:
+            ref = schedule["ref"]
+            selection_uid = selection_uid_by_ref.get(schedule["activity_ref"])
+            visit_uid = self.uid_map["visits"].get(schedule["payload_visit_ref"])
+            if not selection_uid:
+                # The parent activity already has a specific release blocker
+                # (library ambiguity, CT failure, duplicate selection, or failed
+                # create). Do not multiply that one root cause by every cell.
+                continue
+            if not visit_uid:
+                reason = "native SoA schedule has no resolved payload visit uid"
+                self.census.stop("study_activity_schedule", ref, reason)
+                self.census.block_release("study_activity_schedule", ref, reason)
+                continue
+            desired_operational_refs.add(ref)
+            pair = (selection_uid, visit_uid)
+            desired_pair_by_ref[ref] = pair
+            matches = schedules_by_pair.get(pair, [])
+            if len(matches) > 1:
+                reason = "multiple native schedules exist for the same activity and visit"
+                self.census.stop("study_activity_schedule", ref, reason)
+                self.census.block_release("study_activity_schedule", ref, reason)
+                continue
+            if len(matches) == 1:
+                uid = matches[0].get("study_activity_schedule_uid")
+                self.uid_map["native_soa_schedules"][ref] = uid
+                self.census.unchanged.append(
+                    {"kind": "study_activity_schedule", "ref": ref, "uid": uid}
+                )
+                continue
+            created = self.api.simple_post_to_api(
+                f"/studies/{study_uid}/study-activity-schedules",
+                {
+                    "study_activity_uid": selection_uid,
+                    "study_visit_uid": visit_uid,
+                },
+                "/study-activity-schedules",
+            )
+            uid = (created or {}).get("study_activity_schedule_uid")
+            if not uid:
+                reason = "study activity schedule create failed"
+                self.census.stop("study_activity_schedule", ref, reason)
+                self.census.block_release("study_activity_schedule", ref, reason)
+                continue
+            self.uid_map["native_soa_schedules"][ref] = uid
+            self.uid_map["native_soa_owned_schedules"][ref] = uid
+            schedules_by_pair[pair] = [created]
+            schedules_by_uid[uid] = created
+            self.census.created.append(
+                {"kind": "study_activity_schedule", "ref": ref, "uid": uid}
+            )
+
+        # Delete only source cells removed from the payload AND only schedules
+        # this feature created previously. A reused schedule may belong to another
+        # OSB workflow and is intentionally never claimed.
+        for ref, uid in prior_owned.items():
+            if ref in desired_source_refs:
+                continue
+            if uid not in schedules_by_uid:
+                self.uid_map["native_soa_owned_schedules"].pop(ref, None)
+                self.uid_map["native_soa_schedules"].pop(ref, None)
+                continue
+            if not self.api.simple_delete(
+                f"/studies/{study_uid}/study-activity-schedules/{uid}",
+                "/study-activity-schedules",
+            ):
+                self.census.stop(
+                    "study_activity_schedule_removed", ref, "owned schedule delete failed"
+                )
+                continue
+            self.uid_map["native_soa_owned_schedules"].pop(ref, None)
+            self.uid_map["native_soa_schedules"].pop(ref, None)
+            self.census.updated.append(
+                {"kind": "study_activity_schedule_removed", "ref": ref, "uid": uid}
+            )
+
+        for ref in list(self.uid_map["native_soa_schedules"]):
+            if ref not in desired_source_refs:
+                self.uid_map["native_soa_schedules"].pop(ref, None)
+
+        # Verify durable API state, not merely successful response bodies.
+        read_back = self.api.get_all_from_api(
+            f"/studies/{study_uid}/study-activity-schedules"
+        ) or []
+        read_back_by_pair = {}
+        for row in read_back:
+            pair = (row.get("study_activity_uid"), row.get("study_visit_uid"))
+            if all(pair):
+                read_back_by_pair.setdefault(pair, []).append(row)
+        for ref in sorted(desired_operational_refs):
+            matches = read_back_by_pair.get(desired_pair_by_ref[ref], [])
+            if len(matches) != 1:
+                self.uid_map["native_soa_schedules"].pop(ref, None)
+                reason = f"read-after-write expected one native schedule, found {len(matches)}"
+                self.census.stop("native_soa_reconciliation", ref, reason)
+                self.census.block_release("native_soa_reconciliation", ref, reason)
+                continue
+            self.uid_map["native_soa_schedules"][ref] = matches[0][
+                "study_activity_schedule_uid"
+            ]
+
+        # Preserve schedules this feature did not create, but never let an extra
+        # cell on a mapped activity silently contradict the source matrix.
+        desired_pairs = set(desired_pair_by_ref.values())
+        mapped_selection_uids = set(selection_uid_by_ref.values())
+        for row in read_back:
+            pair = (row.get("study_activity_uid"), row.get("study_visit_uid"))
+            if pair[0] not in mapped_selection_uids or pair in desired_pairs:
+                continue
+            uid = row.get("study_activity_schedule_uid") or "?"
+            reason = "pre-existing native schedule is outside the source SoA matrix"
+            self.census.stop("activity_schedule_external", uid, reason)
+            self.census.block_release("activity_schedule_external", uid, reason)
+
+    # ------------------------------------------------------------------
+    # Native Study Purpose: objectives -> endpoints; criteria independently
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _purpose_plain(value):
+        """Normalize OSB HTML/plain syntax content for exact reconciliation."""
+        without_tags = re.sub(r"<[^>]+>", " ", str(value or ""))
+        return re.sub(r"\s+", " ", html.unescape(without_tags)).strip()
+
+    @staticmethod
+    def _purpose_html(value):
+        return f"<p>{html.escape(str(value), quote=False)}</p>"
+
+    def _ensure_purpose_template(
+        self, kind, study_uid, ref, text, criteria_type_uid=None
+    ):
+        config = {
+            "objective": ("/objective-templates", "ObjectiveTemplate"),
+            "endpoint": ("/endpoint-templates", "EndpointTemplate"),
+            "criterion": ("/criteria-templates", "CriteriaTemplate"),
+            "timeframe": ("/timeframe-templates", "TimeframeTemplate"),
+        }[kind]
+        path, label = config
+        cache_key = (kind, self._semantic_key(text), criteria_type_uid)
+        if cache_key in self._purpose_template_cache:
+            return self._purpose_template_cache[cache_key]
+        current = self.api.get_all_from_api(path, params={"page_size": 0}) or []
+        matches = [
+            item
+            for item in current
+            if self._semantic_key(item.get("name_plain") or self._purpose_plain(item.get("name")))
+            == self._semantic_key(text)
+            and (
+                kind != "criterion"
+                or (item.get("type") or {}).get("term_uid") == criteria_type_uid
+            )
+        ]
+        finals = [item for item in matches if str(item.get("status") or "").lower() == "final"]
+        unique = {item.get("uid"): item for item in finals if item.get("uid")}
+        if len(unique) > 1:
+            self.census.stop(
+                f"study_{kind}_template",
+                ref,
+                f"multiple Final exact OSB {label} matches",
+            )
+            return None
+        if len(unique) == 1:
+            uid = next(iter(unique))
+            self._purpose_template_cache[cache_key] = uid
+            return uid
+        body = {
+            "name": self._purpose_html(text),
+            "guidance_text": f"Imported from governed 360i source record {ref}.",
+            "library_name": "Sponsor",
+        }
+        if kind != "timeframe":
+            body["study_uid"] = study_uid
+        if kind == "criterion":
+            body["type_uid"] = criteria_type_uid
+        res = self.api.simple_post_to_api(path, body, path)
+        if res is None or not res.get("uid"):
+            self.census.stop(
+                f"study_{kind}_template", ref, f"{label} create failed"
+            )
+            return None
+        uid = res["uid"]
+        if not self.api.simple_approve(f"{path}/{uid}/approvals"):
+            self.census.stop(
+                f"study_{kind}_template", ref, f"{label} approval failed"
+            )
+            return None
+        self._purpose_template_cache[cache_key] = uid
+        self.census.created.append(
+            {"kind": f"study_{kind}_template", "ref": ref, "uid": uid}
+        )
+        return uid
+
+    def _ensure_purpose_timeframe(self, study_uid, ref, text):
+        if not text:
+            return None
+        key = self._semantic_key(text)
+        if key in self._purpose_timeframe_cache:
+            return self._purpose_timeframe_cache[key]
+        current = self.api.get_all_from_api("/timeframes", params={"page_size": 0}) or []
+        matches = [
+            item
+            for item in current
+            if self._semantic_key(item.get("name_plain") or self._purpose_plain(item.get("name")))
+            == key
+            and str(item.get("status") or "").lower() == "final"
+            and item.get("uid")
+        ]
+        unique = {item["uid"]: item for item in matches}
+        if len(unique) > 1:
+            self.census.stop(
+                "study_endpoint_timeframe", ref, "multiple Final exact OSB Timeframes"
+            )
+            return None
+        if len(unique) == 1:
+            uid = next(iter(unique))
+            self._purpose_timeframe_cache[key] = uid
+            self.uid_map["timeframes"][key] = uid
+            return uid
+        template_uid = self._ensure_purpose_template(
+            "timeframe", study_uid, ref, text
+        )
+        if template_uid is None:
+            return None
+        res = self.api.simple_post_to_api(
+            "/timeframes",
+            {
+                "parameter_terms": [],
+                "timeframe_template_uid": template_uid,
+                "library_name": "Sponsor",
+            },
+            "/timeframes",
+        )
+        if res is None or not res.get("uid"):
+            self.census.stop(
+                "study_endpoint_timeframe", ref, "Timeframe create failed"
+            )
+            return None
+        uid = res["uid"]
+        if not self.api.simple_approve(f"/timeframes/{uid}/approvals"):
+            self.census.stop(
+                "study_endpoint_timeframe", ref, "Timeframe approval failed"
+            )
+            return None
+        self._purpose_timeframe_cache[key] = uid
+        self.uid_map["timeframes"][key] = uid
+        self.census.created.append(
+            {"kind": "study_endpoint_timeframe", "ref": ref, "uid": uid}
+        )
+        return uid
+
+    def _purpose_existing(self, study_uid, section, data_key):
+        rows = self.api.get_all_from_api(
+            f"/studies/{study_uid}/{section}", params={"page_size": 0}
+        ) or []
+        by_text = {}
+        for row in rows:
+            data = row.get(data_key) or {}
+            key = self._semantic_key(
+                data.get("name_plain") or self._purpose_plain(data.get("name"))
+            )
+            if key:
+                by_text.setdefault(key, []).append(row)
+        return rows, by_text
+
+    def ensure_study_purpose(self, payload, study_uid):
+        """Create/reconcile native OSB objectives, endpoints and criteria.
+
+        Exact source text becomes a study-scoped syntax template and instance.
+        Endpoint relationships and levels are resolved against live OSB CT. ODM
+        collection fields are never inputs to this stage.
+        """
+        plan = mapping.study_purpose_plan(payload)
+        if plan is None:
+            reason = (
+                "legacy payload has no governed studyPurpose section; native "
+                "objectives/endpoints/criteria were not derived from carriers"
+            )
+            self.census.block_release("study_purpose", study_uid, reason)
+            return
+        for blocker in plan["blockers"]:
+            reason = f"{blocker.get('code')}: {blocker.get('detail')}"
+            self.census.carried.append(
+                {
+                    "kind": f"study_{blocker.get('kind')}",
+                    "ref": blocker.get("refKey"),
+                    "reason": reason,
+                    "source_assertion_ids": blocker.get("sourceAssertionIds") or [],
+                }
+            )
+            self.census.block_release(
+                f"study_{blocker.get('kind')}", blocker.get("refKey"), reason
+            )
+
+        prior_owned = {
+            kind: dict(self.uid_map[kind])
+            for kind in ("objectives", "endpoints", "criteria")
+        }
+        objective_rows, objectives_by_text = self._purpose_existing(
+            study_uid, "study-objectives", "objective"
+        )
+        objective_uid_by_ref = {}
+        for item in plan["objectives"]:
+            ref = item["ref"]
+            term, error = self._lookup_final_ct_term(
+                CODELIST_OBJECTIVE_LEVEL, item["level_name"]
+            )
+            if error:
+                self.census.stop("study_objective", ref, error)
+                continue
+            matches = objectives_by_text.get(self._semantic_key(item["text"]), [])
+            compatible = [
+                row
+                for row in matches
+                if (row.get("objective_level") or {}).get("term_uid")
+                == term["term_uid"]
+            ]
+            if matches and len(compatible) != 1:
+                self.census.stop(
+                    "study_objective",
+                    ref,
+                    "exact objective text exists with conflicting or duplicate level",
+                )
+                continue
+            if len(compatible) == 1:
+                uid = compatible[0].get("study_objective_uid")
+                self.census.unchanged.append(
+                    {"kind": "study_objective", "ref": ref, "uid": uid}
+                )
+            else:
+                template_uid = self._ensure_purpose_template(
+                    "objective", study_uid, ref, item["text"]
+                )
+                if template_uid is None:
+                    continue
+                res = self.api.simple_post_to_api(
+                    f"/studies/{study_uid}/study-objectives",
+                    {
+                        "objective_level_uid": term["term_uid"],
+                        "objective_data": {
+                            "parameter_terms": [],
+                            "objective_template_uid": template_uid,
+                            "library_name": "Sponsor",
+                        },
+                    },
+                    "/study-objectives",
+                    params={"create_objective": True},
+                )
+                if res is None or not res.get("study_objective_uid"):
+                    self.census.stop(
+                        "study_objective", ref, "objective selection create failed"
+                    )
+                    continue
+                uid = res["study_objective_uid"]
+                self.census.created.append(
+                    {"kind": "study_objective", "ref": ref, "uid": uid}
+                )
+            objective_uid_by_ref[ref] = uid
+            self.uid_map["objectives"][ref] = uid
+
+        endpoint_rows, endpoints_by_text = self._purpose_existing(
+            study_uid, "study-endpoints", "endpoint"
+        )
+        for item in plan["endpoints"]:
+            ref = item["ref"]
+            objective_uid = objective_uid_by_ref.get(item["objective_ref"])
+            if objective_uid is None:
+                self.census.stop(
+                    "study_endpoint", ref, "linked objective was not reconciled"
+                )
+                continue
+            term, error = self._lookup_final_ct_term(
+                CODELIST_ENDPOINT_LEVEL, item["level_name"]
+            )
+            if error:
+                self.census.stop("study_endpoint", ref, error)
+                continue
+            timeframe_uid = self._ensure_purpose_timeframe(
+                study_uid, ref, item.get("timeframe")
+            )
+            if item.get("timeframe") and timeframe_uid is None:
+                continue
+            matches = endpoints_by_text.get(self._semantic_key(item["text"]), [])
+            compatible = [
+                row
+                for row in matches
+                if (row.get("endpoint_level") or {}).get("term_uid")
+                == term["term_uid"]
+                and (row.get("study_objective") or {}).get("study_objective_uid")
+                == objective_uid
+                and (
+                    not timeframe_uid
+                    or (row.get("timeframe") or {}).get("uid") == timeframe_uid
+                )
+            ]
+            if matches and len(compatible) != 1:
+                self.census.stop(
+                    "study_endpoint",
+                    ref,
+                    "exact endpoint text exists with conflicting/duplicate level, objective or timeframe",
+                )
+                continue
+            if len(compatible) == 1:
+                uid = compatible[0].get("study_endpoint_uid")
+                self.census.unchanged.append(
+                    {"kind": "study_endpoint", "ref": ref, "uid": uid}
+                )
+            else:
+                template_uid = self._ensure_purpose_template(
+                    "endpoint", study_uid, ref, item["text"]
+                )
+                if template_uid is None:
+                    continue
+                res = self.api.simple_post_to_api(
+                    f"/studies/{study_uid}/study-endpoints",
+                    {
+                        "study_objective_uid": objective_uid,
+                        "endpoint_level_uid": term["term_uid"],
+                        "endpoint_sublevel_uid": None,
+                        "endpoint_data": {
+                            "parameter_terms": [],
+                            "endpoint_template_uid": template_uid,
+                            "library_name": "Sponsor",
+                        },
+                        "endpoint_units": {"units": [], "separator": None},
+                        "timeframe_uid": timeframe_uid,
+                    },
+                    "/study-endpoints",
+                    params={"create_endpoint": True},
+                )
+                if res is None or not res.get("study_endpoint_uid"):
+                    self.census.stop(
+                        "study_endpoint", ref, "endpoint selection create failed"
+                    )
+                    continue
+                uid = res["study_endpoint_uid"]
+                self.census.created.append(
+                    {"kind": "study_endpoint", "ref": ref, "uid": uid}
+                )
+            self.uid_map["endpoints"][ref] = uid
+
+        criteria_rows, criteria_by_text = self._purpose_existing(
+            study_uid, "study-criteria", "criteria"
+        )
+        for item in plan["criteria"]:
+            ref = item["ref"]
+            term, error = self._lookup_final_ct_term(
+                CODELIST_CRITERIA_TYPE, item["type_name"]
+            )
+            if error:
+                self.census.stop("study_criterion", ref, error)
+                continue
+            matches = criteria_by_text.get(self._semantic_key(item["text"]), [])
+            compatible = [
+                row
+                for row in matches
+                if (row.get("criteria_type") or {}).get("term_uid")
+                == term["term_uid"]
+            ]
+            if matches and len(compatible) != 1:
+                self.census.stop(
+                    "study_criterion",
+                    ref,
+                    "exact criterion text exists with conflicting or duplicate type",
+                )
+                continue
+            if len(compatible) == 1:
+                uid = compatible[0].get("study_criteria_uid")
+                self.census.unchanged.append(
+                    {"kind": "study_criterion", "ref": ref, "uid": uid}
+                )
+            else:
+                template_uid = self._ensure_purpose_template(
+                    "criterion",
+                    study_uid,
+                    ref,
+                    item["text"],
+                    criteria_type_uid=term["term_uid"],
+                )
+                if template_uid is None:
+                    continue
+                res = self.api.simple_post_to_api(
+                    f"/studies/{study_uid}/study-criteria",
+                    {
+                        "criteria_data": {
+                            "parameter_terms": [],
+                            "criteria_template_uid": template_uid,
+                            "library_name": "Sponsor",
+                        }
+                    },
+                    "/study-criteria",
+                    params={"create_criteria": True},
+                )
+                if res is None or not res.get("study_criteria_uid"):
+                    self.census.stop(
+                        "study_criterion", ref, "criteria selection create failed"
+                    )
+                    continue
+                uid = res["study_criteria_uid"]
+                self.census.created.append(
+                    {"kind": "study_criterion", "ref": ref, "uid": uid}
+                )
+            self.uid_map["criteria"][ref] = uid
+
+        # Remove only stale selections previously owned by this importer. Human
+        # OSB entries have no ledger ref and are never candidates for deletion.
+        desired = {
+            "objectives": {item["ref"] for item in plan["objectives"]},
+            "endpoints": {item["ref"] for item in plan["endpoints"]},
+            "criteria": {item["ref"] for item in plan["criteria"]},
+        }
+        delete_config = {
+            "endpoints": ("study-endpoints", "study_endpoint_removed"),
+            "criteria": ("study-criteria", "study_criterion_removed"),
+            "objectives": ("study-objectives", "study_objective_removed"),
+        }
+        for kind in ("endpoints", "criteria", "objectives"):
+            section, census_kind = delete_config[kind]
+            for ref, uid in prior_owned[kind].items():
+                if ref in desired[kind] or not uid:
+                    continue
+                if self.api.simple_delete(
+                    f"/studies/{study_uid}/{section}/{uid}", f"/{section}"
+                ):
+                    self.uid_map[kind].pop(ref, None)
+                    self.census.updated.append(
+                        {"kind": census_kind, "ref": ref, "uid": uid}
+                    )
+                else:
+                    self.census.stop(census_kind, ref, "stale selection delete failed")
+
+        # Read-after-write count/text/link reconciliation over source-owned refs.
+        actual = {
+            "objectives": self.api.get_all_from_api(
+                f"/studies/{study_uid}/study-objectives", params={"page_size": 0}
+            )
+            or [],
+            "endpoints": self.api.get_all_from_api(
+                f"/studies/{study_uid}/study-endpoints", params={"page_size": 0}
+            )
+            or [],
+            "criteria": self.api.get_all_from_api(
+                f"/studies/{study_uid}/study-criteria", params={"page_size": 0}
+            )
+            or [],
+        }
+        actual_uids = {
+            "objectives": {row.get("study_objective_uid") for row in actual["objectives"]},
+            "endpoints": {row.get("study_endpoint_uid") for row in actual["endpoints"]},
+            "criteria": {row.get("study_criteria_uid") for row in actual["criteria"]},
+        }
+        for kind in ("objectives", "endpoints", "criteria"):
+            missing = sorted(
+                ref
+                for ref in desired[kind]
+                if self.uid_map[kind].get(ref) not in actual_uids[kind]
+            )
+            if missing:
+                self.census.stop(
+                    "study_purpose_reconciliation",
+                    kind,
+                    f"read-after-write missing source refs: {','.join(missing)}",
+                )
+
+    # ------------------------------------------------------------------
     # Run
     # ------------------------------------------------------------------
 
     def run(self, study_id=None):
+        # Retired authority path. Keep the implementation readable for historical
+        # replay/forensics, but never let a normal shadow/enforced environment mutate
+        # OSB from the EDC-shaped V1 carrier. Proposal V2 is the sole runtime route.
+        assert_unsafe_legacy_mutation_allowed("run_import_360i")
         study_id = study_id or load_env("ECRF_STUDY_ID")
         self.log.info("Importing 360i study '%s' into OSB", study_id)
 
@@ -806,6 +2225,9 @@ class Import360i(BaseImporter):
 
         crosswalk = self.db.read_current_crosswalk(study_id)
         if crosswalk:
+            self.same_payload_replay = bool(
+                crosswalk["payload_hash"] == record["payload_hash"]
+            )
             # The hash-gate no-op is only valid if the crosswalked OSB study
             # STILL EXISTS. A crosswalk can outlive its OSB study (the instance
             # was wiped/re-seeded, or the study deleted) — in that case an
@@ -829,6 +2251,7 @@ class Import360i(BaseImporter):
             elif (
                 crosswalk["payload_hash"] == record["payload_hash"]
                 and crosswalk.get("status") == "succeeded"
+                and crosswalk.get("importer_version") == IMPORTER_VERSION
             ):
                 # Only a SUCCEEDED import may no-op: a partial one has named
                 # stopped rows — the whole point of re-running is to finish them.
@@ -840,8 +2263,11 @@ class Import360i(BaseImporter):
                 return crosswalk
             else:
                 self.log.info(
-                    "Study previously imported as OSB study '%s' — updating in place.",
+                    "Study previously imported as OSB study '%s' — updating in place "
+                    "(stored importer %s, current %s).",
                     crosswalk["osb_study_uid"],
+                    crosswalk.get("importer_version") or "unknown",
+                    IMPORTER_VERSION,
                 )
                 # Seed the uid map with the previous import's joins so unchanged
                 # entities resolve without re-creation.
@@ -850,6 +2276,8 @@ class Import360i(BaseImporter):
                         self.uid_map[kind].update(refs)
 
         project_number = self.ensure_programme_and_project(payload)
+        if project_number is None:
+            return self._finish(study_id, record, None, None)
         unit_uid_by_name = self.ensure_units(payload)
         codelist_by_ref = self.ensure_codelists(payload)
 
@@ -858,12 +2286,60 @@ class Import360i(BaseImporter):
             self._finish(study_id, record, None, project_number)
             return None
 
-        epoch_uid_by_visit_ref, _scaffolded = self.ensure_epochs(payload, study_uid)
-        self.ensure_visits(payload, study_uid, epoch_uid_by_visit_ref)
+        # Unsupported EDC-oriented study properties remain recoverable but do not
+        # count as native mappings. Record them on every import attempt (including
+        # updates), not only on first study creation.
+        for key in sorted(payload.get("study", {}).get("attributes", {})):
+            if key == "eligibility" and payload.get("studyPurpose") is not None:
+                self.census.carried.append(
+                    {
+                        "kind": "study_attribute",
+                        "ref": key,
+                        "reason": (
+                            "aggregate eligibility prose retained in x360i:bundleMeta; "
+                            "governed native criteria and item-level blockers are "
+                            "reconciled through studyPurpose"
+                        ),
+                    }
+                )
+                continue
+            reason = (
+                "no reviewed native OSB landing in this payload version; retained in "
+                "x360i:bundleMeta and release-blocking"
+            )
+            self.census.carried.append(
+                {
+                    "kind": "study_attribute",
+                    "ref": key,
+                    "reason": reason,
+                }
+            )
+            self.census.block_release("study_attribute", key, reason)
+
+        (
+            epoch_uid_by_visit_ref,
+            _scaffolded,
+            stale_epochs,
+        ) = self.ensure_epochs(payload, study_uid)
+        stale_visits = self.ensure_visits(payload, study_uid, epoch_uid_by_visit_ref)
         self.ensure_arms(payload, study_uid)
+
+        # This is the protocol's activity×visit matrix, independent of ODM
+        # FORM_REF. It selects only governed exact-match activity concepts.
+        self.ensure_native_soa(payload, study_uid)
+
+        # Native Study Purpose is study-definition content, independent of ODM
+        # collection fields. Objectives precede their linked endpoints; criteria
+        # are reconciled from governed eligibility assertions.
+        self.ensure_study_purpose(payload, study_uid)
 
         # ODM (forms/item-groups/items + the form x visit matrix) — B3.
         self.ensure_odm(payload, study_uid, codelist_by_ref, unit_uid_by_name)
+
+        # Dependents go first: schedules/event links may otherwise prevent OSB
+        # from deleting a removed visit, and visits may prevent epoch deletion.
+        self.remove_stale_visits(study_uid, stale_visits)
+        self.remove_stale_epochs(study_uid, stale_epochs)
 
         return self._finish(study_id, record, study_uid, project_number)
 
@@ -888,7 +2364,13 @@ class Import360i(BaseImporter):
                 self.census.stop("vendor_namespace", "x360i", "namespace create failed")
                 return {}
             ns = res
-            self.api.simple_approve(f"/odms/vendor-namespaces/{ns['uid']}/approvals")
+            if not self.api.simple_approve(
+                f"/odms/vendor-namespaces/{ns['uid']}/approvals"
+            ):
+                self.census.stop(
+                    "vendor_namespace", "x360i", "namespace approval failed"
+                )
+                return {}
             self.census.created.append({"kind": "vendor_namespace", "ref": "x360i"})
         else:
             self.census.unchanged.append({"kind": "vendor_namespace", "ref": "x360i"})
@@ -919,14 +2401,30 @@ class Import360i(BaseImporter):
                     "vendor_attribute", spec["name"], "attribute create failed"
                 )
                 continue
-            self.api.simple_approve(f"/odms/vendor-attributes/{res['uid']}/approvals")
+            if not self.api.simple_approve(
+                f"/odms/vendor-attributes/{res['uid']}/approvals"
+            ):
+                self.census.stop(
+                    "vendor_attribute", spec["name"], "attribute approval failed"
+                )
+                continue
             attr_uid_by_name[spec["name"]] = res["uid"]
             self.census.created.append(
                 {"kind": "vendor_attribute", "ref": spec["name"]}
             )
         return attr_uid_by_name
 
-    def _entity_vendor_attributes(self, attr_uids, ref_key, ext_json=None, field_type=None):
+    def _entity_vendor_attributes(
+        self,
+        attr_uids,
+        ref_key,
+        ext_json=None,
+        field_type=None,
+        source_json=None,
+        bundle_meta_json=None,
+        study_id=None,
+        build_hash=None,
+    ):
         """The x360i vendor_attributes array for one ODM entity's POST body."""
         attrs = []
         if attr_uids.get("refKey"):
@@ -935,6 +2433,21 @@ class Import360i(BaseImporter):
             attrs.append({"uid": attr_uids["fieldType"], "value": field_type})
         if ext_json and attr_uids.get("ext"):
             attrs.append({"uid": attr_uids["ext"], "value": ext_json})
+        if source_json and attr_uids.get("source"):
+            attrs.append(
+                {"uid": attr_uids["source"], "value": _encode_carrier(source_json)}
+            )
+        if bundle_meta_json and attr_uids.get("bundleMeta"):
+            attrs.append(
+                {
+                    "uid": attr_uids["bundleMeta"],
+                    "value": _encode_carrier(bundle_meta_json),
+                }
+            )
+        if study_id and attr_uids.get("studyId"):
+            attrs.append({"uid": attr_uids["studyId"], "value": study_id})
+        if build_hash and attr_uids.get("buildHash"):
+            attrs.append({"uid": attr_uids["buildHash"], "value": build_hash})
         return attrs
 
     def ensure_odm(self, payload, study_uid, codelist_by_ref, unit_uid_by_name):
@@ -953,23 +2466,15 @@ class Import360i(BaseImporter):
         attr_uids = self.ensure_vendor_namespace()
         odm = payload.get("odm", {})
         # OSB enforces one-item-one-group and rejects an item-ref batch atomically
-        # if any item is already claimed. Resolve each item's single canonical
-        # owner group up front; duplicate (item, group) references are censused as
-        # `carried` so a catch-all group re-listing domain fields can't silently
-        # drop the items that were unique to it (see payload_to_osb.item_group_ownership).
+        # if any item is already claimed. Keep one canonical ItemDef and mint a
+        # deterministic clone for every additional placement. The clone carries
+        # the exact source field/refKey, so repeated fields remain visible in
+        # every source form instead of being "carried" but absent from the EDC.
         ownership = mapping.item_group_ownership(odm)
         item_owner = ownership["owner"]
-        for dup in ownership["carried"]:
-            self.census.carried.append(
-                {
-                    "kind": "item_ref",
-                    "ref": f"{dup['group']}/{dup['item']}",
-                    "reason": (
-                        f"item {dup['item']} owned by group {dup['owner']} "
-                        f"(OSB one-item-one-group); not re-wired into {dup['group']}"
-                    ),
-                }
-            )
+        duplicate_placements = {
+            (entry["group"], entry["item"]) for entry in ownership["duplicates"]
+        }
 
         def _find_by_oid(path, oid):
             items = self.api.get_all_from_api(
@@ -1008,15 +2513,20 @@ class Import360i(BaseImporter):
             if res is None:
                 self.census.stop(kind, ref, f"{kind} create failed")
                 return None
-            if not defer_approve:
-                self.api.simple_approve(f"{path}/{res['uid']}/approvals")
+            if not defer_approve and not _approve(kind, path, res["uid"], ref):
+                return None
             self.census.created.append({"kind": kind, "ref": ref})
             return res
 
-        def _approve(path, uid):
-            self.api.simple_approve(f"{path}/{uid}/approvals")
+        def _approve(kind, path, uid, ref):
+            if not self.api.simple_approve(f"{path}/{uid}/approvals"):
+                self.census.stop(kind, ref, f"{kind} approval failed")
+                return False
+            return True
 
-        def _patch_through_version(kind, path, existing, body, ref):
+        def _patch_through_version(
+            kind, path, existing, body, ref, defer_approve=False
+        ):
             """OSB version -> PATCH -> approve for an EDITED concept.
 
             An approved concept must be drafted (new version) before it accepts
@@ -1040,7 +2550,8 @@ class Import360i(BaseImporter):
             if self.api.patch_to_api(body, path) is None:
                 self.census.stop(kind, ref, f"{kind} patch failed")
                 return None
-            self.api.simple_approve(f"{path}/{uid}/approvals")
+            if not defer_approve and not _approve(kind, path, uid, ref):
+                return None
             self.census.updated.append({"kind": kind, "ref": ref})
             return uid
 
@@ -1049,7 +2560,8 @@ class Import360i(BaseImporter):
 
             body_no_content is the desired body WITHOUT the content stamp; the
             sha is computed over it, compared against the existing stamp, and
-            appended before the write. Returns (uid, created_bool) or (None, _).
+            appended before the write. Returns
+            (uid, state, prior_object), where state is created|patched|unchanged.
 
             defer_approve=True: when the concept is newly CREATED, leave it in
             Draft (the caller must attach child refs then call _approve). Only
@@ -1062,23 +2574,110 @@ class Import360i(BaseImporter):
                 body = dict(body_no_content)
                 _stamp_content(body, sha)
                 res = _create_and_approve(kind, path, body, ref, defer_approve=defer_approve)
-                return (res["uid"], True) if res else (None, False)
+                return (res["uid"], "created", None) if res else (None, None, None)
             if _existing_content_sha(existing) == sha:
                 self.census.unchanged.append({"kind": kind, "ref": ref})
-                return existing["uid"], False
+                return existing["uid"], "unchanged", existing
             body = dict(body_no_content)
             _stamp_content(body, sha)
-            uid = _patch_through_version(kind, path, existing, body, ref)
-            return (uid, False) if uid else (None, False)
+            uid = _patch_through_version(
+                kind,
+                path,
+                existing,
+                body,
+                ref,
+                defer_approve=defer_approve,
+            )
+            return (uid, "patched", existing) if uid else (None, None, existing)
+
+        def _sync_refs(kind, path, uid, ref, desired, prior, state, child_key):
+            """Reconcile an ODM reference collection, never silently.
+
+            Missing refs are appended on a Draft version. Removed refs or
+            changed relation metadata use the endpoint's explicit override
+            mode so the relationship set is atomically replaced.
+            """
+            current = (prior or {}).get(child_key, []) or []
+            current_by_uid = {entry.get("uid"): entry for entry in current}
+            desired_by_uid = {entry["uid"]: entry for entry in desired}
+
+            extras = sorted(set(current_by_uid) - set(desired_by_uid))
+            changed = []
+            compare_keys = {
+                "items": ("order_number", "mandatory"),
+                "item_groups": ("order_number", "mandatory"),
+                "forms": ("order_number", "mandatory", "locked"),
+            }[child_key]
+
+            def _relation_value(value):
+                if isinstance(value, bool):
+                    return "yes" if value else "no"
+                normalized = str(value).strip().lower() if value is not None else ""
+                return {"true": "yes", "false": "no"}.get(normalized, normalized)
+
+            for child_uid in set(current_by_uid) & set(desired_by_uid):
+                if any(
+                    _relation_value(current_by_uid[child_uid].get(key))
+                    != _relation_value(desired_by_uid[child_uid].get(key))
+                    for key in compare_keys
+                ):
+                    changed.append(child_uid)
+            replace = bool(extras or changed)
+            missing = [
+                entry for entry in desired if entry["uid"] not in current_by_uid
+            ]
+            if not replace and not missing:
+                if state in ("created", "patched"):
+                    return _approve(kind, path, uid, ref)
+                return True
+
+            if state == "unchanged":
+                if self.api.simple_post_to_api(f"{path}/{uid}/versions", {}) is None:
+                    self.census.stop(kind, ref, f"{kind} new-version (draft) failed")
+                    return False
+            refs_to_write = desired if replace else missing
+            result = self.api.simple_post_to_api(
+                f"{path}/{uid}/{child_key.replace('_', '-')}",
+                refs_to_write,
+                params={"override": "true"} if replace else None,
+            )
+            if result is None:
+                self.census.stop(
+                    kind,
+                    ref,
+                    f"{kind} {child_key} POST failed "
+                    f"({len(refs_to_write)} refs, override={replace})",
+                )
+                return False
+            return _approve(kind, path, uid, ref)
 
         # Items (all groups, all forms), then groups, then forms — leaf first.
+        placement_item_uids = {}
+        existing_items_by_oid = {}
+        if self.same_payload_replay:
+            # One bulk snapshot avoids 1,200 serial filtered GETs during a
+            # carrier-only upgrade or exact-payload partial repair. A previous
+            # interrupted attempt may already have created some placement
+            # clones; reusing them is safe because the source hash is identical.
+            existing_items_by_oid = {
+                item.get("oid"): item
+                for item in (self.api.get_all_from_api("/odms/items") or [])
+                if item.get("oid")
+            }
         for form in odm.get("forms", []):
             for group in form.get("itemGroups", []):
                 for item in group.get("items", []):
+                    group_ref = group["refKey"]
+                    item_ref = item["refKey"]
+                    placement_key = mapping.placement_item_key(group_ref, item_ref)
+                    item_oid = mapping.placement_item_oid(
+                        item_ref, group_ref, item_owner[item_ref]
+                    )
                     body = mapping.odm_item_body(item, codelist_by_ref, unit_uid_by_name)
+                    body["oid"] = item_oid
                     body["vendor_attributes"] = self._entity_vendor_attributes(
                         attr_uids,
-                        item["refKey"],
+                        item_ref,
                         ext_json=mapping.vendor_ext_value(item),
                         field_type=item.get("datatypeHint"),
                     )
@@ -1086,9 +2685,35 @@ class Import360i(BaseImporter):
                         body["translated_texts"] = [
                             {"text_type": "Question", "language": "en", "text": item["prompt"]}
                         ]
-                    uid, _created = _reconcile("item", "/odms/items", item["refKey"], body)
+                    existing_item = existing_items_by_oid.get(item_oid)
+                    if self.same_payload_replay and existing_item:
+                        # An exact-payload replay must not rewrite the 1,180
+                        # unchanged base ItemDefs. Exact fields ride their
+                        # parent FormDef; existing placement clones are equally
+                        # reusable. A changed payload does not set this flag.
+                        uid = existing_item["uid"]
+                        if (existing_item.get("status") or "").lower() == "draft":
+                            if not self.api.simple_approve(
+                                f"/odms/items/{uid}/approvals"
+                            ):
+                                self.census.stop(
+                                    "item", item_oid, "draft item approval failed"
+                                )
+                                continue
+                        self.census.unchanged.append(
+                            {"kind": "item", "ref": item_oid}
+                        )
+                    else:
+                        uid, _state, _prior = _reconcile(
+                            "item", "/odms/items", item_oid, body
+                        )
                     if uid:
-                        self.uid_map["items"][item["refKey"]] = uid
+                        placement_item_uids[(group_ref, item_ref)] = uid
+                        self.uid_map["items"][placement_key] = uid
+                        if (group_ref, item_ref) not in duplicate_placements:
+                            # Preserve the historic base-item lookup for ledger
+                            # compatibility while adding placement-scoped keys.
+                            self.uid_map["items"][item_ref] = uid
 
         # Item groups + their item refs.
         for form in odm.get("forms", []):
@@ -1107,84 +2732,82 @@ class Import360i(BaseImporter):
                 }
                 # Create as Draft: ITEM_REFs attach only to a Draft element,
                 # so defer approval until after they're wired.
-                uid, created = _reconcile(
+                uid, state, prior = _reconcile(
                     "item_group", "/odms/item-groups", group["refKey"], body,
                     defer_approve=True,
                 )
                 if uid is None:
                     continue
                 self.uid_map["item_groups"][group["refKey"]] = uid
-                # (Re)wire the item refs only when the group was created or
-                # patched — an unchanged group keeps its existing refs.
-                if not created:
-                    continue
-                group_uid = uid
-                # Wire ONLY the items this group canonically owns — a duplicate
-                # reference (already censused `carried` above) would make OSB
-                # reject the whole batch atomically.
                 group_ref = group["refKey"]
-                item_refs = [
-                    {
-                        "uid": self.uid_map["items"][item["refKey"]],
-                        "order_number": item["orderNumber"],
-                        "mandatory": "yes" if item.get("mandatory") else "no",
-                        "key_sequence": None,
-                        "method_oid": None,
-                        "imputation_method_oid": None,
-                        "role": None,
-                        "role_codelist_oid": None,
-                        "collection_exception_condition_oid": None,
-                        "vendor": {"attributes": []},
-                    }
-                    for item in group.get("items", [])
-                    if item["refKey"] in self.uid_map["items"]
-                    and item_owner.get(item["refKey"]) == group_ref
-                ]
-                if item_refs:
-                    # A failed batch would silently orphan every item in this
-                    # group (verified live: item-ref POST is atomic). Check the
-                    # result and STOP-with-census rather than approve an empty
-                    # group — the no-data-loss guarantee must never fail silently.
-                    if (
-                        self.api.simple_post_to_api(
-                            f"/odms/item-groups/{group_uid}/items", item_refs
-                        )
-                        is None
-                    ):
-                        self.census.stop(
-                            "item_group_items",
-                            group_ref,
-                            f"item-ref batch POST failed ({len(item_refs)} items) "
-                            "— group left unwired to avoid a silent empty group",
-                        )
+                item_refs = []
+                for local_order, item in enumerate(group.get("items", []), start=1):
+                    placement = (group_ref, item["refKey"])
+                    if placement not in placement_item_uids:
                         continue
-                # Approve AFTER item refs are attached (Draft -> Final).
-                _approve("/odms/item-groups", group_uid)
+                    item_refs.append(
+                        {
+                            "uid": placement_item_uids[placement],
+                            # ODM order_number is local to this ItemGroup.
+                            # The source field's form-wide order remains in its
+                            # exact x360i:source carrier for Leg C restoration.
+                            "order_number": local_order,
+                            "mandatory": "yes" if item.get("mandatory") else "no",
+                            "key_sequence": None,
+                            "method_oid": None,
+                            "imputation_method_oid": None,
+                            "role": None,
+                            "role_codelist_oid": None,
+                            "collection_exception_condition_oid": None,
+                            "vendor": {"attributes": []},
+                        }
+                    )
+                _sync_refs(
+                    "item_group_items",
+                    "/odms/item-groups",
+                    uid,
+                    group_ref,
+                    item_refs,
+                    prior,
+                    state,
+                    "items",
+                )
 
         # Forms + their item-group refs.
-        for form in odm.get("forms", []):
+        bundle_meta = mapping.bundle_meta_value(payload)
+        forms = odm.get("forms", [])
+        bundle_meta_carriers = _chunk_carrier(bundle_meta, max(len(forms), 1))
+        for form_index, form in enumerate(forms):
             body = {
                 "name": form["name"][:200],
                 "oid": form["refKey"],
+                "sdtm_version": None,
                 "repeating": "no",
                 "translated_texts": [
                     {"text_type": "Description", "language": "en", "text": form.get("description") or form["name"]}
                 ],
                 "vendor_attributes": self._entity_vendor_attributes(
-                    attr_uids, form["refKey"], ext_json=mapping.vendor_ext_value(form)
+                    attr_uids,
+                    form["refKey"],
+                    ext_json=mapping.vendor_ext_value(form),
+                    source_json=mapping.source_form_value(payload, form["refKey"]),
+                    bundle_meta_json=(
+                        bundle_meta_carriers[form_index]
+                        if form_index < len(bundle_meta_carriers)
+                        else None
+                    ),
+                    study_id=payload["source"]["studyId"],
+                    build_hash=payload["source"]["buildHash"],
                 ),
             }
             # Create as Draft: ITEM_GROUP_REFs attach only to a Draft element,
             # so defer approval until after they're wired.
-            uid, created = _reconcile(
+            uid, state, prior = _reconcile(
                 "form", "/odms/forms", form["refKey"], body, defer_approve=True
             )
             if uid is None:
                 continue
             self.uid_map["forms"][form["refKey"]] = uid
-            if not created:
-                continue
-            form_uid = uid
             group_refs = [
                 {
                     "uid": self.uid_map["item_groups"][group["refKey"]],
@@ -1196,12 +2819,16 @@ class Import360i(BaseImporter):
                 for group in form.get("itemGroups", [])
                 if group["refKey"] in self.uid_map["item_groups"]
             ]
-            if group_refs:
-                self.api.simple_post_to_api(
-                    f"/odms/forms/{form_uid}/item-groups", group_refs
-                )
-            # Approve AFTER item-group refs are attached (Draft -> Final).
-            _approve("/odms/forms", form_uid)
+            _sync_refs(
+                "form_item_groups",
+                "/odms/forms",
+                uid,
+                form["refKey"],
+                group_refs,
+                prior,
+                state,
+                "item_groups",
+            )
 
         # ONE study-event PER VISIT — ODM's own semantics (a StudyEventDef IS
         # a visit; crosswalk §8: the form x visit anchor is StudyEvent
@@ -1217,35 +2844,96 @@ class Import360i(BaseImporter):
         for visit in payload.get("visits", []):
             visit_ref = visit["refKey"]
             assignments = matrix_by_visit.get(visit_ref, [])
-            if not assignments:
-                continue
             event_oid = f"SE.360I.{study_id}.{visit_ref}"
             existing = _find_by_oid("/odms/study-events", event_oid)
+            if not assignments:
+                if existing:
+                    event_uid = existing["uid"]
+                    self.uid_map["study_events"][visit_ref] = event_uid
+                    self.census.unchanged.append(
+                        {"kind": "study_event", "ref": event_oid}
+                    )
+                    _sync_refs(
+                        "study_event_forms",
+                        "/odms/study-events",
+                        event_uid,
+                        event_oid,
+                        [],
+                        existing,
+                        "unchanged",
+                        "forms",
+                    )
+                continue
+
+            event_body = {
+                "name": visit["name"][:200],
+                "oid": event_oid,
+                "description": f"Visit '{visit['name']}' imported from 360i study "
+                f"{study_id}; FORM_REFs are the visit's scheduled forms.",
+            }
             if existing:
                 event_uid = existing["uid"]
                 self.uid_map["study_events"][visit_ref] = event_uid
-                self.census.unchanged.append({"kind": "study_event", "ref": event_oid})
-                continue
-            # Create the study-event as a DRAFT (do NOT approve yet): FORM_REFs
-            # can only be attached while the ODM element is in Draft. OSB
-            # rejects `POST .../forms` on an approved element ("ODM element is
-            # not in Draft"), so the order must be create -> wire forms ->
-            # approve.
-            res = self.api.simple_post_to_api(
-                "/odms/study-events",
-                {
-                    "name": visit["name"][:200],
-                    "oid": event_oid,
-                    "description": f"Visit '{visit['name']}' imported from 360i study "
-                    f"{study_id}; FORM_REFs are the visit's scheduled forms.",
-                },
-            )
-            if res is None:
-                self.census.stop("study_event", event_oid, "study_event create failed")
-                continue
-            event_uid = res["uid"]
-            self.uid_map["study_events"][visit_ref] = event_uid
-            self.census.created.append({"kind": "study_event", "ref": event_oid})
+                event_changed = any(
+                    existing.get(key) != value
+                    for key, value in event_body.items()
+                )
+                if event_changed:
+                    if (
+                        self.api.simple_post_to_api(
+                            f"/odms/study-events/{event_uid}/versions", {}
+                        )
+                        is None
+                    ):
+                        self.census.stop(
+                            "study_event",
+                            event_oid,
+                            "study_event new-version (draft) failed",
+                        )
+                        continue
+                    patch_body = {
+                        **event_body,
+                        "uid": event_uid,
+                        "effective_date": existing.get("effective_date"),
+                        "retired_date": existing.get("retired_date"),
+                        "display_in_tree": existing.get("display_in_tree", True),
+                        "change_description": "360i re-import: event changed",
+                    }
+                    if (
+                        self.api.patch_to_api(
+                            patch_body, "/odms/study-events"
+                        )
+                        is None
+                    ):
+                        self.census.stop(
+                            "study_event", event_oid, "study_event patch failed"
+                        )
+                        continue
+                    event_state = "patched"
+                    self.census.updated.append(
+                        {"kind": "study_event", "ref": event_oid}
+                    )
+                else:
+                    event_state = "unchanged"
+                    self.census.unchanged.append(
+                        {"kind": "study_event", "ref": event_oid}
+                    )
+            else:
+                # Create as Draft; FORM_REFs attach only before approval.
+                res = self.api.simple_post_to_api(
+                    "/odms/study-events", event_body
+                )
+                if res is None:
+                    self.census.stop(
+                        "study_event", event_oid, "study_event create failed"
+                    )
+                    continue
+                event_uid = res["uid"]
+                self.uid_map["study_events"][visit_ref] = event_uid
+                self.census.created.append(
+                    {"kind": "study_event", "ref": event_oid}
+                )
+                event_state = "created"
 
             form_refs = []
             for assignment in sorted(
@@ -1268,15 +2956,19 @@ class Import360i(BaseImporter):
                         "collection_exception_condition_oid": None,
                     }
                 )
-            if form_refs:
-                self.api.simple_post_to_api(
-                    f"/odms/study-events/{event_uid}/forms", form_refs
-                )
+            if _sync_refs(
+                "study_event_forms",
+                "/odms/study-events",
+                event_uid,
+                event_oid,
+                form_refs,
+                existing,
+                event_state,
+                "forms",
+            ):
                 self.census.created.append(
                     {"kind": "form_refs", "ref": event_oid, "count": len(form_refs)}
                 )
-            # Approve the study-event AFTER its FORM_REFs are attached.
-            self.api.simple_approve(f"/odms/study-events/{event_uid}/approvals")
             # Assignment provenance (_derivedFrom, _conditionalNote, ...) has
             # no FORM_REF slot — carried, per assignment, never silently lost.
             derived = [
@@ -1334,12 +3026,14 @@ def main():
 
     metr = Metrics()
     importer = Import360i(metrics_inst=metr)
+    result = None
     try:
-        importer.run(study_id=args.study)
+        result = importer.run(study_id=args.study)
     finally:
         importer.db.close()
     metr.print()
+    return 0 if result and result.get("status") == "succeeded" else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

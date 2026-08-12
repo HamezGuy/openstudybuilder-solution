@@ -1,0 +1,40 @@
+services:
+  database:
+    image: "${DATABASE_IMAGE:?Set immutable DATABASE_IMAGE}"
+    restart: unless-stopped
+
+  api:
+    image: "${API_IMAGE:?Set immutable API_IMAGE}"
+    restart: unless-stopped
+
+  consumerapi:
+    image: "${API_IMAGE:?Set immutable API_IMAGE}"
+    restart: unless-stopped
+
+  extensionsapi:
+    image: "${API_IMAGE:?Set immutable API_IMAGE}"
+    restart: unless-stopped
+
+  frontend:
+    image: "${FRONTEND_IMAGE:?Set immutable FRONTEND_IMAGE}"
+    restart: unless-stopped
+
+  documentation:
+    image: "${DOCUMENTATION_IMAGE:?Set immutable DOCUMENTATION_IMAGE}"
+    restart: unless-stopped
+
+  neodash:
+    image: "${NEODASH_IMAGE:?Set immutable NEODASH_IMAGE}"
+    restart: unless-stopped
+    # NeoDash runs only as a private, optional static tool in production.
+    # Never emit the Neo4j service credential into browser-readable config.
+    environment:
+      ssoEnabled: "false"
+      ssoDiscoveryUrl: ""
+      standalone: "false"
+      standaloneAllowLoad: "false"
+      standaloneProtocol: ""
+      standaloneHost: ""
+      standalonePort: ""
+      standaloneUsername: ""
+      standalonePassword: ""

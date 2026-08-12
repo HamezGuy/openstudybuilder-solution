@@ -1,13 +1,11 @@
 # pylint: disable=no-member
-from typing import Mapping
+from typing import Any, Mapping
 
 import bs4
 import docx
 import pytest
 from docx.enum.style import WD_STYLE_TYPE
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from pyrate_limiter import Any
-
 from clinical_mdr_api.services.utils.docx_builder import DocxBuilder
 from clinical_mdr_api.services.utils.table_f import (
     Ref,

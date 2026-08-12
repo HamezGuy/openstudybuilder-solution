@@ -233,8 +233,16 @@ class Auth:
             azp=access_token_claims.azp or "",
             oid=access_token_claims.oid or "",
             name=access_token_claims.name or "",
-            username=access_token_claims.preferred_username or "",
-            email=access_token_claims.preferred_username or "",
+            username=(
+                access_token_claims.username
+                or access_token_claims.preferred_username
+                or ""
+            ),
+            email=(
+                access_token_claims.email
+                or access_token_claims.preferred_username
+                or ""
+            ),
             roles=access_token_claims.roles,
         )
         self.jwt_claims = jwt_claims

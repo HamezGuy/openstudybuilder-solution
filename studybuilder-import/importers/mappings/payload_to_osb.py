@@ -44,6 +44,15 @@ X360I_ATTRIBUTES = [
     {"name": "studyId", "compatible_types": ["FormDef"], "data_type": "string"},
     {"name": "buildHash", "compatible_types": ["FormDef"], "data_type": "string"},
     {"name": "ext", "compatible_types": ["FormDef", "ItemGroupDef", "ItemDef"], "data_type": "string"},
+    # Exact source objects are the closed-loop carrier. `ext` contains only
+    # properties which Leg A did not map first-class; `source` also preserves
+    # handled values (option codes, original refKeys, null-vs-default, etc.) so
+    # Leg C can prove and restore byte-semantic parity after an OSB round trip.
+    {"name": "source", "compatible_types": ["FormDef", "ItemDef"], "data_type": "string"},
+    # One deterministic form carries the non-structural StudyBundle envelope:
+    # study metadata, tasks, provenance, narrative, evidence, and build census.
+    # This keeps OSB as the system of record without making Leg C read Postgres.
+    {"name": "bundleMeta", "compatible_types": ["FormDef"], "data_type": "string"},
     # Content sha of the last-imported concept body — the upsert's
     # content-compare reads it back from OSB state so an unchanged concept is
     # not version-churned on re-import (no dependency on the payload hash).
@@ -112,6 +121,368 @@ def study_acronym_for(payload):
     name = (study.get("name") or "STUDY").strip()
     cleaned = re.sub(r"[^A-Za-z0-9]+", "", name)[:12].upper()
     return cleaned or "STUDY"
+
+
+PURPOSE_LEVEL_NAMES = {
+    "objective": {
+        "PRIMARY": "Primary Objective",
+        "SECONDARY": "Secondary Objective",
+        "EXPLORATORY": "Exploratory Objective",
+    },
+    "endpoint": {
+        "PRIMARY": "Primary Outcome Measure",
+        "SECONDARY": "Secondary Outcome Measure",
+        "EXPLORATORY": "Exploratory Outcome Measure",
+        "ADDITIONAL": "Additional Outcome Measure",
+    },
+    "criterion": {
+        "INCLUSION": "Inclusion Criteria",
+        "EXCLUSION": "Exclusion Criteria",
+    },
+}
+
+
+FLOWCHART_GROUP_BY_CDASH_DOMAIN = {
+    "AE": "SAFETY",
+    "CM": "SAFETY",
+    "EG": "SAFETY",
+    "ECG": "SAFETY",
+    "LB": "SAFETY",
+    "VS": "SAFETY",
+    "DM": "SUBJECT RELATED INFORMATION",
+    "DS": "SUBJECT RELATED INFORMATION",
+    "MH": "SUBJECT RELATED INFORMATION",
+    "PC": "PHARMACOKINETICS",
+    "PK": "PHARMACOKINETICS",
+    "PP": "PHARMACOKINETICS",
+    "PD": "PHARMACODYNAMICS",
+}
+
+# Exact normalized source labels only. This is deliberately not substring/fuzzy
+# classification: a row that does not state one of these semantics remains a
+# blocker rather than being pushed into a generic SoA bucket.
+FLOWCHART_GROUP_BY_ACTIVITY_NAME = {
+    "admission and discharge": "SUBJECT RELATED INFORMATION",
+    "demographics": "SUBJECT RELATED INFORMATION",
+    "medical history": "SUBJECT RELATED INFORMATION",
+    "physical exam": "SUBJECT RELATED INFORMATION",
+    "physical examination": "SUBJECT RELATED INFORMATION",
+    "randomization": "SUBJECT RELATED INFORMATION",
+    "study termination": "SUBJECT RELATED INFORMATION",
+    "adverse event": "SAFETY",
+    "adverse events": "SAFETY",
+    "concomitant medication": "SAFETY",
+    "concomitant medications": "SAFETY",
+    "ecg": "SAFETY",
+    "pregnancy test": "SAFETY",
+    "urinalysis": "SAFETY",
+    "vital signs": "SAFETY",
+    "blood sample for pk": "PHARMACOKINETICS",
+    "urine collection": "PHARMACODYNAMICS",
+}
+
+
+def semantic_identity(value):
+    """Case/spacing/punctuation-insensitive identity, never fuzzy similarity."""
+    return re.sub(r"[^a-z0-9]+", " ", str(value or "").casefold()).strip()
+
+
+def _flowchart_group_name(activity):
+    domain = str(activity.get("cdashDomain") or "").strip().upper()
+    if domain in FLOWCHART_GROUP_BY_CDASH_DOMAIN:
+        return FLOWCHART_GROUP_BY_CDASH_DOMAIN[domain]
+    category = str(activity.get("category") or "").strip().upper()
+    if category in set(FLOWCHART_GROUP_BY_CDASH_DOMAIN.values()):
+        return category
+    return FLOWCHART_GROUP_BY_ACTIVITY_NAME.get(semantic_identity(activity.get("name")))
+
+
+def native_soa_plan(payload, library_activities):
+    """Resolve a payload SoA to governed OSB activity selections and schedules.
+
+    Only one Final library activity with the exact normalized source name may
+    map. Drafts, partial names and ambiguous exact matches are explicit blockers.
+    The function performs no API calls and never creates library concept ids.
+    """
+    section = payload.get("scheduleOfActivities")
+    if section is None:
+        return None
+    reconciliation = section.get("reconciliation") or {}
+    source_visits = list(section.get("visits") or [])
+    source_activities = list(section.get("activities") or [])
+    source_schedules = list(section.get("schedules") or [])
+    if reconciliation.get("balanced") is not True:
+        raise ValueError("OSB_NATIVE_SOA_RECONCILIATION_UNBALANCED")
+    expected = {
+        "sourceVisits": len(source_visits),
+        "sourceActivities": len(source_activities),
+        "sourceScheduleCells": len(source_schedules),
+    }
+    for key, count in expected.items():
+        if reconciliation.get(key) != count:
+            raise ValueError(f"OSB_NATIVE_SOA_{key.upper()}_COUNT_MISMATCH")
+    joined_visits = sum(1 for visit in source_visits if visit.get("payloadVisitRef"))
+    unjoined_visit_ids = [
+        visit.get("sourceVisitId")
+        for visit in source_visits
+        if not visit.get("payloadVisitRef")
+    ]
+    joined_schedules = sum(
+        1 for schedule in source_schedules if schedule.get("payloadVisitRef")
+    )
+    if reconciliation.get("joinedVisits") != joined_visits:
+        raise ValueError("OSB_NATIVE_SOA_JOINED_VISIT_COUNT_MISMATCH")
+    if reconciliation.get("unjoinedVisitIds") != unjoined_visit_ids:
+        raise ValueError("OSB_NATIVE_SOA_UNJOINED_VISIT_IDS_MISMATCH")
+    if reconciliation.get("joinedScheduleCells") != joined_schedules:
+        raise ValueError("OSB_NATIVE_SOA_JOINED_SCHEDULE_COUNT_MISMATCH")
+    if reconciliation.get("unjoinedScheduleCells") != len(source_schedules) - joined_schedules:
+        raise ValueError("OSB_NATIVE_SOA_UNJOINED_SCHEDULE_COUNT_MISMATCH")
+
+    activity_by_ref = {}
+    for activity in source_activities:
+        ref = str(activity.get("refKey") or "").strip()
+        name = str(activity.get("name") or "").strip()
+        if not ref or ref in activity_by_ref or not name:
+            raise ValueError(f"OSB_NATIVE_SOA_ACTIVITY_INVALID:{ref or '?'}")
+        activity_by_ref[ref] = activity
+    visit_by_source_id = {}
+    for visit in source_visits:
+        source_id = str(visit.get("sourceVisitId") or "").strip()
+        if not source_id or source_id in visit_by_source_id:
+            raise ValueError(f"OSB_NATIVE_SOA_VISIT_INVALID:{source_id or '?'}")
+        visit_by_source_id[source_id] = visit
+
+    final_by_name = {}
+    for concept in library_activities or []:
+        if str(concept.get("status") or "").casefold() != "final":
+            continue
+        key = semantic_identity(concept.get("name"))
+        if key:
+            final_by_name.setdefault(key, []).append(concept)
+
+    mapped = []
+    blocked = []
+    mapped_refs = set()
+    ref_by_activity_uid = {}
+    for ref, activity in activity_by_ref.items():
+        matches = final_by_name.get(semantic_identity(activity["name"]), [])
+        unique = {match.get("uid"): match for match in matches if match.get("uid")}
+        if len(unique) != 1:
+            blocked.append(
+                {
+                    "kind": "activity",
+                    "ref": ref,
+                    "reason": (
+                        "no unique Final exact-normalized OSB Activity match"
+                        if not unique
+                        else "multiple Final exact-normalized OSB Activity matches"
+                    ),
+                }
+            )
+            continue
+        flowchart_group_name = _flowchart_group_name(activity)
+        if flowchart_group_name is None:
+            blocked.append(
+                {
+                    "kind": "activity",
+                    "ref": ref,
+                    "reason": "no deterministic Flowchart Group mapping from source semantics",
+                }
+            )
+            continue
+        concept = next(iter(unique.values()))
+        prior_ref = ref_by_activity_uid.get(concept["uid"])
+        if prior_ref is not None:
+            blocked.append(
+                {
+                    "kind": "activity",
+                    "ref": ref,
+                    "reason": (
+                        "multiple source activity rows resolve to one OSB Activity "
+                        f"already mapped by {prior_ref}"
+                    ),
+                }
+            )
+            continue
+        groupings = list(concept.get("activity_groupings") or [])
+        # A grouping is optional on StudySelectionActivity. Reuse it only when
+        # unique; selecting one of several would invent an unreviewed hierarchy.
+        grouping = groupings[0] if len(groupings) == 1 else {}
+        mapped.append(
+            {
+                "ref": ref,
+                "name": activity["name"],
+                "activity_uid": concept["uid"],
+                "activity_name": concept.get("name"),
+                "flowchart_group_name": flowchart_group_name,
+                "activity_group_uid": grouping.get("activity_group_uid"),
+                "activity_subgroup_uid": grouping.get("activity_subgroup_uid"),
+            }
+        )
+        mapped_refs.add(ref)
+        ref_by_activity_uid[concept["uid"]] = ref
+
+    schedules = []
+    seen_source_cells = set()
+    for index, schedule in enumerate(source_schedules):
+        activity_ref = str(schedule.get("activityRef") or "").strip()
+        source_visit_id = str(schedule.get("sourceVisitId") or "").strip()
+        if activity_ref not in activity_by_ref:
+            raise ValueError(f"OSB_NATIVE_SOA_SCHEDULE_ACTIVITY_MISSING:{activity_ref or index}")
+        if source_visit_id not in visit_by_source_id:
+            raise ValueError(f"OSB_NATIVE_SOA_SCHEDULE_VISIT_MISSING:{source_visit_id or index}")
+        source_cell = (activity_ref, source_visit_id)
+        if source_cell in seen_source_cells:
+            raise ValueError(
+                f"OSB_NATIVE_SOA_SCHEDULE_DUPLICATE:{activity_ref}::{source_visit_id}"
+            )
+        seen_source_cells.add(source_cell)
+        payload_visit_ref = schedule.get("payloadVisitRef")
+        if not payload_visit_ref:
+            blocked.append(
+                {
+                    "kind": "activity_schedule",
+                    "ref": f"{activity_ref}::{source_visit_id}",
+                    "reason": "source SoA visit did not verify against a payload visit",
+                }
+            )
+            continue
+        if activity_ref not in mapped_refs:
+            continue  # the activity-level blocker already accounts for these cells
+        schedules.append(
+            {
+                "ref": f"{activity_ref}::{payload_visit_ref}",
+                "activity_ref": activity_ref,
+                "payload_visit_ref": payload_visit_ref,
+                "source_visit_id": source_visit_id,
+                "value": schedule.get("value"),
+                "required": schedule.get("required") is True,
+                "conditional": schedule.get("conditional"),
+                "footnote_refs": list(schedule.get("footnoteRefs") or []),
+            }
+        )
+    return {
+        "activities": mapped,
+        "schedules": schedules,
+        "blocked": blocked,
+        "source_activity_count": len(source_activities),
+        "source_schedule_count": len(source_schedules),
+    }
+
+
+def study_purpose_plan(payload):
+    """Validate and dependency-order native OSB Study Purpose records.
+
+    The payload is the authority for reviewed text and relationships. This
+    mapper never derives an endpoint from an ODM item or criteria from the
+    aggregate eligibility prose carrier.
+    """
+    purpose = payload.get("studyPurpose")
+    if purpose is None:
+        return None
+    reconciliation = purpose.get("reconciliation") or {}
+    if reconciliation.get("balanced") is not True:
+        raise ValueError("OSB_STUDY_PURPOSE_RECONCILIATION_UNBALANCED")
+
+    seen = {"objective": set(), "endpoint": set(), "criterion": set()}
+    result = {"objectives": [], "endpoints": [], "criteria": [], "blockers": []}
+
+    def common(kind, item):
+        ref = str(item.get("refKey") or "").strip()
+        text = str(item.get("text") or "").strip()
+        source_ids = item.get("sourceAssertionIds") or []
+        if not ref or ref in seen[kind] or not text or not source_ids:
+            raise ValueError(f"OSB_STUDY_PURPOSE_{kind.upper()}_INVALID:{ref or '?'}")
+        seen[kind].add(ref)
+        return ref, text, list(source_ids)
+
+    objective_aliases = {}
+    for item in purpose.get("objectives") or []:
+        ref, text, source_ids = common("objective", item)
+        level = str(item.get("level") or "").upper()
+        level_name = PURPOSE_LEVEL_NAMES["objective"].get(level)
+        if level_name is None:
+            raise ValueError(f"OSB_STUDY_PURPOSE_OBJECTIVE_LEVEL_INVALID:{ref}")
+        aliases = [str(value) for value in item.get("aliasRefKeys") or []]
+        for alias in [ref, *aliases]:
+            if alias in objective_aliases and objective_aliases[alias] != ref:
+                raise ValueError(f"OSB_STUDY_PURPOSE_OBJECTIVE_ALIAS_DUPLICATE:{alias}")
+            objective_aliases[alias] = ref
+        result["objectives"].append(
+            {
+                "ref": ref,
+                "text": text,
+                "level": level,
+                "level_name": level_name,
+                "source_assertion_ids": source_ids,
+                "evidence": list(item.get("evidence") or []),
+            }
+        )
+
+    for item in purpose.get("endpoints") or []:
+        ref, text, source_ids = common("endpoint", item)
+        level = str(item.get("level") or "").upper()
+        level_name = PURPOSE_LEVEL_NAMES["endpoint"].get(level)
+        objective_ref = objective_aliases.get(str(item.get("objectiveRef") or ""))
+        if level_name is None:
+            raise ValueError(f"OSB_STUDY_PURPOSE_ENDPOINT_LEVEL_INVALID:{ref}")
+        if objective_ref is None:
+            raise ValueError(f"OSB_STUDY_PURPOSE_ENDPOINT_OBJECTIVE_MISSING:{ref}")
+        result["endpoints"].append(
+            {
+                "ref": ref,
+                "text": text,
+                "level": level,
+                "level_name": level_name,
+                "objective_ref": objective_ref,
+                "timeframe": item.get("timeframe"),
+                "source_assertion_ids": source_ids,
+                "evidence": list(item.get("evidence") or []),
+            }
+        )
+
+    for item in purpose.get("criteria") or []:
+        ref, text, source_ids = common("criterion", item)
+        criterion_type = str(item.get("type") or "").upper()
+        type_name = PURPOSE_LEVEL_NAMES["criterion"].get(criterion_type)
+        if type_name is None:
+            raise ValueError(f"OSB_STUDY_PURPOSE_CRITERION_TYPE_INVALID:{ref}")
+        result["criteria"].append(
+            {
+                "ref": ref,
+                "text": text,
+                "type": criterion_type,
+                "type_name": type_name,
+                "category": item.get("category"),
+                "source_assertion_ids": source_ids,
+                "evidence": list(item.get("evidence") or []),
+            }
+        )
+
+    result["blockers"] = list(purpose.get("blockers") or [])
+    planned_assertions = {
+        source_id
+        for section in ("objectives", "endpoints", "criteria")
+        for item in result[section]
+        for source_id in item["source_assertion_ids"]
+    }
+    blocked_assertions = {
+        source_id
+        for blocker in result["blockers"]
+        for source_id in blocker.get("sourceAssertionIds") or []
+    }
+    if planned_assertions & blocked_assertions:
+        raise ValueError("OSB_STUDY_PURPOSE_ASSERTION_DOUBLE_DISPOSITION")
+    if len(planned_assertions) != reconciliation.get("mappedAssertions"):
+        raise ValueError("OSB_STUDY_PURPOSE_MAPPED_ASSERTION_COUNT_MISMATCH")
+    if len(blocked_assertions) != reconciliation.get("blockedAssertions"):
+        raise ValueError("OSB_STUDY_PURPOSE_BLOCKED_ASSERTION_COUNT_MISMATCH")
+    if len(planned_assertions | blocked_assertions) != reconciliation.get(
+        "sourceAssertions"
+    ):
+        raise ValueError("OSB_STUDY_PURPOSE_SOURCE_ASSERTION_COUNT_MISMATCH")
+    return result
 
 
 def epochs_plan(payload):
@@ -253,6 +624,7 @@ def visit_plan(payload, epoch_uid_by_ref):
             # Back-compat single value = the first candidate (tests/readers).
             "visit_type_name": mapping["visit_type_names"][0],
             "epoch_ref": v.get("epochRef"),
+            "study_epoch_uid": epoch_uid_by_ref.get(v["refKey"]),
             "refKey": v["refKey"],
             "is_global_anchor_visit": is_anchor,
             "time_value": time_value,
@@ -376,6 +748,64 @@ def vendor_ext_value(entity):
     return json.dumps(ext, sort_keys=True) if ext else None
 
 
+def _canonical_json(value):
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def source_form_value(payload, form_ref):
+    """Exact source form, including fields for one bounded lossless carrier."""
+    for form in (
+        payload.get("sourceBundle", {}).get("forms", {}).get("forms", [])
+    ):
+        if form.get("refKey") == form_ref:
+            return _canonical_json(form)
+    return None
+
+
+def source_field_value(payload, form_ref, field_ref):
+    """Exact source field for one form placement (compound identity)."""
+    for form in (
+        payload.get("sourceBundle", {}).get("forms", {}).get("forms", [])
+    ):
+        if form.get("refKey") != form_ref:
+            continue
+        for field in form.get("fields", []):
+            if field.get("refKey") == field_ref:
+                return _canonical_json(field)
+    return None
+
+
+def bundle_meta_value(payload):
+    """Source StudyBundle except form rows, which ride their own FormDefs."""
+    source = payload.get("sourceBundle", {})
+    meta = {key: value for key, value in source.items() if key != "forms"}
+    forms_envelope = source.get("forms")
+    if isinstance(forms_envelope, dict):
+        forms_meta = {
+            key: value for key, value in forms_envelope.items() if key != "forms"
+        }
+        if forms_meta:
+            meta["forms"] = forms_meta
+    return _canonical_json(meta) if meta else None
+
+
+def placement_item_key(group_ref, item_ref):
+    """Stable uid-map key for an item placement, not merely its data element."""
+    return f"{group_ref}::{item_ref}"
+
+
+def placement_item_oid(item_ref, group_ref, owner_group_ref):
+    """OSB permits one group per ItemDef, while EDC permits repeat placements.
+
+    The canonical owner keeps the original OID. Every additional placement gets
+    a deterministic clone OID; its x360i:source/refKey still restores the exact
+    EDC field identity on export.
+    """
+    if group_ref == owner_group_ref:
+        return item_ref
+    return f"{item_ref}__X360I_PL_{stable_suffix(group_ref, 12)}"
+
+
 # ----------------------------------------------------------------------------
 # Upsert diff — pure classification of desired-vs-current into an action plan.
 #
@@ -407,6 +837,7 @@ VISIT_COMPARE_FIELDS = (
     "max_window",
     "visit_class",
     "visit_type_name",
+    "study_epoch_uid",
     "is_global_anchor_visit",
     "description",
 )
@@ -546,7 +977,7 @@ def odm_concept_diff(desired_by_ref, current_by_ref):
 
 
 def item_group_ownership(odm):
-    """Assign every ODM item to exactly ONE item-group.
+    """Choose the canonical placement of every repeated ODM item.
 
     OSB enforces one-item-one-group: an OdmItem may be connected to a single
     OdmItemGroup, and the item-ref batch POST is atomic — a single already-claimed
@@ -557,14 +988,16 @@ def item_group_ownership(odm):
     makes OSB reject its entire batch, silently dropping even the items that were
     UNIQUE to that group (the group ends up empty).
 
-    This picks each item's canonical owner deterministically and returns the
-    plan the importer executes:
+    This picks each item's canonical owner deterministically. The importer keeps
+    the owner's original ItemDef and creates one deterministic ItemDef clone for
+    every other placement, so all EDC form fields remain visible in OSB and
+    round-trip instead of being merely census-carried:
 
-      owner   {itemRef: groupRef}         -- the ONE group each item wires into
-      wired   {groupRef: [itemRef, ...]}  -- items to POST per group, payload order
-      carried [{"item": itemRef,          -- duplicate (item, group) references the
-                "group": groupRef,          importer must NOT re-post; censused so the
-                "owner": ownerGroupRef}]    no-data-loss guarantee stays honest
+      owner   {itemRef: groupRef}         -- group using the base ItemDef
+      wired   {groupRef: [itemRef, ...]}  -- base placements, payload order
+      duplicates [{"item": itemRef,       -- placements using cloned ItemDefs
+                   "group": groupRef,
+                   "owner": ownerGroupRef}]
 
     Ownership rule (deterministic, favours domain forms over catch-alls): among
     the groups that list an item, prefer the one with the FEWEST shared items
@@ -601,7 +1034,7 @@ def item_group_ownership(odm):
         )
 
     wired = {}
-    carried = []
+    duplicates = []
     for form in odm.get("forms", []):
         for group in form.get("itemGroups", []):
             gref = group["refKey"]
@@ -610,10 +1043,10 @@ def item_group_ownership(odm):
                 if owner[iref] == gref:
                     wired.setdefault(gref, []).append(iref)
                 else:
-                    carried.append(
+                    duplicates.append(
                         {"item": iref, "group": gref, "owner": owner[iref]}
                     )
-    return {"owner": owner, "wired": wired, "carried": carried}
+    return {"owner": owner, "wired": wired, "duplicates": duplicates}
 
 
 def content_sha(body):

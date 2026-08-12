@@ -1,0 +1,14 @@
+.git
+**/.git
+.env*
+**/.env*
+!studybuilder-import/.env.import
+**/node_modules
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.venv
+**/*.log
+.cline-live-test
+.edc-drop

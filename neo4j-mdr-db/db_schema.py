@@ -246,6 +246,10 @@ CONSTRAINTS = [
     ("FootnotePreInstanceRoot", "uid", CONSTRAINT_TYPE_NODE_KEY),
     ("OdmVendorElementRoot", "uid", CONSTRAINT_TYPE_NODE_KEY),
     ("DataSupplierRoot", "uid", CONSTRAINT_TYPE_NODE_KEY),
+    ("OsbMappingContextSnapshot", "context_hash", CONSTRAINT_TYPE_NODE_KEY),
+    ("OsbProposalReview", "proposal_hash", CONSTRAINT_TYPE_NODE_KEY),
+    ("OsbProposalReviewObject", "object_key", CONSTRAINT_TYPE_NODE_KEY),
+    ("OsbProposalReviewDecision", "decision_id", CONSTRAINT_TYPE_NODE_KEY),
     ("ComplexityBurden", "burden_id", CONSTRAINT_TYPE_UNIQUE),
     ("CTTermNameRoot", "uid", CONSTRAINT_TYPE_UNIQUE),
 ]

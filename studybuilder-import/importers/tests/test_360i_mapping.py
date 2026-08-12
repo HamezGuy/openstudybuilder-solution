@@ -24,6 +24,21 @@ def _payload(**over):
             "registryIdentifiers": {},
             "attributes": {"sponsor": "Widget Pharma"},
         },
+        "studyPurpose": {
+            "objectives": [],
+            "endpoints": [],
+            "criteria": [],
+            "blockers": [],
+            "reconciliation": {
+                "sourceAssertions": 0,
+                "mappedAssertions": 0,
+                "blockedAssertions": 0,
+                "objectives": 0,
+                "endpoints": 0,
+                "criteria": 0,
+                "balanced": True,
+            },
+        },
         "epochs": [
             {"name": "Screening", "ordinal": 1, "visitRefs": ["V_SCREEN"]},
             {"name": "Treatment Period", "ordinal": 2, "visitRefs": ["V_BASE", "V_W4"]},
@@ -70,6 +85,69 @@ def test_study_number_is_deterministic_numeric():
     n1 = mapping.study_number_for(p)
     assert n1 == mapping.study_number_for(p)
     assert n1.isdigit()
+
+
+def test_study_purpose_plan_preserves_dependency_links_and_assertion_balance():
+    purpose = {
+        "objectives": [
+            {
+                "refKey": "OBJ-P1",
+                "aliasRefKeys": ["OBJ-1"],
+                "text": "Compare treatment A with treatment B.",
+                "level": "PRIMARY",
+                "sourceAssertionIds": ["objective-a", "objective-b"],
+                "evidence": [],
+            }
+        ],
+        "endpoints": [
+            {
+                "refKey": "EP-P1",
+                "aliasRefKeys": [],
+                "objectiveRef": "OBJ-1",
+                "text": "Total insulin used.",
+                "level": "PRIMARY",
+                "timeframe": "During the final 10 days",
+                "sourceAssertionIds": ["endpoint-a"],
+                "evidence": [],
+            }
+        ],
+        "criteria": [
+            {
+                "refKey": "I-01",
+                "aliasRefKeys": [],
+                "text": "Adults aged 18 years and older.",
+                "type": "INCLUSION",
+                "sourceAssertionIds": ["criterion-a"],
+                "evidence": [],
+            }
+        ],
+        "blockers": [
+            {
+                "kind": "endpoint",
+                "refKey": "EP-X",
+                "code": "OSB_ENDPOINT_OBJECTIVE_LINK_REVIEW_REQUIRED",
+                "detail": "No reviewed objective link.",
+                "sourceAssertionIds": ["endpoint-x"],
+            }
+        ],
+        "reconciliation": {
+            "sourceAssertions": 5,
+            "mappedAssertions": 4,
+            "blockedAssertions": 1,
+            "objectives": 1,
+            "endpoints": 1,
+            "criteria": 1,
+            "balanced": True,
+        },
+    }
+
+    plan = mapping.study_purpose_plan(_payload(studyPurpose=purpose))
+
+    assert plan["objectives"][0]["level_name"] == "Primary Objective"
+    assert plan["endpoints"][0]["objective_ref"] == "OBJ-P1"
+    assert plan["endpoints"][0]["level_name"] == "Primary Outcome Measure"
+    assert plan["criteria"][0]["type_name"] == "Inclusion Criteria"
+    assert plan["blockers"][0]["refKey"] == "EP-X"
 
 
 def test_stated_epochs_pass_through_without_scaffolding():
@@ -214,6 +292,21 @@ def test_visit_diff_changed_window_becomes_targeted_patch():
     assert "max_window" in patch["changed"]
     assert {e["ref"] for e in diff["unchanged"]} == {"V_SCREEN", "V_BASE"}
     assert diff["create"] == [] and diff["delete"] == []
+
+
+def test_visit_diff_changed_epoch_uid_becomes_targeted_patch():
+    p = _payload()
+    uids = {"V_SCREEN": "Visit_1", "V_BASE": "Visit_2", "V_W4": "Visit_3"}
+    old_epochs = {
+        "V_SCREEN": "StudyEpoch_old",
+        "V_BASE": "StudyEpoch_old",
+        "V_W4": "StudyEpoch_old",
+    }
+    current = _visit_current_from_plan(p, uids, old_epochs)
+    new_epochs = {ref: "StudyEpoch_new" for ref in old_epochs}
+    diff = mapping.visit_diff(p, current, new_epochs)
+    assert {entry["ref"] for entry in diff["patch"]} == set(uids)
+    assert all("study_epoch_uid" in entry["changed"] for entry in diff["patch"])
 
 
 def test_visit_diff_new_visit_creates_removed_visit_deletes():
@@ -430,12 +523,12 @@ def test_ownership_unique_catch_all_item_still_wires():
     assert plan["wired"]["G_AE"] == ["AETERM", "AESER"]
 
 
-def test_ownership_duplicate_reference_is_carried_not_wired():
+def test_ownership_duplicate_reference_gets_clone_placement():
     plan = mapping.item_group_ownership(_odm_two_groups())
-    # The duplicates (AETERM/AESER re-listed under the catch-all) are censused,
-    # never posted — so the no-data-loss accounting stays honest.
-    carried = plan["carried"]
-    assert {(c["item"], c["group"], c["owner"]) for c in carried} == {
+    # Every duplicate placement receives a deterministic cloned ItemDef; it is
+    # no longer merely censused while disappearing from that source form.
+    duplicates = plan["duplicates"]
+    assert {(c["item"], c["group"], c["owner"]) for c in duplicates} == {
         ("AETERM", "G_AAA_CATCH", "G_AE"),
         ("AESER", "G_AAA_CATCH", "G_AE"),
     }
@@ -454,3 +547,56 @@ def test_ownership_every_item_wired_exactly_once():
 def test_ownership_is_deterministic():
     odm = _odm_two_groups()
     assert mapping.item_group_ownership(odm) == mapping.item_group_ownership(odm)
+
+
+def test_placement_item_oid_clones_duplicates_but_preserves_source_ref():
+    owner_oid = mapping.placement_item_oid("AETERM", "G_AE", "G_AE")
+    clone_oid = mapping.placement_item_oid("AETERM", "G_AAA_CATCH", "G_AE")
+    assert owner_oid == "AETERM"
+    assert clone_oid.startswith("AETERM__X360I_PL_")
+    assert clone_oid == mapping.placement_item_oid(
+        "AETERM", "G_AAA_CATCH", "G_AE"
+    )
+    assert clone_oid != mapping.placement_item_oid("AETERM", "G_OTHER", "G_AE")
+
+
+def test_exact_source_carriers_preserve_study_form_and_field_data():
+    payload = _payload(
+        sourceBundle={
+            "formatVersion": "1.0",
+            "study": {"name": "WID-301", "sponsor": "Widget Pharma"},
+            "_provenance": {"build": "abc"},
+            "visits": [{"refKey": "V1", "name": "Visit 1"}],
+            "forms": {
+                "sourceStudyName": "WID-301",
+                "exportWarnings": ["none"],
+                "forms": [
+                    {
+                        "refKey": "F1",
+                        "name": "Form 1",
+                        "editChecks": [{"id": "EC1"}],
+                        "fields": [
+                            {
+                                "refKey": "X",
+                                "name": "Original field",
+                                "type": "select",
+                                "options": [{"label": "Yes", "value": "Y"}],
+                            }
+                        ],
+                    }
+                ]
+            },
+        }
+    )
+    assert '"sponsor":"Widget Pharma"' in mapping.bundle_meta_value(payload)
+    assert '"visits":[{"name":"Visit 1","refKey":"V1"}]' in mapping.bundle_meta_value(
+        payload
+    )
+    assert '"sourceStudyName":"WID-301"' in mapping.bundle_meta_value(payload)
+    assert '"exportWarnings":["none"]' in mapping.bundle_meta_value(payload)
+    assert '"fields"' not in mapping.bundle_meta_value(payload)
+    form_source = mapping.source_form_value(payload, "F1")
+    assert '"editChecks":[{"id":"EC1"}]' in form_source
+    assert '"fields":[{"name":"Original field"' in form_source
+    field_source = mapping.source_field_value(payload, "F1", "X")
+    assert '"value":"Y"' in field_source

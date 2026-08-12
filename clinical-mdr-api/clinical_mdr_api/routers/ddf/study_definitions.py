@@ -2,7 +2,8 @@ import re
 from pathlib import Path as PathFromPathLib
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Path, Request
+from fastapi import APIRouter, Path, Query, Request
+
 from fastapi.templating import Jinja2Templates
 
 from clinical_mdr_api.domain_repositories.study_selections.study_soa_repository import (
@@ -54,9 +55,18 @@ Possible errors:
 )
 def get_study(
     study_uid: Annotated[str, Path(description="The unique uid of the study.")],
+    study_value_version: Annotated[
+        str | None,
+        Query(
+            description="Optional explicit OSB study value version. All study selections are read at this same version."
+        ),
+    ] = None,
 ) -> dict[str, Any]:
     usdm_service = USDMService()
-    ddf_study_wrapper = usdm_service.get_by_uid(study_uid)
+    ddf_study_wrapper = usdm_service.get_by_uid(
+        study_uid, study_value_version=study_value_version
+    )
+
     return ddf_study_wrapper
 
 

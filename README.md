@@ -35,6 +35,33 @@ StudyBuilder consists of a few main components, that are all included as subdire
 
 Each directory contains a more detailed ReadMe for that component.
 
+## AccuraTrial Command Center deployment
+
+In the AccuraTrial platform, OpenStudyBuilder is a private, authenticated child
+application behind Command Center:
+
+- Command Center owns interactive login and issues five-minute RS256 tokens with
+  audience `accuratrial-openstudybuilder`.
+- OSB API/RBAC stays enabled; the Vue OAuth UI stays disabled to avoid a second
+  login. Browser API traffic must enter through the managed OSB origin so Command
+  Center can inject the audience token.
+- Native OSB, Neo4j, and NeoDash ports must not be publicly exposed.
+- The production override disables NeoDash standalone login and removes the
+  Neo4j username/password from its browser-readable configuration. Treat
+  NeoDash as an optional private administrative tool until a server-side,
+  Command Center-authorized database bridge is implemented.
+- Production configuration starts from `.env.production.example`.
+- Production starts from immutable images only:
+  `docker compose --env-file .env.production -f compose.yaml -f
+  compose.production.yaml up -d --no-build`.
+- `MAPPING_AUTHORITY_MODE=shadow` or `enforced` deliberately blocks the legacy
+  StudyBundleV1 EDC sender. Command Center's EDC-send action must remain disabled
+  until the governed native release package is implemented and validated.
+
+Never copy the EDC JWT signing secret into this repository. OSB trusts only
+Command Center's HTTPS discovery/JWKS endpoint; EDC imports use a separate,
+narrowly scoped `x-api-key`.
+
 The OpenStudyBuilder landscape has connected tools available. You can find the following:
 
 - [OpenStudyBuilder Word-Addin](https://github.com/NovoNordisk-OpenSource/openstudybuilder-word-addin) - a Microsoft Word Add-in to support the creation of clinical protocols, using the OpenStudyBuilder study definitions.
@@ -68,12 +95,13 @@ in a non administrator or root shell: `docker run hello-world`
 If this is not working see this link for Ubuntu rootless configuration:
 [Docker Rootless](https://docs.docker.com/engine/security/rootless/)
 
-For low-end systems, the database container may fail for low-on-memory 
-reasons. In that case, update the following values in `compose.yaml`
+The seeded database build defaults to a bounded 1/3 GiB heap and 1 GiB
+page-cache so it can complete in an 8 GiB Docker VM. A larger release builder
+can override these without editing Compose:
 ```
-        NEO4J_server_memory_heap_initial__size: "1G"
-        NEO4J_server_memory_heap_max__size: "1G"
-        NEO4J_server_memory_pagecache_size: "500M"
+NEO4J_BUILD_HEAP_INITIAL=2G
+NEO4J_BUILD_HEAP_MAX=4G
+NEO4J_BUILD_PAGECACHE=2G
 ```
 
 Mind that this will choke the performance of the Neo4j database,
@@ -91,15 +119,16 @@ memory=6GB
 See [Advanced settings configuration in WSL](https://docs.microsoft.com/en-us/windows/wsl/wsl-config)
 for all available options.
 
-Also on Windows installations where GIT for Windows is used to clone the repository, errors with correct line endings in the WSL engine can occure.  
+Git for Windows can translate line endings when files are checked out. The repository
+`.gitattributes` file forces Unix line endings for shell and AWK scripts used inside
+Linux containers, including the frontend Nginx entrypoint. A fresh checkout needs no
+global Git configuration. The effective rules can be checked with:
 
-to avoid this use either of these commands before the cloning of repository.
+```shell
+git check-attr eol -- studybuilder/config/nginx/sb-config.sh studybuilder/scripts/update-config.awk
+```
 
-`git config --global core.autocrlf input`
-
-`git config --global core.autocrlf false`
-
-See [Configuring Git to handle line endings](https://docs.github.com/en/get-started/getting-started-with-git/configuring-git-to-handle-line-endings?platform=windows) and [Resolving Git line ending issues in Docker containers](https://gist.github.com/jonlabelle/70a87e6871a1138ac3031f5e8e39f294)
+See [Configuring Git to handle line endings](https://docs.github.com/en/get-started/getting-started-with-git/configuring-git-to-handle-line-endings?platform=windows)
 for more information.
 
 ## Known Issues with Dockerfiles on ARM64 Architecture
@@ -150,6 +179,27 @@ docker compose build
 Building the Docker images may take 30 minutes or more to complete, 
 especially for the database image.
 
+The database build pins the seed tarball, runtime image, and APOC plugin to the
+same Neo4j release through `NEO4J_VERSION_PINNED` (default `2026.06.0`). Do not
+replace the runtime image with a floating `neo4j:enterprise` tag because Neo4j
+cannot open a store created by a newer kernel.
+
+The default project seed includes the two curated CDISC example studies and does
+not load the large `DummyStudy` fixture set. Developers who explicitly need those
+fixtures can opt in for a database image build:
+
+```shell
+INCLUDE_DUMMY_STUDIES=true docker compose build database
+```
+
+PowerShell equivalent:
+
+```powershell
+$env:INCLUDE_DUMMY_STUDIES = "true"
+docker compose build database
+Remove-Item Env:INCLUDE_DUMMY_STUDIES
+```
+
 
 ## Starting the services
 
@@ -198,6 +248,33 @@ OpenStudyBuilder-Solution-neodash-1         build-tools-neodash         "/docker
 - Neo4j database web client: <http://localhost:5001/browser/>
 
   The default username is `neo4j` and the default password is `changeme1234`
+
+## Running the governed Proposal V2 importer against the preview stack
+
+Build the importer image once:
+
+```shell
+docker compose -f studybuilder-import/compose.yaml build import
+```
+
+The override joins the importer to the root stack's Docker network and addresses
+the API as `http://api:5003`. Proposal V2 reads immutable Facts/outbox jobs,
+validates the pinned OSB mapping context, and hands itemized targets to OSB review:
+
+```shell
+docker compose \
+  -f studybuilder-import/compose.yaml \
+  -f studybuilder-import/compose.override.yaml \
+  run --rm import pipenv run import_osb_proposal_v2
+```
+
+The default external network is `opensourcebuilder_default`. If the root stack
+uses a different Compose project name, set `OSB_NETWORK_NAME` to its network name.
+Database credentials and tenant settings remain supplied through the importer's
+environment file or command environment; do not commit them. The former
+`import_360i` StudyBundleV1 carrier command is retired from runtime wiring. Its
+module and historical tables remain only for controlled forensic/migration work
+and require explicit unsafe-legacy opt-in when invoked directly.
 
 
 ## Stopping the services

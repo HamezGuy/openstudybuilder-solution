@@ -195,25 +195,41 @@ class ApiBinding:
         if response.ok:
             self.metrics.icrement(simple_path + "--POST")
             self.log.debug("POST %s %s", path, "success")
-            return response.json()
+            try:
+                return response.json()
+            except ValueError:
+                self.log.warning(
+                    "POST %s returned HTTP %s with a non-JSON success body",
+                    path,
+                    response.status_code,
+                )
+                self.metrics.icrement(simple_path + "--ERROR")
+                return None
 
         self.log.debug("POST %s", path)
-        if "message" in response.json() and (
-            "already exist" in response.json()["message"]
-            or "all ready" in response.json()["message"]
-            or "Duplicate template" in response.json()["message"]
-            or "There is already" in response.json()["message"]
+        try:
+            error_body = response.json()
+        except ValueError:
+            error_body = {}
+        message = str(error_body.get("message") or "")
+        if message and (
+            "already exist" in message
+            or "all ready" in message
+            or "Duplicate template" in message
+            or "There is already" in message
         ):
-            self.log.warning(response.json()["message"])
+            self.log.warning(message)
             self.metrics.icrement(simple_path + "--AlreadyExists")
-        elif (
-            "message" in response.json()
-            and "no approved objective" in response.json()["message"]
-        ):
-            self.log.warning(response.json()["message"])
+        elif message and "no approved objective" in message:
+            self.log.warning(message)
             self.metrics.icrement(simple_path + "--NoObjective")
         else:
-            self.log.warning(response.text)
+            self.log.warning(
+                "POST %s failed (HTTP %s): %s",
+                path,
+                response.status_code,
+                response.text,
+            )
             self.metrics.icrement(simple_path + "--ERROR")
         return None
 
@@ -261,23 +277,27 @@ class ApiBinding:
             self.metrics.icrement(short_path + "--ERROR")
         return None
 
-    def patch_to_api(self, body, path):
+    def patch_to_api(self, body, path, params=None):
         url = path_join(self.api_base_url, path, body["uid"])
-        response = requests.patch(url, headers=self.api_headers, json=body)
+        response = requests.patch(
+            url, headers=self.api_headers, json=body, params=params
+        )
         if response.ok:
             self.metrics.icrement(path + "--Patch")
             self.log.info("Patch %s %s", path, "success")
             return response.json()
 
-        self.log.warning("Patch %s %s", path, "error")
-        if (
-            "message" in response.json().keys()
-            and "already exists" in response.json()["message"]
-        ):
-            self.log.warning(response.json()["message"])
+        self.log.warning("Patch %s error (HTTP %s)", path, response.status_code)
+        try:
+            error = response.json()
+        except requests.exceptions.JSONDecodeError:
+            error = {}
+        message = error.get("message", "")
+        if "already exists" in message:
+            self.log.warning(message)
             self.metrics.icrement(path + "--AlreadyExists")
         else:
-            self.log.warning(response.text)
+            self.log.warning(response.text or "<empty response body>")
             self.metrics.icrement(path + "--Patch-ERROR")
         return None
 

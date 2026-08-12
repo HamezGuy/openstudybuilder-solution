@@ -127,31 +127,22 @@ def test_get_users(api_client):
     assert response.json()[0]["username"] == "unknown-user@example.com"
 
 
-def test_patch_user(api_client):
-    """Test PATCH /admin/users/{user_id}"""
+def test_patch_user_is_rejected_for_authoritative_identity_projection(api_client):
+    """OSB must not become a second authority for shared identity fields."""
     user_id = "test-user-" + str(random.randint(1000, 9999))
     TestUtils.create_dummy_user(user_id=user_id)
-    new_username = "new_username"
-
     response = api_client.patch(
-        f"/admin/users/{user_id}", json={"username": new_username}
+        f"/admin/users/{user_id}", json={"username": "new_username"}
     )
-    assert_response_status_code(response, 200)
-    assert response.json()["username"] == new_username
+    assert_response_status_code(response, 409)
+    assert "identity projection" in response.json()["message"].lower()
 
     response = api_client.get("/admin/users")
     assert_response_status_code(response, 200)
     for item in response.json():
         if item["user_id"] == user_id:
-            assert item["username"] == new_username
+            assert item["username"] == "unknown-user@example.com"
             break
-
-    # Revert username change - we have mysterious test isolation issues
-    response = api_client.patch(
-        f"/admin/users/{user_id}", json={"username": "unknown-user@example.com"}
-    )
-    assert_response_status_code(response, 200)
-    assert response.json()["username"] == "unknown-user@example.com"
 
 
 def test_complexity_score_post_burdens(api_client):

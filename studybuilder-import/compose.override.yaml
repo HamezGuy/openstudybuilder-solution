@@ -10,5 +10,5 @@ services:
 
 networks:
   osb:
-    name: openstudybuilder-solution_default
+    name: ${OSB_NETWORK_NAME:-opensourcebuilder_default}
     external: true

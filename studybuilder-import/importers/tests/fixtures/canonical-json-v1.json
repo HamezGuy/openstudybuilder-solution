@@ -1,0 +1,33 @@
+{
+  "canonicalizationVersion": "canonical-json/1.0",
+  "vectors": [
+    {
+      "name": "utf16-key-order",
+      "input": { "": "bmp-private-use", "𐀀": "supplementary" },
+      "canonical": "{\"𐀀\":\"supplementary\",\"\":\"bmp-private-use\"}"
+    },
+    {
+      "name": "combining-characters-are-not-normalized",
+      "input": { "composed": "é", "decomposed": "é" },
+      "canonical": "{\"composed\":\"é\",\"decomposed\":\"é\"}"
+    },
+    {
+      "name": "escaped-controls",
+      "input": { "text": "\u0000\b\t\n\f\r\\\"" },
+      "canonical": "{\"text\":\"\\u0000\\b\\t\\n\\f\\r\\\\\\\"\"}"
+    },
+    {
+      "name": "javascript-number-boundaries",
+      "input": {
+        "negativeZero": -0,
+        "belowFixed": 1e-7,
+        "fixedFloor": 1e-6,
+        "fixedCeiling": 1e20,
+        "exponentFloor": 1e21,
+        "unsafeInteger": 9007199254740993,
+        "nested": [null, false, 0]
+      },
+      "canonical": "{\"belowFixed\":1e-7,\"exponentFloor\":1e+21,\"fixedCeiling\":100000000000000000000,\"fixedFloor\":0.000001,\"negativeZero\":0,\"nested\":[null,false,0],\"unsafeInteger\":9007199254740992}"
+    }
+  ]
+}

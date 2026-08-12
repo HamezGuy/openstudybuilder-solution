@@ -1,3 +1,7 @@
+
+
+
+
 """Project an OSB study into an AccuraTrial EDC StudyBundleV1 and (optionally)
 push it to the EDC's import endpoint.
 
@@ -23,6 +27,8 @@ unknown types to 'text' without a word; this exporter refuses to participate
 in that: every downgrade is a census row.
 """
 
+import base64
+import gzip
 import json
 import logging
 import re
@@ -30,6 +36,9 @@ from typing import Any
 
 import httpx
 
+from clinical_mdr_api.domains.study_definition_aggregates.study_metadata import (
+    StudyComponentEnum,
+)
 from clinical_mdr_api.services.integrations.edc_field_types import (
     resolve_edc_field_type,
 )
@@ -39,6 +48,37 @@ log = logging.getLogger(__name__)
 
 EDC_BUNDLE_FORMAT_VERSION = "1.0"
 X360I_EVENT_OID = re.compile(r"^SE\.360I\.(?P<study_id>.+)\.(?P<visit_ref>[^.]+)$")
+X360I_STUDY_DESCRIPTION = re.compile(
+    r"^Imported from 360i study (?P<study_id>.+?) \(build [^)]+\)$"
+)
+CARRIER_COMPRESSION_PREFIX = "gzip+base64:"
+CARRIER_CHUNK_PREFIX = "chunk:"
+
+
+def authority_disclosure(mode: str, source_overlay_active: bool) -> dict[str, Any]:
+    """Describe who actually controls this V1 projection.
+
+    Until the released-version package replaces the source restoration helpers,
+    this exporter is not allowed to claim OSB mapping authority. Keeping the
+    verdict in one pure function makes the API response, warning, and tests agree.
+    """
+    return {
+        "mode": mode,
+        # Name the source that actually controls this carrier projection. The
+        # non-authoritative/deployment flags below prevent it being mistaken for
+        # OSB authority; calling an active overlay "none" instead concealed the
+        # exact provenance reviewers need to diagnose mapping differences.
+        "mappingAuthority": (
+            "legacy-source-overlay"
+            if source_overlay_active
+            else "none-legacy-comparison"
+        ),
+        "authoritative": False,
+        "deploymentAllowed": False,
+        "sourceOverlayActive": source_overlay_active,
+        "studyDefinitionStandard": "CDISC USDM 4",
+        "crfMetadataStandard": "CDISC ODM 1.3.2",
+    }
 
 
 class EdcExportError(Exception):
@@ -58,11 +98,118 @@ def _vendor_attr(entity: dict, name: str) -> str | None:
     return None
 
 
+def _carrier_json(value: str) -> Any:
+    """Decode a plain or transport-compressed x360i JSON carrier."""
+    if value.startswith(CARRIER_COMPRESSION_PREFIX):
+        encoded = value[len(CARRIER_COMPRESSION_PREFIX) :]
+        value = gzip.decompress(base64.b64decode(encoded)).decode("utf-8")
+    return json.loads(value)
+
+
+def _source_study_id(study: dict[str, Any]) -> str | None:
+    """Recover the 360i identity stamped on the OSB study at import time."""
+    match = X360I_STUDY_DESCRIPTION.match(str(study.get("description") or ""))
+    return match.group("study_id") if match else None
+
+
 def _english_text(entity: dict, text_type: str) -> str | None:
     for tt in entity.get("translated_texts", []) or []:
         if tt.get("text_type") == text_type and tt.get("language", "").startswith("en"):
             return tt.get("text")
     return None
+
+
+def _term_name(value: Any) -> str | None:
+    if not isinstance(value, dict):
+        return None
+    name = value.get("sponsor_preferred_name") or value.get("name")
+    return str(name).strip() if name else None
+
+
+def _term_names(values: Any) -> str | None:
+    names = [_term_name(value) for value in (values or [])]
+    present = list(dict.fromkeys(name for name in names if name))
+    return "; ".join(present) if present else None
+
+
+def _phase_for_edc(value: Any) -> str | None:
+    name = _term_name(value)
+    if not name:
+        return None
+    match = re.search(r"\b(?:phase\s*)?([1-4]|I{1,3}|IV)\b", name, re.IGNORECASE)
+    if not match:
+        return name
+    token = match.group(1).upper()
+    return {"1": "I", "2": "II", "3": "III", "4": "IV"}.get(token, token)
+
+
+def _native_study_projection(study: dict[str, Any]) -> dict[str, Any]:
+    """Project OSB-owned StudyMetadata to the portable EDC study contract.
+
+    Only fields with an actual native OSB representation are emitted. Missing is
+    omitted, ``False`` is preserved, and CT objects become their canonical OSB
+    display values rather than opaque UIDs. Source-carrier fields are merged later
+    and may fill only properties this projection does not own.
+    """
+    metadata = study.get("current_metadata") or {}
+    ident = metadata.get("identification_metadata") or {}
+    description = metadata.get("study_description") or {}
+    design = metadata.get("high_level_study_design") or {}
+    population = metadata.get("study_population") or {}
+    intervention = metadata.get("study_intervention") or {}
+    registry = ident.get("registry_identifiers") or {}
+
+    title = description.get("study_title")
+    acronym = ident.get("study_acronym")
+    study_id = ident.get("study_id")
+    result: dict[str, Any] = {
+        "name": str(acronym or study_id or title or study.get("uid") or ""),
+        "studyParameters": {},
+    }
+
+    def put(key, value):
+        if value is not None and value != "":
+            result[key] = value
+
+    put("uniqueIdentifier", study_id)
+    put("secondaryIdentifier", registry.get("ct_gov_id"))
+    put("nctNumber", registry.get("ct_gov_id"))
+    put("officialTitle", title)
+    put("studyAcronym", acronym)
+
+    study_type = _term_name(design.get("study_type_code"))
+    put("protocolType", study_type.casefold() if study_type else None)
+    put("phase", _phase_for_edc(design.get("trial_phase_code")))
+
+    randomized = intervention.get("is_trial_randomised")
+    if isinstance(randomized, bool):
+        result["allocation"] = "Randomized" if randomized else "Non-Randomized"
+    masking = _term_name(intervention.get("trial_blinding_schema_code"))
+    put("masking", masking.replace(" ", "-") if masking == "Open Label" else masking)
+    put("control", _term_name(intervention.get("control_type_code")))
+    put("assignment", _term_name(intervention.get("intervention_model_code")))
+    put("purpose", _term_names(intervention.get("trial_intent_types_codes")))
+
+    put("expectedTotalEnrollment", population.get("number_of_expected_subjects"))
+    sex = _term_name(population.get("sex_of_participants_code"))
+    put("gender", sex.casefold() if sex else None)
+    for target, source in (
+        ("ageMin", "planned_minimum_age_of_subjects"),
+        ("ageMax", "planned_maximum_age_of_subjects"),
+    ):
+        duration = population.get(source)
+        if isinstance(duration, dict) and duration.get("duration_value") is not None:
+            result[target] = str(duration["duration_value"])
+    healthy = population.get("healthy_subject_indicator")
+    if isinstance(healthy, bool):
+        result["healthyVolunteerAccepted"] = healthy
+    put("therapeuticArea", _term_names(population.get("therapeutic_area_codes")))
+    put(
+        "indication",
+        _term_names(population.get("disease_condition_or_indication_codes")),
+    )
+    put("conditions", _term_names(population.get("diagnosis_group_codes")))
+    return result
 
 
 class EdcExportService:
@@ -85,14 +232,31 @@ class EdcExportService:
         self.item_group_service = OdmItemGroupService()
         self.item_service = OdmItemService()
         self.census: list[dict[str, str]] = []
+        self.source_bundle_meta: dict[str, Any] = {}
 
     # ------------------------------------------------------------------
     # Projection
     # ------------------------------------------------------------------
 
+
     def build_bundle(self, study_uid: str) -> dict[str, Any]:
         self.census = []
-        study = self.study_service.get_by_uid(study_uid)
+        self.source_bundle_meta = {}
+
+        authority_mode = config.settings.mapping_authority_mode
+        if authority_mode == "enforced":
+            raise EdcExportError(
+                "MAPPING_AUTHORITY_ENFORCED: the carrier-compatible V1 exporter is disabled because it can restore Intelligence Layer source values over native OSB state. Use the released OSB authority package once its V2 EDC importer is enabled."
+            )
+        study = self.study_service.get_by_uid(
+            study_uid,
+            include_sections=[
+                StudyComponentEnum.STUDY_DESIGN,
+                StudyComponentEnum.STUDY_POPULATION,
+                StudyComponentEnum.STUDY_INTERVENTION,
+            ],
+        )
+
         study_dict = study.model_dump() if hasattr(study, "model_dump") else dict(study)
 
         ident = (study_dict.get("current_metadata") or {}).get(
@@ -112,47 +276,101 @@ class EdcExportService:
         # from its study-events' FORM_REFs), not every form in the shared ODM
         # library — otherwise a multi-study instance leaks OSB's baked DDF seed
         # forms and other studies' forms into the bundle.
-        event_form_uids = self._study_event_form_uids(visit_ref_by_name, visits)
-        forms, form_ref_by_uid, form_ref_by_oid = self._forms(event_form_uids)
+        source_study_id = _source_study_id(study_dict)
+        event_form_uids, source_study_ids = self._study_event_form_uids(
+            visit_ref_by_name, visits, source_study_id
+        )
+        forms, form_ref_by_uid, form_ref_by_oid = self._forms(
+            event_form_uids, source_study_ids
+        )
         assignments = self._assignments(
-            study_uid, visit_ref_by_name, form_ref_by_uid, form_ref_by_oid, visits
+            study_uid,
+            visit_ref_by_name,
+            form_ref_by_uid,
+            form_ref_by_oid,
+            visits,
+            source_study_ids,
         )
         arms = self._group_classes(study_uid)
 
-        registry = ident.get("registry_identifiers") or {}
+        source_meta = self.source_bundle_meta
+        source_study = dict(source_meta.get("study") or {})
+        source_forms = dict(source_meta.get("forms") or {})
+        source_overlay_active = bool(source_meta)
+        native_study = _native_study_projection(study_dict)
+        merged_study = dict(source_study)
+        native_keys = set(native_study)
+        for key, value in native_study.items():
+            if key in source_study and source_study[key] != value:
+                self.census.append(
+                    {
+                        "kind": "study_value_conflict",
+                        "ref": key,
+                        "detail": (
+                            "OpenStudyBuilder native value won over the historical "
+                            f"source carrier (source={source_study[key]!r}, osb={value!r})"
+                        ),
+                    }
+                )
+            merged_study[key] = value
+        for key in sorted(set(source_study) - native_keys):
+            self.census.append(
+                {
+                    "kind": "carrier_preserved",
+                    "ref": f"study.{key}",
+                    "detail": (
+                        "No native OSB StudyMetadata landing exists for this EDC property; "
+                        "the historical source value is retained without native authority credit."
+                    ),
+                }
+            )
+        disclosure = authority_disclosure(authority_mode, source_overlay_active)
+        authority_warning = (
+            "NON-AUTHORITATIVE SHADOW EXPORT: this StudyBundleV1 may restore legacy Intelligence Layer source-carrier values for properties the native OSB V1 projection cannot yet represent. It is for parity review only; OpenStudyBuilder release authority has not been established."
+            if authority_mode == "shadow"
+            else "LEGACY EXPORT: mapping authority is not established by this StudyBundleV1."
+        )
+        self.census.append(
+            {
+                "kind": "mapping_authority",
+                "ref": study_uid,
+                "detail": authority_warning,
+            }
+        )
         bundle: dict[str, Any] = {
-            "formatVersion": EDC_BUNDLE_FORMAT_VERSION,
-            "exportedAt": "1970-01-01T00:00:00.000Z",
-            "exportedBy": "openstudybuilder-edc-export",
-            "sourceStudyName": str(name),
-            "study": {
-                "name": str(name),
-                **(
-                    {"officialTitle": desc.get("study_title")}
-                    if desc.get("study_title")
-                    else {}
-                ),
-                **(
-                    {"secondaryIdentifier": registry.get("ct_gov_id")}
-                    if registry.get("ct_gov_id")
-                    else {}
-                ),
-                **(
-                    {"studyAcronym": ident.get("study_acronym")}
-                    if ident.get("study_acronym")
-                    else {}
-                ),
-                "studyParameters": {},
-            },
-            "visits": visits,
-            "visitFormAssignments": assignments,
+            **source_meta,
+            "formatVersion": source_meta.get(
+                "formatVersion", EDC_BUNDLE_FORMAT_VERSION
+            ),
+            "exportedAt": source_meta.get(
+                "exportedAt", "1970-01-01T00:00:00.000Z"
+            ),
+            "exportedBy": source_meta.get(
+                "exportedBy", "openstudybuilder-edc-export"
+            ),
+            "sourceStudyName": source_meta.get("sourceStudyName", str(name)),
+            "study": merged_study or native_study,
+            "visits": self._restore_source_visits(visits),
+            "visitFormAssignments": self._restore_source_assignments(assignments),
             "forms": {
-                "formatVersion": EDC_BUNDLE_FORMAT_VERSION,
-                "exportedAt": "1970-01-01T00:00:00.000Z",
-                "exportedBy": "openstudybuilder-edc-export",
+                **source_forms,
+                "formatVersion": source_forms.get(
+                    "formatVersion", EDC_BUNDLE_FORMAT_VERSION
+                ),
+                "exportedAt": source_forms.get(
+                    "exportedAt", "1970-01-01T00:00:00.000Z"
+                ),
+                "exportedBy": source_forms.get(
+                    "exportedBy", "openstudybuilder-edc-export"
+                ),
+                "exportWarnings": [
+                    *(source_forms.get("exportWarnings") or []),
+                    authority_warning,
+                ],
                 "forms": forms,
             },
-            **({"studyGroupClasses": arms} if arms else {}),
+            **self._restore_source_group_classes(arms),
+            "_mappingAuthority": disclosure,
             "_exportCensus": {
                 "rows": self.census,
                 "counts": {
@@ -177,6 +395,118 @@ class EdcExportService:
                 "nothing for an EDC to import"
             )
         return bundle
+
+    @staticmethod
+    def _ref(value: Any) -> str:
+        return _sanitize_ref(str(value or ""))
+
+    def _restore_source_visits(self, current: list[dict[str, Any]]):
+        source = self.source_bundle_meta.get("visits") or []
+        if not source:
+            return current
+        current_by_ref = {
+            self._ref(v.get("refKey") or v.get("name")): v for v in current
+        }
+        restored = []
+        for original in source:
+            current_visit = current_by_ref.pop(
+                self._ref(original.get("refKey") or original.get("name")), {}
+            )
+            merged = dict(original)
+            for key in (
+                "name",
+                "ordinal",
+                "type",
+                "repeating",
+            ):
+                if key in original and key in current_visit:
+                    merged[key] = current_visit[key]
+            if original.get("refKey"):
+                merged["refKey"] = original["refKey"]
+            restored.append(merged)
+        restored.extend(current_by_ref.values())
+        return restored
+
+    def _restore_source_assignments(self, current: list[dict[str, Any]]):
+        source = self.source_bundle_meta.get("visitFormAssignments") or []
+        if not source:
+            return current
+        current_by_ref = {
+            (self._ref(a.get("visitRef")), self._ref(a.get("formRef"))): a
+            for a in current
+        }
+        restored = []
+        for original in source:
+            key = (
+                self._ref(original.get("visitRef")),
+                self._ref(original.get("formRef")),
+            )
+            assignment = current_by_ref.pop(key, {})
+            merged = {**assignment, **original}
+            for key in ("required", "ordinal"):
+                if key in original and key in assignment:
+                    merged[key] = assignment[key]
+            if original.get("visitRef"):
+                merged["visitRef"] = original["visitRef"]
+            if original.get("formRef"):
+                merged["formRef"] = original["formRef"]
+            restored.append(merged)
+        restored.extend(current_by_ref.values())
+        return restored
+
+    def _restore_source_group_classes(self, arms: list[dict[str, Any]]):
+        source = self.source_bundle_meta.get("studyGroupClasses") or []
+        if not source:
+            return {"studyGroupClasses": arms} if arms else {}
+        current_arms = iter(arms)
+        restored = []
+        for group_class in source:
+            if group_class.get("groupClassTypeName") != "Arm":
+                restored.append(group_class)
+                continue
+            current = next(current_arms, None)
+            if current and "groups" in group_class:
+                restored.append({**current, **group_class, "groups": current["groups"]})
+            else:
+                restored.append(group_class)
+        restored.extend(current_arms)
+        return {"studyGroupClasses": restored} if restored else {}
+
+    def _restore_source_fields(
+        self, current: list[dict[str, Any]], source_form: dict[str, Any]
+    ):
+        source_by_ref = {
+            self._ref(field.get("refKey") or field.get("name")): field
+            for field in source_form.get("fields", [])
+        }
+        restored = []
+        for field in current:
+            original = source_by_ref.get(
+                self._ref(field.get("refKey") or field.get("name"))
+            )
+            if not original:
+                restored.append(field)
+                continue
+            # Source wins for values OSB cannot represent faithfully (option
+            # codes, validation objects, evidence annotations, null-vs-default).
+            merged = {**field, **original}
+            # Current OSB state wins for fields it does model and users can edit.
+            for key in (
+                "name",
+                "label",
+                "type",
+                "required",
+                "sdtmVariable",
+                "section",
+                "group",
+            ):
+                if key in original and key in field:
+                    merged[key] = field[key]
+            if "length" in original and "length" in field:
+                merged["length"] = field["length"]
+            merged["refKey"] = original.get("refKey") or field["refKey"]
+            restored.append(merged)
+        return restored
 
     def _visits(self, study_uid: str):
         result = self.visit_service_cls.get_all_visits(study_uid, page_size=0)
@@ -225,7 +555,9 @@ class EdcExportService:
             visits.append(visit)
         return visits, ref_by_uid, ref_by_name
 
-    def _study_event_form_uids(self, visit_ref_by_name, visits):
+    def _study_event_form_uids(
+        self, visit_ref_by_name, visits, expected_source_study_id=None
+    ):
         """OdmForm UIDs reached from THIS study's study-events' FORM_REFs. A
         study-event belongs to the study when its OID carries a known visit
         refKey (SE.360I.<studyId>.<visitRef>) or its name equals a visit name
@@ -238,6 +570,9 @@ class EdcExportService:
         )
         visit_refs = {v["refKey"] for v in visits}
         form_uids: set[str] = set()
+        source_study_ids: set[str] = (
+            {expected_source_study_id} if expected_source_study_id else set()
+        )
         for event_model in events:
             event = (
                 event_model.model_dump()
@@ -246,17 +581,36 @@ class EdcExportService:
             )
             oid = event.get("oid") or ""
             match = X360I_EVENT_OID.match(oid)
-            claims_visit = bool(match and match.group("visit_ref") in visit_refs)
+            if (
+                match
+                and expected_source_study_id
+                and match.group("study_id") != expected_source_study_id
+            ):
+                # A stamped event from another 360i study must never fall
+                # through to the weaker name join.
+                continue
+            claims_visit = bool(
+                match
+                and match.group("visit_ref") in visit_refs
+                and (
+                    expected_source_study_id is None
+                    or match.group("study_id") == expected_source_study_id
+                )
+            )
+            if claims_visit and match and not expected_source_study_id:
+                source_study_ids.add(match.group("study_id"))
             if not claims_visit:
+                if match:
+                    continue
                 claims_visit = (event.get("name") or "").strip().lower() in visit_ref_by_name
             if not claims_visit:
                 continue
             for form_ref_model in event.get("forms", []) or []:
                 if form_ref_model.get("uid"):
                     form_uids.add(form_ref_model["uid"])
-        return form_uids
+        return form_uids, source_study_ids
 
-    def _forms(self, event_form_uids=None):
+    def _forms(self, event_form_uids=None, source_study_ids=None):
         """The study's ODM forms, projected with sections (item groups) and
         fields (items). refKey = the form's OID when it has one (the 360i
         importer sets OID = refKey), else a sanitized name.
@@ -279,25 +633,108 @@ class EdcExportService:
             for form_model in forms_items
         ]
         event_form_uids = event_form_uids or set()
+        source_study_ids = source_study_ids or set()
 
         def _is_x360i(form):
             # A 360i-created form carries at least one x360i vendor attribute
             # (refKey/content/ext); OSB's baked DDF seed forms carry none.
             return any(
-                attr.get("name") in ("refKey", "content", "ext", "fieldType")
+                attr.get("name")
+                in ("refKey", "content", "ext", "fieldType", "source", "bundleMeta")
                 for attr in (form.get("vendor_attributes") or [])
             )
 
-        any_x360i = any(_is_x360i(f) for f in all_forms)
+        bundle_meta_chunks: dict[int, str] = {}
+        bundle_meta_chunk_total: int | None = None
+        for form in all_forms:
+            if (
+                source_study_ids
+                and _vendor_attr(form, "studyId") not in source_study_ids
+            ):
+                continue
+            raw_meta = _vendor_attr(form, "bundleMeta")
+            if not raw_meta:
+                continue
+            if raw_meta.startswith(CARRIER_CHUNK_PREFIX):
+                try:
+                    header, chunk = raw_meta[len(CARRIER_CHUNK_PREFIX) :].split(
+                        ":", 1
+                    )
+                    index_text, total_text = header.split("/", 1)
+                    index, total = int(index_text), int(total_text)
+                    if not 1 <= index <= total:
+                        raise ValueError("chunk index is out of range")
+                    if (
+                        bundle_meta_chunk_total is not None
+                        and bundle_meta_chunk_total != total
+                    ):
+                        raise ValueError("inconsistent chunk totals")
+                    bundle_meta_chunk_total = total
+                    bundle_meta_chunks[index] = chunk
+                except (TypeError, ValueError):
+                    self.census.append(
+                        {
+                            "kind": "bundle_meta_unparseable",
+                            "ref": form.get("oid") or form.get("uid") or "?",
+                            "detail": "x360i:bundleMeta chunk header is invalid",
+                        }
+                    )
+                continue
+            try:
+                parsed_meta = _carrier_json(raw_meta)
+                if isinstance(parsed_meta, dict):
+                    self.source_bundle_meta = parsed_meta
+                    break
+            except (TypeError, ValueError, OSError):
+                self.census.append(
+                    {
+                        "kind": "bundle_meta_unparseable",
+                        "ref": form.get("oid") or form.get("uid") or "?",
+                        "detail": "x360i:bundleMeta is not valid JSON",
+                    }
+                )
+
+        if bundle_meta_chunks and not self.source_bundle_meta:
+            expected = bundle_meta_chunk_total or 0
+            if set(bundle_meta_chunks) != set(range(1, expected + 1)):
+                self.census.append(
+                    {
+                        "kind": "bundle_meta_unparseable",
+                        "ref": "bundleMeta",
+                        "detail": "x360i:bundleMeta carrier has missing chunks",
+                    }
+                )
+            else:
+                try:
+                    parsed_meta = _carrier_json(
+                        "".join(
+                            bundle_meta_chunks[index]
+                            for index in range(1, expected + 1)
+                        )
+                    )
+                    if isinstance(parsed_meta, dict):
+                        self.source_bundle_meta = parsed_meta
+                except (TypeError, ValueError, OSError):
+                    self.census.append(
+                        {
+                            "kind": "bundle_meta_unparseable",
+                            "ref": "bundleMeta",
+                            "detail": "x360i:bundleMeta chunks are not valid JSON",
+                        }
+                    )
 
         def _in_scope(form):
             if form.get("uid") in event_form_uids:
                 return True
-            if _is_x360i(form):
+            if _vendor_attr(form, "studyId") in source_study_ids:
                 return True
-            # Fully-native OSB study (no x360i stamps anywhere, no matching
-            # study-events): don't silently emit an empty bundle — project all.
-            return not any_x360i and not event_form_uids
+            # A fully-native study with no event links can only safely fall
+            # back to native forms. Never absorb x360i forms from other studies.
+            return (
+                not source_study_ids
+                and not event_form_uids
+                and not _is_x360i(form)
+            )
 
         forms = []
         ref_by_uid: dict[str, str] = {}
@@ -307,7 +744,24 @@ class EdcExportService:
         for form in all_forms:
             if not _in_scope(form):
                 continue
-            base = _sanitize_ref(form.get("oid") or form.get("name"))
+            source_form = {}
+            raw_source = _vendor_attr(form, "source")
+            if raw_source:
+                try:
+                    candidate = _carrier_json(raw_source)
+                    if isinstance(candidate, dict):
+                        source_form = candidate
+                except (TypeError, ValueError, OSError):
+                    self.census.append(
+                        {
+                            "kind": "source_form_unparseable",
+                            "ref": form.get("oid") or form.get("uid") or "?",
+                            "detail": "x360i:source is not valid JSON",
+                        }
+                    )
+            base = _sanitize_ref(
+                source_form.get("refKey") or form.get("oid") or form.get("name")
+            )
             ref = base
             n = 2
             while ref in used:
@@ -348,32 +802,65 @@ class EdcExportService:
                             order=ii,
                         )
                     )
-            forms.append(
-                {
-                    "refKey": ref,
-                    "name": form.get("name"),
-                    **(
-                        {"description": _english_text(form, "Description")}
-                        if _english_text(form, "Description")
-                        else {}
-                    ),
-                    "sections": sections,
-                    "fields": fields,
-                    "editChecks": [],
-                    "validationRuleRecords": [],
-                    "formLinks": [],
-                }
-            )
+            fields = self._restore_source_fields(fields, source_form)
+            if source_form:
+                restored_form = {**source_form, "fields": fields}
+                if "name" in source_form:
+                    restored_form["name"] = form.get("name")
+                description = _english_text(form, "Description")
+                if "description" in source_form and description:
+                    restored_form["description"] = description
+                forms.append(restored_form)
+            else:
+                forms.append(
+                    {
+                        "refKey": ref,
+                        "name": form.get("name"),
+                        **(
+                            {"description": _english_text(form, "Description")}
+                            if _english_text(form, "Description")
+                            else {}
+                        ),
+                        "sections": sections,
+                        "fields": fields,
+                        "editChecks": [],
+                        "validationRuleRecords": [],
+                        "formLinks": [],
+                    }
+                )
         return forms, ref_by_uid, ref_by_oid
 
     def _field(self, form_ref, section_name, item, item_ref, order):
         stamped_type = _vendor_attr(item, "fieldType")
+        field_ref = _sanitize_ref(
+            _vendor_attr(item, "refKey") or item.get("oid") or item.get("name")
+        )
+        # The source UI historically stamped scalar SYSBP/DIABP questions with
+        # its composite `blood_pressure` widget type. OSB now owns each as a
+        # separate numeric ODM ItemDef (`float`). Restoring the stale widget stamp
+        # would make AccuraTrial store the numeric value as text. Prefer the native
+        # ODM datatype for these exact scalar identities and disclose the override.
+        if (
+            stamped_type == "blood_pressure"
+            and str(item.get("datatype") or "").lower() in {"float", "double", "decimal"}
+            and field_ref in {"SYSBP", "DIABP"}
+        ):
+            self.census.append(
+                {
+                    "kind": "carrier_type_overridden",
+                    "ref": f"{form_ref}/{field_ref}",
+                    "detail": (
+                        "OpenStudyBuilder native ODM numeric datatype won over stale "
+                        "x360i:fieldType 'blood_pressure'; exported as decimal"
+                    ),
+                }
+            )
+            stamped_type = None
         has_codelist = bool(item.get("codelist"))
         multi = bool((item.get("codelist") or {}).get("allows_multi_choice"))
         edc_type, downgrade = resolve_edc_field_type(
             item.get("datatype"), stamped_type, has_codelist, multi
         )
-        field_ref = _sanitize_ref(item.get("oid") or item.get("name"))
         if downgrade:
             self.census.append(
                 {
@@ -383,20 +870,50 @@ class EdcExportService:
                 }
             )
 
+        source_field: dict[str, Any] = {}
+        source_json = _vendor_attr(item, "source")
+        if source_json:
+            try:
+                candidate = _carrier_json(source_json)
+                if isinstance(candidate, dict):
+                    source_field = candidate
+            except (TypeError, ValueError, OSError):
+                self.census.append(
+                    {
+                        "kind": "source_field_unparseable",
+                        "ref": f"{form_ref}/{field_ref}",
+                        "detail": "x360i:source is not valid JSON",
+                    }
+                )
+
         field: dict[str, Any] = {
-            "refKey": field_ref,
+            **source_field,
+            "refKey": source_field.get("refKey") or field_ref,
             "name": item.get("name"),
             "type": edc_type,
-            "order": item_ref.get("order_number") or order,
         }
+        current_order = item_ref.get("order_number") or order
+        if "ordinal" in source_field:
+            field["ordinal"] = current_order
+            field.pop("order", None)
+        else:
+            field["order"] = current_order
         prompt = item.get("prompt") or _english_text(item, "Question")
         if prompt:
             field["label"] = prompt
         mandatory = item_ref.get("mandatory")
         if mandatory is not None:
             field["required"] = str(mandatory).lower() in ("yes", "true", "1")
-        if item.get("length") is not None:
+        # Text items with no stated length are defaulted to 200 solely because
+        # OSB requires one. Do not manufacture that default into the EDC bundle.
+        if item.get("length") is not None and (
+            "length" in source_field or item.get("length") != 200
+        ):
             field["length"] = item["length"]
+        elif "length" not in source_field:
+            field.pop("length", None)
+        if item.get("comment"):
+            field["description"] = item["comment"]
         if item.get("sds_var_name"):
             field["sdtmVariable"] = item["sds_var_name"]
         if section_name:
@@ -406,7 +923,7 @@ class EdcExportService:
         if units:
             field["unit"] = units[0].get("name")
         terms = item.get("terms") or []
-        if terms:
+        if terms and "options" not in source_field:
             field["options"] = [
                 {
                     "label": t.get("display_text") or t.get("name") or str(t.get("uid")),
@@ -430,21 +947,42 @@ class EdcExportService:
                         "detail": "x360i:ext is not valid JSON; extensions not restored",
                     }
                 )
-            for key in ("helpText", "placeholder", "format", "sdtmAnnotation",
-                        "sdtmDomain", "sdtmTestcd", "sdtmQnam"):
-                if key in ext and key not in field:
-                    field[key] = ext[key] if not isinstance(ext[key], str) else ext[key]
-            for key in ("showWhen", "requiredWhen", "validationRules", "options",
-                        "min", "max", "criteriaItems"):
-                if key in ext and key not in field:
+            for key, value in ext.items():
+                if key in field:
+                    continue
+                if isinstance(value, str) and value.startswith("json:"):
                     try:
-                        field[key] = json.loads(ext[key]) if isinstance(ext[key], str) else ext[key]
+                        value = json.loads(value[len("json:") :])
                     except (TypeError, ValueError):
-                        pass
+                        self.census.append(
+                            {
+                                "kind": "ext_value_unparseable",
+                                "ref": f"{form_ref}/{field_ref}/{key}",
+                                "detail": "tagged x360i:ext value is not valid JSON",
+                            }
+                        )
+                elif isinstance(value, str) and value[:1] in ("[", "{"):
+                    try:
+                        value = json.loads(value)
+                    except (TypeError, ValueError):
+                        self.census.append(
+                            {
+                                "kind": "ext_value_unparseable",
+                                "ref": f"{form_ref}/{field_ref}/{key}",
+                                "detail": "structured x360i:ext value is not valid JSON",
+                            }
+                        )
+                field[key] = value
         return field
 
     def _assignments(
-        self, study_uid, visit_ref_by_name, form_ref_by_uid, form_ref_by_oid, visits
+        self,
+        study_uid,
+        visit_ref_by_name,
+        form_ref_by_uid,
+        form_ref_by_oid,
+        visits,
+        source_study_ids=None,
     ):
         """visitFormAssignments from OdmStudyEvent FORM_REFs.
 
@@ -458,6 +996,7 @@ class EdcExportService:
             events_result.items if hasattr(events_result, "items") else events_result
         )
         visit_refs = {v["refKey"] for v in visits}
+        source_study_ids = source_study_ids or set()
         assignments = []
         for event_model in events:
             event = (
@@ -469,10 +1008,17 @@ class EdcExportService:
             match = X360I_EVENT_OID.match(oid)
             visit_ref = None
             if match:
+                if (
+                    source_study_ids
+                    and match.group("study_id") not in source_study_ids
+                ):
+                    continue
                 candidate = match.group("visit_ref")
                 if candidate in visit_refs:
                     visit_ref = candidate
             if visit_ref is None:
+                if match:
+                    continue
                 by_name = visit_ref_by_name.get((event.get("name") or "").strip().lower())
                 if by_name:
                     visit_ref = by_name
@@ -552,8 +1098,32 @@ class EdcExportService:
 
     def send_to_edc(self, study_uid: str, dry_run: bool = True) -> dict[str, Any]:
         """Push the bundle to the EDC's import-study-bundle with the M2M
-        x-api-key. ALWAYS available as dry_run first; the caller decides.
+        x-api-key. V1 transfer is an explicitly opted-in, non-production legacy
+        recovery action only. Shadow mode may generate comparison bytes locally,
+        but must not transmit them across the EDC boundary.
         """
+        authority_mode = config.settings.mapping_authority_mode
+        if authority_mode != "legacy":
+            raise EdcExportError(
+                f"MAPPING_AUTHORITY_{authority_mode.upper()}: StudyBundleV1 cannot be sent "
+                "to EDC; shadow is local comparison-only and enforced requires a verified "
+                "Package V2 release."
+            )
+        if not dry_run:
+            raise EdcExportError(
+                "LEGACY_EDC_ACTIVATION_PROHIBITED: StudyBundleV1 may be sent only as a comparison dry-run. Native execution, reconciliation, Package V2, and EDC V2 deployment receipts are not implemented."
+            )
+        deployment_environment = config.settings.deployment_environment.strip().lower()
+        if deployment_environment in {"prod", "production"}:
+            raise EdcExportError(
+                "LEGACY_EDC_SEND_PRODUCTION_PROHIBITED: StudyBundleV1 cannot cross the "
+                "EDC boundary in production, including dry-run."
+            )
+        if not config.settings.allow_unsafe_legacy_edc_send:
+            raise EdcExportError(
+                "LEGACY_EDC_SEND_EXPLICIT_OPT_IN_REQUIRED: set "
+                "ALLOW_UNSAFE_LEGACY_EDC_SEND=true only in a disposable migration environment."
+            )
         base_url = getattr(config.settings, "edc_base_url", "") or ""
         api_key = ""
         key_setting = getattr(config.settings, "edc_api_key", None)
@@ -569,19 +1139,37 @@ class EdcExportService:
             )
 
         bundle = self.build_bundle(study_uid)
-        response = httpx.post(
-            f"{base_url.rstrip('/')}/api/forms/import-study-bundle",
-            json={"bundle": bundle, "dryRun": dry_run},
-            headers={"x-api-key": api_key},
-            timeout=120.0,
-        )
+        # This is OSB's local audit artifact, not part of StudyBundleV1.
+        # Return it to the caller, but do not make an older EDC classify it as
+        # an unknown study key.
+        export_census = bundle.pop("_exportCensus", None)
+        mapping_authority = bundle.get("_mappingAuthority")
+
+        try:
+            response = httpx.post(
+                f"{base_url.rstrip('/')}/api/forms/import-study-bundle",
+                json={"bundle": bundle, "dryRun": dry_run},
+                headers={"x-api-key": api_key},
+                timeout=120.0,
+            )
+        except httpx.HTTPError as exc:
+            raise EdcExportError(f"EDC transfer failed: {exc}") from exc
         try:
             body = response.json()
         except ValueError:
             body = {"raw": response.text}
+        if not response.is_success:
+            raise EdcExportError(
+                f"EDC rejected the transfer (HTTP {response.status_code}): {body}"
+            )
+        if not body.get("success", False):
+            raise EdcExportError(
+                f"EDC returned HTTP 2xx without success=true: {body}"
+            )
         return {
             "dryRun": dry_run,
             "statusCode": response.status_code,
             "edcResponse": body,
-            "exportCensus": bundle.get("_exportCensus"),
+            "exportCensus": export_census,
+            "mappingAuthority": mapping_authority,
         }

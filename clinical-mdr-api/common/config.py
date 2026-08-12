@@ -8,6 +8,32 @@ from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def assert_mapping_authority_configuration(
+    *,
+    environment: str,
+    mode: str,
+    mode_explicit: bool,
+    allow_unsafe_legacy_edc_send: bool,
+) -> None:
+    """Pure startup guard, separated from global Settings for executable tests."""
+    normalized_environment = environment.strip().lower()
+    if normalized_environment in {"prod", "production"} and not mode_explicit:
+        raise ValueError(
+            "MAPPING_AUTHORITY_MODE_REQUIRED: production must explicitly select "
+            "shadow or enforced mode"
+        )
+    if normalized_environment in {"prod", "production"} and mode == "legacy":
+        raise ValueError(
+            "MAPPING_AUTHORITY_LEGACY_PRODUCTION_PROHIBITED: production must use "
+            "shadow or enforced mode"
+        )
+    if normalized_environment in {"prod", "production"} and allow_unsafe_legacy_edc_send:
+        raise ValueError(
+            "LEGACY_EDC_SEND_PRODUCTION_PROHIBITED: "
+            "ALLOW_UNSAFE_LEGACY_EDC_SEND cannot be enabled in production"
+        )
+
+
 class Settings(BaseSettings):
     """
     Settings class for the application.
@@ -158,12 +184,43 @@ class Settings(BaseSettings):
     # AccuraTrial EDC push (/integrations/edc). The key is the EDC's M2M
     # x-api-key, scoped to forms:import-study-bundle on the EDC side. Both
     # empty = push disabled; the bundle GET (file download) works regardless.
+
     edc_base_url: str = Field(default="", alias="EDC_BASE_URL")
     edc_api_key: SecretStr = Field(default=SecretStr(""), alias="EDC_API_KEY")
+
+    # Authority transition for OSB -> EDC releases:
+    # - legacy: current carrier-compatible StudyBundleV1 export is available;
+    # - shadow: current export remains available but is explicitly non-authoritative;
+    # - enforced: legacy/carrier export is refused until the native released-version
+    #   package is implemented. This prevents an x360i source carrier from being
+    #   mistaken for an OpenStudyBuilder-approved mapping.
+    mapping_authority_mode: Literal["legacy", "shadow", "enforced"] = Field(
+        default="shadow", alias="MAPPING_AUTHORITY_MODE"
+    )
+    deployment_environment: str = Field(
+        default="development", alias="DEPLOYMENT_ENVIRONMENT"
+    )
+    allow_unsafe_legacy_edc_send: bool = Field(
+        default=False, alias="ALLOW_UNSAFE_LEGACY_EDC_SEND"
+    )
+
+    def assert_mapping_authority_startup_safe(self) -> None:
+        """Refuse implicit or legacy production authority before startup."""
+        assert_mapping_authority_configuration(
+            environment=self.deployment_environment,
+            mode=self.mapping_authority_mode,
+            # Pydantic records fields supplied by env, .env, init values or other
+            # configured settings sources. Checking os.environ alone falsely
+            # rejected an explicit production mode loaded from the repository's
+            # configured .env source.
+            mode_explicit="mapping_authority_mode" in self.model_fields_set,
+            allow_unsafe_legacy_edc_send=self.allow_unsafe_legacy_edc_send,
+        )
 
     # gzip API responses (Content-Encoding: gzip)
     gzip_response_min_size: int = Field(
         default=500,
+
         ge=0,
         description="Minimum response size in bytes to gzip compress, or 0 to disable.",
     )

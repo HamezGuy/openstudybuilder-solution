@@ -6,18 +6,26 @@ services:
   database:
     build:
       args:
-        NEO4J_IMAGE: ${NEO4J_IMAGE:-neo4j:enterprise}
+        NEO4J_VERSION_PINNED: ${NEO4J_VERSION_PINNED:-2026.06.0}
         PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.14-slim}
-        NEO4J_server_memory_heap_initial__size: "3G"
-        NEO4J_server_memory_heap_max__size: "3G"
-        NEO4J_server_memory_pagecache_size: "2G"
+        INCLUDE_DUMMY_STUDIES: ${INCLUDE_DUMMY_STUDIES:-false}
+        # The seed build runs Neo4j plus several Python importers. Keep its
+        # default footprint below Docker Desktop's common 8 GiB limit; release
+        # builders with more memory may raise these explicitly.
+        NEO4J_server_memory_heap_initial__size: "${NEO4J_BUILD_HEAP_INITIAL:-1G}"
+        NEO4J_server_memory_heap_max__size: "${NEO4J_BUILD_HEAP_MAX:-3G}"
+        NEO4J_server_memory_pagecache_size: "${NEO4J_BUILD_PAGECACHE:-1G}"
         CDISC_DATA_DIR: ${CDISC_DATA_DIR:-mdr_standards_import/container_booting/}
-        NEO4J_MDR_AUTH_PASSWORD: "${NEO4J_PASSWORD:-changeme1234}"
+        # Seed with a build-only credential. The production database backup does
+        # not contain the system auth database; runtime auth is set below.
+        NEO4J_MDR_AUTH_PASSWORD: "build-only-not-runtime"
         UID: ${UID:-1000}
       context: ./
       dockerfile: database.Dockerfile
+    image: ${DATABASE_IMAGE:-}
     environment:
       NEO4J_ACCEPT_LICENSE_AGREEMENT: "yes"
+      NEO4J_AUTH: "neo4j/${NEO4J_PASSWORD:-changeme1234}"
       NEO4J_server_memory_heap_initial__size: "2G"
       NEO4J_server_memory_heap_max__size: "2G"
       NEO4J_server_memory_pagecache_size: "1G"
@@ -43,23 +51,42 @@ services:
       args:
         TARGET: ${BUILD_TARGET:-dev}
     image: ${API_IMAGE:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       database:
         condition: service_healthy
     environment:
-      NEO4J_DSN: "${NEO4J_DSN:-bolt://neo4j:changeme1234@database:7687/mdrdb}"
-      ALLOW_ORIGIN_REGEX: "${ALLOW_ORIGIN_REGEX:-.*}"
-      OAUTH_ENABLED: "${OAUTH_ENABLED:-False}"
-      OAUTH_RBAC_ENABLED: "${OAUTH_RBAC_ENABLED:-False}"
-      OAUTH_METADATA_URL: "${OAUTH_METADATA_URL:-}"
-      OAUTH_API_APP_ID: "${OAUTH_API_APP_ID:-}"
+      # Use an OSB-specific host override. A generic host NEO4J_DSN commonly
+      # points at localhost:<published-port>; inside this container localhost is
+      # the API itself, which produced a falsely-healthy stack with every study
+      # endpoint returning 500. The default is Docker DNS + the container port.
+      NEO4J_DSN: "${OSB_NEO4J_DSN:-bolt://neo4j:changeme1234@database:7687/mdrdb}"
+      ALLOW_ORIGIN_REGEX: '${ALLOW_ORIGIN_REGEX:-^https?://(osb\.)?(localhost|127\.0\.0\.1)(:[0-9]+)?$}'
+      # Command Center is the interactive broker. OSB validates its short-lived
+      # RS256 assertion and persists only a local user projection for authorship.
+      # Local preview defaults must be self-contained: Command Center is not part
+      # of this compose project, and consumer/extensions currently fail startup
+      # when discovery is unreachable. Production sets both True explicitly via
+      # .env.production.example.
+      OAUTH_ENABLED: "${OSB_API_AUTH_ENABLED:-False}"
+      OAUTH_RBAC_ENABLED: "${OSB_API_RBAC_ENABLED:-False}"
+      OAUTH_METADATA_URL: "${COMMAND_CENTER_METADATA_URL:-http://host.docker.internal:7000/.well-known/openid-configuration}"
+      OAUTH_API_APP_ID: "${COMMAND_CENTER_OSB_AUDIENCE:-accuratrial-openstudybuilder}"
       OAUTH_API_APP_SECRET: "${OAUTH_API_APP_SECRET:-}"
       OAUTH_SWAGGER_APP_ID: "${OAUTH_SWAGGER_APP_ID:-}"
       MS_GRAPH_INTEGRATION_ENABLED: "${MS_GRAPH_INTEGRATION_ENABLED:-}"
       MS_GRAPH_GROUPS_QUERY: "${MS_GRAPH_GROUPS_QUERY:-}"
+      DEPLOYMENT_ENVIRONMENT: "${DEPLOYMENT_ENVIRONMENT:-development}"
       # AccuraTrial EDC push (/integrations/edc); empty = push disabled.
       EDC_BASE_URL: "${EDC_BASE_URL:-}"
       EDC_API_KEY: "${EDC_API_KEY:-}"
+      # Safe transition: carrier-compatible V1 exports are explicitly shadow
+      # artifacts. Set to enforced only when the native released-version package
+      # is enabled; enforced mode refuses the legacy source-overlay exporter.
+      MAPPING_AUTHORITY_MODE: "${MAPPING_AUTHORITY_MODE:-shadow}"
+      ALLOW_UNSAFE_LEGACY_EDC_SEND: "${ALLOW_UNSAFE_LEGACY_EDC_SEND:-false}"
+
       UVICORN_PORT: 5003
       UVICORN_ROOT_PATH: "/api"
       # deprecated #
@@ -76,16 +103,18 @@ services:
       args:
         TARGET: ${BUILD_TARGET:-dev}
     image: ${API_IMAGE:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       database:
         condition: service_healthy
     environment:
-      NEO4J_DSN: "${NEO4J_DSN:-bolt://neo4j:changeme1234@database:7687/mdrdb}"
-      ALLOW_ORIGIN_REGEX: "${ALLOW_ORIGIN_REGEX:-.*}"
-      OAUTH_ENABLED: "${OAUTH_ENABLED:-False}"
-      OAUTH_RBAC_ENABLED: "${OAUTH_RBAC_ENABLED:-False}"
-      OAUTH_METADATA_URL: "${OAUTH_METADATA_URL:-}"
-      OAUTH_API_APP_ID: "${OAUTH_API_APP_ID:-}"
+      NEO4J_DSN: "${OSB_NEO4J_DSN:-bolt://neo4j:changeme1234@database:7687/mdrdb}"
+      ALLOW_ORIGIN_REGEX: '${ALLOW_ORIGIN_REGEX:-^https?://(osb\.)?(localhost|127\.0\.0\.1)(:[0-9]+)?$}'
+      OAUTH_ENABLED: "${OSB_API_AUTH_ENABLED:-False}"
+      OAUTH_RBAC_ENABLED: "${OSB_API_RBAC_ENABLED:-False}"
+      OAUTH_METADATA_URL: "${COMMAND_CENTER_METADATA_URL:-http://host.docker.internal:7000/.well-known/openid-configuration}"
+      OAUTH_API_APP_ID: "${COMMAND_CENTER_OSB_AUDIENCE:-accuratrial-openstudybuilder}"
       OAUTH_SWAGGER_APP_ID: "${OAUTH_SWAGGER_APP_ID:-}"
       UVICORN_PORT: 5008
       UVICORN_ROOT_PATH: "/consumer-api"
@@ -99,16 +128,18 @@ services:
       args:
         TARGET: ${BUILD_TARGET:-dev}
     image: ${API_IMAGE:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       database:
         condition: service_healthy
     environment:
-      NEO4J_DSN: "${NEO4J_DSN:-bolt://neo4j:changeme1234@database:7687/mdrdb}"
-      ALLOW_ORIGIN_REGEX: "${ALLOW_ORIGIN_REGEX:-.*}"
-      OAUTH_ENABLED: "${OAUTH_ENABLED:-False}"
-      OAUTH_RBAC_ENABLED: "${OAUTH_RBAC_ENABLED:-False}"
-      OAUTH_METADATA_URL: "${OAUTH_METADATA_URL:-}"
-      OAUTH_API_APP_ID: "${OAUTH_API_APP_ID:-}"
+      NEO4J_DSN: "${OSB_NEO4J_DSN:-bolt://neo4j:changeme1234@database:7687/mdrdb}"
+      ALLOW_ORIGIN_REGEX: '${ALLOW_ORIGIN_REGEX:-^https?://(osb\.)?(localhost|127\.0\.0\.1)(:[0-9]+)?$}'
+      OAUTH_ENABLED: "${OSB_API_AUTH_ENABLED:-False}"
+      OAUTH_RBAC_ENABLED: "${OSB_API_RBAC_ENABLED:-False}"
+      OAUTH_METADATA_URL: "${COMMAND_CENTER_METADATA_URL:-http://host.docker.internal:7000/.well-known/openid-configuration}"
+      OAUTH_API_APP_ID: "${COMMAND_CENTER_OSB_AUDIENCE:-accuratrial-openstudybuilder}"
       OAUTH_SWAGGER_APP_ID: "${OAUTH_SWAGGER_APP_ID:-}"
       UVICORN_PORT: 5009
       UVICORN_ROOT_PATH: "/extensions-api"
@@ -119,10 +150,12 @@ services:
     build:
       args:
         NGINX_IMAGE: ${NGINX_IMAGE:-nginx:alpine}
-        NODE_IMAGE: ${NODE_IMAGE:-node:lts-alpine}
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
       context: ./studybuilder
       dockerfile: Dockerfile
     image: ${FRONTEND_IMAGE:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       # Nginx reverse-proxy configuration requires downstream services to be ready at startup
       api:
@@ -141,9 +174,11 @@ services:
       API_BASE_URL: "${API_PATH:-}"
       DOC_BASE_URL: "${DOC_PATH:-}"
       NEODASH_BASE_URL: "${NEODASH_PATH:-}"
-      OAUTH_ENABLED: "${OAUTH_ENABLED:-false}"
-      OAUTH_METADATA_URL: "${OAUTH_METADATA_URL:-}"
-      OAUTH_API_APP_ID: "${OAUTH_API_APP_ID:-}"
+      # The gateway already established the user session. Keep the Vue OAuth UI
+      # off so it never prompts for a second interactive login.
+      OAUTH_ENABLED: "${OSB_UI_OAUTH_ENABLED:-false}"
+      OAUTH_METADATA_URL: "${COMMAND_CENTER_METADATA_URL:-http://host.docker.internal:7000/.well-known/openid-configuration}"
+      OAUTH_API_APP_ID: "${COMMAND_CENTER_OSB_AUDIENCE:-accuratrial-openstudybuilder}"
       OAUTH_UI_APP_ID: "${OAUTH_UI_APP_ID:-}"
       APPINSIGHTS_DISABLE: "true"
 
@@ -152,7 +187,7 @@ services:
     build:
       args:
         NGINX_IMAGE: ${NGINX_IMAGE:-nginx:alpine}
-        NODE_IMAGE: ${NODE_IMAGE:-node:lts-alpine}
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
       context: ./documentation-portal
       dockerfile: Dockerfile
     image: ${DOCUMENTATION_IMAGE:-}
@@ -164,7 +199,7 @@ services:
       context: ./osb-neodash
       dockerfile: Dockerfile
       args:
-        NODE_IMAGE: ${NODE_IMAGE:-node:lts-alpine}
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
         NGINX_IMAGE: ${NGINX_IMAGE:-nginx:alpine}
     depends_on:
       database:

@@ -145,7 +145,13 @@ const dryRunSucceeded = ref(false)
 const censusRows = computed(() => bundle.value?._exportCensus?.rows ?? [])
 const quarantineStudyId = computed(() => {
   const response = sendResult.value?.edcResponse
-  return response?.studyId ?? response?.data?.studyId ?? null
+  return (
+    response?.newStudyId ??
+    response?.data?.newStudyId ??
+    response?.studyId ??
+    response?.data?.studyId ??
+    null
+  )
 })
 
 async function loadBundle() {

@@ -32,7 +32,11 @@ API_HEADERS = {"Accept": "application/json", "User-Agent": "test"}
 # Env loading
 # ---------------------------------------------------------------
 #
-API_BASE_URL = load_env("API_BASE_URL")
+# Resolve deployment configuration when a real importer is constructed, not when
+# the module is imported. Pure mapping/worker tests inject an API binding and must
+# not require a live deployment URL merely to collect. A real unconfigured worker
+# still fails closed in BaseImporter.__init__ below.
+API_BASE_URL = load_env("API_BASE_URL", "")
 
 
 # Decorator to avoid starting every function with the open() context manager
@@ -89,6 +93,8 @@ class BaseImporter:
         else:
             self.metrics = metrics_inst
         if api is None:
+            if not API_BASE_URL:
+                raise EnvironmentError("Failed because API_BASE_URL is not set.")
             headers = self._authenticate(API_HEADERS)
             self.api = ApiBinding(API_BASE_URL, headers, self.metrics, logger=self.log)
         else:
@@ -96,7 +102,12 @@ class BaseImporter:
 
         self.visit_type_codelist_name = "VisitType"
         self.element_subtype_codelist_name = "Element Sub Type"
-        self._start_auth_refresh()
+        # Command Center assertions are intentionally short-lived (5 minutes),
+        # so refresh at 3 minutes while the revocable workflow grant is alive.
+        # Existing client-credentials/static-token imports keep their 25-minute
+        # cadence for backwards compatibility.
+        refresh_interval = 3 * 60 if load_env("COMMAND_CENTER_WORKFLOW_GRANT", "") else 25 * 60
+        self._start_auth_refresh(interval=refresh_interval)
 
     def _start_auth_refresh(self, interval=25 * 60):
         def refresh_loop():
@@ -125,7 +136,25 @@ class BaseImporter:
 
         api_token = load_env("STUDYBUILDER_API_TOKEN", "")
 
-        if api_token:
+        workflow_grant = load_env("COMMAND_CENTER_WORKFLOW_GRANT", "")
+        workflow_token_endpoint = load_env("COMMAND_CENTER_TOKEN_ENDPOINT", "")
+        workflow_application = load_env("COMMAND_CENTER_WORKFLOW_APPLICATION", "osb")
+
+        if workflow_grant and workflow_token_endpoint:
+            logger.info("Fetching an operator-scoped token from Command Center")
+            response = requests.post(
+                workflow_token_endpoint,
+                json={"grant": workflow_grant, "application": workflow_application},
+                timeout=15,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            access_token = payload.get("access_token")
+            if not access_token:
+                raise RuntimeError("Command Center workflow-token response is missing access_token")
+            headers["Authorization"] = f"Bearer {access_token}"
+
+        elif api_token:
             logger.info(
                 "Using API access token from STUDYBUILDER_API_TOKEN env variable"
             )

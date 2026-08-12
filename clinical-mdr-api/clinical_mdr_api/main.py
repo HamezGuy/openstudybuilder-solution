@@ -10,6 +10,8 @@ from common.logger import default_logging_config, log_exception
 
 default_logging_config()
 
+settings.assert_mapping_authority_startup_safe()
+
 configure_database(
     settings.neo4j_dsn,
     soft_cardinality_check=settings.soft_cardinality_check,
@@ -586,7 +588,23 @@ app.include_router(
     prefix="/integrations/edc",
     tags=["AccuraTrial EDC integration"],
 )
+app.include_router(
+    routers.integrations.mapping_context.router,
+    prefix="/integrations/mapping-context",
+    tags=["OpenStudyBuilder mapping context"],
+)
+app.include_router(
+    routers.integrations.proposal_review.router,
+    prefix="/integrations/proposal-reviews",
+    tags=["OpenStudyBuilder proposal review"],
+)
+app.include_router(
+    routers.integrations.study_authority.router,
+    prefix="/integrations/study-authority",
+    tags=["OpenStudyBuilder mapping authority"],
+)
 app.include_router(routers.ddf_router, prefix="/usdm/v4", tags=["USDM endpoints"])
+
 app.include_router(
     routers.data_suppliers_router, prefix="/data-suppliers", tags=["Data Suppliers"]
 )

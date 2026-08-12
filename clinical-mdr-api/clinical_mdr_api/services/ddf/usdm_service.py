@@ -22,6 +22,13 @@ from clinical_mdr_api.services.studies.study_endpoint_selection import (
     StudyEndpointSelectionService,
 )
 from clinical_mdr_api.services.studies.study_epoch import StudyEpochService
+from clinical_mdr_api.services.studies.study_objective_selection import (
+    StudyObjectiveSelectionService,
+)
+from clinical_mdr_api.services.studies.study_standard_version_selection import (
+    StudyStandardVersionService,
+)
+
 from clinical_mdr_api.services.studies.study_visit import StudyVisitService
 from common.telemetry import trace_calls
 
@@ -36,14 +43,19 @@ class USDMService:
             get_osb_study_arms=StudyArmSelectionService().get_all_selection,
             get_osb_study_epochs=StudyEpochService.get_all_epochs,
             get_osb_study_elements=StudyElementSelectionService().get_all_selection,
+            get_osb_study_objectives=StudyObjectiveSelectionService().get_all_selection,
             get_osb_study_endpoints=StudyEndpointSelectionService().get_all_selection,
+            get_osb_study_standard_versions=StudyStandardVersionService().get_standard_versions_in_study,
             get_osb_study_visits=StudyVisitService.get_all_visits,
+
             get_osb_study_activities=StudyActivitySelectionService().get_all_selection,
             get_osb_activity_schedules=StudyActivityScheduleService().get_all_schedules,
         )
 
     @trace_calls(args=[1], kwargs=["uid"])
-    def get_by_uid(self, uid: str) -> dict[str, Any]:
+    def get_by_uid(
+        self, uid: str, study_value_version: str | None = None
+    ) -> dict[str, Any]:
         osb_study = StudyService().get_by_uid(
             uid,
             include_sections=[
@@ -55,7 +67,8 @@ class USDMService:
                 StudyComponentEnum.STUDY_INTERVENTION,
                 StudyComponentEnum.STUDY_POPULATION,
             ],
+            study_value_version=study_value_version,
         )
-
-        usdm_wrapped_study = self._usdm_mapper.map(osb_study)
-        return usdm_wrapped_study
+        return self._usdm_mapper.map(
+            osb_study, study_value_version=study_value_version
+        )

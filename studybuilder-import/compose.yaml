@@ -2,6 +2,7 @@ services:
 
   # Import 'command' for local development
   import:
+    image: osb-import:latest
     build:
       args:
         UID: "${UID:-1000}"

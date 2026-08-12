@@ -1,0 +1,48 @@
+"""Closed Proposal V2 target taxonomy backed by installed OSB native models."""
+
+TARGET_CAPABILITIES = {
+    "StudyMetadata": "native_study_mutation",
+    "StudyStandardVersion": "native_study_mutation",
+    "StudySelectionObjective": "native_study_mutation",
+    "StudySelectionEndpoint": "native_study_mutation",
+    "StudySelectionCriteria": "native_study_mutation",
+    "StudySelectionCompound": "native_study_mutation",
+    "StudyCompoundDosing": "native_study_mutation",
+    "StudySelectionArm": "native_study_mutation",
+    "StudySelectionElement": "native_study_mutation",
+    "StudyEpoch": "native_study_mutation",
+    "StudyDesignCell": "native_study_mutation",
+    "StudyVisit": "native_study_mutation",
+    "StudySelectionActivity": "native_study_mutation",
+    "StudyActivitySchedule": "native_study_mutation",
+    "StudyActivityInstruction": "native_study_mutation",
+    "CTTerm": "governed_library_reference",
+    "CTCodelist": "governed_library_reference",
+    "UnitDefinition": "governed_library_reference",
+    "DatasetVariable": "governed_library_reference",
+    "Activity": "governed_library_reference",
+    "ActivityInstance": "governed_library_reference",
+    "Timeframe": "governed_library_reference",
+    "MedicinalProduct": "governed_library_reference",
+    "PharmaceuticalProduct": "governed_library_reference",
+    "OdmForm": "governed_library_reference",
+    "OdmItemGroup": "governed_library_reference",
+    "OdmItem": "governed_library_reference",
+    "IntegrationExtension": "governed_extension",
+    "RetainedNarrative": "retained_narrative",
+    "Unresolved": "unresolved",
+}
+
+# Families with a complete typed existing-route operation/reconciliation plan.
+# A valid OSB model name outside this set remains native but non-executable.
+NATIVE_EXECUTOR_RESOURCE_TYPES = frozenset(
+    {
+        "StudySelectionObjective",
+        "StudySelectionCriteria",
+        "StudySelectionActivity",
+    }
+)
+
+
+def target_capability(resource_type: str) -> str | None:
+    return TARGET_CAPABILITIES.get(resource_type)
