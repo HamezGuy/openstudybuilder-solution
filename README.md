@@ -276,6 +276,10 @@ environment file or command environment; do not commit them. The former
 module and historical tables remain only for controlled forensic/migration work
 and require explicit unsafe-legacy opt-in when invoked directly.
 
+Command Center invokes the same worker with `--study <study-id>`. That option
+scopes both intake and review-polling leases to the requested study; omit it only
+for a general queue worker.
+
 
 ## Stopping the services
 

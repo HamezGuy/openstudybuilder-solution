@@ -158,8 +158,7 @@ class OsbProposalDb:
                 "SELECT set_config('app.tenant_id', %s, false)",
                 (self.tenant_id,),
             )
-            cursor.execute(
-                """
+            cursor.execute("""
                 SELECT current_user AS role_name, role.rolsuper, role.rolbypassrls,
                        EXISTS (
                          SELECT 1 FROM pg_class table_row
@@ -171,8 +170,7 @@ class OsbProposalDb:
                        ) AS owns_protected_table
                   FROM pg_roles role
                  WHERE role.rolname = current_user
-                """
-            )
+                """)
             posture = cursor.fetchone()
             if (
                 not posture
@@ -182,14 +180,12 @@ class OsbProposalDb:
                 or posture["owns_protected_table"]
             ):
                 raise RuntimeError("OSB_IMPORTER_DATABASE_ROLE_POSTURE_INVALID")
-            cursor.execute(
-                """
+            cursor.execute("""
                 SELECT has_table_privilege(current_user, 'osb_study_proposals_v2', 'INSERT,UPDATE,DELETE')
                        OR has_table_privilege(current_user, 'osb_proposal_heads', 'INSERT,UPDATE,DELETE')
                        OR has_table_privilege(current_user, 'osb_proposal_outbox', 'INSERT,DELETE')
                        AS excess_privilege
-                """
-            )
+                """)
             if cursor.fetchone()["excess_privilege"]:
                 raise RuntimeError("OSB_IMPORTER_DATABASE_GRANTS_EXCESSIVE")
         self.conn.commit()
@@ -203,7 +199,12 @@ class OsbProposalDb:
     def __exit__(self, *_exc):
         self.close()
 
-    def claim_next(self, lease_owner: str, lease_seconds: int = 300):
+    def claim_next(
+        self,
+        lease_owner: str,
+        lease_seconds: int = 300,
+        study_id: str | None = None,
+    ):
         """Claim one queued/retryable/expired job with ``SKIP LOCKED``.
 
         The proposal and outbox are selected in the same transaction. A running
@@ -223,6 +224,7 @@ class OsbProposalDb:
                       FROM osb_proposal_outbox
                      WHERE available_at <= NOW()
                        AND workflow_stage = 'intake'
+                       AND (CAST(%s AS text) IS NULL OR study_id = %s)
                        AND (
                          status IN ('queued', 'failed_retryable')
                          OR (status = 'running' AND lease_expires_at < clock_timestamp())
@@ -230,7 +232,8 @@ class OsbProposalDb:
                      ORDER BY available_at, created_at, outbox_id
                      FOR UPDATE SKIP LOCKED
                      LIMIT 1
-                    """
+                    """,
+                    (study_id, study_id),
                 )
                 candidate = cursor.fetchone()
                 if candidate is None:
@@ -281,7 +284,12 @@ class OsbProposalDb:
             raise OsbProposalIntegrityError("OUTBOX_PROPOSAL_MISSING")
         return {**claimed, "proposal": proposal}
 
-    def claim_review_required(self, lease_owner: str, lease_seconds: int = 300):
+    def claim_review_required(
+        self,
+        lease_owner: str,
+        lease_seconds: int = 300,
+        study_id: str | None = None,
+    ):
         """Lease one proposal awaiting OSB review without re-running intake."""
         if not lease_owner:
             raise ValueError("lease_owner is required")
@@ -296,6 +304,7 @@ class OsbProposalDb:
                       FROM osb_proposal_outbox
                      WHERE workflow_stage = 'review_polling'
                        AND available_at <= NOW()
+                       AND (CAST(%s AS text) IS NULL OR study_id = %s)
                        AND (
                          status = 'review_required'
                          OR (status = 'running' AND lease_expires_at < clock_timestamp())
@@ -303,7 +312,8 @@ class OsbProposalDb:
                      ORDER BY available_at, updated_at, outbox_id
                      FOR UPDATE SKIP LOCKED
                      LIMIT 1
-                    """
+                    """,
+                    (study_id, study_id),
                 )
                 candidate = cursor.fetchone()
                 if candidate is None:
@@ -347,8 +357,7 @@ class OsbProposalDb:
         lease_expires_at = datetime.now(timezone.utc) + timedelta(seconds=lease_seconds)
         try:
             with self.conn.cursor() as cursor:
-                cursor.execute(
-                    """
+                cursor.execute("""
                     SELECT outbox_id, proposal_hash
                       FROM osb_proposal_outbox
                      WHERE workflow_stage = 'native_execution'
@@ -360,8 +369,7 @@ class OsbProposalDb:
                      ORDER BY available_at, updated_at, outbox_id
                      FOR UPDATE SKIP LOCKED
                      LIMIT 1
-                    """
-                )
+                    """)
                 candidate = cursor.fetchone()
                 if candidate is None:
                     self.conn.commit()
@@ -478,7 +486,9 @@ class OsbProposalDb:
             raise OsbProposalIntegrityError("OSB_PROPOSAL_BYTE_LIMIT_EXCEEDED")
         reconciliation = proposal.get("reconciliation") or {}
         source_refs = proposal.get("sourceFactRefs") or []
-        content = {key: value for key, value in proposal.items() if key != "proposalHash"}
+        content = {
+            key: value for key, value in proposal.items() if key != "proposalHash"
+        }
         if _stable_hash(content) != proposal.get("proposalHash"):
             raise OsbProposalIntegrityError("OSB_PROPOSAL_HASH_MISMATCH")
         if proposal.get("proposalHash") != row["proposal_hash"]:
@@ -554,15 +564,28 @@ class OsbProposalDb:
             raise OsbProposalIntegrityError("OSB_PROPOSAL_SOURCE_BUILD_HASH_MISMATCH")
 
         section_order = (
-            "studySetup", "standards", "objectives", "endpoints", "criteria",
-            "productsDosing", "armsCohortsBranches", "epochsElementsCells",
-            "visitsTiming", "activitiesItems", "soa", "odm", "extensions",
-            "retainedNarrative", "unresolved",
+            "studySetup",
+            "standards",
+            "objectives",
+            "endpoints",
+            "criteria",
+            "productsDosing",
+            "armsCohortsBranches",
+            "epochsElementsCells",
+            "visitsTiming",
+            "activitiesItems",
+            "soa",
+            "odm",
+            "extensions",
+            "retainedNarrative",
+            "unresolved",
         )
         sections = proposal.get("sections") or {}
         if set(sections) - set(section_order):
             raise OsbProposalIntegrityError("OSB_PROPOSAL_UNKNOWN_SECTION")
-        objects = [item for section in section_order for item in sections.get(section) or []]
+        objects = [
+            item for section in section_order for item in sections.get(section) or []
+        ]
         if len(objects) > 15_000:
             raise OsbProposalIntegrityError("OSB_PROPOSAL_OBJECT_LIMIT_EXCEEDED")
         object_ids = set()

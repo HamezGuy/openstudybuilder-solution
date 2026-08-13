@@ -9,6 +9,7 @@ report ``succeeded`` until reviewed native execution and reconciliation complete
 from __future__ import annotations
 
 import json
+import os
 import socket
 import sys
 import threading
@@ -32,10 +33,18 @@ class ImportOsbProposalV2(BaseImporter):
     lease_seconds = 300
     heartbeat_seconds = 60
 
-    def __init__(self, api=None, metrics_inst=None, db=None, worker_id=None):
+    def __init__(
+        self,
+        api=None,
+        metrics_inst=None,
+        db=None,
+        worker_id=None,
+        study_id=None,
+    ):
         super().__init__(api=api, metrics_inst=metrics_inst)
         self.db = db or OsbProposalDb(log=self.log)
         self.worker_id = worker_id or f"{socket.gethostname()}:{id(self)}"
+        self.study_id = study_id
 
     def _append(self, job, item):
         self.db.append_item_result(
@@ -82,7 +91,9 @@ class ImportOsbProposalV2(BaseImporter):
                     lost.append(True)
                     stopped.set()
 
-        thread = threading.Thread(target=renew, name="osb-proposal-heartbeat", daemon=True)
+        thread = threading.Thread(
+            target=renew, name="osb-proposal-heartbeat", daemon=True
+        )
         thread.start()
         try:
             yield
@@ -194,9 +205,12 @@ class ImportOsbProposalV2(BaseImporter):
         }
 
     def run_once(self):
-        job = self.db.claim_next(self.worker_id)
+        job = self.db.claim_next(self.worker_id, study_id=self.study_id)
         if job is None:
-            review_job = self.db.claim_review_required(self.worker_id)
+            review_job = self.db.claim_review_required(
+                self.worker_id,
+                study_id=self.study_id,
+            )
             if review_job is None:
                 self.log.info(
                     "No queued, reclaimable, or review-pending OSB Proposal V2 job"
@@ -304,8 +318,18 @@ class ImportOsbProposalV2(BaseImporter):
 
 
 def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(prog="run_import_osb_proposal_v2.py")
+    parser.add_argument(
+        "--study",
+        default=os.environ.get("ECRF_STUDY_ID"),
+        help="Limit this worker invocation to one study id",
+    )
+    args = parser.parse_args()
+
     metrics = Metrics()
-    importer = ImportOsbProposalV2(metrics_inst=metrics)
+    importer = ImportOsbProposalV2(metrics_inst=metrics, study_id=args.study)
     try:
         result = importer.run_once()
     finally:

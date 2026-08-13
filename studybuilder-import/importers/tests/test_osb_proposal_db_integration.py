@@ -16,7 +16,6 @@ from psycopg.rows import dict_row
 
 from ..utils.osb_proposal_db import OsbProposalDb, _stable_hash
 
-
 OWNER_DSN = os.environ.get("ECRF_TEST_OWNER_PG_DSN")
 WORKER_DSN = os.environ.get("ECRF_TEST_PG_DSN")
 pytestmark = pytest.mark.skipif(
@@ -256,7 +255,19 @@ def test_worker_role_claims_renews_reclaims_and_finishes_exactly_once():
                 "rolbypassrls": False,
             }
 
-            claimed = first.claim_next("worker-1", lease_seconds=30)
+            assert (
+                first.claim_next(
+                    "wrong-study-worker",
+                    lease_seconds=30,
+                    study_id="not-this-study",
+                )
+                is None
+            )
+            claimed = first.claim_next(
+                "worker-1",
+                lease_seconds=30,
+                study_id=value["study_id"],
+            )
             assert claimed["attempt"] == 1
             assert claimed["proposal"] == value["proposal"]
             assert second.claim_next("worker-2", lease_seconds=30) is None
@@ -339,7 +350,19 @@ def test_review_complete_is_claimed_only_by_the_native_execution_stage():
                 available_at=datetime.now(timezone.utc),
             )
 
-            review = db.claim_review_required("review-poller", lease_seconds=30)
+            assert (
+                db.claim_review_required(
+                    "wrong-study-poller",
+                    lease_seconds=30,
+                    study_id="not-this-study",
+                )
+                is None
+            )
+            review = db.claim_review_required(
+                "review-poller",
+                lease_seconds=30,
+                study_id=value["study_id"],
+            )
             assert review["attempt"] == 2
             db.finish(
                 review["outbox_id"],

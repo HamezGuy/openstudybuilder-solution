@@ -14,8 +14,10 @@ class FakeDb:
         self.results = []
         self.finishes = []
         self.generations = []
+        self.claimed_studies = []
 
-    def claim_next(self, owner):
+    def claim_next(self, owner, study_id=None):
+        self.claimed_studies.append(("intake", study_id))
         return {
             "outbox_id": "job-1",
             "proposal_hash": self.proposal["proposalHash"],
@@ -23,7 +25,8 @@ class FakeDb:
             "proposal": self.proposal,
         }
 
-    def claim_review_required(self, owner):
+    def claim_review_required(self, owner, study_id=None):
+        self.claimed_studies.append(("review", study_id))
         return None
 
     def renew_lease(self, outbox_id, owner, generation, lease_seconds):
@@ -109,6 +112,7 @@ def worker(db):
     value.db = db
     value.api = FakeApi()
     value.worker_id = "worker-1"
+    value.study_id = None
     value.log = logging.getLogger("test-proposal-worker")
     return value
 
@@ -177,6 +181,27 @@ def test_openapi_network_failure_is_retryable(monkeypatch):
     assert db.finishes[-1][4] is not None
 
 
+def test_requested_study_scopes_intake_and_review_claims():
+    class EmptyDb(FakeDb):
+        def claim_next(self, owner, study_id=None):
+            self.claimed_studies.append(("intake", study_id))
+            return None
+
+        def claim_review_required(self, owner, study_id=None):
+            self.claimed_studies.append(("review", study_id))
+            return None
+
+    db = EmptyDb(proposal("expected-hash"))
+    scoped_worker = worker(db)
+    scoped_worker.study_id = "study-a"
+
+    assert scoped_worker.run_once() is None
+    assert db.claimed_studies == [
+        ("intake", "study-a"),
+        ("review", "study-a"),
+    ]
+
+
 def test_review_contract_rejection_is_terminal(monkeypatch):
     openapi = b'{"openapi":"3.1.0"}'
     db = FakeDb(proposal(_stable_hash(json.loads(openapi))))
@@ -202,10 +227,12 @@ class FakeReviewDb(FakeDb):
         super().__init__(proposal)
         self.review_job = review_job
 
-    def claim_next(self, owner):
+    def claim_next(self, owner, study_id=None):
+        self.claimed_studies.append(("intake", study_id))
         return None
 
-    def claim_review_required(self, owner):
+    def claim_review_required(self, owner, study_id=None):
+        self.claimed_studies.append(("review", study_id))
         if not self.review_job:
             return None
         return {
