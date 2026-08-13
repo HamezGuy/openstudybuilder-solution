@@ -2,6 +2,19 @@ import { defineStore } from 'pinia'
 
 import { auth } from '@/plugins/auth'
 
+/** Decode a JWT payload for display only. Authorization remains server-side. */
+export function decodeJwtPayload(token) {
+  const segments = String(token).split('.')
+  if (segments.length !== 3 || !segments[1]) {
+    throw new Error('Invalid JWT shape')
+  }
+  const base64 = segments[1].replace(/-/g, '+').replace(/_/g, '/')
+  const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=')
+  const binary = atob(padded)
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0))
+  return JSON.parse(new TextDecoder().decode(bytes))
+}
+
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     userInfo: null,
@@ -23,7 +36,7 @@ export const useAuthStore = defineStore('auth', {
         if (!resp.ok) return null
         const body = await resp.json()
         if (!body || !body.access_token) return null
-        return JSON.parse(atob(body.access_token.split('.')[1]))
+        return decodeJwtPayload(body.access_token)
       } catch {
         return null
       }
