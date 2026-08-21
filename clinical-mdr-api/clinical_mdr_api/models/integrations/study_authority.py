@@ -33,7 +33,15 @@ class StudyAuthorityCounts(BaseModel):
     design_cells: int = 0
     visits: int = 0
     activities: int = 0
+    activity_instances: int = 0
     activity_schedules: int = 0
+    compounds: int = 0
+    compound_dosings: int = 0
+    activity_items: int = 0
+    odm_items: int = 0
+    odm_item_groups: int = 0
+    odm_forms: int = 0
+    odm_study_events: int = 0
     usdm_objectives: int = 0
     usdm_endpoints: int = 0
     usdm_arms: int = 0
@@ -42,6 +50,11 @@ class StudyAuthorityCounts(BaseModel):
     usdm_design_cells: int = 0
     usdm_encounters: int = 0
     usdm_activities: int = 0
+    usdm_interventions: int = 0
+    usdm_administrations: int = 0
+    usdm_eligibility_criteria: int = 0
+    usdm_eligibility_criterion_items: int = 0
+    usdm_population_criterion_links: int = 0
     usdm_scheduled_activity_links: int = 0
     usdm_void_codes: int = 0
 
@@ -58,7 +71,7 @@ class StudyAuthorityReconciliationRow(BaseModel):
 
 
 class StudyAuthoritySnapshot(BaseModel):
-    schema_version: Literal["osb-authority/1.1"] = "osb-authority/1.1"
+    schema_version: Literal["osb-authority/1.2"] = "osb-authority/1.2"
     mapping_authority: Literal["OpenStudyBuilder"] = "OpenStudyBuilder"
     study_definition_standard: Literal["CDISC USDM 4"] = "CDISC USDM 4"
     crf_metadata_standard: Literal["CDISC ODM 1.3.2"] = "CDISC ODM 1.3.2"
@@ -88,10 +101,12 @@ class StudyAuthoritySnapshot(BaseModel):
     study_design_cells: list[dict[str, Any]] = Field(default_factory=list)
     study_visits: list[dict[str, Any]] = Field(default_factory=list)
     study_activities: list[dict[str, Any]] = Field(default_factory=list)
+    study_activity_instances: list[dict[str, Any]] = Field(default_factory=list)
     study_activity_schedules: list[dict[str, Any]] = Field(default_factory=list)
+    study_compounds: list[dict[str, Any]] = Field(default_factory=list)
+    study_compound_dosings: list[dict[str, Any]] = Field(default_factory=list)
+    study_odm_metadata: dict[str, Any] = Field(default_factory=dict)
     usdm_extensions: dict[str, Any] = Field(default_factory=dict)
-    reconciliation: list[StudyAuthorityReconciliationRow] = Field(
-        default_factory=list
-    )
+    reconciliation: list[StudyAuthorityReconciliationRow] = Field(default_factory=list)
     structure_statistics: dict[str, Any]
     integrity: dict[str, Any]

@@ -104,6 +104,13 @@ from clinical_mdr_api.services._utils import (  # type: ignore
     service_level_generic_filtering,
     service_level_generic_header_filtering,
 )
+from clinical_mdr_api.services.studies.study_visibility import (
+    assigned_study_uids,
+    bind_study_to_current_tenant,
+    catalog_item_author,
+    delegated_study_scope_required,
+    study_visible_to_user,
+)
 from clinical_mdr_api.utils.db_integrity_checks import (
     QUERIES,
     execute_all_checks_for_study,
@@ -120,6 +127,28 @@ from common.telemetry import trace_calls
 from common.utils import booltostr
 
 log = logging.getLogger(__name__)
+
+
+def _request_user():
+    """Current request user, or None when there is no auth context (unit tests)."""
+    try:
+        return user()
+    except Exception:  # pylint: disable=broad-exception-caught
+        return None
+
+
+def _item_uid(item) -> str | None:
+    if item is None:
+        return None
+    if isinstance(item, dict):
+        return item.get("uid") or item.get("study_uid")
+    return getattr(item, "uid", None)
+
+
+def _caller_may_see(item) -> bool:
+    return study_visible_to_user(
+        _request_user(), catalog_item_author(item), study_uid=_item_uid(item)
+    )
 
 
 def validate_if_study_is_not_locked(
@@ -351,7 +380,7 @@ class StudyService:
                 study_value_version=study_value_version,
             )
 
-            if study_definition is None:
+            if study_definition is None or not _caller_may_see(study_definition):
                 raise NotFoundException("Study Definition", uid)
 
             return self._models_study_from_study_definition_ar(
@@ -1066,6 +1095,7 @@ class StudyService:
             has_study_activity_instruction,
             deleted,
         )
+        items = [item for item in items if _caller_may_see(item)]
 
         if minimal_response:
             return [StudyMinimal.from_input(item) for item in items]
@@ -1100,21 +1130,49 @@ class StudyService:
             # Some transformation logic is happening from an aggregated object to the pydantic return model
             # This logic prevents us from doing the filtering, sorting, and pagination on the Cypher side
             # Consequently, this has to be done here in the service layer
-            all_items = self._repos.study_definition_repository.find_all(
-                has_study_footnote=has_study_footnote,
-                has_study_objective=has_study_objective,
-                has_study_endpoint=has_study_endpoint,
-                has_study_criteria=has_study_criteria,
-                has_study_activity=has_study_activity,
-                has_study_activity_instruction=has_study_activity_instruction,
-                sort_by={},
-                total_count=False,
-                filter_by={},
-                deleted=deleted,
-            )
+            scoped_study_uids: tuple[str, ...] = ()
+            if delegated_study_scope_required():
+                scoped_study_uids = assigned_study_uids(require_write=False)
+                exact_items = [
+                    item
+                    for uid in scoped_study_uids
+                    if (
+                        item := self._repos.study_definition_repository.find_by_uid(
+                            uid=uid
+                        )
+                    )
+                    is not None
+                ]
+            else:
+                all_items = self._repos.study_definition_repository.find_all(
+                    has_study_footnote=has_study_footnote,
+                    has_study_objective=has_study_objective,
+                    has_study_endpoint=has_study_endpoint,
+                    has_study_criteria=has_study_criteria,
+                    has_study_activity=has_study_activity,
+                    has_study_activity_instruction=has_study_activity_instruction,
+                    sort_by={},
+                    total_count=False,
+                    filter_by={},
+                    deleted=deleted,
+                )
+                exact_items = all_items.items
 
             if not sort_by:
                 sort_by = {"uid": True}
+
+            if delegated_study_scope_required():
+                scoped_uid_set = set(scoped_study_uids)
+
+                def find_scoped_parent(uid: str):
+                    if uid not in scoped_uid_set:
+                        return None
+                    return self._repos.study_definition_repository.find_by_uid(uid=uid)
+
+            else:
+                find_scoped_parent = (
+                    self._repos.study_definition_repository.find_by_uid
+                )
 
             # then prepare and return response of our service
             parsed_items = [
@@ -1122,11 +1180,12 @@ class StudyService:
                     study_definition_ar=item,
                     find_project_by_project_number=self._repos.project_repository.find_by_project_number,
                     find_clinical_programme_by_uid=self._repos.clinical_programme_repository.find_by_uid,
-                    find_study_parent_part_by_uid=self._repos.study_definition_repository.find_by_uid,
+                    find_study_parent_part_by_uid=find_scoped_parent,
                     include_sections=include_sections,
                     exclude_sections=exclude_sections,
                 )
-                for item in all_items.items
+                for item in exact_items
+                if _caller_may_see(item)
             ]
 
             # Do filtering, sorting, pagination and count
@@ -1595,6 +1654,7 @@ class StudyService:
 
             # save the aggregate instance we have just created
             self._repos.study_definition_repository.save(study_definition)
+            bind_study_to_current_tenant(study_definition.uid)
 
             if is_subpart:
                 self._repos.study_definition_repository.update_subpart_relationship(

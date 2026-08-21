@@ -19,8 +19,13 @@ function extractStudyUidFromLocalStorage() {
 }
 
 function getAppEnvVariable() {
-  const $config = inject('$config')
-  const { APP_ENV } = $config
+  let $config
+  try {
+    $config = inject('$config', null)
+  } catch {
+    $config = null
+  }
+  const APP_ENV = $config?.APP_ENV
 
   if (!APP_ENV) return ''
 

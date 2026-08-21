@@ -1,0 +1,374 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.accuratrials.invalid/osb/osb-candidate-request-v1.schema.json",
+  "title": "OsbCandidateRequestV1",
+  "description": "OSB-owned receiving contract produced by CSL from one immutable SemanticSnapshotV1 and SourceFactPackageV1. CSL does not select a native target.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "requestId",
+    "requestVersionId",
+    "tenantId",
+    "platformStudyId",
+    "osbStudyIdentity",
+    "sourceFactPackage",
+    "semanticSnapshot",
+    "activeClaimRevisions",
+    "requestedObjectFamilies",
+    "typedSourceIntents",
+    "evidenceArtifactRefs",
+    "projectionRuleset",
+    "inputConservation",
+    "checkpointPreconditions",
+    "expiresAt",
+    "createdAt",
+    "createdBy"
+  ],
+  "properties": {
+    "contractVersion": { "const": "OsbCandidateRequestV1@1.0.0" },
+    "requestId": { "type": "string", "format": "uuid" },
+    "requestVersionId": { "type": "string", "format": "uuid" },
+    "tenantId": { "type": "string", "format": "uuid" },
+    "platformStudyId": { "type": "string", "format": "uuid" },
+    "osbStudyIdentity": { "$ref": "#/$defs/osbStudyIdentity" },
+    "sourceFactPackage": { "$ref": "#/$defs/sourcePackageRef" },
+    "semanticSnapshot": { "$ref": "#/$defs/snapshotRef" },
+    "activeClaimRevisions": {
+      "type": "array",
+      "maxItems": 1000000,
+      "items": { "$ref": "#/$defs/activeClaimRevision" }
+    },
+    "requestedObjectFamilies": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/resourceFamily" }
+    },
+    "typedSourceIntents": {
+      "type": "array",
+      "maxItems": 1000000,
+      "items": { "$ref": "#/$defs/typedSourceIntent" }
+    },
+    "evidenceArtifactRefs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "items": { "$ref": "#/$defs/artifactRef" }
+    },
+    "projectionRuleset": { "$ref": "#/$defs/projectionRuleset" },
+    "inputConservation": { "$ref": "#/$defs/requestCensus" },
+    "checkpointPreconditions": { "$ref": "#/$defs/checkpoint" },
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "createdBy": { "type": "string", "minLength": 1, "maxLength": 1024 }
+  },
+  "$defs": {
+    "hashRef": {
+      "title": "OsbCandidateHashRefV1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "canonicalizationVersion", "value", "mediaType", "schemaVersion", "excludedPaths"],
+      "properties": {
+        "algorithm": { "const": "sha-256" },
+        "canonicalizationVersion": { "enum": ["canonical-json/1.0", "raw-bytes/1.0"] },
+        "value": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "mediaType": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "schemaVersion": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "excludedPaths": { "type": "array", "maxItems": 0, "items": { "type": "string" } }
+      }
+    },
+    "resourceFamily": {
+      "title": "OsbResourceFamilyV1",
+      "enum": [
+        "activities",
+        "compound_product_relationships",
+        "controlled_terminology",
+        "criteria_templates",
+        "endpoint_templates",
+        "objective_templates",
+        "odm_forms",
+        "odm_item_groups",
+        "odm_items",
+        "study_compound_dosing_relationships",
+        "units"
+      ]
+    },
+    "osbStudyIdentity": {
+      "title": "OsbStudyIdentityV1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion", "system", "tenantId", "platformStudyId", "namespace",
+        "objectType", "bindingId", "nativeIdentity", "nativeVersion", "verificationStatus"
+      ],
+      "properties": {
+        "contractVersion": { "const": "1.0.0" },
+        "system": { "const": "osb" },
+        "tenantId": { "type": "string", "format": "uuid" },
+        "platformStudyId": { "type": "string", "format": "uuid" },
+        "namespace": { "const": "accuratrials-osb" },
+        "objectType": { "const": "study-draft-root" },
+        "bindingId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "nativeIdentity": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "nativeVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "verificationStatus": { "const": "verified" }
+      }
+    },
+    "sourcePackageRef": {
+      "title": "OsbCandidateSourcePackageRefV1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["packageVersionId", "payloadHash", "factSetHash"],
+      "properties": {
+        "packageVersionId": { "type": "string", "format": "uuid" },
+        "payloadHash": { "$ref": "#/$defs/hashRef" },
+        "factSetHash": { "$ref": "#/$defs/hashRef" }
+      }
+    },
+    "snapshotRef": {
+      "title": "OsbCandidateSnapshotRefV1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["snapshotVersionId", "payloadHash", "memberSetHash"],
+      "properties": {
+        "snapshotVersionId": { "type": "string", "format": "uuid" },
+        "payloadHash": { "$ref": "#/$defs/hashRef" },
+        "memberSetHash": { "$ref": "#/$defs/hashRef" }
+      }
+    },
+    "activeClaimRevision": {
+      "title": "OsbCandidateActiveClaimRevisionV1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceFactId", "revision", "lifecycle", "valueHash"],
+      "properties": {
+        "sourceFactId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "lifecycle": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "valueHash": { "$ref": "#/$defs/hashRef" }
+      }
+    },
+    "typedValue": {
+      "title": "OsbTypedSourceValueV1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "sourcePath", "valueType", "value"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "sourcePath": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "valueType": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "value": true
+      }
+    },
+    "typedSourceIntent": {
+      "title": "OsbTypedSourceIntentV1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "factId", "revision", "conceptId", "targetKey", "semanticRole",
+        "resourceFamily", "source", "evidence", "searchStrings", "searchCodes", "createOption"
+      ],
+      "properties": {
+        "factId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "conceptId": { "type": "string", "format": "uuid" },
+        "targetKey": { "const": "primary" },
+        "semanticRole": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "resourceFamily": { "$ref": "#/$defs/resourceFamily" },
+        "source": {
+          "title": "OsbTypedSourceIntentSourceV1",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["assertionType", "clinicalDomain", "candidateType", "exactQuote", "label", "values"],
+          "properties": {
+            "assertionType": { "type": ["string", "null"] },
+            "clinicalDomain": { "type": ["string", "null"] },
+            "candidateType": { "type": ["string", "null"] },
+            "exactQuote": { "type": ["string", "null"] },
+            "label": { "type": ["string", "null"] },
+            "values": {
+              "type": "array",
+              "maxItems": 1000,
+              "items": { "$ref": "#/$defs/typedValue" }
+            }
+          }
+        },
+        "evidence": true,
+        "searchStrings": {
+          "type": "array",
+          "maxItems": 20,
+          "items": { "type": "string", "minLength": 1, "maxLength": 256 }
+        },
+        "searchCodes": {
+          "type": "array",
+          "maxItems": 20,
+          "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+        },
+        "createOption": {
+          "title": "OsbCreateOptionV1",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["allowed", "requestedNativeType"],
+          "properties": {
+            "allowed": { "const": true },
+            "requestedNativeType": { "type": "string", "minLength": 1, "maxLength": 128 }
+          }
+        }
+      }
+    },
+    "artifactRef": {
+      "title": "OsbCandidateEvidenceArtifactRefV1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion", "artifactId", "artifactVersionId", "kind", "stableLocator",
+        "payloadHash", "descriptorHash", "byteSize", "classification", "tenantId", "region",
+        "producerService", "producerEnvironment", "producerVersion", "payloadContract",
+        "payloadContractVersion", "purpose", "createdAt"
+      ],
+      "properties": {
+        "contractVersion": { "const": "ArtifactRefV1@1.0.0" },
+        "artifactId": { "type": "string", "format": "uuid" },
+        "artifactVersionId": { "type": "string", "format": "uuid" },
+        "kind": { "type": "string", "minLength": 3, "maxLength": 128 },
+        "stableLocator": { "type": "string", "minLength": 8, "maxLength": 2048 },
+        "payloadHash": { "$ref": "#/$defs/hashRef" },
+        "descriptorHash": { "$ref": "#/$defs/hashRef" },
+        "byteSize": { "type": "integer", "minimum": 0 },
+        "classification": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "tenantId": { "type": "string", "format": "uuid" },
+        "region": { "type": "string", "minLength": 2, "maxLength": 64 },
+        "producerService": { "type": "string", "minLength": 3, "maxLength": 128 },
+        "producerEnvironment": { "type": "string", "minLength": 2, "maxLength": 64 },
+        "producerVersion": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "payloadContract": { "type": "string", "minLength": 3, "maxLength": 256 },
+        "payloadContractVersion": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "purpose": { "type": "string", "minLength": 3, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "projectionRuleset": {
+      "title": "OsbProjectionRulesetV1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "hash"],
+      "properties": {
+        "id": { "const": "csl-to-osb-candidate-request" },
+        "version": { "const": "1.0.0" },
+        "hash": { "$ref": "#/$defs/hashRef" }
+      }
+    },
+    "requestCensus": {
+      "title": "ConservationCensusV1",
+      "description": "Value-level source-to-target conservation rows. Aggregate counts alone are not proof.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contractVersion", "rows", "rowSetHash", "counts"],
+      "properties": {
+        "contractVersion": { "const": "ConservationCensusV1@1.0.0" },
+        "rows": {
+          "type": "array",
+          "maxItems": 1000000,
+          "items": { "$ref": "#/$defs/censusRow" }
+        },
+        "rowSetHash": { "$ref": "#/$defs/hashRef" },
+        "counts": {
+          "title": "ConservationCensusCountsV1",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["rows", "native", "governedExtension", "excludedSigned", "deferredBlocking", "quarantined", "rejected"],
+          "properties": {
+            "rows": { "type": "integer", "minimum": 0 },
+            "native": { "type": "integer", "minimum": 0 },
+            "governedExtension": { "type": "integer", "minimum": 0 },
+            "excludedSigned": { "type": "integer", "minimum": 0 },
+            "deferredBlocking": { "type": "integer", "minimum": 0 },
+            "quarantined": { "type": "integer", "minimum": 0 },
+            "rejected": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "censusEndpoint": {
+      "title": "ConservationEndpointV1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifactId", "contract", "type", "path", "valueHash"],
+      "properties": {
+        "artifactId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "contract": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "type": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "path": { "type": "string", "pattern": "^#(?:/(?:[^~/]|~[01])*)*$", "maxLength": 4096 },
+        "valueHash": { "$ref": "#/$defs/hashRef" }
+      }
+    },
+    "censusExclusionPolicy": {
+      "title": "ConservationExclusionPolicyV1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policyId", "policyVersion", "approver", "reason", "sourcePath"],
+      "properties": {
+        "policyId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "policyVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "approver": { "type": "string", "minLength": 1, "maxLength": 3072 },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "sourcePath": { "type": "string", "pattern": "^#(?:/(?:[^~/]|~[01])*)*$", "maxLength": 4096 }
+      }
+    },
+    "censusRow": {
+      "title": "ConservationCensusRowV1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unitId", "source", "target", "multiplicity", "splitMergeGroup", "splitMergeRule",
+        "ordering", "disposition", "exclusionPolicy", "evidenceRefs", "receiptRefs"
+      ],
+      "properties": {
+        "unitId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "source": { "$ref": "#/$defs/censusEndpoint" },
+        "target": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/censusEndpoint" }] },
+        "multiplicity": {
+          "title": "ConservationCensusMultiplicityV1",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source", "target"],
+          "properties": {
+            "source": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+            "target": { "type": "integer", "minimum": 0, "maximum": 1000000 }
+          }
+        },
+        "splitMergeGroup": { "type": ["string", "null"], "maxLength": 512 },
+        "splitMergeRule": { "type": ["string", "null"], "maxLength": 512 },
+        "ordering": {
+          "title": "ConservationCensusOrderingV1",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["significant", "sourceIndex", "targetIndex"],
+          "properties": {
+            "significant": { "type": "boolean" },
+            "sourceIndex": { "type": ["integer", "null"], "minimum": 0 },
+            "targetIndex": { "type": ["integer", "null"], "minimum": 0 }
+          }
+        },
+        "disposition": {
+          "enum": ["native", "governed_extension", "excluded_signed", "deferred_blocking", "quarantined", "rejected"]
+        },
+        "exclusionPolicy": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/censusExclusionPolicy" }] },
+        "evidenceRefs": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 1024 } },
+        "receiptRefs": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 1024 } }
+      }
+    },
+    "checkpoint": {
+      "title": "OsbCandidateCheckpointV1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["osbNativeVersion", "semanticSnapshotHash"],
+      "properties": {
+        "osbNativeVersion": { "type": ["string", "null"] },
+        "semanticSnapshotHash": { "$ref": "#/$defs/hashRef" }
+      }
+    }
+  }
+}

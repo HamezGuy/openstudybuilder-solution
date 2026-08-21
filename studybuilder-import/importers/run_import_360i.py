@@ -343,8 +343,8 @@ class Import360i(BaseImporter):
             )
         return next(iter(unique_terms.values())), None
 
-    def _lookup_age_year_unit(self):
-        """Resolve the unique governed CDISC year unit in the Age Unit subset."""
+    def _matching_age_year_units(self):
+        """Final Age Unit subset definitions bound to CDISC C29848 / year."""
         units = self.api.get_all_from_api("/concepts/unit-definitions") or []
 
         def term_name(term):
@@ -365,16 +365,45 @@ class Import360i(BaseImporter):
                 or term_name(term) in {"year", "years"}
                 for term in ct_units
             )
-            if "age unit" in subsets and has_year_ct:
+            if "age unit" in subsets and has_year_ct and unit.get("uid"):
                 matches.append(unit)
-        unique = {unit.get("uid"): unit for unit in matches if unit.get("uid")}
-        if len(unique) != 1:
+        return list({unit["uid"]: unit for unit in matches}.values())
+
+    def _lookup_age_year_unit(self):
+        """Resolve a governed CDISC year unit in the Age Unit subset.
+
+        Some seeds carry both `year` and `years`. OSB's study-population write
+        canonicalizes to `years`, so that name wins when both exist.
+        """
+        unique = self._matching_age_year_units()
+        if not unique:
             return None, (
                 "expected one Final OSB UnitDefinition for CDISC C29848 in the "
-                f"Age Unit subset, found {len(unique)}"
+                "Age Unit subset, found 0"
             )
-        unit = next(iter(unique.values()))
-        return {"uid": unit["uid"], "name": unit.get("name")}, None
+        if len(unique) == 1:
+            unit = unique[0]
+            return {"uid": unit["uid"], "name": unit.get("name")}, None
+
+        def named(label):
+            return [
+                unit
+                for unit in unique
+                if self._semantic_key(unit.get("name")) == label
+            ]
+
+        for label in ("years", "year"):
+            preferred = named(label)
+            if len(preferred) == 1:
+                unit = preferred[0]
+                return {"uid": unit["uid"], "name": unit.get("name")}, None
+        return None, (
+            "expected one Final OSB UnitDefinition for CDISC C29848 in the "
+            f"Age Unit subset, found {len(unique)}"
+        )
+
+    def _age_year_unit_uids(self):
+        return {unit["uid"] for unit in self._matching_age_year_units()}
 
     # ------------------------------------------------------------------
     # Prerequisites: programme, project, units, codelists
@@ -819,6 +848,16 @@ class Import360i(BaseImporter):
             }
             for path, wanted in expected
             if self._at(actual_metadata, path) != wanted
+        ]
+        age_year_uids = self._age_year_unit_uids()
+        mismatches = [
+            row
+            for row in mismatches
+            if not (
+                row["path"].endswith("duration_unit_code.uid")
+                and row["expected"] in age_year_uids
+                and row["actual"] in age_year_uids
+            )
         ]
         if mismatches:
             self.census.stop(

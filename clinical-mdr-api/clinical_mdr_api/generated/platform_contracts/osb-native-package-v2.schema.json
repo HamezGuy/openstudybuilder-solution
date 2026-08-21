@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.accuratrials.com/osb/OsbNativePackageV2/2.0",
+  "title": "OsbNativePackageV2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion", "packageId", "packageVersionId", "tenantId", "platformStudyId",
+    "osbStudyIdentity", "releasedVersion", "authorityHash", "sourceFactPackage",
+    "semanticSnapshotHash", "decisionSetHash", "transformationCheckpointHash",
+    "specialistReviewLockReceipt", "preReleaseApproval", "platformManifest", "profiles",
+    "terminologyPins", "capabilityManifest", "studyDesign", "captureDesign", "contentIndex",
+    "contentIndexHash", "conservation", "provenancePins", "productionEligible", "createdAt", "createdBy"
+  ],
+  "properties": {
+    "contractVersion": { "const": "OsbNativePackageV2@2.0.0" },
+    "packageId": { "type": "string", "format": "uuid" },
+    "packageVersionId": { "type": "string", "format": "uuid" },
+    "tenantId": { "type": "string", "format": "uuid" },
+    "platformStudyId": { "type": "string", "format": "uuid" },
+    "osbStudyIdentity": { "type": "object", "required": ["nativeIdentity", "nativeVersion"] },
+    "releasedVersion": { "type": "string", "minLength": 1 },
+    "authorityHash": { "$ref": "#/$defs/HashRef" },
+    "sourceFactPackage": { "type": "object" },
+    "semanticSnapshotHash": { "$ref": "#/$defs/HashRef" },
+    "decisionSetHash": { "$ref": "#/$defs/HashRef" },
+    "transformationCheckpointHash": { "$ref": "#/$defs/HashRef" },
+    "specialistReviewLockReceipt": { "$ref": "#/$defs/ArtifactRef" },
+    "preReleaseApproval": { "$ref": "#/$defs/ArtifactRef" },
+    "platformManifest": { "$ref": "#/$defs/ArtifactRef" },
+    "profiles": { "type": "object" },
+    "terminologyPins": { "type": "array", "uniqueItems": true, "items": { "type": "string" } },
+    "capabilityManifest": { "type": "object" },
+    "studyDesign": { "type": "object" },
+    "captureDesign": { "type": "object" },
+    "contentIndex": { "type": "array" },
+    "contentIndexHash": { "$ref": "#/$defs/HashRef" },
+    "conservation": { "type": "object" },
+    "provenancePins": { "type": "object" },
+    "productionEligible": { "const": false },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "createdBy": { "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "HashRef": {
+      "type": "object",
+      "required": ["algorithm", "canonicalizationVersion", "value", "mediaType", "schemaVersion", "excludedPaths"],
+      "properties": { "value": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" } }
+    },
+    "ArtifactRef": {
+      "type": "object",
+      "required": ["contractVersion", "artifactId", "artifactVersionId", "kind", "payloadHash", "descriptorHash"]
+    }
+  }
+}

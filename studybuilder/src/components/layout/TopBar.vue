@@ -36,7 +36,7 @@
         {{ app.name }}
       </v-btn>
       <v-btn
-        v-if="isAuthenticated"
+        v-if="isAuthenticated && checkPermission(roles.ADMIN_READ)"
         class="text-capitalize"
         href="/neodash/"
         target="_blank"
@@ -230,6 +230,7 @@
           {{ $t('_global.select_study') }}
         </v-btn>
         <v-btn
+          v-if="checkPermission(roles.STUDY_WRITE)"
           color="nnBaseBlue"
           rounded="xl"
           elevation="1"
@@ -239,7 +240,7 @@
         </v-btn>
       </template>
     </ConfirmDialog>
-    <v-dialog v-model="showSelectForm" persistent max-width="600px">
+    <v-dialog v-model="showSelectForm" persistent max-width="600px" z-index="4000">
       <StudyQuickSelectForm
         @close="showSelectForm = false"
         @selected="reloadPage"
@@ -306,10 +307,11 @@ const apps = [
     name: 'Studies',
     needsAuthentication: true,
   },
-  {
+    {
     icon: 'mdi-bookshelf',
     name: 'Library',
     needsAuthentication: true,
+    requiredRole: roles.LIBRARY_READ,
   },
   {
     icon: 'mdi-wrench-outline',
@@ -328,12 +330,21 @@ const documentationPortalUrl = computed(() => {
   return $config.DOC_BASE_URL
 })
 const username = computed(() => {
-  return authStore.userInfo ? authStore.userInfo.name : 'Anonymous'
+  if (!authStore.identityResolved) return ''
+  return (
+    authStore.userInfo?.name ||
+    authStore.userInfo?.username ||
+    authStore.userInfo?.preferred_username ||
+    ''
+  )
 })
 const isAuthenticated = computed(() => {
-  return !$config.OAUTH_ENABLED || !!authStore.userInfo
+  if (!authStore.identityResolved) return false
+  if (authStore.userInfo) return true
+  return !$config.OAUTH_ENABLED
 })
 const availableApps = computed(() => {
+  if (!authStore.identityResolved) return []
   return apps.filter(
     (app) =>
       !app.needsAuthentication ||
@@ -356,12 +367,16 @@ function redirectToStudyTable() {
   router.push({ name: 'SelectOrAddStudy' })
 }
 function reloadPage() {
-  const regex = /\/studies\/Study_[\d]+/
-  const newUrl = document.location.href.replace(
-    regex,
-    '/studies/' + selectedStudy.value.uid
-  )
-  document.location.href = newUrl
+  const uid = selectedStudy.value?.uid
+  if (!uid) return
+  const current = router.currentRoute.value
+  if (current.params.study_id && current.params.study_id !== uid) {
+    router.replace({
+      name: current.name,
+      params: { ...current.params, study_id: uid },
+      query: current.query,
+    })
+  }
 }
 </script>
 

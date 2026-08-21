@@ -1,3 +1,5 @@
+import base64
+import json
 import logging
 import time
 import uuid
@@ -23,6 +25,8 @@ class JWKService(KeySet):
         oauth_client: OAuth2Mixin,
         audience: str | list[str],
         leeway_seconds: int | float = 15,
+        cache_ttl_seconds: int = 300,
+        revoked_kids: set[str] | None = None,
     ):
         self.oauth_client = oauth_client
         self.audience = audience
@@ -30,6 +34,9 @@ class JWKService(KeySet):
         self._http_client = AsyncClient()
         self.jwks_uri = None
         self.leeway = leeway_seconds
+        self.cache_ttl_seconds = cache_ttl_seconds
+        self.revoked_kids = revoked_kids or set()
+        self._last_unknown_key_refresh = 0.0
         self.claims_options: dict[str, Any] = {}
         super().__init__({})
 
@@ -71,6 +78,8 @@ class JWKService(KeySet):
 
     def find_by_kid(self, kid: str) -> Key:
         """KeySet interface for jwt.decode()"""
+        if not kid or kid in self.revoked_kids:
+            raise UnknownKeyError(f"Signing key is absent or revoked: {kid!s}")
         try:
             return self.keys[kid]
         except KeyError as exc:
@@ -124,10 +133,16 @@ class JWKService(KeySet):
 
         return key
 
-    async def refresh_jwk_set(self) -> bool:
+    async def refresh_jwk_set(self, *, unknown_key: bool = False) -> bool:
         """Update keys only if cooldown seconds has elapsed"""
-
-        if self._keys_updated + self.cooldown < time.time():
+        now = time.time()
+        if unknown_key:
+            if self._last_unknown_key_refresh + self.cooldown >= now:
+                return False
+            self._last_unknown_key_refresh = now
+            await self.fetch_jwk_set()
+            return True
+        if self._keys_updated + self.cache_ttl_seconds < now:
             await self.fetch_jwk_set()
             return True
 
@@ -142,6 +157,17 @@ class JWKService(KeySet):
     async def validate_jwt(self, token: str | bytes) -> JWTClaims:
         """Validates JWT, fetching JWKs, checking signature and iss & aud claims (if init), then returns claims."""
         await self.init()
+        await self.refresh_jwk_set()
+
+        try:
+            encoded_header = (token.decode() if isinstance(token, bytes) else token).split(".", 1)[0]
+            padding = "=" * (-len(encoded_header) % 4)
+            token_header = json.loads(base64.urlsafe_b64decode(encoded_header + padding))
+            token_kid = token_header.get("kid")
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            raise NotAuthenticatedException("JWT protected header is invalid") from exc
+        if not token_kid or token_kid in self.revoked_kids:
+            raise NotAuthenticatedException("JWT signing key is absent or revoked")
 
         try:
             claims = jwt.decode(
@@ -152,9 +178,12 @@ class JWKService(KeySet):
 
         except UnknownKeyError as exc:
             # Re-fetch the list of keys if key-id was not found in local key-set
-            if not await self.refresh_jwk_set():
+            if not await self.refresh_jwk_set(unknown_key=True):
                 # Keys were not re-fetched within the cooldown period, so no need to retry decoding
                 raise NotAuthenticatedException(exc.args[0]) from exc
+
+            if token_kid not in self.keys:
+                raise NotAuthenticatedException(f"Unknown key id: {token_kid!s}") from exc
 
             # retry decoding of JWT
             claims = jwt.decode(token, key=self, claims_options=self.claims_options)

@@ -1,16 +1,17 @@
 """OSB authority boundary: native study + USDM must reconcile before release."""
 
-from clinical_mdr_api.services.ddf.usdm_utils import IdManager
 from clinical_mdr_api.models.integrations.study_authority import (
     StudyAuthorityReconciliationRow,
 )
+from clinical_mdr_api.services.ddf.usdm_utils import IdManager
+from clinical_mdr_api.services.integrations.edc_export import authority_disclosure
 from clinical_mdr_api.services.integrations.study_authority import (
+    _assemble_study_odm_metadata,
     _build_reconciliation,
     _build_usdm_extensions,
     _canonical_hash,
     _mapping_blockers,
 )
-from clinical_mdr_api.services.integrations.edc_export import authority_disclosure
 
 
 def _native(status="LOCKED"):
@@ -162,13 +163,15 @@ def test_empty_endpoint_units_are_release_blocking():
         usdm=_usdm(objectives=1, endpoints=1),
         standards=_standards(),
         objectives=[{"study_objective_uid": "O1", "objective": {"uid": "OBJ"}}],
-        endpoints=[{
-            "study_endpoint_uid": "E1",
-            "endpoint": {"uid": "END"},
-            "endpoint_level": {"term_uid": "LEVEL"},
-            "timeframe": {"uid": "TF"},
-            "endpoint_units": {"units": []},
-        }],
+        endpoints=[
+            {
+                "study_endpoint_uid": "E1",
+                "endpoint": {"uid": "END"},
+                "endpoint_level": {"term_uid": "LEVEL"},
+                "timeframe": {"uid": "TF"},
+                "endpoint_units": {"units": []},
+            }
+        ],
         criteria=[],
         integrity={"all_passed": True},
     )
@@ -294,9 +297,7 @@ def test_nonmatched_identity_row_blocks_release():
             )
         ],
     )
-    assert "USDM_ENCOUNTER_IDENTITY_MISMATCH" in {
-        blocker.code for blocker in blockers
-    }
+    assert "USDM_ENCOUNTER_IDENTITY_MISMATCH" in {blocker.code for blocker in blockers}
 
 
 def test_historical_integrity_unavailability_remains_explicit():
@@ -434,3 +435,107 @@ def test_void_usdm_codes_block_release():
         integrity={"all_passed": True},
     )
     assert "USDM_VOID_CODE_PRESENT" in {blocker.code for blocker in blockers}
+
+
+def test_study_reachable_odm_hierarchy_is_complete_and_deduplicated():
+    mapped = {
+        "activity_item": {
+            "studyActivityInstanceUid": "SAI1",
+            "activityInstanceUid": "AI1",
+            "activityInstanceVersion": "1.0",
+            "activityItemClassUid": "AIC1",
+            "activityItemClassName": "Result",
+            "textValue": None,
+        },
+        "odm_item": {
+            "uid": "OdmItem_1",
+            "version": "1.0",
+            "name": "Visual acuity",
+            "oid": "VAORRES",
+        },
+        "activity_item_link": {"order": 1, "primary": True},
+        "odm_item_group": {
+            "uid": "OdmItemGroup_1",
+            "version": "1.0",
+            "name": "Visual acuity assessment",
+            "oid": "VA",
+        },
+        "item_ref": {"orderNumber": 1, "mandatory": True},
+        "odm_form": {
+            "uid": "OdmForm_1",
+            "version": "1.0",
+            "name": "Ophthalmology",
+            "oid": "OPHTH",
+        },
+        "item_group_ref": {"orderNumber": 1, "mandatory": True},
+        "odm_study_event": {
+            "uid": "OdmStudyEvent_1",
+            "version": "1.0",
+            "name": "Month 12",
+            "oid": "M12",
+        },
+        "form_ref": {"orderNumber": 1, "mandatory": True, "locked": False},
+    }
+    unmapped = {
+        "activity_item": {
+            "studyActivityInstanceUid": "SAI2",
+            "activityInstanceUid": "AI2",
+            "activityInstanceVersion": "1.0",
+            "activityItemClassUid": "AIC2",
+            "activityItemClassName": "Comment",
+            "textValue": None,
+        }
+    }
+
+    metadata = _assemble_study_odm_metadata([mapped, mapped, unmapped])
+
+    assert metadata["scope"] == "study-reachable-native-odm"
+    assert len(metadata["activityItems"]) == 2
+    assert metadata["unmappedActivityItemCount"] == 1
+    assert len(metadata["items"]) == 1
+    assert metadata["items"][0]["activityItemLinks"][0]["primary"] is True
+    assert metadata["itemGroups"][0]["itemRefs"][0]["uid"] == "OdmItem_1"
+    assert metadata["forms"][0]["itemGroupRefs"][0]["uid"] == "OdmItemGroup_1"
+    assert metadata["studyEvents"][0]["formRefs"][0]["uid"] == "OdmForm_1"
+
+
+def test_native_compound_without_usdm_intervention_blocks_release():
+    blockers = _mapping_blockers(
+        authority_mode="shadow",
+        native_study=_native(),
+        usdm=_usdm(),
+        standards=_standards(),
+        objectives=[],
+        endpoints=[],
+        criteria=[],
+        integrity={"all_passed": True},
+        compounds=[
+            {
+                "study_compound_uid": "SC1",
+                "compound": {"uid": "Compound_1", "name": "Ranibizumab"},
+            }
+        ],
+    )
+    assert "USDM_INTERVENTION_COVERAGE_GAP" in {blocker.code for blocker in blockers}
+
+
+def test_odm_snapshot_keeps_distinct_identical_activity_items_and_source_properties():
+    semantic_item = {
+        "studyActivityInstanceUid": "SAI1",
+        "activityInstanceUid": "AI1",
+        "activityItemClassUid": "AIC1",
+        "textValue": None,
+        "sourceProperties": {"is_adam_param_specific": True},
+    }
+    rows = [
+        {"activity_item_key": "neo4j-item-1", "activity_item": semantic_item},
+        {"activity_item_key": "neo4j-item-2", "activity_item": semantic_item},
+    ]
+
+    metadata = _assemble_study_odm_metadata(rows)
+
+    assert len(metadata["activityItems"]) == 2
+    assert metadata["unmappedActivityItemCount"] == 2
+    assert metadata["activityItems"][0]["sourceProperties"] == {
+        "is_adam_param_specific": True
+    }

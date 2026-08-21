@@ -387,3 +387,31 @@ def test_native_soa_blocks_reuse_with_conflicting_flowchart_group():
             ),
         }
     ]
+
+
+def test_age_year_unit_prefers_canonical_year_when_duplicates_exist():
+    class _UnitApi:
+        def get_all_from_api(self, path, params=None):
+            assert path == "/concepts/unit-definitions"
+            return [
+                {
+                    "uid": "Unit_years",
+                    "name": "Years",
+                    "status": "Final",
+                    "unit_subsets": [{"name": "Age Unit"}],
+                    "ct_units": [{"term_uid": "C29848", "name": "Year"}],
+                },
+                {
+                    "uid": "Unit_year",
+                    "name": "Year",
+                    "status": "Final",
+                    "unit_subsets": [{"name": "Age Unit"}],
+                    "ct_units": [{"term_uid": "C29848", "name": "Year"}],
+                },
+            ]
+
+    importer = object.__new__(Import360i)
+    importer.api = _UnitApi()
+    unit, error = importer._lookup_age_year_unit()
+    assert error is None
+    assert unit["uid"] == "Unit_years"

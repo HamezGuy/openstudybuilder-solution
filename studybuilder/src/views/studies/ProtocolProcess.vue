@@ -85,6 +85,7 @@
           {{ $t('_global.select_study') }}
         </v-btn>
         <v-btn
+          v-if="accessGuard.checkPermission($roles.STUDY_WRITE)"
           color="nnBaseBlue"
           rounded="xl"
           elevation="1"
@@ -98,6 +99,7 @@
       v-model="showSelectForm"
       persistent
       max-width="600px"
+      z-index="4000"
       @keydown.esc="showSelectForm = false"
     >
       <StudyQuickSelectForm
@@ -114,11 +116,13 @@ import StudyQuickSelectForm from '@/components/studies/StudyQuickSelectForm.vue'
 import generalUtils from '@/utils/generalUtils'
 import { useAppStore } from '@/stores/app'
 import { useStudiesGeneralStore } from '@/stores/studies-general'
+import { useAccessGuard } from '@/composables/accessGuard'
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 
 const { t } = useI18n()
+const accessGuard = useAccessGuard()
 const studiesGeneralStore = useStudiesGeneralStore()
 const appStore = useAppStore()
 const router = useRouter()

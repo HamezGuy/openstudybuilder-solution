@@ -265,7 +265,10 @@ validates the pinned OSB mapping context, and hands itemized targets to OSB revi
 docker compose \
   -f studybuilder-import/compose.yaml \
   -f studybuilder-import/compose.override.yaml \
-  run --rm import pipenv run import_osb_proposal_v2
+  run --rm import pipenv run import_osb_proposal_v2 \
+  --study <source-study-id> \
+  --target-study-uid <osb-study-uid> \
+  --target-study-version <draft-version>
 ```
 
 The default external network is `opensourcebuilder_default`. If the root stack
@@ -277,8 +280,12 @@ module and historical tables remain only for controlled forensic/migration work
 and require explicit unsafe-legacy opt-in when invoked directly.
 
 Command Center invokes the same worker with `--study <study-id>`. That option
-scopes both intake and review-polling leases to the requested study; omit it only
-for a general queue worker.
+scopes intake, review-polling, and native-execution leases to the requested source
+study. Native execution additionally requires the explicit target UID/version
+arguments (or `OSB_TARGET_STUDY_UID` and `OSB_TARGET_STUDY_VERSION`). The worker
+verifies that target is still the same DRAFT version before and after all writes.
+Omit the target arguments only for a worker that must stop at review; native jobs
+then remain `review_complete` rather than being assigned to an arbitrary study.
 
 
 ## Stopping the services

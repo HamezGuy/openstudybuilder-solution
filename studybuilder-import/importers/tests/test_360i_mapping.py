@@ -600,3 +600,32 @@ def test_exact_source_carriers_preserve_study_form_and_field_data():
     assert '"fields":[{"name":"Original field"' in form_source
     field_source = mapping.source_field_value(payload, "F1", "X")
     assert '"value":"Y"' in field_source
+
+
+NCT03167411_SOA_ACTIVITY_NAMES = [
+    "Inclusion/Exclusion Criteria",
+    "Medical History",
+    "Demographics",
+    "Vital Signs",
+    "Laboratory",
+    "ECG",
+    "Study Administration",
+    "Study Design / Randomization",
+    "Concomitant Medications",
+    "Exposure",
+    "Adverse Events",
+    "Procedures",
+    "Endpoints",
+    "Disposition",
+    "Protocol Deviations",
+    "Adverse Event Grading",
+]
+
+
+def test_flowchart_groups_cover_nct03167411_activity_labels():
+    missing = [
+        name
+        for name in NCT03167411_SOA_ACTIVITY_NAMES
+        if mapping._flowchart_group_name({"name": name}) is None
+    ]
+    assert missing == []

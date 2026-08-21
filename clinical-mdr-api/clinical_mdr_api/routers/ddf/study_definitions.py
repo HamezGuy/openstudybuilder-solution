@@ -2,7 +2,7 @@ import re
 from pathlib import Path as PathFromPathLib
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Path, Query, Request
+from fastapi import APIRouter, Depends, Path, Query, Request
 
 from fastapi.templating import Jinja2Templates
 
@@ -21,7 +21,12 @@ from common.auth.dependencies import security
 from common.models.error import ErrorResponse
 from common.telemetry import trace_block
 
-router = APIRouter(prefix="/studyDefinitions")
+from clinical_mdr_api.routers.studies.study_access import enforce_visible_study
+
+router = APIRouter(
+    prefix="/studyDefinitions",
+    dependencies=[Depends(enforce_visible_study)],
+)
 
 M11_TEMPLATES_DIR_PATH = (
     PathFromPathLib(__file__).parent.parent.parent.parent / "m11-templates"

@@ -1,3 +1,4 @@
+import json
 import logging
 
 from cachetools import TTLCache, cached
@@ -38,7 +39,16 @@ def persist_user(user_info: User):
                 u.username = $username,
                 u.name = $name,
                 u.email = $email,
-                u.roles = $roles
+                u.roles = $roles,
+                u.tenant_id = $tenant_id,
+                u.study_ids = $study_ids,
+                u.subject_type = $subject_type,
+                u.issuer = $issuer,
+                u.human_subject = $human_subject,
+                u.service_actor = $service_actor,
+                u.purpose = $purpose,
+                u.capabilities = $capabilities,
+                u.actor_chain_json = $actor_chain_json
         ON MATCH
             SET u.updated = datetime(),
                 u.oid = $oid,
@@ -46,7 +56,16 @@ def persist_user(user_info: User):
                 u.username = COALESCE($username, u.username),
                 u.name = $name,
                 u.email = $email,
-                u.roles = $roles
+                u.roles = $roles,
+                u.tenant_id = $tenant_id,
+                u.study_ids = $study_ids,
+                u.subject_type = $subject_type,
+                u.issuer = $issuer,
+                u.human_subject = $human_subject,
+                u.service_actor = $service_actor,
+                u.purpose = $purpose,
+                u.capabilities = $capabilities,
+                u.actor_chain_json = $actor_chain_json
         """
     params = {
         "id": user_info.id(),
@@ -56,6 +75,15 @@ def persist_user(user_info: User):
         "name": user_info.name,
         "email": user_info.email,
         "roles": list(user_info.roles),
+        "tenant_id": user_info.tenant_id or None,
+        "study_ids": sorted(user_info.study_ids),
+        "subject_type": user_info.subject_type,
+        "issuer": user_info.issuer,
+        "human_subject": user_info.human_subject or None,
+        "service_actor": user_info.service_actor or None,
+        "purpose": user_info.purpose or None,
+        "capabilities": sorted(user_info.capabilities),
+        "actor_chain_json": json.dumps(user_info.actor_chain, separators=(",", ":")),
     }
     try:
         db.cypher_query(

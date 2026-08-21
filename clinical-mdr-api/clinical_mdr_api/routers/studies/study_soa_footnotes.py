@@ -16,6 +16,7 @@ from clinical_mdr_api.repositories._utils import FilterOperator
 from clinical_mdr_api.routers import _generic_descriptions, decorators
 from clinical_mdr_api.routers import study_router as router
 from clinical_mdr_api.routers.studies import utils
+from clinical_mdr_api.routers.studies.study_access import empty_cross_study_page
 from clinical_mdr_api.services.studies.study_soa_footnote import StudySoAFootnoteService
 from common.auth import rbac
 from common.auth.dependencies import security
@@ -40,6 +41,9 @@ def get_all_study_soa_footnotes_from_all_studies(
     operator: _generic_descriptions.FILTER_OPERATOR_QUERY = settings.default_filter_operator,
     total_count: _generic_descriptions.TOTAL_COUNT_QUERY = False,
 ) -> CustomPage[StudySoAFootnote]:
+    empty = empty_cross_study_page(page_number, page_size)
+    if empty is not None:
+        return empty
     service = StudySoAFootnoteService()
     all_footnotes = service.get_all(
         page_number=page_number,

@@ -101,9 +101,13 @@ onMounted(async () => {
   appStore.initialize()
   theme.change('NNCustomLightTheme')
   authStore.initialize()
-  const resp = await notifications.getActive()
-  if (resp.data.length) {
-    appStore.setSystemAnnouncement(resp.data[0])
+  try {
+    const resp = await notifications.getActive()
+    if (resp?.data?.length) {
+      appStore.setSystemAnnouncement(resp.data[0])
+    }
+  } catch {
+    // Investigators cannot read admin announcements; do not blank the shell.
   }
 })
 

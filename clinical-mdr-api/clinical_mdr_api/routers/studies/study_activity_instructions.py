@@ -12,6 +12,7 @@ from clinical_mdr_api.repositories._utils import FilterOperator
 from clinical_mdr_api.routers import _generic_descriptions
 from clinical_mdr_api.routers import study_router as router
 from clinical_mdr_api.routers.studies import utils
+from clinical_mdr_api.routers.studies.study_access import empty_cross_study_page
 from clinical_mdr_api.services.studies.study_activity_instruction import (
     StudyActivityInstructionService,
 )
@@ -40,6 +41,9 @@ def get_all_activity_instructions_for_all_studies(
     operator: _generic_descriptions.FILTER_OPERATOR_QUERY = settings.default_filter_operator,
     total_count: _generic_descriptions.TOTAL_COUNT_QUERY = False,
 ) -> CustomPage[StudyActivityInstruction]:
+    empty = empty_cross_study_page(page_number, page_size)
+    if empty is not None:
+        return empty
     service = StudyActivityInstructionService()
     all_selections = service.get_all_instructions_for_all_studies(
         page_number=page_number,

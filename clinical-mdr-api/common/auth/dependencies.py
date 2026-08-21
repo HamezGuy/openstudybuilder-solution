@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from starlette_context import context
 
 from common.auth.jwk_service import JWKService
-from common.auth.models import AccessTokenClaims, Auth, User
+from common.auth.models import AccessTokenClaims, Auth, User, validate_delegated_claims
 from common.auth.user import persist_user, user
 from common.config import settings
 from common.exceptions import NotAuthenticatedException
@@ -29,6 +29,8 @@ jwks_service = JWKService(
     oidc_client,
     audience=settings.oauth_api_app_id,
     leeway_seconds=settings.jwt_leeway_seconds,
+    cache_ttl_seconds=settings.oauth_jwks_cache_ttl_seconds,
+    revoked_kids=set(settings.oauth_revoked_kids),
 )
 
 oauth_scheme = OAuth2AuthorizationCodeBearer(
@@ -66,11 +68,24 @@ async def validate_token(token: Annotated[str, Depends(oauth_scheme)]):
         raise NotAuthenticatedException("Model validation error") from exc
 
     access_token_claims = AccessTokenClaims.model_validate(jwt_claims)
+    if settings.delegated_claims_required:
+        try:
+            validate_delegated_claims(
+                access_token_claims,
+                exchanging_clients=set(settings.oauth_exchanging_clients),
+                allowed_purposes=set(settings.oauth_allowed_purposes),
+                allowed_capabilities=set(settings.oauth_allowed_capabilities),
+                allowed_roles=set(settings.oauth_allowed_roles),
+                max_ttl_seconds=settings.oauth_max_access_token_ttl_seconds,
+            )
+        except ValueError as exc:
+            log.info("Delegated access-token profile rejected: %s", str(exc))
+            raise NotAuthenticatedException("Delegated access-token profile is invalid") from exc
 
     # Attributes to current tracing span
     tracer: Tracer = execution_context.get_opencensus_tracer()
     tracer.add_attribute_to_current_span(
-        "ai.user.authUserId", access_token_claims.preferred_username
+        "ai.user.authUserId", access_token_claims.sub
     )
     tracer.add_attribute_to_current_span(
         "ai.user.accountId", access_token_claims.oid or access_token_claims.sub
@@ -79,7 +94,9 @@ async def validate_token(token: Annotated[str, Depends(oauth_scheme)]):
 
     # Save to context
     context["auth"] = Auth(
-        jwt_claims=jwt_claims, access_token_claims=access_token_claims
+        jwt_claims=jwt_claims,
+        access_token_claims=access_token_claims,
+        authentication_verified=True,
     )
 
     persist_user(user_info=user())
@@ -215,6 +232,7 @@ def dummy_auth_object(access_token_claims: AccessTokenClaims) -> Auth:
             {},
         ),
         access_token_claims=access_token_claims,
+        authentication_verified=False,
     )
 
 

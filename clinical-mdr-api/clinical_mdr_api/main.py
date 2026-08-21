@@ -11,6 +11,8 @@ from common.logger import default_logging_config, log_exception
 default_logging_config()
 
 settings.assert_mapping_authority_startup_safe()
+settings.assert_delegated_auth_startup_safe()
+settings.assert_native_identity_startup_safe()
 
 configure_database(
     settings.neo4j_dsn,
@@ -119,6 +121,12 @@ middlewares.append(Middleware(ExceptionTracebackMiddleware))
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    if settings.platform_commands_prototype_enabled:
+        from clinical_mdr_api.services.integrations.platform_command import (
+            ensure_platform_command_schema,
+        )
+
+        ensure_platform_command_schema()
     if settings.oauth_enabled:
         # Reconfiguring Swagger UI settings with OpenID Connect discovery
         await reconfigure_with_openid_discovery()
@@ -602,6 +610,11 @@ app.include_router(
     routers.integrations.study_authority.router,
     prefix="/integrations/study-authority",
     tags=["OpenStudyBuilder mapping authority"],
+)
+app.include_router(
+    routers.integrations.native_identity.router,
+    prefix="/integrations/platform-control",
+    tags=["Platform control (disabled)"],
 )
 app.include_router(routers.ddf_router, prefix="/usdm/v4", tags=["USDM endpoints"])
 

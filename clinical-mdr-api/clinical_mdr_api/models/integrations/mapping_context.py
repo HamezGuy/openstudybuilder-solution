@@ -16,6 +16,9 @@ MappingResourceFamily = Literal[
     "endpoint_templates",
     "criteria_templates",
     "timeframe_templates",
+    "timeframes",
+    "compound_product_relationships",
+    "study_compound_dosing_relationships",
     "activities",
     "odm_forms",
     "odm_item_groups",
@@ -47,7 +50,7 @@ class MappingContextRequest(BaseModel):
         default_factory=list, max_length=2
     )
     resource_families: list[MappingResourceFamily] = Field(
-        default_factory=list, max_length=12
+        default_factory=list, max_length=15
     )
     search_strings: list[Annotated[str, Field(min_length=1, max_length=256)]] = Field(
         default_factory=list, max_length=50
@@ -143,7 +146,7 @@ class MappingContextV2Request(BaseModel):
         default_factory=list, max_length=2
     )
     candidate_groups: list[MappingContextCandidateGroupRequest] = Field(
-        default_factory=list, max_length=10_000
+        default_factory=list, max_length=75_000
     )
     maximum_candidates_per_group: Annotated[int, Field(ge=1, le=25)] = 10
 

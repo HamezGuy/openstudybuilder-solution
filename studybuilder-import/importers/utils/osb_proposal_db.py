@@ -12,29 +12,34 @@ import hashlib
 import io
 import json
 import math
-from decimal import Decimal
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 import psycopg
+import requests
 from psycopg.rows import dict_row
 
 from ..functions.utils import load_env
 
 PROPOSAL_FORMAT_VERSION = "osb-proposal/2.1"
 CANONICAL_JSON_VERSION = "canonical-json/1.0"
-MAX_PROPOSAL_BYTES = 32 * 1024 * 1024
+MAX_PROPOSAL_BYTES = 128 * 1024 * 1024
 MAX_PROPOSAL_DEPTH = 20
-MAX_PROPOSAL_NODES = 600_000
+MAX_PROPOSAL_NODES = 3_000_000
+MAX_PROPOSAL_FACTS = 25_000
+MAX_PROPOSAL_OBJECTS = 75_000
+MAX_PROPOSAL_ARRAY_VALUES = 100_000
 DELIVERY_STATUSES = {
     "queued",
     "running",
     "review_required",
     "review_complete",
+    "native_partial",
     "succeeded",
     "failed_retryable",
     "failed_terminal",
 }
-TERMINAL_STATUSES = {"succeeded", "failed_terminal"}
+NATIVE_RESULT_STATUSES = {"native_partial", "succeeded"}
 
 
 def _utf16_sort_key(value: str) -> bytes:
@@ -93,8 +98,80 @@ def _stable_hash(value):
     return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
 
 
+def _native_delivery_status(native_evidence, reconciliation_evidence):
+    """Validate bound reconciliation evidence and derive the terminal status."""
+    for name, evidence in (
+        ("native_execution_evidence", native_evidence),
+        ("reconciliation_evidence", reconciliation_evidence),
+    ):
+        if not isinstance(evidence, dict) or not evidence.get("contentHash"):
+            raise ValueError(f"{name} must contain contentHash")
+        evidence_content = {
+            key: value for key, value in evidence.items() if key != "contentHash"
+        }
+        if evidence["contentHash"] != _stable_hash(evidence_content):
+            raise ValueError(f"{name} contentHash mismatch")
+
+    shared_fields = (
+        "proposalHash",
+        "targetStudyUid",
+        "targetStudyVersion",
+        "operationCount",
+        "releaseReady",
+        "releaseBlockers",
+    )
+    for field in shared_fields:
+        if native_evidence.get(field) != reconciliation_evidence.get(field):
+            raise ValueError(f"native evidence mismatch for {field}")
+
+    for field in (
+        "proposalHash",
+        "sourceStudyId",
+        "targetStudyUid",
+        "targetStudyVersion",
+    ):
+        value = native_evidence.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"native evidence {field} must be a non-empty string")
+
+    operation_count = native_evidence.get("operationCount")
+    if (
+        not isinstance(operation_count, int)
+        or isinstance(operation_count, bool)
+        or operation_count < 0
+    ):
+        raise ValueError(
+            "native evidence operationCount must be a non-negative integer"
+        )
+    if not isinstance(native_evidence.get("releaseReady"), bool):
+        raise ValueError("native evidence releaseReady must be boolean")
+    if not isinstance(native_evidence.get("releaseBlockers"), list):
+        raise ValueError("native evidence releaseBlockers must be an array")
+    if not isinstance(native_evidence.get("deferredObjects"), list):
+        raise ValueError("native evidence deferredObjects must be an array")
+    receipts = native_evidence.get("receipts")
+    rows = reconciliation_evidence.get("rows")
+    if not isinstance(receipts, list) or len(receipts) != operation_count:
+        raise ValueError("native evidence receipt count does not match operationCount")
+    if not isinstance(rows, list) or len(rows) != operation_count:
+        raise ValueError("reconciliation row count does not match operationCount")
+    if reconciliation_evidence.get("allReconciled") is not True:
+        raise ValueError("reconciliation evidence must report allReconciled true")
+
+    release_ready = (
+        native_evidence["releaseReady"]
+        and not native_evidence["releaseBlockers"]
+        and not native_evidence["deferredObjects"]
+    )
+    return "succeeded" if release_ready else "native_partial"
+
+
 class OsbProposalIntegrityError(ValueError):
     """The immutable proposal/outbox record contradicts its own identity."""
+
+
+class OsbProposalSourceUnavailable(RuntimeError):
+    """The immutable semantic source could not be read due to a transient failure."""
 
 
 def _decompress_limited(value: bytes) -> bytes:
@@ -126,7 +203,7 @@ def _assert_bounded(value):
                 raise OsbProposalIntegrityError("OSB_PROPOSAL_NON_FINITE_NUMBER")
             return
         if isinstance(item, list):
-            if len(item) > 10_000:
+            if len(item) > MAX_PROPOSAL_ARRAY_VALUES:
                 raise OsbProposalIntegrityError("OSB_PROPOSAL_ARRAY_LIMIT_EXCEEDED")
             for child in item:
                 visit(child, depth + 1)
@@ -221,10 +298,16 @@ class OsbProposalDb:
                 cursor.execute(
                     """
                     SELECT outbox_id, proposal_hash
-                      FROM osb_proposal_outbox
+                      FROM osb_proposal_outbox AS outbox
                      WHERE available_at <= NOW()
-                       AND workflow_stage = 'intake'
-                       AND (CAST(%s AS text) IS NULL OR study_id = %s)
+                        AND workflow_stage = 'intake'
+                        AND (CAST(%s AS text) IS NULL OR study_id = %s)
+                        AND EXISTS (
+                          SELECT 1 FROM osb_proposal_heads AS head
+                           WHERE head.tenant_id = outbox.tenant_id
+                             AND head.study_id = outbox.study_id
+                             AND head.proposal_hash = outbox.proposal_hash
+                        )
                        AND (
                          status IN ('queued', 'failed_retryable')
                          OR (status = 'running' AND lease_expires_at < clock_timestamp())
@@ -264,6 +347,16 @@ class OsbProposalDb:
 
         try:
             proposal = self.read_proposal(claimed["proposal_hash"])
+        except OsbProposalSourceUnavailable as error:
+            self.finish(
+                claimed["outbox_id"],
+                lease_owner,
+                claimed["lease_generation"],
+                "failed_retryable",
+                str(error),
+                available_at=datetime.now(timezone.utc) + timedelta(minutes=1),
+            )
+            raise
         except OsbProposalIntegrityError as error:
             self.finish(
                 claimed["outbox_id"],
@@ -301,10 +394,16 @@ class OsbProposalDb:
                 cursor.execute(
                     """
                     SELECT outbox_id, proposal_hash
-                      FROM osb_proposal_outbox
+                      FROM osb_proposal_outbox AS outbox
                      WHERE workflow_stage = 'review_polling'
-                       AND available_at <= NOW()
-                       AND (CAST(%s AS text) IS NULL OR study_id = %s)
+                        AND available_at <= NOW()
+                        AND (CAST(%s AS text) IS NULL OR study_id = %s)
+                        AND EXISTS (
+                          SELECT 1 FROM osb_proposal_heads AS head
+                           WHERE head.tenant_id = outbox.tenant_id
+                             AND head.study_id = outbox.study_id
+                             AND head.proposal_hash = outbox.proposal_hash
+                        )
                        AND (
                          status = 'review_required'
                          OR (status = 'running' AND lease_expires_at < clock_timestamp())
@@ -343,7 +442,12 @@ class OsbProposalDb:
             raise
         return claimed
 
-    def claim_review_complete(self, lease_owner: str, lease_seconds: int = 300):
+    def claim_review_complete(
+        self,
+        lease_owner: str,
+        lease_seconds: int = 300,
+        study_id: str | None = None,
+    ):
         """Lease one fully reviewed proposal for the separate native-execution stage.
 
         The proposal and every exact Fact revision/hash are re-verified at this
@@ -357,19 +461,29 @@ class OsbProposalDb:
         lease_expires_at = datetime.now(timezone.utc) + timedelta(seconds=lease_seconds)
         try:
             with self.conn.cursor() as cursor:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT outbox_id, proposal_hash
-                      FROM osb_proposal_outbox
+                      FROM osb_proposal_outbox AS outbox
                      WHERE workflow_stage = 'native_execution'
-                       AND available_at <= NOW()
-                       AND (
-                         status = 'review_complete'
-                         OR (status = 'running' AND lease_expires_at < clock_timestamp())
-                       )
+                        AND available_at <= NOW()
+                        AND (CAST(%s AS text) IS NULL OR study_id = %s)
+                        AND EXISTS (
+                          SELECT 1 FROM osb_proposal_heads AS head
+                           WHERE head.tenant_id = outbox.tenant_id
+                             AND head.study_id = outbox.study_id
+                             AND head.proposal_hash = outbox.proposal_hash
+                        )
+                        AND (
+                          status IN ('review_complete', 'failed_retryable')
+                          OR (status = 'running' AND lease_expires_at < clock_timestamp())
+                        )
                      ORDER BY available_at, updated_at, outbox_id
                      FOR UPDATE SKIP LOCKED
                      LIMIT 1
-                    """)
+                    """,
+                    (study_id, study_id),
+                )
                 candidate = cursor.fetchone()
                 if candidate is None:
                     self.conn.commit()
@@ -385,9 +499,9 @@ class OsbProposalDb:
                            lease_expires_at = %s,
                            last_error = NULL
                      WHERE outbox_id = %s
-                     RETURNING outbox_id, proposal_hash, study_id, status,
-                               workflow_stage, attempt, lease_generation,
-                               lease_owner, lease_expires_at
+                      RETURNING outbox_id, proposal_hash, study_id, status,
+                                workflow_stage, attempt, lease_generation,
+                                lease_owner, lease_expires_at, item_results
                     """,
                     (lease_owner, lease_expires_at, candidate["outbox_id"]),
                 )
@@ -450,6 +564,10 @@ class OsbProposalDb:
 
     def verify_fact_refs(self, proposal):
         """Reject stale or substituted Fact revisions before OSB processing."""
+        authority = proposal.get("sourceAuthority")
+        if authority is not None:
+            self._verify_semantic_fact_refs(proposal, authority)
+            return
         refs = proposal.get("sourceFactRefs") or []
         fact_ids = [ref.get("factId") for ref in refs]
         with self.conn.cursor() as cursor:
@@ -476,6 +594,161 @@ class OsbProposalDb:
             if _stable_hash(row["fact_json"]) != ref.get("factContentHash"):
                 raise OsbProposalIntegrityError(
                     f"OSB_PROPOSAL_FACT_HASH_MISMATCH:{ref.get('factId')}"
+                )
+
+    @staticmethod
+    def _verify_semantic_fact_refs(proposal, authority):
+        if (
+            not isinstance(authority, dict)
+            or authority.get("authorityType") != "semantic_claim_projection"
+            or authority.get("system") != "ClinicalSemanticLayer"
+            or authority.get("contractVersion") != "1.0"
+            or authority.get("tenantId") != proposal.get("tenantId")
+            or authority.get("studyId") != proposal.get("studyId")
+            or authority.get("mediaType")
+            != "application/vnd.accuratrials.semantic-claim-projection+json;version=1.0"
+        ):
+            raise OsbProposalIntegrityError("OSB_PROPOSAL_SOURCE_AUTHORITY_INVALID")
+        content_hash = authority.get("contentHash")
+        package_hash = authority.get("packageHash")
+        if (
+            not isinstance(content_hash, str)
+            or not content_hash.startswith("sha256:")
+            or len(content_hash) != 71
+            or not isinstance(package_hash, str)
+            or not package_hash.startswith("sha256:")
+            or len(package_hash) != 71
+        ):
+            raise OsbProposalIntegrityError("OSB_PROPOSAL_SOURCE_AUTHORITY_INVALID")
+
+        try:
+            base_url = load_env("SEMANTIC_API_URL").rstrip("/")
+            token = load_env("SEMANTIC_ADAPTER_TOKEN")
+            adapter_id = load_env("SEMANTIC_ADAPTER_ID")
+        except (EnvironmentError, ValueError, AttributeError) as error:
+            # Proposal validation happens after the outbox lease is committed.
+            # Normalize missing/invalid runtime credentials into the retryable
+            # source-unavailable family so claim_next always releases the lease
+            # through its fenced finish path instead of marooning a row in
+            # `running` until lease expiry.
+            raise OsbProposalSourceUnavailable(
+                "OSB_SEMANTIC_SOURCE_CONFIGURATION_UNAVAILABLE"
+            ) from error
+        tenant_id = authority["tenantId"]
+        try:
+            response = requests.get(
+                f"{base_url}/v1/objects/sha256/{content_hash[7:]}",
+                headers={
+                    "Accept": "application/octet-stream",
+                    "Authorization": f"Bearer {token}",
+                    "x-semantic-adapter-id": adapter_id,
+                    "x-semantic-tenant-id": tenant_id,
+                },
+                timeout=120,
+            )
+        except requests.RequestException as error:
+            raise OsbProposalSourceUnavailable(
+                f"OSB_SEMANTIC_SOURCE_UNAVAILABLE:{type(error).__name__}"
+            ) from error
+        if response.status_code in {408, 429} or response.status_code >= 500:
+            raise OsbProposalSourceUnavailable(
+                f"OSB_SEMANTIC_SOURCE_UNAVAILABLE:{response.status_code}"
+            )
+        if not response.ok:
+            raise OsbProposalIntegrityError(
+                f"OSB_SEMANTIC_SOURCE_REJECTED:{response.status_code}"
+            )
+        package_bytes = response.content
+        if len(package_bytes) > MAX_PROPOSAL_BYTES:
+            raise OsbProposalIntegrityError("OSB_SEMANTIC_SOURCE_BYTE_LIMIT_EXCEEDED")
+        if f"sha256:{hashlib.sha256(package_bytes).hexdigest()}" != content_hash:
+            raise OsbProposalIntegrityError("OSB_SEMANTIC_SOURCE_CONTENT_HASH_MISMATCH")
+        try:
+            package = json.loads(package_bytes)
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise OsbProposalIntegrityError("OSB_SEMANTIC_SOURCE_INVALID_JSON") from error
+        if not isinstance(package, dict):
+            raise OsbProposalIntegrityError("OSB_SEMANTIC_SOURCE_INVALID_JSON")
+        package_content = {
+            key: value for key, value in package.items() if key != "packageHash"
+        }
+        if (
+            package.get("packageHash") != package_hash
+            or f"sha256:{_stable_hash(package_content)}" != package_hash
+            or package.get("tenantId") != tenant_id
+            or package.get("studyId") != authority.get("studyId")
+        ):
+            raise OsbProposalIntegrityError("OSB_SEMANTIC_SOURCE_MANIFEST_MISMATCH")
+
+        claims = package.get("claims")
+        if not isinstance(claims, list) or package.get("claimCount") != len(claims):
+            raise OsbProposalIntegrityError("OSB_SEMANTIC_SOURCE_CLAIM_COUNT_INVALID")
+        selection = package.get("sourceSelection")
+        if selection is not None:
+            if (
+                not isinstance(selection, dict)
+                or selection.get("sourceSystem") != "EDCProtocolToECRF"
+                or selection.get("includedClaimCount") != len(claims)
+                or not isinstance(selection.get("studyClaimCount"), int)
+                or not isinstance(selection.get("excludedClaimCount"), int)
+                or selection.get("studyClaimCount")
+                != selection.get("includedClaimCount") + selection.get("excludedClaimCount")
+                or not isinstance(selection.get("excludedClaimIdsHash"), str)
+                or not selection.get("excludedClaimIdsHash").startswith("sha256:")
+                or len(selection.get("excludedClaimIdsHash")) != 71
+            ):
+                raise OsbProposalIntegrityError("OSB_SEMANTIC_SOURCE_SELECTION_INVALID")
+        # Packages published before sourceSelection was added remain immutable
+        # authority artifacts. They are accepted only through the strict legacy
+        # path below: every claim must carry a valid IL Fact extension and the
+        # package claimCount must be exact. New publishers always emit explicit
+        # inclusion/exclusion accounting.
+
+        facts = {}
+        for claim in claims:
+            if not isinstance(claim, dict):
+                raise OsbProposalIntegrityError("OSB_SEMANTIC_SOURCE_CLAIM_INVALID")
+            extensions = claim.get("extensions") or {}
+            if not isinstance(extensions, dict):
+                raise OsbProposalIntegrityError("OSB_SEMANTIC_SOURCE_CLAIM_INVALID")
+            carried = extensions.get("edcprotocoltoecrf/fact")
+            if carried is None:
+                raise OsbProposalIntegrityError("OSB_SEMANTIC_SOURCE_FACT_EXTENSION_MISSING")
+            if (
+                not isinstance(carried, dict)
+                or carried.get("factId") != claim.get("claimId")
+                or not isinstance(carried.get("revision"), int)
+                or carried.get("revision") < 1
+                or not isinstance(carried.get("provenance"), dict)
+                or not isinstance(carried.get("provenance", {}).get("citations"), list)
+            ):
+                raise OsbProposalIntegrityError("OSB_SEMANTIC_SOURCE_FACT_INVALID")
+            fact = {
+                **carried,
+                "tenantId": tenant_id,
+                "studyId": authority.get("studyId"),
+            }
+            fact_id = fact.get("factId")
+            if fact_id in facts:
+                raise OsbProposalIntegrityError("OSB_SEMANTIC_SOURCE_FACT_DUPLICATE")
+            facts[fact_id] = fact
+
+        refs = proposal.get("sourceFactRefs") or []
+        if len(facts) != len(refs):
+            raise OsbProposalIntegrityError("OSB_SEMANTIC_SOURCE_FACT_COUNT_MISMATCH")
+        for ref in refs:
+            fact = facts.get(ref.get("factId"))
+            if fact is None:
+                raise OsbProposalIntegrityError(
+                    f"OSB_SEMANTIC_SOURCE_FACT_MISSING:{ref.get('factId')}"
+                )
+            if fact.get("revision") != ref.get("revision"):
+                raise OsbProposalIntegrityError(
+                    f"OSB_SEMANTIC_SOURCE_FACT_REVISION_STALE:{ref.get('factId')}"
+                )
+            if _stable_hash(fact) != ref.get("factContentHash"):
+                raise OsbProposalIntegrityError(
+                    f"OSB_SEMANTIC_SOURCE_FACT_HASH_MISMATCH:{ref.get('factId')}"
                 )
 
     @staticmethod
@@ -525,7 +798,7 @@ class OsbProposalDb:
         ):
             raise OsbProposalIntegrityError("OSB_PROPOSAL_RECONCILIATION_UNBALANCED")
 
-        if len(source_refs) > 5_000:
+        if len(source_refs) > MAX_PROPOSAL_FACTS:
             raise OsbProposalIntegrityError("OSB_PROPOSAL_FACT_LIMIT_EXCEEDED")
         source_ref_by_id = {ref.get("factId"): ref for ref in source_refs}
         if None in source_ref_by_id or len(source_ref_by_id) != len(source_refs):
@@ -549,17 +822,18 @@ class OsbProposalDb:
             raise OsbProposalIntegrityError(
                 "OSB_PROPOSAL_SOURCE_DOCUMENT_IDENTITY_INVALID"
             )
-        expected_source_build_hash = _stable_hash(
-            {
-                "tenantId": proposal.get("tenantId"),
-                "studyId": proposal.get("studyId"),
-                "projectId": proposal.get("projectId"),
-                "authorityMode": proposal.get("authorityMode"),
-                "sourceRunIds": proposal.get("sourceRunIds") or [],
-                "sourceDocuments": source_documents,
-                "sourceFactRefs": source_refs,
-            }
-        )
+        source_build_content = {
+            "tenantId": proposal.get("tenantId"),
+            "studyId": proposal.get("studyId"),
+            "projectId": proposal.get("projectId"),
+            "authorityMode": proposal.get("authorityMode"),
+            "sourceRunIds": proposal.get("sourceRunIds") or [],
+            "sourceDocuments": source_documents,
+            "sourceFactRefs": source_refs,
+        }
+        if proposal.get("sourceAuthority"):
+            source_build_content["sourceAuthority"] = proposal["sourceAuthority"]
+        expected_source_build_hash = _stable_hash(source_build_content)
         if proposal.get("sourceBuildHash") != expected_source_build_hash:
             raise OsbProposalIntegrityError("OSB_PROPOSAL_SOURCE_BUILD_HASH_MISMATCH")
 
@@ -586,7 +860,7 @@ class OsbProposalDb:
         objects = [
             item for section in section_order for item in sections.get(section) or []
         ]
-        if len(objects) > 15_000:
+        if len(objects) > MAX_PROPOSAL_OBJECTS:
             raise OsbProposalIntegrityError("OSB_PROPOSAL_OBJECT_LIMIT_EXCEEDED")
         object_ids = set()
         concept_ids = set()
@@ -808,7 +1082,8 @@ class OsbProposalDb:
         error: str | None = None,
         available_at: datetime | None = None,
     ):
-        if status not in DELIVERY_STATUSES - {"queued", "running"}:
+        allowed = DELIVERY_STATUSES - {"queued", "running"} - NATIVE_RESULT_STATUSES
+        if status not in allowed:
             raise ValueError(f"invalid finish status {status}")
         retry_at = available_at or datetime.now(timezone.utc)
         with self.conn.cursor() as cursor:
@@ -821,10 +1096,10 @@ class OsbProposalDb:
                          WHEN %s = 'review_complete' THEN 'native_execution'
                          ELSE workflow_stage
                        END,
-                       available_at = CASE
-                         WHEN %s IN ('failed_retryable', 'review_required') THEN %s
-                         ELSE available_at
-                       END,
+                        available_at = CASE
+                          WHEN %s IN ('failed_retryable', 'review_required', 'review_complete') THEN %s
+                          ELSE available_at
+                        END,
                        last_error = %s
                  WHERE outbox_id = %s
                    AND status = 'running'
@@ -848,3 +1123,55 @@ class OsbProposalDb:
                 self.conn.rollback()
                 raise RuntimeError("OSB_PROPOSAL_LEASE_OWNERSHIP_LOST")
         self.conn.commit()
+
+    def finish_native_execution(
+        self,
+        outbox_id,
+        lease_owner: str,
+        lease_generation: int,
+        native_execution_evidence: dict,
+        reconciliation_evidence: dict,
+    ):
+        """Finish native execution only with both hashed evidence documents.
+
+        ``succeeded`` means the complete reviewed proposal is release-ready.
+        ``native_partial`` means the supported native subset reconciled but
+        release blockers/deferred objects remain. Both are terminal and retain
+        evidence; partial content is never mislabeled as end-to-end success.
+        """
+        delivery_status = _native_delivery_status(
+            native_execution_evidence,
+            reconciliation_evidence,
+        )
+        with self.conn.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE osb_proposal_outbox
+                   SET status = %s,
+                       workflow_stage = 'package_build',
+                       native_execution_evidence = %s::jsonb,
+                       reconciliation_evidence = %s::jsonb,
+                       last_error = NULL
+                 WHERE outbox_id = %s
+                   AND status = 'running'
+                   AND workflow_stage = 'native_execution'
+                   AND lease_owner = %s
+                   AND lease_generation = %s
+                   AND lease_expires_at >= clock_timestamp()
+                   AND proposal_hash = %s
+                """,
+                (
+                    delivery_status,
+                    json.dumps(native_execution_evidence, sort_keys=True),
+                    json.dumps(reconciliation_evidence, sort_keys=True),
+                    outbox_id,
+                    lease_owner,
+                    lease_generation,
+                    native_execution_evidence["proposalHash"],
+                ),
+            )
+            if cursor.rowcount != 1:
+                self.conn.rollback()
+                raise RuntimeError("OSB_PROPOSAL_LEASE_OWNERSHIP_LOST")
+        self.conn.commit()
+        return delivery_status

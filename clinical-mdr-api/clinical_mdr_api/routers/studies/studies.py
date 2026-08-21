@@ -1,7 +1,7 @@
 from typing import Annotated, Any, cast
 
 from dict2xml import DataSorter, dict2xml
-from fastapi import APIRouter, Body, Path, Query
+from fastapi import APIRouter, Body, Depends, Path, Query
 from fastapi.responses import Response
 from pydantic.types import Json
 from starlette.requests import Request
@@ -65,7 +65,9 @@ from common.exceptions import ValidationException
 from common.models.error import ErrorResponse
 
 # Prefixed with "/studies"
-router = APIRouter()
+from clinical_mdr_api.routers.studies.study_access import enforce_visible_study
+
+router = APIRouter(dependencies=[Depends(enforce_visible_study)])
 
 StudyUID = Path(description="The unique id of the study.")
 TargetStudyUID = Path(

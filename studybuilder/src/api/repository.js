@@ -37,11 +37,9 @@ const requestInterceptors = {
       config.params.page_size = 0
     }
     const accessToken = await auth.getAccessToken()
+    config.withCredentials = true
     if (accessToken) {
       config.headers.Authorization = `Bearer ${accessToken}`
-      config.withCredentials = true
-    } else {
-      auth.clear()
     }
 
     // Check if we need to serialize filters

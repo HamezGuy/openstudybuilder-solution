@@ -6,10 +6,14 @@ export const useFeatureFlagsStore = defineStore('featureFlags', () => {
   const featureFlags = ref({})
 
   async function fetchFeatureFlags() {
-    const resp = await api.get()
-    featureFlags.value = {}
-    for (const flag of resp.data) {
-      featureFlags.value[flag.name] = flag.enabled
+    try {
+      const resp = await api.get()
+      featureFlags.value = {}
+      for (const flag of resp.data) {
+        featureFlags.value[flag.name] = flag.enabled
+      }
+    } catch {
+      featureFlags.value = featureFlags.value || {}
     }
   }
 

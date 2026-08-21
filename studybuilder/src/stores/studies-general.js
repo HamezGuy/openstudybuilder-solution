@@ -43,6 +43,9 @@ export const useStudiesGeneralStore = defineStore('studiesGeneral', {
       })
     },
     studyId: (state) => {
+      if (!state.selectedStudy) {
+        return null
+      }
       if (!state.selectedStudy.current_metadata) {
         const studyNumber = state.selectedStudy.number
         return studyNumber !== undefined && studyNumber !== null
@@ -113,22 +116,67 @@ export const useStudiesGeneralStore = defineStore('studiesGeneral', {
   actions: {
     unselectStudy() {
       this.selectedStudy = null
+      this.selectedStudyVersion = null
       localStorage.removeItem('selectedStudy')
+      this._syncAppStudyUid(null)
+    },
+
+    hydrateSelectedStudy() {
+      if (this.selectedStudy?.uid) {
+        return this.selectedStudy
+      }
+      const raw = localStorage.getItem('selectedStudy')
+      if (!raw) {
+        return null
+      }
+      try {
+        const parsedStudy = JSON.parse(raw)
+        if (!parsedStudy?.uid) {
+          localStorage.removeItem('selectedStudy')
+          return null
+        }
+        this.selectedStudy = parsedStudy
+        this.selectedStudyVersion = parsedStudy.current_metadata
+          ? parsedStudy.current_metadata.version_metadata.version_number
+          : parsedStudy.version_number
+        this._syncAppStudyUid(parsedStudy.uid)
+        return parsedStudy
+      } catch {
+        localStorage.removeItem('selectedStudy')
+        return null
+      }
+    },
+
+    _syncAppStudyUid(uid) {
+      import('./app')
+        .then(({ useAppStore }) => {
+          useAppStore().syncStudyMenuParams(uid)
+        })
+        .catch(() => {})
     },
 
     async initialize() {
-      const selectedStudy = localStorage.getItem('selectedStudy')
-      if (selectedStudy) {
-        const parsedStudy = JSON.parse(selectedStudy)
+      const parsedStudy = this.hydrateSelectedStudy()
+      if (!parsedStudy) {
+        return
+      }
+      try {
         await this.selectStudy(parsedStudy)
-        try {
-          await study.getStudy(parsedStudy.uid, true)
-        } catch (error) {
-          this.unselectStudy()
+      } catch {
+        // Keep the hydrated study even if preference APIs fail.
+      }
+      try {
+        const resp = await study.getStudy(parsedStudy.uid, true)
+        if (resp?.data?.uid) {
+          this.selectedStudy = resp.data
+          localStorage.setItem('selectedStudy', JSON.stringify(resp.data))
+          this._syncAppStudyUid(resp.data.uid)
         }
+      } catch {
+        // A readable list/local copy is enough to keep the study selected.
       }
     },
-    async selectStudy(studyObj, forceReload) {
+    async selectStudy(studyObj, _forceReload) {
       this.selectedStudy = studyObj
       if (!studyObj.current_metadata) {
         this.selectedStudyVersion = studyObj.version_number
@@ -137,15 +185,24 @@ export const useStudiesGeneralStore = defineStore('studiesGeneral', {
           studyObj.current_metadata.version_metadata.version_number
       }
       localStorage.setItem('selectedStudy', JSON.stringify(studyObj))
-      let resp
-      resp = await study.getStudyPreferredTimeUnit(studyObj.uid)
-      this.studyPreferredTimeUnit = resp.data
-      resp = await study.getSoAPreferredTimeUnit(studyObj.uid)
-      this.soaPreferredTimeUnit = resp.data
-      resp = await study.getSoAPreferences(studyObj.uid)
-      this.soaPreferences = resp.data
-      if (forceReload) {
-        document.location.reload()
+      this._syncAppStudyUid(studyObj.uid)
+      try {
+        const resp = await study.getStudyPreferredTimeUnit(studyObj.uid)
+        this.studyPreferredTimeUnit = resp.data
+      } catch {
+        this.studyPreferredTimeUnit = null
+      }
+      try {
+        const resp = await study.getSoAPreferredTimeUnit(studyObj.uid)
+        this.soaPreferredTimeUnit = resp.data
+      } catch {
+        this.soaPreferredTimeUnit = null
+      }
+      try {
+        const resp = await study.getSoAPreferences(studyObj.uid)
+        this.soaPreferences = resp.data
+      } catch {
+        this.soaPreferences = null
       }
     },
     setStudyPreferredTimeUnit({ timeUnitUid, protocolSoa }) {

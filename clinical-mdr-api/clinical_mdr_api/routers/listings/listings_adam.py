@@ -1,6 +1,6 @@
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Path
+from fastapi import APIRouter, Depends, Path
 
 from clinical_mdr_api.domains.listings.utils import AdamReport
 from clinical_mdr_api.models.listings.listings_adam import (
@@ -19,7 +19,9 @@ from common.auth.dependencies import security
 from common.config import settings
 
 # Prefixed with "/listings"
-router = APIRouter()
+from clinical_mdr_api.routers.studies.study_access import enforce_visible_study
+
+router = APIRouter(dependencies=[Depends(enforce_visible_study)])
 
 
 @router.get(

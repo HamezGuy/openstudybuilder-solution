@@ -1,7 +1,7 @@
 """Real PostgreSQL lease, RLS, and Fact-integrity tests for Proposal V2.
 
 Set ECRF_TEST_OWNER_PG_DSN and ECRF_TEST_PG_DSN to an isolated database that has
-migrations 001-039 applied. The worker DSN must use the non-owner osb_importer
+migrations 001-046 applied. The worker DSN must use the non-owner osb_importer
 role; fixture setup is the only code that uses owner credentials.
 """
 
@@ -50,46 +50,69 @@ def _fixture():
         "provenance": {"citations": [{"page": 1}]},
     }
     fact_hash = _stable_hash(fact)
+    document_hash = "d" * 64
+    source_fact_refs = [
+        {
+            "factId": fact_id,
+            "revision": 1,
+            "factContentHash": fact_hash,
+        }
+    ]
+    source_documents = [
+        {
+            "documentVersionId": document_id,
+            "contentHash": document_hash,
+        }
+    ]
+    source_build_hash = _stable_hash(
+        {
+            "tenantId": tenant_id,
+            "studyId": study_id,
+            "projectId": None,
+            "authorityMode": "shadow",
+            "sourceRunIds": ["run-1"],
+            "sourceDocuments": source_documents,
+            "sourceFactRefs": source_fact_refs,
+        }
+    )
+    dispositions = [{"factId": fact_id, "disposition": "not-targeted"}]
+    proposal_id = _stable_hash(
+        {
+            "tenantId": tenant_id,
+            "studyId": study_id,
+            "projectId": None,
+            "authorityMode": "shadow",
+            "sourceBuildHash": source_build_hash,
+            "osbOpenApiHash": "openapi-hash",
+            "osbMappingContextHash": "context-hash",
+            "proposalObjects": [],
+            "sourceDispositions": dispositions,
+        }
+    )
     content = {
-        "formatVersion": "osb-proposal/2.0",
-        "proposalId": f"proposal-{suffix}",
+        "formatVersion": "osb-proposal/2.1",
+        "canonicalizationVersion": "canonical-json/1.0",
+        "proposalId": proposal_id,
         "tenantId": tenant_id,
         "studyId": study_id,
         "projectId": None,
+        "sourceBuildHash": source_build_hash,
         "sourceRunIds": ["run-1"],
         "sourceDocumentVersionIds": [document_id],
+        "sourceDocuments": source_documents,
         "previousProposalHash": None,
         "osbOpenApiHash": "openapi-hash",
         "osbMappingContextHash": "context-hash",
         "authorityMode": "shadow",
-        "sections": {
-            "unresolved": [
-                {
-                    "proposalObjectId": f"object-{suffix}",
-                    "mapping": {
-                        "factIds": [fact_id],
-                        "proposedResourceType": "OdmItem",
-                        "candidates": [],
-                        "selectedCandidate": None,
-                        "disposition": "unresolved",
-                    },
-                }
-            ]
-        },
+        "sections": {},
         "reconciliation": {
             "balanced": True,
             "sourceFacts": 1,
-            "proposedObjects": 1,
-            "mappedSourceFacts": 1,
-            "dispositions": [],
+            "proposedObjects": 0,
+            "mappedSourceFacts": 0,
+            "dispositions": dispositions,
         },
-        "sourceFactRefs": [
-            {
-                "factId": fact_id,
-                "revision": 1,
-                "factContentHash": fact_hash,
-            }
-        ],
+        "sourceFactRefs": source_fact_refs,
     }
     proposal_hash = _stable_hash(content)
     proposal = {**content, "proposalHash": proposal_hash}
@@ -97,6 +120,7 @@ def _fixture():
         "tenant_id": tenant_id,
         "study_id": study_id,
         "document_id": document_id,
+        "document_hash": document_hash,
         "fact_id": fact_id,
         "outbox_id": outbox_id,
         "fact": fact,
@@ -120,7 +144,7 @@ def _seed(owner, value):
                 value["document_id"],
                 value["tenant_id"],
                 value["study_id"],
-                uuid.uuid4().hex,
+                value["document_hash"],
             ),
         )
         cursor.execute(
@@ -159,14 +183,15 @@ def _seed(owner, value):
             """
             INSERT INTO osb_study_proposals_v2 (
               tenant_id, proposal_hash, proposal_id, study_id, project_id,
-              format_version, authority_mode, osb_openapi_hash,
+              format_version, canonicalization_version, source_build_hash,
+              authority_mode, osb_openapi_hash,
               osb_mapping_context_hash, previous_proposal_hash,
               source_fact_count, eligible_approved_fact_count,
               proposed_object_count, mapped_source_fact_count,
               source_disposition_count, unresolved_count,
               reconciliation_balanced, proposal_jsonb, byte_size
-            ) VALUES (%s,%s,%s,%s,NULL,'osb-proposal/2.0','shadow',
-                      'openapi-hash','context-hash',NULL,1,1,1,1,0,1,TRUE,
+            ) VALUES (%s,%s,%s,%s,NULL,'osb-proposal/2.1','canonical-json/1.0',
+                      %s,'shadow','openapi-hash','context-hash',NULL,1,1,0,0,1,1,TRUE,
                       %s::jsonb,%s)
             """,
             (
@@ -174,6 +199,7 @@ def _seed(owner, value):
                 value["proposal_hash"],
                 proposal["proposalId"],
                 value["study_id"],
+                proposal["sourceBuildHash"],
                 json.dumps(proposal),
                 len(json.dumps(proposal).encode("utf-8")),
             ),
@@ -273,14 +299,36 @@ def test_worker_role_claims_renews_reclaims_and_finishes_exactly_once():
             assert second.claim_next("worker-2", lease_seconds=30) is None
             assert other_tenant.claim_next("other-worker", lease_seconds=30) is None
 
-            assert first.renew_lease(value["outbox_id"], "worker-2", 30) is False
-            assert first.renew_lease(value["outbox_id"], "worker-1", 30) is True
+            assert (
+                first.renew_lease(
+                    value["outbox_id"],
+                    "worker-2",
+                    claimed["lease_generation"],
+                    30,
+                )
+                is False
+            )
+            assert (
+                first.renew_lease(
+                    value["outbox_id"],
+                    "worker-1",
+                    claimed["lease_generation"],
+                    30,
+                )
+                is True
+            )
             with pytest.raises(RuntimeError, match="OSB_PROPOSAL_LEASE_OWNERSHIP_LOST"):
                 second.append_item_result(
-                    value["outbox_id"], "worker-2", {"status": "wrong-owner"}
+                    value["outbox_id"],
+                    "worker-2",
+                    claimed["lease_generation"],
+                    {"status": "wrong-owner"},
                 )
             first.append_item_result(
-                value["outbox_id"], "worker-1", {"status": "planned"}
+                value["outbox_id"],
+                "worker-1",
+                claimed["lease_generation"],
+                {"status": "planned"},
             )
 
             with owner.cursor() as cursor:
@@ -295,11 +343,25 @@ def test_worker_role_claims_renews_reclaims_and_finishes_exactly_once():
             reclaimed = second.claim_next("worker-2", lease_seconds=30)
             assert reclaimed["attempt"] == 2
             with pytest.raises(RuntimeError, match="OSB_PROPOSAL_LEASE_OWNERSHIP_LOST"):
-                first.finish(value["outbox_id"], "worker-1", "succeeded")
+                first.finish(
+                    value["outbox_id"],
+                    "worker-1",
+                    claimed["lease_generation"],
+                    "failed_terminal",
+                )
             second.append_item_result(
-                value["outbox_id"], "worker-2", {"status": "reconciled"}
+                value["outbox_id"],
+                "worker-2",
+                reclaimed["lease_generation"],
+                {"status": "reconciled"},
             )
-            second.finish(value["outbox_id"], "worker-2", "succeeded")
+            second.finish(
+                value["outbox_id"],
+                "worker-2",
+                reclaimed["lease_generation"],
+                "failed_terminal",
+                "TEST_LEASE_STAGE_END",
+            )
 
             with second.conn.cursor() as cursor:
                 cursor.execute(
@@ -310,7 +372,7 @@ def test_worker_role_claims_renews_reclaims_and_finishes_exactly_once():
                 )
                 completed = cursor.fetchone()
             second.conn.commit()
-            assert completed["status"] == "succeeded"
+            assert completed["status"] == "failed_terminal"
             assert completed["attempt"] == 2
             assert completed["lease_owner"] is None
             assert completed["lease_expires_at"] is None
@@ -335,7 +397,20 @@ def test_worker_role_claims_renews_reclaims_and_finishes_exactly_once():
             _cleanup(owner, value)
 
 
-def test_review_complete_is_claimed_only_by_the_native_execution_stage():
+@pytest.mark.parametrize(
+    ("release_ready", "release_blockers", "expected_status"),
+    [
+        (True, [], "succeeded"),
+        (
+            False,
+            ["OSB_RELEASE_EXTENSION_OBJECTS_PRESENT"],
+            "native_partial",
+        ),
+    ],
+)
+def test_review_complete_is_claimed_only_by_the_native_execution_stage(
+    release_ready, release_blockers, expected_status
+):
     value = _fixture()
     with psycopg.connect(OWNER_DSN, row_factory=dict_row) as owner:
         _seed(owner, value)
@@ -345,6 +420,7 @@ def test_review_complete_is_claimed_only_by_the_native_execution_stage():
             db.finish(
                 initial["outbox_id"],
                 "intake-worker",
+                initial["lease_generation"],
                 "review_required",
                 "OSB_PROPOSAL_REVIEW_REQUIRED",
                 available_at=datetime.now(timezone.utc),
@@ -367,21 +443,85 @@ def test_review_complete_is_claimed_only_by_the_native_execution_stage():
             db.finish(
                 review["outbox_id"],
                 "review-poller",
+                review["lease_generation"],
                 "review_complete",
                 "OSB_NATIVE_V2_EXECUTION_PENDING",
             )
 
             # Intake must not reprocess an already-reviewed proposal.
             assert db.claim_next("intake-worker", lease_seconds=30) is None
-            execution = db.claim_review_complete("native-worker", lease_seconds=30)
+            assert (
+                db.claim_review_complete(
+                    "wrong-study-native-worker",
+                    lease_seconds=30,
+                    study_id="not-this-study",
+                )
+                is None
+            )
+            execution = db.claim_review_complete(
+                "native-worker",
+                lease_seconds=30,
+                study_id=value["study_id"],
+            )
             assert execution["attempt"] == 3
             assert execution["proposal"] == value["proposal"]
-            db.finish(
+            assert execution["item_results"] == []
+            native_content = {
+                "schemaVersion": "test-native/1.0",
+                "proposalHash": value["proposal_hash"],
+                "sourceStudyId": value["study_id"],
+                "targetStudyUid": "Study_1",
+                "targetStudyVersion": "DRAFT",
+                "operationCount": 0,
+                "releaseReady": release_ready,
+                "releaseBlockers": release_blockers,
+                "deferredObjects": [],
+                "receipts": [],
+            }
+            native_evidence = {
+                **native_content,
+                "contentHash": _stable_hash(native_content),
+            }
+            reconciliation_content = {
+                "schemaVersion": "test-reconciliation/1.0",
+                "proposalHash": value["proposal_hash"],
+                "targetStudyUid": "Study_1",
+                "targetStudyVersion": "DRAFT",
+                "operationCount": 0,
+                "allReconciled": True,
+                "releaseReady": release_ready,
+                "releaseBlockers": release_blockers,
+                "rows": [],
+            }
+            reconciliation_evidence = {
+                **reconciliation_content,
+                "contentHash": _stable_hash(reconciliation_content),
+            }
+            delivery_status = db.finish_native_execution(
                 execution["outbox_id"],
                 "native-worker",
-                "failed_terminal",
-                "TEST_NATIVE_STAGE_END",
+                execution["lease_generation"],
+                native_evidence,
+                reconciliation_evidence,
             )
+            assert delivery_status == expected_status
+            with db.conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT status, workflow_stage, native_execution_evidence, "
+                    "reconciliation_evidence, completed_at, lease_owner, "
+                    "lease_expires_at FROM osb_proposal_outbox "
+                    "WHERE outbox_id = %s",
+                    (value["outbox_id"],),
+                )
+                completed = cursor.fetchone()
+            db.conn.commit()
+            assert completed["status"] == expected_status
+            assert completed["workflow_stage"] == "package_build"
+            assert completed["native_execution_evidence"] == native_evidence
+            assert completed["reconciliation_evidence"] == reconciliation_evidence
+            assert completed["completed_at"] is not None
+            assert completed["lease_owner"] is None
+            assert completed["lease_expires_at"] is None
         finally:
             db.close()
             _cleanup(owner, value)

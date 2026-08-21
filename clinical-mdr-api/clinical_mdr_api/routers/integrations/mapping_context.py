@@ -10,6 +10,9 @@ from clinical_mdr_api.models.integrations.mapping_context import (
 )
 from clinical_mdr_api.services.integrations.mapping_context import MappingContextService
 from clinical_mdr_api.services.integrations.canonical_json import canonical_hash
+from clinical_mdr_api.services.studies.study_visibility import (
+    assert_mapping_context_scope,
+)
 from common.auth import rbac
 from common.auth.dependencies import security
 
@@ -31,6 +34,7 @@ def create_mapping_context(
     body: MappingContextRequest,
     request: Request,
 ) -> MappingContextResponse:
+    assert_mapping_context_scope(body.study_uid, require_write=False)
     return MappingContextService().get_context(
         body,
         osb_openapi_hash=canonical_openapi_hash(request.app.openapi()),
@@ -48,6 +52,7 @@ def create_mapping_context_v2(
     body: MappingContextV2Request,
     request: Request,
 ) -> MappingContextV2Response:
+    assert_mapping_context_scope(body.study_uid, require_write=True)
     return MappingContextService().get_context_v2(
         body,
         osb_openapi_hash=canonical_openapi_hash(request.app.openapi()),

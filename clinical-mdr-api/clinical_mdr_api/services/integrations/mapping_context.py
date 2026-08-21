@@ -16,13 +16,13 @@ from clinical_mdr_api.models.integrations.mapping_context import (
     MappingContextV2Request,
     MappingContextV2Response,
 )
-from clinical_mdr_api.services.studies.study_standard_version_selection import (
-    StudyStandardVersionService,
-)
+from clinical_mdr_api.services.integrations.canonical_json import canonical_hash
 from clinical_mdr_api.services.integrations.proposal_review import (
     Neo4jProposalReviewRepository,
 )
-from clinical_mdr_api.services.integrations.canonical_json import canonical_hash
+from clinical_mdr_api.services.studies.study_standard_version_selection import (
+    StudyStandardVersionService,
+)
 
 _FAMILY_NODE_MODELS = {
     "objective_templates": (
@@ -45,10 +45,23 @@ _FAMILY_NODE_MODELS = {
         "TimeframeTemplateValue",
         "TimeframeTemplate",
     ),
+    # StudyEndpoint.timeframe_uid references an approved Timeframe INSTANCE,
+    # never its template. Keeping instances as their own governed family stops a
+    # TimeframeTemplate UID from passing review and then failing the native DTO.
+    "timeframes": ("TimeframeRoot", "TimeframeValue", "Timeframe"),
     "activities": ("ActivityRoot", "ActivityValue", "Activity"),
     "odm_forms": ("OdmFormRoot", "OdmFormValue", "OdmForm"),
     "odm_item_groups": ("OdmItemGroupRoot", "OdmItemGroupValue", "OdmItemGroup"),
     "odm_items": ("OdmItemRoot", "OdmItemValue", "OdmItem"),
+}
+
+_BLOCKER_ONLY_FAMILY_CODES = {
+    "compound_product_relationships": (
+        "MAPPING_CONTEXT_COMPOUND_PRODUCT_RELATIONSHIP_UNAVAILABLE"
+    ),
+    "study_compound_dosing_relationships": (
+        "MAPPING_CONTEXT_STUDY_COMPOUND_DOSING_RELATIONSHIP_UNAVAILABLE"
+    ),
 }
 
 
@@ -87,9 +100,17 @@ class MappingContextService:
         codes = _normalized(request.search_codes)
         warnings: list[str] = []
         release_blockers: list[str] = []
+        families = list(dict.fromkeys(request.resource_families))
         packages = self._selected_packages(request, warnings, release_blockers)
         data_models = self._selected_data_models(request, release_blockers)
-        required_catalogues = {"DDF CT", "SDTM CT", "CDASH CT"}
+        # The primary Proposal V2 contract is USDM study definition -> OSB.
+        # DDF CT is its terminology snapshot. CDASH/SDTM packages and models are
+        # prerequisites only for the separate collection-standard family; making
+        # them unconditional blocked every pure-USDM study proposal.
+        collection_mapping_requested = "cdash_variables" in families
+        required_catalogues = {"DDF CT"}
+        if collection_mapping_requested:
+            required_catalogues.update({"SDTM CT", "CDASH CT"})
         selected_catalogues = {package.catalogue_name for package in packages}
         for catalogue in sorted(required_catalogues - selected_catalogues):
             release_blockers.append(
@@ -98,10 +119,12 @@ class MappingContextService:
         if any(package.automatically_created for package in packages):
             release_blockers.append("MAPPING_CONTEXT_AUTO_SELECTED_PACKAGE")
         selected_model_families = {model.family for model in data_models}
-        for family in sorted({"SDTM", "CDASH"} - selected_model_families):
+        required_model_families = (
+            {"SDTM", "CDASH"} if collection_mapping_requested else set()
+        )
+        for family in sorted(required_model_families - selected_model_families):
             release_blockers.append(f"MAPPING_CONTEXT_{family}_MODEL_IG_MISSING")
 
-        families = list(dict.fromkeys(request.resource_families))
         candidates: dict[str, list[MappingContextCandidate]] = {}
         governed = not release_blockers
         if not searches and not codes:
@@ -115,7 +138,10 @@ class MappingContextService:
         else:
             package_uids = [package.package_uid for package in packages]
             for family in families:
-                if family == "controlled_terminology":
+                if family in _BLOCKER_ONLY_FAMILY_CODES:
+                    rows = []
+                    release_blockers.append(_BLOCKER_ONLY_FAMILY_CODES[family])
+                elif family == "controlled_terminology":
                     rows = self._controlled_terminology(
                         searches,
                         codes,
@@ -203,15 +229,23 @@ class MappingContextService:
         release_blockers: list[str] = []
         packages = self._selected_packages(request, warnings, release_blockers)
         data_models = self._selected_data_models(request, release_blockers)
+        requested_families = {
+            group.resource_family for group in request.candidate_groups
+        }
+        collection_mapping_requested = "cdash_variables" in requested_families
+        required_catalogues = {"DDF CT"}
+        if collection_mapping_requested:
+            required_catalogues.update({"SDTM CT", "CDASH CT"})
         selected_catalogues = {package.catalogue_name for package in packages}
-        for catalogue in sorted(
-            {"DDF CT", "SDTM CT", "CDASH CT"} - selected_catalogues
-        ):
+        for catalogue in sorted(required_catalogues - selected_catalogues):
             release_blockers.append(
                 f"MAPPING_CONTEXT_{catalogue.replace(' ', '_')}_PACKAGE_MISSING"
             )
         selected_model_families = {model.family for model in data_models}
-        for family in sorted({"SDTM", "CDASH"} - selected_model_families):
+        required_model_families = (
+            {"SDTM", "CDASH"} if collection_mapping_requested else set()
+        )
+        for family in sorted(required_model_families - selected_model_families):
             release_blockers.append(f"MAPPING_CONTEXT_{family}_MODEL_IG_MISSING")
 
         # Group outcomes must never starve later groups. Only immutable context
@@ -229,7 +263,11 @@ class MappingContextService:
             candidates: list[MappingContextCandidate] = []
             truncated = False
             incomplete_count = 0
-            if not searches and not codes:
+            if requested.resource_family in _BLOCKER_ONLY_FAMILY_CODES:
+                group_blockers.append(
+                    _BLOCKER_ONLY_FAMILY_CODES[requested.resource_family]
+                )
+            elif not searches and not codes:
                 group_blockers.append("MAPPING_CONTEXT_GROUP_SEARCH_EMPTY")
             elif requested.resource_family == "controlled_terminology" and (
                 requested.parent_resource_type != "CTCodelist" or not parent_searches
@@ -241,12 +279,28 @@ class MappingContextService:
                     candidates, incomplete_count = self._controlled_terminology_v2(
                         searches, codes, parent_searches, package_uids, query_limit
                     )
+                    # A pinned CDISC package is the authoritative source, so it is
+                    # always consulted first. Sponsor study-design codelists belong
+                    # to no package at all; without this fallback every concept
+                    # governed by one is unresolvable regardless of the pin.
+                    if not candidates:
+                        candidates, incomplete_count = (
+                            self._controlled_terminology_sponsor_v2(
+                                searches, codes, parent_searches, query_limit
+                            )
+                        )
                 elif requested.resource_family == "controlled_terminology_codelists":
                     candidates, incomplete_count = (
                         self._controlled_terminology_codelists_v2(
                             searches, codes, package_uids, query_limit
                         )
                     )
+                    if not candidates:
+                        candidates, incomplete_count = (
+                            self._controlled_terminology_codelists_sponsor_v2(
+                                searches, codes, query_limit
+                            )
+                        )
                 elif requested.resource_family == "units":
                     candidates, incomplete_count = self._units_v2(
                         searches, codes, query_limit, request.as_of
@@ -417,8 +471,10 @@ class MappingContextService:
                     AND ig_version.status = 'Final' AND ig_version.end_date IS NULL
                 """
                 params = {
+                    "model_catalogue": requested.family,
                     "model_uid": requested.model_uid,
                     "model_version": requested.model_version,
+                    "ig_catalogue": f"{requested.family}IG",
                     "ig_uid": requested.implementation_guide_uid,
                     "ig_version": requested.implementation_guide_version,
                 }
@@ -432,17 +488,21 @@ class MappingContextService:
                     AND (ig_version.end_date IS NULL OR ig_version.end_date > datetime($as_of))
                 """
                 params = {
+                    "model_catalogue": requested.family,
                     "model_uid": requested.model_uid,
                     "model_version": requested.model_version,
+                    "ig_catalogue": f"{requested.family}IG",
                     "ig_uid": requested.implementation_guide_uid,
                     "ig_version": requested.implementation_guide_version,
                     "as_of": as_of.isoformat(),
                 }
             query = (
                 """
-                MATCH (model_root:DataModelRoot {uid: $model_uid})
+                MATCH (:DataModelCatalogue {name: $model_catalogue})
+                      -[:HAS_DATA_MODEL]->(model_root:DataModelRoot {uid: $model_uid})
                       -[model_version:HAS_VERSION]->(model_value:DataModelValue {version_number: $model_version})
-                MATCH (ig_root:DataModelIGRoot {uid: $ig_uid})
+                MATCH (:DataModelCatalogue {name: $ig_catalogue})
+                      -[:HAS_DATA_MODEL_IG]->(ig_root:DataModelIGRoot {uid: $ig_uid})
                       -[ig_version:HAS_VERSION]->(ig_value:DataModelIGValue {version_number: $ig_version})
                       -[:IMPLEMENTS]->(model_value)
                 WHERE """
@@ -646,6 +706,170 @@ class MappingContextService:
                     parent_submission_value=row[12],
                     submission_value=row[14],
                     extensible=row[13],
+                )
+            )
+        return candidates, incomplete
+
+    @staticmethod
+    def _controlled_terminology_sponsor_v2(searches, codes, parent_searches, limit):
+        """Resolve CT terms held in a non-CDISC library outside any CT package.
+
+        The study-design vocabularies OSB's own study objects consume (Criteria
+        Type, Flowchart Group, Objective/Endpoint Level, Visit Type, Visit
+        Contact Mode, Epoch/Element Sub Type, Arm Type, Time Point Reference)
+        are sponsor codelists. They are deliberately not members of a published
+        CDISC package, so package-scoped retrieval cannot reach them at all and
+        every such concept would be reported unresolved. Governance is preserved
+        by pinning the codelist and term versions themselves: the candidate
+        carries library provenance instead of package provenance, so a reviewer
+        can always tell the two apart.
+        """
+        query = """
+            MATCH (library:Library)-[:CONTAINS_CODELIST]->(codelist_root:CTCodelistRoot)
+                  -[:HAS_ATTRIBUTES_ROOT]->(:CTCodelistAttributesRoot)
+                  -[codelist_version:HAS_VERSION]->(codelist_attributes:CTCodelistAttributesValue)
+            WHERE library.name <> 'CDISC'
+              AND NOT (codelist_attributes)<-[:CONTAINS_ATTRIBUTES]-(:CTPackageCodelist)
+              AND any(parent IN $parent_searches WHERE
+                    toLower(codelist_root.uid) = parent
+                    OR toLower(coalesce(codelist_attributes.name, '')) = parent
+                    OR toLower(coalesce(codelist_attributes.submission_value, '')) = parent)
+              AND codelist_version.status = 'Final'
+              AND codelist_version.end_date IS NULL
+            MATCH (codelist_root)-[owns:HAS_TERM]->(membership:CTCodelistTerm)
+                  -[:HAS_TERM_ROOT]->(term_root:CTTermRoot)
+            WHERE owns.end_date IS NULL
+            MATCH (term_root)-[:HAS_NAME_ROOT]->(term_name_root:CTTermNameRoot)
+                  -[:LATEST_FINAL]->(term_name:CTTermNameValue)
+            MATCH (term_name_root)-[term_name_version:HAS_VERSION]->(term_name)
+            WHERE term_name_version.status = 'Final'
+              AND term_name_version.end_date IS NULL
+            OPTIONAL MATCH (term_root)-[:HAS_ATTRIBUTES_ROOT]->(:CTTermAttributesRoot)
+                           -[:LATEST_FINAL]->(term_attributes:CTTermAttributesValue)
+            WITH DISTINCT library, codelist_root, codelist_attributes, codelist_version,
+                 membership, term_root, term_name, term_name_version, term_attributes,
+                 CASE
+                   WHEN any(code IN $codes WHERE toLower(term_root.uid) = code
+                        OR toLower(coalesce(term_attributes.concept_id, '')) = code
+                        OR toLower(coalesce(membership.submission_value, '')) = code) THEN 0
+                   WHEN any(needle IN $searches WHERE toLower(term_name.name) = needle
+                        OR toLower(coalesce(term_attributes.preferred_term, '')) = needle) THEN 1
+                   ELSE 2
+                 END AS match_rank
+            WHERE any(needle IN $searches WHERE
+                       toLower(term_name.name) CONTAINS needle
+                       OR toLower(coalesce(term_attributes.preferred_term, '')) CONTAINS needle)
+               OR any(code IN $codes WHERE toLower(term_root.uid) = code
+                       OR toLower(coalesce(term_attributes.concept_id, '')) = code
+                       OR toLower(coalesce(membership.submission_value, '')) = code)
+            RETURN term_root.uid, term_name.name, term_attributes.concept_id,
+                   term_name_version.version, term_name_version.status,
+                   toString(term_name_version.start_date), toString(term_name_version.end_date),
+                   library.name, codelist_root.uid, codelist_version.version,
+                   codelist_attributes.submission_value, codelist_attributes.extensible,
+                   membership.submission_value
+            ORDER BY match_rank, toLower(term_name.name), term_root.uid, codelist_root.uid
+            LIMIT $limit
+        """
+        result, _ = db.cypher_query(
+            query,
+            {
+                "searches": searches,
+                "codes": codes,
+                "parent_searches": parent_searches,
+                "limit": limit,
+            },
+        )
+        candidates = []
+        incomplete = 0
+        for row in result:
+            if not all(
+                (row[0], row[1], row[3], row[4], row[7], row[8], row[9], row[10], row[12])
+            ):
+                incomplete += 1
+                continue
+            candidates.append(
+                MappingContextCandidate(
+                    resource_family="controlled_terminology",
+                    resource_type="CTTerm",
+                    uid=row[0],
+                    label=row[1],
+                    code=row[2],
+                    version=str(row[3]),
+                    status=row[4],
+                    valid_from=row[5],
+                    valid_to=row[6],
+                    library_name=row[7],
+                    parent_resource_type="CTCodelist",
+                    parent_uid=row[8],
+                    parent_version=str(row[9]),
+                    parent_submission_value=row[10],
+                    submission_value=row[12],
+                    extensible=row[11],
+                )
+            )
+        return candidates, incomplete
+
+    @staticmethod
+    def _controlled_terminology_codelists_sponsor_v2(searches, codes, limit):
+        """Resolve non-CDISC codelists that no published CT package contains."""
+        query = """
+            MATCH (library:Library)-[:CONTAINS_CODELIST]->(codelist_root:CTCodelistRoot)
+                  -[:HAS_ATTRIBUTES_ROOT]->(:CTCodelistAttributesRoot)
+                  -[attributes_version:HAS_VERSION]->(attributes:CTCodelistAttributesValue)
+            MATCH (codelist_root)-[:HAS_NAME_ROOT]->(name_root:CTCodelistNameRoot)
+                  -[name_version:HAS_VERSION]->(name:CTCodelistNameValue)
+            WHERE library.name <> 'CDISC'
+              AND NOT (attributes)<-[:CONTAINS_ATTRIBUTES]-(:CTPackageCodelist)
+              AND attributes_version.status = 'Final'
+              AND attributes_version.end_date IS NULL
+              AND name_version.status = 'Final'
+              AND name_version.end_date IS NULL
+            WITH DISTINCT library, codelist_root, name, name_version, attributes,
+                 CASE
+                   WHEN any(code IN $codes WHERE toLower(codelist_root.uid) = code
+                        OR toLower(coalesce(attributes.concept_id, '')) = code
+                        OR toLower(coalesce(attributes.submission_value, '')) = code) THEN 0
+                   WHEN any(needle IN $searches WHERE toLower(name.name) = needle) THEN 1
+                   ELSE 2
+                 END AS match_rank
+            WHERE any(needle IN $searches WHERE
+                       toLower(name.name) CONTAINS needle
+                       OR toLower(coalesce(attributes.name, '')) CONTAINS needle)
+               OR any(code IN $codes WHERE toLower(codelist_root.uid) = code
+                       OR toLower(coalesce(attributes.concept_id, '')) = code
+                       OR toLower(coalesce(attributes.submission_value, '')) = code)
+            RETURN codelist_root.uid, name.name, attributes.concept_id,
+                   name_version.version, name_version.status,
+                   toString(name_version.start_date), toString(name_version.end_date),
+                   library.name, attributes.submission_value, attributes.extensible
+            ORDER BY match_rank, toLower(name.name), codelist_root.uid
+            LIMIT $limit
+        """
+        result, _ = db.cypher_query(
+            query,
+            {"searches": searches, "codes": codes, "limit": limit},
+        )
+        candidates = []
+        incomplete = 0
+        for row in result:
+            if not all((row[0], row[1], row[3], row[4], row[7], row[8])):
+                incomplete += 1
+                continue
+            candidates.append(
+                MappingContextCandidate(
+                    resource_family="controlled_terminology_codelists",
+                    resource_type="CTCodelist",
+                    uid=row[0],
+                    label=row[1],
+                    code=row[2],
+                    version=str(row[3]),
+                    status=row[4],
+                    valid_from=row[5],
+                    valid_to=row[6],
+                    library_name=row[7],
+                    submission_value=row[8],
+                    extensible=row[9],
                 )
             )
         return candidates, incomplete
@@ -1077,8 +1301,8 @@ class MappingContextService:
             RETURN root.uid, value.name, version.version, version.status,
                    toString(version.start_date), toString(version.end_date),
                    library.name, value.oid, criteria_type.uid,
-                   count(DISTINCT parameter)
-            ORDER BY match_rank, toLower(value.name), root.uid
+                   count(DISTINCT parameter), min(match_rank) AS resolved_match_rank
+            ORDER BY resolved_match_rank, toLower(value.name), root.uid
             LIMIT $limit
         """
         result, _ = db.cypher_query(query, params)

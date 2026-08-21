@@ -14,6 +14,15 @@ from clinical_mdr_api.services.studies.study_activity_selection import (
 from clinical_mdr_api.services.studies.study_arm_selection import (
     StudyArmSelectionService,
 )
+from clinical_mdr_api.services.studies.study_compound_dosing_selection import (
+    StudyCompoundDosingSelectionService,
+)
+from clinical_mdr_api.services.studies.study_compound_selection import (
+    StudyCompoundSelectionService,
+)
+from clinical_mdr_api.services.studies.study_criteria_selection import (
+    StudyCriteriaSelectionService,
+)
 from clinical_mdr_api.services.studies.study_design_cell import StudyDesignCellService
 from clinical_mdr_api.services.studies.study_element_selection import (
     StudyElementSelectionService,
@@ -28,7 +37,6 @@ from clinical_mdr_api.services.studies.study_objective_selection import (
 from clinical_mdr_api.services.studies.study_standard_version_selection import (
     StudyStandardVersionService,
 )
-
 from clinical_mdr_api.services.studies.study_visit import StudyVisitService
 from common.telemetry import trace_calls
 
@@ -46,8 +54,10 @@ class USDMService:
             get_osb_study_objectives=StudyObjectiveSelectionService().get_all_selection,
             get_osb_study_endpoints=StudyEndpointSelectionService().get_all_selection,
             get_osb_study_standard_versions=StudyStandardVersionService().get_standard_versions_in_study,
+            get_osb_study_compounds=StudyCompoundSelectionService().get_all_selection,
+            get_osb_study_compound_dosings=StudyCompoundDosingSelectionService().get_all_compound_dosings,
+            get_osb_study_criteria=StudyCriteriaSelectionService().get_all_selection,
             get_osb_study_visits=StudyVisitService.get_all_visits,
-
             get_osb_study_activities=StudyActivitySelectionService().get_all_selection,
             get_osb_activity_schedules=StudyActivityScheduleService().get_all_schedules,
         )
@@ -69,6 +79,4 @@ class USDMService:
             ],
             study_value_version=study_value_version,
         )
-        return self._usdm_mapper.map(
-            osb_study, study_value_version=study_value_version
-        )
+        return self._usdm_mapper.map(osb_study, study_value_version=study_value_version)

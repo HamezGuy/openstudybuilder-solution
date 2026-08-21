@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import json
 import hashlib
+import json
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -11,6 +12,8 @@ from uuid import uuid4
 from neomodel import db
 
 from clinical_mdr_api.models.integrations.proposal_review import (
+    ProposalExecutionAuthorization,
+    ProposalExecutionAuthorizationInput,
     ProposalObjectDecision,
     ProposalObjectDecisionInput,
     ProposalReviewIntake,
@@ -20,12 +23,15 @@ from clinical_mdr_api.models.integrations.proposal_review import (
 from clinical_mdr_api.services.integrations.canonical_json import (
     canonical_hash as _canonical_hash,
 )
-from clinical_mdr_api.services.integrations.proposal_target_capabilities import (
-    NATIVE_EXECUTOR_RESOURCE_TYPES,
-    target_capability,
-)
 from clinical_mdr_api.services.integrations.canonical_json import (
     canonical_json as _canonical_json,
+)
+from clinical_mdr_api.services.integrations.proposal_target_capabilities import (
+    NATIVE_CREATE_REQUEST_RESOURCE_TYPES,
+    NATIVE_DUAL_MODE_RESOURCE_TYPES,
+    NATIVE_EXECUTOR_RESOURCE_TYPES,
+    NATIVE_SELECTION_RESOURCE_TYPES,
+    target_capability,
 )
 from common.utils import convert_to_datetime
 
@@ -46,7 +52,89 @@ SECTION_ORDER = (
     "retainedNarrative",
     "unresolved",
 )
-MAX_PROPOSAL_BYTES = 32 * 1024 * 1024
+MAX_PROPOSAL_BYTES = 128 * 1024 * 1024
+REVIEWER_ROLE = "Study.Write"
+READER_ROLE = "Study.Read"
+
+
+@dataclass(frozen=True)
+class ProposalReviewPrincipal:
+    """Identity facts derived only from an already validated access token."""
+
+    actor_id: str
+    human_user_id: str
+    token_id: str
+    tenant_id: str
+    scoped_study_ids: frozenset[str]
+    organization_ids: frozenset[str]
+    roles: frozenset[str]
+    authentication_verified: bool
+    purpose: str = ""
+    capabilities: frozenset[str] = frozenset()
+    enforce_delegated_scope: bool = False
+    development_access: bool = False
+
+    def _assert_access_identity(self) -> None:
+        if self.development_access:
+            return
+        if not self.authentication_verified:
+            raise ValueError("OSB_PROPOSAL_REVIEW_AUTHENTICATION_NOT_VERIFIED")
+        if not self.actor_id:
+            raise ValueError("OSB_PROPOSAL_REVIEW_ACTOR_REQUIRED")
+
+    def _assert_authenticated_human(self) -> None:
+        if not self.authentication_verified:
+            raise ValueError("OSB_PROPOSAL_REVIEW_AUTHENTICATION_NOT_VERIFIED")
+        if not self.actor_id or self.actor_id != self.human_user_id:
+            raise ValueError("OSB_PROPOSAL_REVIEW_HUMAN_IDENTITY_REQUIRED")
+
+    def assert_proposal_access(
+        self,
+        expected_tenant_id: str,
+        expected_study_id: str,
+        role: str,
+    ) -> None:
+        """Authorize human or service access to one proposal source scope.
+
+        Authentication-disabled local development already bypasses the API's
+        security/RBAC dependencies.  Preserve that preview behavior for
+        intake/read, but never treat it as a verified signature identity.
+        """
+        self._assert_access_identity()
+        if self.development_access:
+            return
+        if role not in self.roles:
+            raise ValueError("OSB_PROPOSAL_REVIEW_ROLE_REQUIRED")
+        if self.enforce_delegated_scope:
+            if self.purpose not in {
+                "interactive-domain-access",
+                "workflow-orchestration",
+            }:
+                raise ValueError("OSB_PROPOSAL_REVIEW_PURPOSE_REQUIRED")
+            capability = "study:write" if role == REVIEWER_ROLE else "study:read"
+            if capability not in self.capabilities:
+                raise ValueError("OSB_PROPOSAL_REVIEW_CAPABILITY_REQUIRED")
+        if not self.tenant_id:
+            raise ValueError("OSB_PROPOSAL_REVIEW_TENANT_ID_REQUIRED")
+        if not expected_tenant_id or self.tenant_id != expected_tenant_id:
+            raise ValueError("OSB_PROPOSAL_REVIEW_TENANT_SCOPE_MISMATCH")
+        self.assert_study_access(expected_study_id)
+
+    def assert_study_access(self, expected_study_id: str) -> None:
+        self._assert_access_identity()
+        if self.development_access:
+            return
+        if not expected_study_id or expected_study_id not in self.scoped_study_ids:
+            raise ValueError("OSB_PROPOSAL_REVIEW_STUDY_SCOPE_MISMATCH")
+
+    def assert_can_sign(self, signature_id: str) -> None:
+        self._assert_authenticated_human()
+        if REVIEWER_ROLE not in self.roles:
+            raise ValueError("OSB_PROPOSAL_REVIEW_ROLE_REQUIRED")
+        if not self.tenant_id:
+            raise ValueError("OSB_PROPOSAL_REVIEW_TENANT_ID_REQUIRED")
+        if not self.token_id or signature_id != self.token_id:
+            raise ValueError("OSB_PROPOSAL_REVIEW_SIGNATURE_TOKEN_MISMATCH")
 
 
 def _text_hash(value: str) -> str:
@@ -289,7 +377,7 @@ class Neo4jProposalReviewRepository:
                 candidate_key: $candidate_key,
                 note: $note,
                 signature_id: $signature_id,
-                signature_verified: false,
+                signature_verified: $signature_verified,
                 decision_content_hash: $decision_content_hash,
                 actor_id: $actor_id,
                 decided_at: datetime($decided_at)
@@ -310,6 +398,163 @@ class Neo4jProposalReviewRepository:
         if not result:
             raise ValueError("OSB_PROPOSAL_REVIEW_OBJECT_NOT_FOUND")
 
+    @staticmethod
+    def get_draft_target(study_uid: str) -> dict[str, Any] | None:
+        """Return the live draft and its stable, original owner.
+
+        `LATEST_DRAFT.author_id` is the most recent editor and changes on a
+        metadata PATCH.  Ownership must instead come from the first
+        `HAS_VERSION` relationship or an importer could take ownership merely
+        by writing to the study.  Drafts intentionally have no numeric version;
+        node id and start date are the optimistic-concurrency tokens.
+        """
+        result, _ = db.cypher_query(
+            """
+            MATCH (study:StudyRoot {uid: $study_uid})
+                  -[draft:LATEST_DRAFT]->(value:StudyValue)
+            WHERE draft.end_date IS NULL
+              AND draft.status = 'DRAFT'
+              AND draft.start_date IS NOT NULL
+            MATCH (study)-[created:HAS_VERSION]->(:StudyValue)
+            WHERE created.author_id IS NOT NULL
+              AND created.start_date IS NOT NULL
+            WITH study, draft, value, created
+            ORDER BY created.start_date ASC, elementId(created) ASC
+            WITH study, draft, value, head(collect(created)) AS initial
+            RETURN study.uid, 'DRAFT', draft.status, initial.author_id,
+                   draft.start_date, elementId(value)
+            LIMIT 2
+            """,
+            {"study_uid": study_uid},
+        )
+        if len(result) > 1:
+            raise ValueError("OSB_PROPOSAL_TARGET_DRAFT_AMBIGUOUS")
+        if not result:
+            return None
+        row = result[0]
+        return {
+            "study_uid": row[0],
+            "version": row[1],
+            "status": row[2],
+            "owner_id": row[3],
+            "version_start_date": convert_to_datetime(row[4]),
+            "study_value_node_id": row[5],
+            "ownership_basis": "initial_version_author",
+        }
+
+    @staticmethod
+    def append_execution_authorization(
+        proposal_hash: str,
+        authorization: dict[str, Any],
+    ) -> None:
+        """Atomically bind an authorization to the still-current owned draft."""
+        result, _ = db.cypher_query(
+            """
+            MATCH (proposal:OsbProposalReview {proposal_hash: $proposal_hash})
+            MATCH (reviewer:User {user_id: $actor_id})
+            MATCH (study:StudyRoot {uid: $target_study_uid})
+                  -[draft:LATEST_DRAFT]->(value:StudyValue)
+            WHERE draft.end_date IS NULL
+              AND draft.status = 'DRAFT'
+              AND draft.start_date = datetime($target_version_start_date)
+              AND elementId(value) = $target_study_value_node_id
+            MATCH (study)-[created:HAS_VERSION]->(:StudyValue)
+            WHERE created.author_id IS NOT NULL
+              AND created.start_date IS NOT NULL
+            WITH proposal, reviewer, study, draft, value, created
+            ORDER BY created.start_date ASC, elementId(created) ASC
+            WITH proposal, reviewer, study, draft, value,
+                 head(collect(created)) AS initial
+            WHERE $target_study_version = 'DRAFT'
+              AND initial.author_id = $target_study_owner_id
+              AND initial.author_id = $actor_id
+              AND $target_ownership_basis = 'initial_version_author'
+            OPTIONAL MATCH
+              (proposal)-[old_latest:LATEST_EXECUTION_AUTHORIZATION]->(previous)
+            DELETE old_latest
+            CREATE (authorization:OsbProposalExecutionAuthorization {
+                authorization_id: $authorization_id,
+                proposal_hash: $proposal_hash,
+                target_study_uid: $target_study_uid,
+                target_study_version: $target_study_version,
+                target_study_status: 'DRAFT',
+                target_study_value_node_id: $target_study_value_node_id,
+                target_study_owner_id: $target_study_owner_id,
+                target_ownership_basis: $target_ownership_basis,
+                target_version_start_date: datetime($target_version_start_date),
+                decision_set_hash: $decision_set_hash,
+                signature_id: $signature_id,
+                signature_verified: $signature_verified,
+                actor_id: $actor_id,
+                authorized_at: datetime($authorized_at),
+                authorization_content_hash: $authorization_content_hash
+            })
+            CREATE (proposal)-[:HAS_EXECUTION_AUTHORIZATION]->(authorization)
+            CREATE (proposal)-[:LATEST_EXECUTION_AUTHORIZATION]->(authorization)
+            CREATE (authorization)-[:TARGETS_STUDY]->(study)
+            CREATE (authorization)-[:AUTHORIZED_BY]->(reviewer)
+            FOREACH (_ IN CASE WHEN previous IS NULL THEN [] ELSE [1] END |
+              CREATE (authorization)-[:SUPERSEDES]->(previous)
+            )
+            RETURN authorization.authorization_id
+            """,
+            {
+                "proposal_hash": proposal_hash,
+                **authorization,
+            },
+        )
+        if not result:
+            raise ValueError("OSB_PROPOSAL_TARGET_DRAFT_OWNERSHIP_STALE")
+
+    @staticmethod
+    def get_execution_authorization(
+        proposal_hash: str,
+    ) -> dict[str, Any] | None:
+        result, _ = db.cypher_query(
+            """
+            MATCH (:OsbProposalReview {proposal_hash: $proposal_hash})
+                  -[:LATEST_EXECUTION_AUTHORIZATION]->
+                  (authorization:OsbProposalExecutionAuthorization)
+            RETURN authorization.authorization_id,
+                   authorization.proposal_hash,
+                   authorization.target_study_uid,
+                   authorization.target_study_version,
+                   authorization.target_study_status,
+                   authorization.target_study_value_node_id,
+                   authorization.target_study_owner_id,
+                   authorization.target_ownership_basis,
+                   authorization.target_version_start_date,
+                   authorization.decision_set_hash,
+                   authorization.signature_id,
+                   authorization.signature_verified,
+                   authorization.actor_id,
+                   authorization.authorized_at,
+                   authorization.authorization_content_hash
+            LIMIT 1
+            """,
+            {"proposal_hash": proposal_hash},
+        )
+        if not result:
+            return None
+        row = result[0]
+        return {
+            "authorization_id": row[0],
+            "proposal_hash": row[1],
+            "target_study_uid": row[2],
+            "target_study_version": row[3],
+            "target_study_status": row[4],
+            "target_study_value_node_id": row[5],
+            "target_study_owner_id": row[6],
+            "target_ownership_basis": row[7],
+            "target_version_start_date": convert_to_datetime(row[8]),
+            "decision_set_hash": row[9],
+            "signature_id": row[10],
+            "signature_verified": bool(row[11]),
+            "actor_id": row[12],
+            "authorized_at": convert_to_datetime(row[13]),
+            "authorization_content_hash": row[14],
+        }
+
 
 class ProposalReviewService:
     def __init__(self, repository: Neo4jProposalReviewRepository | None = None):
@@ -319,8 +564,14 @@ class ProposalReviewService:
         self,
         intake: ProposalReviewIntake,
         live_openapi_hash: str,
+        principal: ProposalReviewPrincipal,
     ) -> ProposalReviewStatus:
         proposal = intake.proposal.model_dump(by_alias=True)
+        principal.assert_proposal_access(
+            proposal.get("tenantId") or "",
+            proposal.get("studyId") or "",
+            REVIEWER_ROLE,
+        )
         if len(_canonical_json(proposal).encode("utf-8")) > MAX_PROPOSAL_BYTES:
             raise ValueError("OSB_PROPOSAL_BYTE_LIMIT_EXCEEDED")
         objects = self._validate_proposal(proposal, live_openapi_hash)
@@ -380,6 +631,12 @@ class ProposalReviewService:
         if None in source_ref_by_id or len(source_ref_by_id) != len(source_refs):
             raise ValueError("OSB_PROPOSAL_SOURCE_FACT_IDENTITY_INVALID")
         source_documents = proposal.get("sourceDocuments") or []
+        source_authority = proposal.get("sourceAuthority")
+        if source_authority and (
+            source_authority.get("tenantId") != proposal.get("tenantId")
+            or source_authority.get("studyId") != proposal.get("studyId")
+        ):
+            raise ValueError("OSB_PROPOSAL_SOURCE_AUTHORITY_INVALID")
         source_document_ids = {
             item.get("documentVersionId"): item.get("contentHash")
             for item in source_documents
@@ -391,8 +648,7 @@ class ProposalReviewService:
             != [item.get("documentVersionId") for item in source_documents]
         ):
             raise ValueError("OSB_PROPOSAL_SOURCE_DOCUMENT_IDENTITY_INVALID")
-        expected_source_build_hash = _canonical_hash(
-            {
+        source_build_content = {
                 "tenantId": proposal.get("tenantId"),
                 "studyId": proposal.get("studyId"),
                 "projectId": proposal.get("projectId"),
@@ -401,7 +657,9 @@ class ProposalReviewService:
                 "sourceDocuments": source_documents,
                 "sourceFactRefs": source_refs,
             }
-        )
+        if source_authority:
+            source_build_content["sourceAuthority"] = source_authority
+        expected_source_build_hash = _canonical_hash(source_build_content)
         if proposal.get("sourceBuildHash") != expected_source_build_hash:
             raise ValueError("OSB_PROPOSAL_SOURCE_BUILD_HASH_MISMATCH")
         sections = proposal.get("sections") or {}
@@ -644,13 +902,20 @@ class ProposalReviewService:
         proposal_hash: str,
         proposal_object_id: str,
         decision: ProposalObjectDecisionInput,
-        actor_id: str,
+        principal: ProposalReviewPrincipal,
     ) -> ProposalReviewStatus:
+        principal.assert_can_sign(decision.signature_id)
+        actor_id = principal.actor_id
         if not actor_id:
             raise ValueError("OSB_PROPOSAL_REVIEW_ACTOR_REQUIRED")
         stored = self.repository.get_proposal(proposal_hash)
         if stored is None:
             raise ValueError("OSB_PROPOSAL_REVIEW_NOT_FOUND")
+        principal.assert_proposal_access(
+            stored["proposal"].get("tenantId") or "",
+            stored["proposal"].get("studyId") or "",
+            REVIEWER_ROLE,
+        )
         item = next(
             (
                 value
@@ -680,7 +945,7 @@ class ProposalReviewService:
             "candidate_key": decision.candidate_key,
             "note": decision.note,
             "signature_id": decision.signature_id,
-            "signature_verified": False,
+            "signature_verified": True,
             "actor_id": actor_id,
             "decided_at": decided_at,
         }
@@ -698,12 +963,159 @@ class ProposalReviewService:
         )
         return self.get_status(proposal_hash)
 
-    def get_status(self, proposal_hash: str) -> ProposalReviewStatus:
+    @staticmethod
+    def _decision_set_hash(
+        proposal_hash: str,
+        decisions: list[ProposalObjectDecision],
+    ) -> str:
+        return _canonical_hash(
+            {
+                "proposalHash": proposal_hash,
+                "decisions": [
+                    {
+                        "proposalObjectId": item.proposal_object_id,
+                        "decisionContentHash": item.decision_content_hash,
+                    }
+                    for item in sorted(
+                        decisions,
+                        key=lambda value: value.proposal_object_id,
+                    )
+                ],
+            }
+        )
+
+    @staticmethod
+    def _authorization_hash_input(
+        authorization: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            key: value.isoformat() if isinstance(value, datetime) else value
+            for key, value in authorization.items()
+            if key != "authorization_content_hash"
+        }
+
+    def authorize_execution(
+        self,
+        proposal_hash: str,
+        request: ProposalExecutionAuthorizationInput,
+        principal: ProposalReviewPrincipal,
+    ) -> ProposalReviewStatus:
+        """Authorize one immutable decision set for one current owned draft."""
         stored = self.repository.get_proposal(proposal_hash)
         if stored is None:
             raise ValueError("OSB_PROPOSAL_REVIEW_NOT_FOUND")
+        principal.assert_proposal_access(
+            stored["proposal"].get("tenantId") or "",
+            stored["proposal"].get("studyId") or "",
+            REVIEWER_ROLE,
+        )
+        principal.assert_study_access(request.target_study_uid)
+        principal.assert_can_sign(request.signature_id)
+        status = self.get_status(proposal_hash)
+        if not status.review_complete:
+            raise ValueError("OSB_PROPOSAL_REVIEW_INCOMPLETE")
+        if status.rejected_object_count:
+            raise ValueError("OSB_PROPOSAL_REVIEW_REJECTED")
+        if any(
+            not item.latest_decision or not item.latest_decision.signature_verified
+            for item in status.objects
+        ):
+            raise ValueError("OSB_PROPOSAL_REVIEW_SIGNATURE_NOT_VERIFIED")
+        if request.expected_decision_set_hash != status.decision_set_hash:
+            raise ValueError("OSB_PROPOSAL_REVIEW_DECISION_SET_STALE")
+
+        if stored["proposal"].get("authorityMode") != "enforced":
+            raise ValueError("OSB_PROPOSAL_AUTHORITY_MODE_NOT_ENFORCED")
+        disallowed_blockers = [
+            blocker
+            for blocker in status.execution_blockers
+            if blocker
+            not in {
+                "OSB_EXECUTION_AUTHORIZATION_REQUIRED",
+                "OSB_STUDY_OWNERSHIP_UNVERIFIED",
+            }
+        ]
+        if disallowed_blockers:
+            raise ValueError(
+                "OSB_PROPOSAL_EXECUTION_BLOCKED:" + ",".join(disallowed_blockers)
+            )
+
+        target = self.repository.get_draft_target(request.target_study_uid)
+        if target is None:
+            raise ValueError("OSB_PROPOSAL_TARGET_DRAFT_NOT_FOUND")
+        if (
+            target["study_uid"] != request.target_study_uid
+            or target["version"] != request.target_study_version
+            or target["status"] != "DRAFT"
+        ):
+            raise ValueError("OSB_PROPOSAL_TARGET_DRAFT_VERSION_STALE")
+        if target["owner_id"] != principal.actor_id:
+            raise ValueError("OSB_PROPOSAL_TARGET_DRAFT_NOT_OWNED_BY_REVIEWER")
+
+        authorized_at = datetime.now(timezone.utc)
+        authorization = {
+            "authorization_id": str(uuid4()),
+            "proposal_hash": proposal_hash,
+            "target_study_uid": target["study_uid"],
+            "target_study_version": target["version"],
+            "target_study_status": "DRAFT",
+            "target_study_value_node_id": target["study_value_node_id"],
+            "target_study_owner_id": target["owner_id"],
+            "target_ownership_basis": target["ownership_basis"],
+            "target_version_start_date": target["version_start_date"].isoformat(),
+            "decision_set_hash": status.decision_set_hash,
+            "signature_id": request.signature_id,
+            "signature_verified": True,
+            "actor_id": principal.actor_id,
+            "authorized_at": authorized_at.isoformat(),
+        }
+        authorization["authorization_content_hash"] = _canonical_hash(
+            self._authorization_hash_input(authorization)
+        )
+        self.repository.append_execution_authorization(
+            proposal_hash,
+            authorization,
+        )
+        return self.get_status(proposal_hash)
+
+    def get_status(
+        self,
+        proposal_hash: str,
+        principal: ProposalReviewPrincipal | None = None,
+    ) -> ProposalReviewStatus:
+        stored = self.repository.get_proposal(proposal_hash)
+        if stored is None:
+            raise ValueError("OSB_PROPOSAL_REVIEW_NOT_FOUND")
+        if principal is not None:
+            principal.assert_proposal_access(
+                stored["proposal"].get("tenantId") or "",
+                stored["proposal"].get("studyId") or "",
+                READER_ROLE,
+            )
         latest = {}
+        invalid_decision_hashes = []
         for value in self.repository.list_decisions(proposal_hash):
+            expected_hash = _canonical_hash(
+                {
+                    "proposalHash": proposal_hash,
+                    "proposalObjectId": value["proposal_object_id"],
+                    **{
+                        key: (
+                            item if not isinstance(item, datetime) else item.isoformat()
+                        )
+                        for key, item in value.items()
+                        if key
+                        not in {
+                            "proposal_hash",
+                            "proposal_object_id",
+                            "decision_content_hash",
+                        }
+                    },
+                }
+            )
+            if value.get("decision_content_hash") != expected_hash:
+                invalid_decision_hashes.append(value["proposal_object_id"])
+                value["signature_verified"] = False
             latest[value["proposal_object_id"]] = ProposalObjectDecision(**value)
         review_objects = []
         object_target_keys_by_fact = {
@@ -793,6 +1205,49 @@ class ProposalReviewService:
         ]
         rejected = sum(item.action == "rejected" for item in decisions)
         review_complete = len(decisions) == len(review_objects)
+        decision_set_hash = self._decision_set_hash(proposal_hash, decisions)
+        proposal = stored["proposal"]
+        mapping_context = self.repository.get_context(proposal["osbMappingContextHash"])
+        mapping_context_release_blockers = [
+            f"OSB_RELEASE_MAPPING_CONTEXT_BLOCKER:{code}"
+            for code in (mapping_context or {}).get("releaseBlockers", [])
+        ]
+        authorization_raw = self.repository.get_execution_authorization(proposal_hash)
+        authorization = (
+            ProposalExecutionAuthorization(**authorization_raw)
+            if authorization_raw
+            else None
+        )
+        target = (
+            self.repository.get_draft_target(authorization.target_study_uid)
+            if authorization
+            else None
+        )
+        authorization_hash_valid = bool(
+            authorization_raw
+            and _canonical_hash(self._authorization_hash_input(authorization_raw))
+            == authorization_raw.get("authorization_content_hash")
+        )
+        target_ownership_verified = bool(
+            authorization
+            and target
+            and authorization_hash_valid
+            and target.get("study_uid") == authorization.target_study_uid
+            and target.get("version") == authorization.target_study_version
+            and target.get("status") == "DRAFT"
+            and target.get("owner_id") == authorization.target_study_owner_id
+            and target.get("owner_id") == authorization.actor_id
+            and target.get("ownership_basis") == authorization.target_ownership_basis
+        )
+        target_snapshot_verified = bool(
+            target_ownership_verified
+            and target
+            and authorization
+            and target.get("study_value_node_id")
+            == authorization.target_study_value_node_id
+            and target.get("version_start_date")
+            == authorization.target_version_start_date
+        )
         if not review_objects:
             execution_blockers = ["OSB_PROPOSAL_REVIEW_EMPTY"]
         elif not review_complete:
@@ -804,8 +1259,72 @@ class ProposalReviewService:
             # authority/executor dependency instead of one blanket blocker so the
             # worker cannot mistake support for one family as support for all.
             execution_blockers = [
-                "OSB_REVIEW_SIGNATURE_VERIFICATION_UNAVAILABLE",
-                "OSB_STUDY_OWNERSHIP_VERSION_UNRESOLVED",
+                *(
+                    ["OSB_PROPOSAL_AUTHORITY_MODE_NOT_ENFORCED"]
+                    if proposal.get("authorityMode") != "enforced"
+                    else []
+                ),
+                *(
+                    [
+                        "OSB_REVIEW_DECISION_CONTENT_HASH_INVALID:"
+                        + ",".join(sorted(invalid_decision_hashes))
+                    ]
+                    if invalid_decision_hashes
+                    else []
+                ),
+                *(
+                    [
+                        "OSB_REVIEW_SIGNATURE_NOT_VERIFIED:"
+                        + ",".join(
+                            item.proposal_object_id
+                            for item in review_objects
+                            if not item.latest_decision
+                            or not item.latest_decision.signature_verified
+                        )
+                    ]
+                    if any(
+                        not item.latest_decision
+                        or not item.latest_decision.signature_verified
+                        for item in review_objects
+                    )
+                    else []
+                ),
+                *(
+                    ["OSB_EXECUTION_AUTHORIZATION_REQUIRED"]
+                    if authorization is None
+                    else []
+                ),
+                *(
+                    ["OSB_EXECUTION_AUTHORIZATION_CONTENT_HASH_INVALID"]
+                    if authorization and not authorization_hash_valid
+                    else []
+                ),
+                *(
+                    ["OSB_EXECUTION_AUTHORIZATION_PROPOSAL_MISMATCH"]
+                    if authorization and authorization.proposal_hash != proposal_hash
+                    else []
+                ),
+                *(
+                    ["OSB_EXECUTION_AUTHORIZATION_DECISION_SET_STALE"]
+                    if authorization
+                    and authorization.decision_set_hash != decision_set_hash
+                    else []
+                ),
+                *(
+                    ["OSB_EXECUTION_AUTHORIZATION_SIGNATURE_NOT_VERIFIED"]
+                    if authorization and not authorization.signature_verified
+                    else []
+                ),
+                *(
+                    ["OSB_STUDY_OWNERSHIP_UNVERIFIED"]
+                    if not target_ownership_verified
+                    else []
+                ),
+                *(
+                    ["OSB_STUDY_DRAFT_SNAPSHOT_STALE"]
+                    if target_ownership_verified and not target_snapshot_verified
+                    else []
+                ),
                 *[
                     f"OSB_NATIVE_V2_DEPENDENCY_MISSING:{item.proposal_object_id}:"
                     f"{','.join(item.missing_dependency_target_keys)}"
@@ -819,37 +1338,96 @@ class ProposalReviewService:
                     if item.unselected_dependency_target_keys
                 ],
                 *[
-                    f"OSB_NATIVE_V2_FAMILY_EXECUTOR_UNAVAILABLE:"
-                    f"{item.proposed_resource_type}"
+                    f"OSB_NATIVE_V2_SELECTION_REQUIRED:{item.proposal_object_id}"
                     for item in review_objects
                     if item.capability_kind == "native_study_mutation"
+                    and item.proposed_resource_type in NATIVE_SELECTION_RESOURCE_TYPES
                     and item.proposed_resource_type
-                    not in NATIVE_EXECUTOR_RESOURCE_TYPES
+                    not in NATIVE_DUAL_MODE_RESOURCE_TYPES
+                    and item.latest_decision
+                    and item.latest_decision.action != "selected_candidate"
                 ],
                 *[
-                    f"OSB_NATIVE_V2_CREATE_REQUEST_EXECUTOR_UNAVAILABLE:"
+                    f"OSB_NATIVE_V2_CREATE_REQUEST_REQUIRED:{item.proposal_object_id}"
+                    for item in review_objects
+                    if item.proposed_resource_type
+                    in NATIVE_CREATE_REQUEST_RESOURCE_TYPES
+                    and item.proposed_resource_type
+                    not in NATIVE_DUAL_MODE_RESOURCE_TYPES
+                    and item.latest_decision
+                    and item.latest_decision.action != "create_request"
+                ],
+                *[
+                    f"OSB_NATIVE_V2_SELECTION_OR_CREATE_REQUEST_REQUIRED:"
                     f"{item.proposal_object_id}"
                     for item in review_objects
-                    if item.latest_decision
-                    and item.latest_decision.action == "create_request"
+                    if item.proposed_resource_type in NATIVE_DUAL_MODE_RESOURCE_TYPES
+                    and item.latest_decision
+                    and item.latest_decision.action
+                    not in {"selected_candidate", "create_request"}
                 ],
-                *[
-                    f"OSB_NATIVE_V2_RESOURCE_UNSUPPORTED:{resource_type}"
-                    for resource_type in sorted(
-                        {
-                            item.proposed_resource_type
-                            for item in review_objects
-                            if item.capability_kind
-                            not in {
-                                "native_study_mutation",
-                                "governed_library_reference",
-                            }
-                            and item.proposed_resource_type
-                        }
+                *(
+                    ["OSB_NATIVE_V2_NO_EXECUTABLE_OBJECTS"]
+                    if not any(
+                        item.proposed_resource_type in NATIVE_EXECUTOR_RESOURCE_TYPES
+                        for item in review_objects
                     )
-                ],
+                    else []
+                ),
             ]
-        proposal = stored["proposal"]
+        execution_blockers = list(dict.fromkeys(execution_blockers))
+        dependency_object_ids = {
+            object_by_fact_target[(item.fact_ids[0], target_key)]["proposalObjectId"]
+            for item in review_objects
+            if item.fact_ids
+            for target_key in item.dependency_target_keys
+            if (item.fact_ids[0], target_key) in object_by_fact_target
+        }
+        release_blockers = list(
+            dict.fromkeys(
+                [
+                    *execution_blockers,
+                    *mapping_context_release_blockers,
+                    *[
+                        f"OSB_RELEASE_NATIVE_FAMILY_EXECUTOR_UNAVAILABLE:"
+                        f"{item.proposal_object_id}:{item.proposed_resource_type}"
+                        for item in review_objects
+                        if item.capability_kind == "native_study_mutation"
+                        and item.proposed_resource_type
+                        not in NATIVE_EXECUTOR_RESOURCE_TYPES
+                    ],
+                    *[
+                        f"OSB_RELEASE_CREATE_REQUEST_EXECUTOR_UNAVAILABLE:"
+                        f"{item.proposal_object_id}:{item.proposed_resource_type}"
+                        for item in review_objects
+                        if item.latest_decision
+                        and item.latest_decision.action == "create_request"
+                        and item.proposed_resource_type
+                        not in NATIVE_CREATE_REQUEST_RESOURCE_TYPES
+                    ],
+                    *[
+                        f"OSB_RELEASE_GOVERNED_REFERENCE_NOT_CONSUMED:"
+                        f"{item.proposal_object_id}:{item.proposed_resource_type}"
+                        for item in review_objects
+                        if item.capability_kind == "governed_library_reference"
+                        and item.proposal_object_id not in dependency_object_ids
+                    ],
+                    *[
+                        f"OSB_RELEASE_NON_NATIVE_TARGET:"
+                        f"{item.proposal_object_id}:{item.proposed_resource_type}"
+                        for item in review_objects
+                        if item.capability_kind
+                        in {"governed_extension", "retained_narrative", "unresolved"}
+                    ],
+                    *[
+                        f"OSB_RELEASE_RESOURCE_UNSUPPORTED:"
+                        f"{item.proposal_object_id}:{item.proposed_resource_type}"
+                        for item in review_objects
+                        if item.capability_kind == "unsupported"
+                    ],
+                ]
+            )
+        )
         accepted_at = stored["accepted_at"]
         return ProposalReviewStatus(
             proposal_hash=proposal_hash,
@@ -867,7 +1445,31 @@ class ProposalReviewService:
             decided_object_count=len(decisions),
             rejected_object_count=rejected,
             review_complete=review_complete,
-            native_execution_ready=False,
+            decision_set_hash=decision_set_hash,
+            target_study_uid=(
+                authorization.target_study_uid if authorization else None
+            ),
+            target_study_version=(
+                authorization.target_study_version if authorization else None
+            ),
+            target_study_status=(
+                authorization.target_study_status if authorization else None
+            ),
+            target_study_value_node_id=(
+                authorization.target_study_value_node_id if authorization else None
+            ),
+            target_study_owner_id=(
+                authorization.target_study_owner_id if authorization else None
+            ),
+            target_ownership_basis=(
+                authorization.target_ownership_basis if authorization else None
+            ),
+            target_ownership_verified=target_ownership_verified,
+            target_snapshot_verified=target_snapshot_verified,
+            execution_authorization=authorization,
+            native_execution_ready=not execution_blockers,
             execution_blockers=execution_blockers,
+            release_ready=not release_blockers,
+            release_blockers=release_blockers,
             objects=review_objects,
         )

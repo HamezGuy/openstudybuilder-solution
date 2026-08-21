@@ -679,8 +679,13 @@ export const useAppStore = defineStore('app', {
       return undefined
     },
     helpUrl: (state) => {
-      const $config = inject('$config')
-      const baseUrl = $config.DOC_BASE_URL.replace(/\/+$/, '')
+      let $config
+      try {
+        $config = inject('$config', null)
+      } catch {
+        $config = null
+      }
+      const baseUrl = String($config?.DOC_BASE_URL || '/doc').replace(/\/+$/, '')
       if (state.helpPath) {
         return `${baseUrl}/guides/${state.helpPath}`
       }
@@ -747,6 +752,25 @@ export const useAppStore = defineStore('app', {
     setBreadcrumbs(breadcrumbs) {
       this.breadcrumbs = breadcrumbs
     },
+    syncStudyMenuParams(uid) {
+      const studyUid = uid || '*'
+      this.studyUid = studyUid
+      const walk = (items) => {
+        if (!Array.isArray(items)) return
+        for (const item of items) {
+          if (
+            item?.url &&
+            typeof item.url === 'object' &&
+            item.url.params &&
+            Object.prototype.hasOwnProperty.call(item.url.params, 'study_id')
+          ) {
+            item.url.params.study_id = studyUid
+          }
+          if (item.children) walk(item.children)
+        }
+      }
+      walk(this.menuItems?.Studies?.items)
+    },
     async initialize() {
       const studiesGeneralStore = useStudiesGeneralStore()
       const section = localStorage.getItem('section')
@@ -763,7 +787,8 @@ export const useAppStore = defineStore('app', {
         this.setBreadcrumbs(JSON.parse(breadcrumbs))
       }
 
-      studiesGeneralStore.initialize()
+      await studiesGeneralStore.initialize()
+      this.syncStudyMenuParams(studiesGeneralStore.selectedStudy?.uid)
 
       // Load user preferences from API
       try {

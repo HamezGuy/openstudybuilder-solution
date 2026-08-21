@@ -11,6 +11,7 @@ import json
 from typing import Any
 
 from fastapi.encoders import jsonable_encoder
+from neomodel import db
 
 from clinical_mdr_api.domains.study_definition_aggregates.study_metadata import (
     StudyComponentEnum,
@@ -24,6 +25,9 @@ from clinical_mdr_api.models.integrations.study_authority import (
 )
 from clinical_mdr_api.services.ddf.usdm_service import USDMService
 from clinical_mdr_api.services.studies.study import StudyService
+from clinical_mdr_api.services.studies.study_activity_instance_selection import (
+    StudyActivityInstanceSelectionService,
+)
 from clinical_mdr_api.services.studies.study_activity_schedule import (
     StudyActivityScheduleService,
 )
@@ -32,6 +36,12 @@ from clinical_mdr_api.services.studies.study_activity_selection import (
 )
 from clinical_mdr_api.services.studies.study_arm_selection import (
     StudyArmSelectionService,
+)
+from clinical_mdr_api.services.studies.study_compound_dosing_selection import (
+    StudyCompoundDosingSelectionService,
+)
+from clinical_mdr_api.services.studies.study_compound_selection import (
+    StudyCompoundSelectionService,
 )
 from clinical_mdr_api.services.studies.study_criteria_selection import (
     StudyCriteriaSelectionService,
@@ -70,6 +80,290 @@ def _canonical_hash(value: Any) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _append_unique(items: list[dict[str, Any]], value: dict[str, Any]) -> None:
+    if value not in items:
+        items.append(value)
+
+
+def _assemble_study_odm_metadata(
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Assemble the exact ODM graph reachable from selected activity items."""
+    activity_items: dict[str, dict[str, Any]] = {}
+    odm_items: dict[tuple[str, str], dict[str, Any]] = {}
+    item_groups: dict[tuple[str, str], dict[str, Any]] = {}
+    forms: dict[tuple[str, str], dict[str, Any]] = {}
+    study_events: dict[tuple[str, str], dict[str, Any]] = {}
+
+    for row in rows:
+        activity_item = row.get("activity_item") or {}
+        # The same semantic item may legitimately occur twice. Use Neo4j's
+        # run-local element identity only for grouping query fan-out; it is not
+        # emitted into the authority payload or content hash.
+        activity_key = str(
+            row.get("activity_item_key") or _canonical_hash(activity_item)
+        )
+        if activity_key not in activity_items:
+            activity_items[activity_key] = {
+                **activity_item,
+                "odmItemRefs": [],
+            }
+
+        odm_item = row.get("odm_item")
+        if odm_item:
+            item_key = (
+                str(odm_item.get("uid") or ""),
+                str(odm_item.get("version") or ""),
+            )
+            item = odm_items.setdefault(
+                item_key,
+                {**odm_item, "activityItemLinks": []},
+            )
+            item_ref = {"uid": item_key[0], "version": item_key[1]}
+            _append_unique(activity_items[activity_key]["odmItemRefs"], item_ref)
+            _append_unique(
+                item["activityItemLinks"],
+                {
+                    "activityItem": activity_item,
+                    **(row.get("activity_item_link") or {}),
+                },
+            )
+
+        odm_group = row.get("odm_item_group")
+        if odm_group:
+            group_key = (
+                str(odm_group.get("uid") or ""),
+                str(odm_group.get("version") or ""),
+            )
+            group = item_groups.setdefault(
+                group_key,
+                {**odm_group, "itemRefs": []},
+            )
+            if odm_item:
+                _append_unique(
+                    group["itemRefs"],
+                    {
+                        "uid": str(odm_item.get("uid") or ""),
+                        "version": str(odm_item.get("version") or ""),
+                        **(row.get("item_ref") or {}),
+                    },
+                )
+
+        odm_form = row.get("odm_form")
+        if odm_form:
+            form_key = (
+                str(odm_form.get("uid") or ""),
+                str(odm_form.get("version") or ""),
+            )
+            form = forms.setdefault(
+                form_key,
+                {**odm_form, "itemGroupRefs": []},
+            )
+            if odm_group:
+                _append_unique(
+                    form["itemGroupRefs"],
+                    {
+                        "uid": str(odm_group.get("uid") or ""),
+                        "version": str(odm_group.get("version") or ""),
+                        **(row.get("item_group_ref") or {}),
+                    },
+                )
+
+        odm_event = row.get("odm_study_event")
+        if odm_event:
+            event_key = (
+                str(odm_event.get("uid") or ""),
+                str(odm_event.get("version") or ""),
+            )
+            event = study_events.setdefault(
+                event_key,
+                {**odm_event, "formRefs": []},
+            )
+            if odm_form:
+                _append_unique(
+                    event["formRefs"],
+                    {
+                        "uid": str(odm_form.get("uid") or ""),
+                        "version": str(odm_form.get("version") or ""),
+                        **(row.get("form_ref") or {}),
+                    },
+                )
+
+    def ordered(values: dict) -> list[dict[str, Any]]:
+        return sorted(
+            values.values(),
+            key=lambda item: (
+                str(item.get("uid") or item.get("studyActivityInstanceUid") or ""),
+                str(item.get("version") or item.get("activityInstanceUid") or ""),
+                _canonical_hash(item),
+            ),
+        )
+
+    activity_item_values = ordered(activity_items)
+    return {
+        "scope": "study-reachable-native-odm",
+        "activityItems": activity_item_values,
+        "items": ordered(odm_items),
+        "itemGroups": ordered(item_groups),
+        "forms": ordered(forms),
+        "studyEvents": ordered(study_events),
+        "unmappedActivityItemCount": sum(
+            not item["odmItemRefs"] for item in activity_item_values
+        ),
+    }
+
+
+def _get_study_odm_metadata(
+    study_uid: str, study_value_version: str | None
+) -> dict[str, Any]:
+    """Load ODM forms/groups/items/events reachable from one native study version."""
+    query = """
+        MATCH (study_root:StudyRoot {uid: $study_uid})
+              -[study_version:HAS_VERSION|LATEST]->(study_value:StudyValue)
+        WHERE ($study_value_version IS NULL AND type(study_version) = 'LATEST')
+           OR ($study_value_version IS NOT NULL
+               AND type(study_version) = 'HAS_VERSION'
+               AND study_version.version = $study_value_version)
+        MATCH (study_value)-[:HAS_STUDY_ACTIVITY_INSTANCE]
+              ->(selection:StudyActivityInstance)
+              -[:HAS_SELECTED_ACTIVITY_INSTANCE]
+              ->(activity_instance:ActivityInstanceValue)
+        MATCH (activity_instance_root:ActivityInstanceRoot)
+              -[activity_instance_version:HAS_VERSION]->(activity_instance)
+        MATCH (activity_instance)-[:CONTAINS_ACTIVITY_ITEM]
+              ->(activity_item:ActivityItem)
+        OPTIONAL MATCH (activity_item)<-[:HAS_ACTIVITY_ITEM]
+              -(activity_item_class_root:ActivityItemClassRoot)-[:LATEST]
+              ->(activity_item_class:ActivityItemClassValue)
+        OPTIONAL MATCH (odm_item:OdmItemValue)
+              -[activity_item_link:LINKS_TO_ACTIVITY_ITEM]->(activity_item)
+        OPTIONAL MATCH (odm_item_root:OdmItemRoot)
+              -[odm_item_version:HAS_VERSION]->(odm_item)
+        OPTIONAL MATCH (odm_item_group:OdmItemGroupValue)
+              -[item_ref:ITEM_REF]->(odm_item)
+        OPTIONAL MATCH (odm_item_group_root:OdmItemGroupRoot)
+              -[odm_item_group_version:HAS_VERSION]->(odm_item_group)
+        OPTIONAL MATCH (odm_form:OdmFormValue)
+              -[item_group_ref:ITEM_GROUP_REF]->(odm_item_group)
+        OPTIONAL MATCH (odm_form_root:OdmFormRoot)
+              -[odm_form_version:HAS_VERSION]->(odm_form)
+        OPTIONAL MATCH (odm_study_event:OdmStudyEventValue)
+              -[form_ref:FORM_REF]->(odm_form)
+        OPTIONAL MATCH (odm_study_event_root:OdmStudyEventRoot)
+              -[odm_study_event_version:HAS_VERSION]->(odm_study_event)
+        RETURN {
+            studyActivityInstanceUid: selection.uid,
+            activityInstanceUid: activity_instance_root.uid,
+            activityInstanceVersion: activity_instance_version.version,
+            activityInstanceVersionMetadata: properties(activity_instance_version),
+            activityItemClassUid: activity_item_class_root.uid,
+            activityItemClassName: activity_item_class.display_name,
+            activityItemClassDefinition: activity_item_class.definition,
+            activityItemClassNciConceptId: activity_item_class.nci_concept_id,
+            textValue: activity_item.text_value,
+            sourceProperties: properties(activity_item)
+        } AS activity_item,
+        elementId(activity_item) AS activity_item_key,
+        CASE WHEN odm_item IS NULL THEN NULL ELSE {
+            uid: odm_item_root.uid,
+            version: odm_item_version.version,
+            versionMetadata: properties(odm_item_version),
+            name: odm_item.name,
+            oid: odm_item.oid,
+            prompt: odm_item.prompt,
+            datatype: odm_item.datatype,
+            length: odm_item.length,
+            significantDigits: odm_item.significant_digits,
+            sasFieldName: odm_item.sas_field_name,
+            sdsVarName: odm_item.sds_var_name,
+            origin: odm_item.origin,
+            comment: odm_item.comment,
+            sourceProperties: properties(odm_item)
+        } END AS odm_item,
+        CASE WHEN activity_item_link IS NULL THEN NULL ELSE {
+            order: activity_item_link.order,
+            primary: activity_item_link.primary,
+            presetResponseValue: activity_item_link.preset_response_value,
+            valueCondition: activity_item_link.value_condition,
+            valueDependentMap: activity_item_link.value_dependent_map,
+            sourceProperties: properties(activity_item_link)
+        } END AS activity_item_link,
+        CASE WHEN odm_item_group IS NULL THEN NULL ELSE {
+            uid: odm_item_group_root.uid,
+            version: odm_item_group_version.version,
+            versionMetadata: properties(odm_item_group_version),
+            name: odm_item_group.name,
+            oid: odm_item_group.oid,
+            repeating: odm_item_group.repeating,
+            isReferenceData: odm_item_group.is_reference_data,
+            sasDatasetName: odm_item_group.sas_dataset_name,
+            origin: odm_item_group.origin,
+            purpose: odm_item_group.purpose,
+            comment: odm_item_group.comment,
+            sourceProperties: properties(odm_item_group)
+        } END AS odm_item_group,
+        CASE WHEN item_ref IS NULL THEN NULL ELSE {
+            orderNumber: item_ref.order_number,
+            mandatory: item_ref.mandatory,
+            keySequence: item_ref.key_sequence,
+            methodOid: item_ref.method_oid,
+            imputationMethodOid: item_ref.imputation_method_oid,
+            role: item_ref.role,
+            roleCodelistOid: item_ref.role_codelist_oid,
+            collectionExceptionConditionOid: item_ref.collection_exception_condition_oid,
+            vendor: item_ref.vendor,
+            sourceProperties: properties(item_ref)
+        } END AS item_ref,
+        CASE WHEN odm_form IS NULL THEN NULL ELSE {
+            uid: odm_form_root.uid,
+            version: odm_form_version.version,
+            versionMetadata: properties(odm_form_version),
+            name: odm_form.name,
+            oid: odm_form.oid,
+            repeating: odm_form.repeating,
+            sdtmVersion: odm_form.sdtm_version,
+            sourceProperties: properties(odm_form)
+        } END AS odm_form,
+        CASE WHEN item_group_ref IS NULL THEN NULL ELSE {
+            orderNumber: item_group_ref.order_number,
+            mandatory: item_group_ref.mandatory,
+            collectionExceptionConditionOid: item_group_ref.collection_exception_condition_oid,
+            vendor: item_group_ref.vendor,
+            sourceProperties: properties(item_group_ref)
+        } END AS item_group_ref,
+        CASE WHEN odm_study_event IS NULL THEN NULL ELSE {
+            uid: odm_study_event_root.uid,
+            version: odm_study_event_version.version,
+            versionMetadata: properties(odm_study_event_version),
+            name: odm_study_event.name,
+            oid: odm_study_event.oid,
+            effectiveDate: odm_study_event.effective_date,
+            retiredDate: odm_study_event.retired_date,
+            description: odm_study_event.description,
+            displayInTree: odm_study_event.display_in_tree,
+            sourceProperties: properties(odm_study_event)
+        } END AS odm_study_event,
+        CASE WHEN form_ref IS NULL THEN NULL ELSE {
+            orderNumber: form_ref.order_number,
+            mandatory: form_ref.mandatory,
+            locked: form_ref.locked,
+            collectionExceptionConditionOid: form_ref.collection_exception_condition_oid,
+            sourceProperties: properties(form_ref)
+        } END AS form_ref
+        ORDER BY selection.uid, activity_instance_root.uid,
+                 odm_study_event_root.uid, odm_form_root.uid,
+                 odm_item_group_root.uid, odm_item_root.uid
+    """
+    result, columns = db.cypher_query(
+        query,
+        {
+            "study_uid": study_uid,
+            "study_value_version": study_value_version,
+        },
+    )
+    return _assemble_study_odm_metadata([dict(zip(columns, row)) for row in result])
+
+
 def _usdm_designs(usdm: dict[str, Any]) -> list[dict[str, Any]]:
     try:
         return usdm["study"]["versions"][0]["studyDesigns"] or []
@@ -77,7 +371,15 @@ def _usdm_designs(usdm: dict[str, Any]) -> list[dict[str, Any]]:
         return []
 
 
+def _usdm_version(usdm: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return usdm["study"]["versions"][0] or {}
+    except (KeyError, IndexError, TypeError):
+        return {}
+
+
 def _usdm_counts(usdm: dict[str, Any]) -> dict[str, int]:
+    version = _usdm_version(usdm)
     designs = _usdm_designs(usdm)
     objectives = [
         objective
@@ -94,17 +396,35 @@ def _usdm_counts(usdm: dict[str, Any]) -> dict[str, int]:
         for design in designs
         for timeline in (design.get("scheduleTimelines") or [])
     ]
+    eligibility_criteria = [
+        criterion
+        for design in designs
+        for criterion in (design.get("eligibilityCriteria") or [])
+    ]
+    administrations = [
+        administration
+        for intervention in (version.get("studyInterventions") or [])
+        for administration in (intervention.get("administrations") or [])
+    ]
     return {
         "objectives": len(objectives),
         "endpoints": len(endpoints),
         "arms": sum(len(design.get("arms") or []) for design in designs),
         "epochs": sum(len(design.get("epochs") or []) for design in designs),
         "elements": sum(len(design.get("elements") or []) for design in designs),
-        "design_cells": sum(
-            len(design.get("studyCells") or []) for design in designs
-        ),
+        "design_cells": sum(len(design.get("studyCells") or []) for design in designs),
         "encounters": sum(len(design.get("encounters") or []) for design in designs),
         "activities": sum(len(design.get("activities") or []) for design in designs),
+        "interventions": len(version.get("studyInterventions") or []),
+        "administrations": len(administrations),
+        "eligibility_criteria": len(eligibility_criteria),
+        "eligibility_criterion_items": len(
+            version.get("eligibilityCriterionItems") or []
+        ),
+        "population_criterion_links": sum(
+            len((design.get("population") or {}).get("criterionIds") or [])
+            for design in designs
+        ),
         "scheduled_activity_links": sum(
             len(instance.get("activityIds") or [])
             for timeline in timelines
@@ -127,6 +447,7 @@ def _usdm_void_code_count(value: Any) -> int:
 
 
 def _usdm_entities(usdm: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    version = _usdm_version(usdm)
     designs = _usdm_designs(usdm)
     objectives = [
         objective
@@ -146,9 +467,7 @@ def _usdm_entities(usdm: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
             for endpoint in (objective.get("endpoints") or [])
         ],
         "arms": [item for design in designs for item in (design.get("arms") or [])],
-        "epochs": [
-            item for design in designs for item in (design.get("epochs") or [])
-        ],
+        "epochs": [item for design in designs for item in (design.get("epochs") or [])],
         "elements": [
             item for design in designs for item in (design.get("elements") or [])
         ],
@@ -160,6 +479,21 @@ def _usdm_entities(usdm: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
         ],
         "activities": [
             item for design in designs for item in (design.get("activities") or [])
+        ],
+        "eligibility_criteria": [
+            item
+            for design in designs
+            for item in (design.get("eligibilityCriteria") or [])
+        ],
+        "eligibility_criterion_items": list(
+            version.get("eligibilityCriterionItems") or []
+        ),
+        "population_criterion_ids": [
+            criterion_id
+            for design in designs
+            for criterion_id in (
+                (design.get("population") or {}).get("criterionIds") or []
+            )
         ],
         "scheduled_instances": [
             item for timeline in timelines for item in (timeline.get("instances") or [])
@@ -192,9 +526,7 @@ def _identity_row(
         resource_class=resource_class,
         native_uid=native_uid,
         usdm_id=(
-            usdm_item.get("id") or usdm_item.get("extensionId")
-            if usdm_item
-            else None
+            usdm_item.get("id") or usdm_item.get("extensionId") if usdm_item else None
         ),
         native_identity=native_identity,
         usdm_identity=usdm_item or {},
@@ -308,6 +640,8 @@ def _build_reconciliation(
             "design_cells",
             "encounters",
             "activities",
+            "eligibility_criteria",
+            "eligibility_criterion_items",
         )
     }
 
@@ -429,6 +763,7 @@ def _build_reconciliation(
             "elements",
             "element_uid",
             lambda native: {
+                "name": native.get("name"),
                 "label": native.get("name"),
                 "description": native.get("description"),
             },
@@ -451,7 +786,13 @@ def _build_reconciliation(
         "StudyElement": "StudyElement",
         "Encounter": "Encounter",
     }
-    for resource_class, native_items, entity_key, uid_key, expected_identity in families:
+    for (
+        resource_class,
+        native_items,
+        entity_key,
+        uid_key,
+        expected_identity,
+    ) in families:
         for index, native in enumerate(native_items, start=1):
             actual = next(
                 (
@@ -483,7 +824,9 @@ def _build_reconciliation(
             None,
         )
         expected = {
-            "armId": _expected_id("StudyArm", arms, "arm_uid", native.get("study_arm_uid")),
+            "armId": _expected_id(
+                "StudyArm", arms, "arm_uid", native.get("study_arm_uid")
+            ),
             "epochId": _expected_id(
                 "StudyEpoch", epochs, "uid", native.get("study_epoch_uid")
             ),
@@ -520,19 +863,17 @@ def _build_reconciliation(
             ),
             None,
         )
-        procedures = (actual or {}).get("definedProcedures") or []
-        actual_identity = {
-            **(actual or {}),
-            "procedureName": procedures[0].get("name") if procedures else None,
-        }
         expected = {
-            "name": subgroup.get("activity_subgroup_name") or " ",
-            "procedureName": activity.get("name"),
+            "name": activity.get("name")
+            or subgroup.get("activity_subgroup_name")
+            or f"Unresolved activity {native.get('study_activity_uid')}",
+            "label": activity.get("name_sentence_case"),
+            "description": activity.get("definition"),
         }
         row = _identity_row(
             resource_class="Activity",
             native_uid=native.get("study_activity_uid"),
-            usdm_item=actual_identity if actual else None,
+            usdm_item=actual,
             native_identity={
                 "activityUid": activity.get("uid"),
                 **expected,
@@ -609,6 +950,91 @@ def _build_reconciliation(
             )
         )
 
+    # Eligibility is a paired USDM v4 shape: StudyDesign.eligibilityCriteria
+    # references StudyVersion.eligibilityCriterionItems, and the population
+    # references every criterion. Reconcile all three links so a superficially
+    # present criterion cannot hide a broken or lossy export.
+    for native in (row for row in criteria if row.get("criteria")):
+        native_uid = native.get("study_criteria_uid")
+        native_criterion = native.get("criteria") or {}
+        expected_text = native_criterion.get("name_plain") or native_criterion.get(
+            "name"
+        )
+        expected_category = native.get("criteria_type") or {}
+        expected_category_uid = (
+            expected_category.get("term_uid")
+            or expected_category.get("termUid")
+            or expected_category.get("uid")
+        )
+        expected_category_code = (
+            str(expected_category_uid).split("_", 1)[0]
+            if expected_category_uid
+            else None
+        )
+        actual = next(
+            (
+                item
+                for item in entities["eligibility_criteria"]
+                if item.get("label") == native_uid
+                or item.get("identifier") == native_uid
+            ),
+            None,
+        )
+        actual_item = next(
+            (
+                item
+                for item in entities["eligibility_criterion_items"]
+                if item.get("id") == (actual or {}).get("criterionItemId")
+            ),
+            None,
+        )
+        actual_category = (actual or {}).get("category") or {}
+        comparable = (
+            {
+                **actual,
+                "criterionItemResolved": actual_item is not None,
+                "criterionItemLabel": (actual_item or {}).get("label"),
+                "criterionItemText": (actual_item or {}).get("text"),
+                "populationLinked": (actual or {}).get("id")
+                in entities["population_criterion_ids"],
+                "categoryCode": actual_category.get("code"),
+            }
+            if actual
+            else None
+        )
+        row = _identity_row(
+            resource_class="EligibilityCriterion",
+            native_uid=native_uid,
+            usdm_item=comparable,
+            native_identity={
+                "criteriaUid": native_criterion.get("uid"),
+                "text": expected_text,
+                "categoryCode": expected_category_code,
+            },
+            expected_usdm_identity={
+                "label": native_uid,
+                "identifier": native_uid,
+                "description": expected_text,
+                "criterionItemResolved": True,
+                "criterionItemLabel": native_uid,
+                "criterionItemText": expected_text,
+                "populationLinked": True,
+                "categoryCode": expected_category_code,
+            },
+            relationship_identity={
+                "criterionItemId": (actual or {}).get("criterionItemId"),
+                "criterionItemResolved": actual_item is not None,
+                "populationLinked": (actual or {}).get("id")
+                in entities["population_criterion_ids"],
+            },
+            blocker_code="USDM_ELIGIBILITY_PAIRED_SHAPE_MISMATCH",
+        )
+        rows.append(row)
+        if actual and actual.get("id"):
+            consumed["eligibility_criteria"].add(actual["id"])
+        if actual_item and actual_item.get("id"):
+            consumed["eligibility_criterion_items"].add(actual_item["id"])
+
     extension_criteria = {
         item.get("studyCriteriaUid"): item
         for item in usdm_extensions.get("eligibilityCriteria", [])
@@ -645,6 +1071,8 @@ def _build_reconciliation(
         ("design_cells", "StudyCell"),
         ("encounters", "Encounter"),
         ("activities", "Activity"),
+        ("eligibility_criteria", "EligibilityCriterion"),
+        ("eligibility_criterion_items", "EligibilityCriterionItem"),
     ):
         for item in entities[entity_key]:
             if item.get("id") not in consumed[entity_key]:
@@ -685,6 +1113,8 @@ def _mapping_blockers(
     visits: list[dict[str, Any]] | None = None,
     activities: list[dict[str, Any]] | None = None,
     design_cells: list[dict[str, Any]] | None = None,
+    compounds: list[dict[str, Any]] | None = None,
+    compound_dosings: list[dict[str, Any]] | None = None,
     usdm_extensions: dict[str, Any] | None = None,
     reconciliation: list[StudyAuthorityReconciliationRow] | None = None,
     structure_statistics: dict[str, Any] | None = None,
@@ -770,12 +1200,19 @@ def _mapping_blockers(
             )
         )
 
-# Reconcile native study selections against the USDM projection.
+    # Reconcile native study selections against the USDM projection.
     usdm_counts = _usdm_counts(usdm)
     usdm_objectives = usdm_counts["objectives"]
     usdm_endpoints = usdm_counts["endpoints"]
     native_objective_instances = [row for row in objectives if row.get("objective")]
     native_endpoint_instances = [row for row in endpoints if row.get("endpoint")]
+    native_interventions = [
+        row
+        for row in (compounds or [])
+        if row.get("medicinal_product")
+        or row.get("compound_alias")
+        or row.get("compound")
+    ]
     if len(native_objective_instances) != len(objectives):
         blockers.append(
             StudyAuthorityBlocker(
@@ -797,7 +1234,11 @@ def _mapping_blockers(
         uid = row.get("study_endpoint_uid") or "unknown"
         for field, code, detail in (
             ("endpoint_level", "ENDPOINT_LEVEL_MISSING", "Endpoint level is required."),
-            ("timeframe", "ENDPOINT_TIMEFRAME_MISSING", "Endpoint timeframe is required."),
+            (
+                "timeframe",
+                "ENDPOINT_TIMEFRAME_MISSING",
+                "Endpoint timeframe is required.",
+            ),
         ):
             if not row.get(field):
                 blockers.append(
@@ -826,11 +1267,7 @@ def _mapping_blockers(
             )
         extension_rows = (usdm_extensions or {}).get("endpointSemantics", [])
         extension = next(
-            (
-                item
-                for item in extension_rows
-                if item.get("studyEndpointUid") == uid
-            ),
+            (item for item in extension_rows if item.get("studyEndpointUid") == uid),
             None,
         )
         if not extension:
@@ -875,8 +1312,64 @@ def _mapping_blockers(
                 detail=f"USDM contains {usdm_endpoints} endpoint(s), but OSB has {len(native_endpoint_instances)} instantiated endpoint(s).",
             )
         )
+    if usdm_counts["interventions"] != len(native_interventions):
+        blockers.append(
+            StudyAuthorityBlocker(
+                code="USDM_INTERVENTION_COVERAGE_GAP",
+                path="usdm.study.versions[0].studyInterventions",
+                detail=(
+                    f"USDM contains {usdm_counts['interventions']} intervention(s), "
+                    f"but OSB has {len(native_interventions)} compound/product selection(s)."
+                ),
+            )
+        )
     extension_criteria = (usdm_extensions or {}).get("eligibilityCriteria", [])
     native_criteria_instances = [row for row in criteria if row.get("criteria")]
+    if usdm_counts["eligibility_criteria"] != len(native_criteria_instances):
+        blockers.append(
+            StudyAuthorityBlocker(
+                code="USDM_ELIGIBILITY_CRITERION_COVERAGE_GAP",
+                path="usdm.study.versions[0].studyDesigns[].eligibilityCriteria",
+                detail=(
+                    f"USDM contains {usdm_counts['eligibility_criteria']} eligibility criterion/criteria, "
+                    f"but OSB has {len(native_criteria_instances)} instantiated criterion/criteria."
+                ),
+            )
+        )
+    native_dosings = compound_dosings or []
+    if usdm_counts["administrations"] != len(native_dosings):
+        blockers.append(
+            StudyAuthorityBlocker(
+                code="USDM_ADMINISTRATION_COVERAGE_GAP",
+                path="usdm.study.versions[0].studyInterventions[].administrations",
+                detail=(
+                    f"USDM contains {usdm_counts['administrations']} administration(s), "
+                    f"but OSB has {len(native_dosings)} compound dosing selection(s)."
+                ),
+            )
+        )
+    if usdm_counts["eligibility_criterion_items"] != len(native_criteria_instances):
+        blockers.append(
+            StudyAuthorityBlocker(
+                code="USDM_ELIGIBILITY_ITEM_COVERAGE_GAP",
+                path="usdm.study.versions[0].eligibilityCriterionItems",
+                detail=(
+                    f"USDM contains {usdm_counts['eligibility_criterion_items']} eligibility item(s), "
+                    f"but OSB has {len(native_criteria_instances)} instantiated criterion/criteria."
+                ),
+            )
+        )
+    if usdm_counts["population_criterion_links"] != len(native_criteria_instances):
+        blockers.append(
+            StudyAuthorityBlocker(
+                code="USDM_ELIGIBILITY_POPULATION_LINK_COVERAGE_GAP",
+                path="usdm.study.versions[0].studyDesigns[].population.criterionIds",
+                detail=(
+                    f"USDM population(s) contain {usdm_counts['population_criterion_links']} criterion link(s), "
+                    f"but OSB has {len(native_criteria_instances)} instantiated criterion/criteria."
+                ),
+            )
+        )
     if len(extension_criteria) != len(native_criteria_instances):
         blockers.append(
             StudyAuthorityBlocker(
@@ -946,9 +1439,10 @@ def _mapping_blockers(
                     detail="A stated visit time value requires a governed time unit.",
                 )
             )
-        has_window = visit.get("min_visit_window_value") is not None or visit.get(
-            "max_visit_window_value"
-        ) is not None
+        has_window = (
+            visit.get("min_visit_window_value") is not None
+            or visit.get("max_visit_window_value") is not None
+        )
         if has_window and not visit.get("visit_window_unit_name"):
             blockers.append(
                 StudyAuthorityBlocker(
@@ -1094,9 +1588,7 @@ class StudyAuthorityService:
         )
         native_study = _as_json(native_model)
         usdm = _as_json(
-            USDMService().get_by_uid(
-                study_uid, study_value_version=study_value_version
-            )
+            USDMService().get_by_uid(study_uid, study_value_version=study_value_version)
         )
         standards = _as_json(
             StudyStandardVersionService().get_standard_versions_in_study(
@@ -1104,35 +1596,43 @@ class StudyAuthorityService:
             )
         )
         objectives = _as_json(
-            StudyObjectiveSelectionService().get_all_selection(
+            StudyObjectiveSelectionService()
+            .get_all_selection(
                 study_uid=study_uid,
                 no_brackets=True,
                 page_size=0,
                 study_value_version=study_value_version,
-            ).items
+            )
+            .items
         )
         endpoints = _as_json(
-            StudyEndpointSelectionService().get_all_selection(
+            StudyEndpointSelectionService()
+            .get_all_selection(
                 study_uid=study_uid,
                 no_brackets=True,
                 page_size=0,
                 study_value_version=study_value_version,
-            ).items
+            )
+            .items
         )
         criteria = _as_json(
-            StudyCriteriaSelectionService().get_all_selection(
+            StudyCriteriaSelectionService()
+            .get_all_selection(
                 study_uid=study_uid,
                 no_brackets=True,
                 page_size=0,
                 study_value_version=study_value_version,
-            ).items
+            )
+            .items
         )
         arms = _as_json(
-            StudyArmSelectionService().get_all_selection(
+            StudyArmSelectionService()
+            .get_all_selection(
                 study_uid=study_uid,
                 page_size=0,
                 study_value_version=study_value_version,
-            ).items
+            )
+            .items
         )
         epochs = _as_json(
             StudyEpochService.get_all_epochs(
@@ -1142,11 +1642,13 @@ class StudyAuthorityService:
             ).items
         )
         elements = _as_json(
-            StudyElementSelectionService().get_all_selection(
+            StudyElementSelectionService()
+            .get_all_selection(
                 study_uid=study_uid,
                 page_size=0,
                 study_value_version=study_value_version,
-            ).items
+            )
+            .items
         )
         design_cells = _as_json(
             StudyDesignCellService().get_all_design_cells(
@@ -1162,11 +1664,23 @@ class StudyAuthorityService:
             ).items
         )
         activities = _as_json(
-            StudyActivitySelectionService().get_all_selection(
+            StudyActivitySelectionService()
+            .get_all_selection(
                 study_uid=study_uid,
                 page_size=0,
                 study_value_version=study_value_version,
-            ).items
+            )
+            .items
+        )
+
+        activity_instances = _as_json(
+            StudyActivityInstanceSelectionService()
+            .get_all_selection(
+                study_uid=study_uid,
+                page_size=0,
+                study_value_version=study_value_version,
+            )
+            .items
         )
         schedules = _as_json(
             StudyActivityScheduleService().get_all_schedules(
@@ -1174,6 +1688,25 @@ class StudyAuthorityService:
                 study_value_version=study_value_version,
             )
         )
+        compounds = _as_json(
+            StudyCompoundSelectionService()
+            .get_all_selection(
+                study_uid=study_uid,
+                page_size=0,
+                study_value_version=study_value_version,
+            )
+            .items
+        )
+        compound_dosings = _as_json(
+            StudyCompoundDosingSelectionService()
+            .get_all_compound_dosings(
+                study_uid=study_uid,
+                page_size=0,
+                study_value_version=study_value_version,
+            )
+            .items
+        )
+        odm_metadata = _as_json(_get_study_odm_metadata(study_uid, study_value_version))
 
         usdm_extensions = _build_usdm_extensions(
             endpoints,
@@ -1212,6 +1745,7 @@ class StudyAuthorityService:
             "design_cell_count": len(design_cells),
             "visit_count": len(visits),
             "study_activity_count": len(activities),
+            "study_activity_instance_count": len(activity_instances),
             "study_activity_schedule_count": len(schedules),
             "version_consistent": True,
         }
@@ -1244,6 +1778,8 @@ class StudyAuthorityService:
             visits=visits,
             activities=activities,
             design_cells=design_cells,
+            compounds=compounds,
+            compound_dosings=compound_dosings,
             usdm_extensions=usdm_extensions,
             reconciliation=reconciliation,
             structure_statistics=structure_statistics,
@@ -1261,7 +1797,15 @@ class StudyAuthorityService:
             design_cells=len(design_cells),
             visits=len(visits),
             activities=len(activities),
+            activity_instances=len(activity_instances),
             activity_schedules=len(schedules),
+            compounds=len(compounds),
+            compound_dosings=len(compound_dosings),
+            activity_items=len(odm_metadata.get("activityItems") or []),
+            odm_items=len(odm_metadata.get("items") or []),
+            odm_item_groups=len(odm_metadata.get("itemGroups") or []),
+            odm_forms=len(odm_metadata.get("forms") or []),
+            odm_study_events=len(odm_metadata.get("studyEvents") or []),
             usdm_objectives=usdm_counts["objectives"],
             usdm_endpoints=usdm_counts["endpoints"],
             usdm_arms=usdm_counts["arms"],
@@ -1270,14 +1814,21 @@ class StudyAuthorityService:
             usdm_design_cells=usdm_counts["design_cells"],
             usdm_encounters=usdm_counts["encounters"],
             usdm_activities=usdm_counts["activities"],
-            usdm_scheduled_activity_links=usdm_counts[
-                "scheduled_activity_links"
+            usdm_interventions=usdm_counts["interventions"],
+            usdm_administrations=usdm_counts["administrations"],
+            usdm_eligibility_criteria=usdm_counts["eligibility_criteria"],
+            usdm_eligibility_criterion_items=usdm_counts[
+                "eligibility_criterion_items"
             ],
+            usdm_population_criterion_links=usdm_counts[
+                "population_criterion_links"
+            ],
+            usdm_scheduled_activity_links=usdm_counts["scheduled_activity_links"],
             usdm_void_codes=_usdm_void_code_count(usdm),
         )
         release_eligible = len(blockers) == 0
         content = {
-            "schema_version": "osb-authority/1.1",
+            "schema_version": "osb-authority/1.2",
             "mapping_authority": "OpenStudyBuilder",
             "study_definition_standard": "CDISC USDM 4",
             "crf_metadata_standard": "CDISC ODM 1.3.2",
@@ -1299,7 +1850,11 @@ class StudyAuthorityService:
             "study_design_cells": design_cells,
             "study_visits": visits,
             "study_activities": activities,
+            "study_activity_instances": activity_instances,
             "study_activity_schedules": schedules,
+            "study_compounds": compounds,
+            "study_compound_dosings": compound_dosings,
+            "study_odm_metadata": odm_metadata,
             "usdm_extensions": usdm_extensions,
             "reconciliation": _as_json(reconciliation),
             "structure_statistics": structure_statistics,

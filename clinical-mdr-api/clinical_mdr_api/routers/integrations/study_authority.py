@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Path, Query
+from fastapi import APIRouter, Depends, Path, Query
 
 from clinical_mdr_api.models.integrations.study_authority import (
     StudyAuthoritySnapshot,
@@ -14,7 +14,9 @@ from clinical_mdr_api.services.integrations.study_authority import (
 from common.auth import rbac
 from common.auth.dependencies import security
 
-router = APIRouter()
+from clinical_mdr_api.routers.studies.study_access import enforce_visible_study
+
+router = APIRouter(dependencies=[Depends(enforce_visible_study)])
 
 
 @router.get(

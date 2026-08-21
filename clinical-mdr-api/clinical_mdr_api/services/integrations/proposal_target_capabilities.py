@@ -37,9 +37,40 @@ TARGET_CAPABILITIES = {
 # A valid OSB model name outside this set remains native but non-executable.
 NATIVE_EXECUTOR_RESOURCE_TYPES = frozenset(
     {
+        "StudyMetadata",
+        "StudySelectionArm",
+        "StudySelectionElement",
+        "StudyEpoch",
+        "StudyDesignCell",
+        "StudyVisit",
         "StudySelectionObjective",
+        "StudySelectionEndpoint",
         "StudySelectionCriteria",
         "StudySelectionActivity",
+        "StudyActivitySchedule",
+    }
+)
+
+NATIVE_SELECTION_RESOURCE_TYPES = frozenset(
+    {
+        "StudySelectionObjective",
+        "StudySelectionEndpoint",
+        "StudySelectionCriteria",
+        "StudySelectionActivity",
+    }
+)
+
+NATIVE_DUAL_MODE_RESOURCE_TYPES = frozenset()
+
+NATIVE_CREATE_REQUEST_RESOURCE_TYPES = frozenset(
+    {
+        "StudyMetadata",
+        "StudySelectionArm",
+        "StudySelectionElement",
+        "StudyEpoch",
+        "StudyDesignCell",
+        "StudyVisit",
+        "StudyActivitySchedule",
     }
 )
 

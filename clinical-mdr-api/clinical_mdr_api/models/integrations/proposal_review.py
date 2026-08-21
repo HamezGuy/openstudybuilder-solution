@@ -18,9 +18,16 @@ from pydantic.alias_generators import to_camel
 from clinical_mdr_api.models.utils import BaseModel
 
 Hash64 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+PrefixedHash64 = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
 BoundedString = Annotated[str, Field(max_length=16_384)]
 ShortString = Annotated[str, Field(min_length=1, max_length=512)]
 Confidence = Annotated[float, Field(ge=0, le=1)]
+
+# These protocol-scale ceilings are a single cross-system contract. Keep them
+# synchronized with EDCProtocolToECRF's OSB_PROPOSAL_LIMITS and the importer
+# bridge: a producer must never emit a valid proposal that OSB cannot intake.
+MAX_PROPOSAL_FACTS = 25_000
+MAX_PROPOSAL_OBJECTS = 75_000
 
 
 class StrictProposalModel(BaseModel):
@@ -34,6 +41,19 @@ class StrictProposalModel(BaseModel):
 class ProposalSourceDocument(StrictProposalModel):
     document_version_id: ShortString
     content_hash: Hash64
+
+
+class ProposalSourceAuthority(StrictProposalModel):
+    authority_type: Literal["semantic_claim_projection"]
+    system: Literal["ClinicalSemanticLayer"]
+    contract_version: Literal["1.0"]
+    tenant_id: ShortString
+    study_id: ShortString
+    package_hash: PrefixedHash64
+    content_hash: PrefixedHash64
+    media_type: Literal[
+        "application/vnd.accuratrials.semantic-claim-projection+json;version=1.0"
+    ]
 
 
 class ProposalSourceFactRef(StrictProposalModel):
@@ -229,6 +249,9 @@ class ProposalObjectSource(StrictProposalModel):
         paths = [item.source_path for item in self.values]
         if len(paths) != len(set(paths)):
             raise ValueError("OSB_PROPOSAL_SOURCE_PATH_DUPLICATE")
+        names = [item.name for item in self.values]
+        if len(names) != len(set(names)):
+            raise ValueError("OSB_PROPOSAL_SOURCE_NAME_DUPLICATE")
         return self
 
 
@@ -277,31 +300,35 @@ class ProposalObject(StrictProposalModel):
 
 
 class ProposalSections(StrictProposalModel):
-    study_setup: list[ProposalObject] = Field(alias="studySetup", max_length=15_000)
-    standards: list[ProposalObject] = Field(max_length=15_000)
-    objectives: list[ProposalObject] = Field(max_length=15_000)
-    endpoints: list[ProposalObject] = Field(max_length=15_000)
-    criteria: list[ProposalObject] = Field(max_length=15_000)
+    study_setup: list[ProposalObject] = Field(
+        alias="studySetup", max_length=MAX_PROPOSAL_OBJECTS
+    )
+    standards: list[ProposalObject] = Field(max_length=MAX_PROPOSAL_OBJECTS)
+    objectives: list[ProposalObject] = Field(max_length=MAX_PROPOSAL_OBJECTS)
+    endpoints: list[ProposalObject] = Field(max_length=MAX_PROPOSAL_OBJECTS)
+    criteria: list[ProposalObject] = Field(max_length=MAX_PROPOSAL_OBJECTS)
     products_dosing: list[ProposalObject] = Field(
-        alias="productsDosing", max_length=15_000
+        alias="productsDosing", max_length=MAX_PROPOSAL_OBJECTS
     )
     arms_cohorts_branches: list[ProposalObject] = Field(
-        alias="armsCohortsBranches", max_length=15_000
+        alias="armsCohortsBranches", max_length=MAX_PROPOSAL_OBJECTS
     )
     epochs_elements_cells: list[ProposalObject] = Field(
-        alias="epochsElementsCells", max_length=15_000
+        alias="epochsElementsCells", max_length=MAX_PROPOSAL_OBJECTS
     )
-    visits_timing: list[ProposalObject] = Field(alias="visitsTiming", max_length=15_000)
+    visits_timing: list[ProposalObject] = Field(
+        alias="visitsTiming", max_length=MAX_PROPOSAL_OBJECTS
+    )
     activities_items: list[ProposalObject] = Field(
-        alias="activitiesItems", max_length=15_000
+        alias="activitiesItems", max_length=MAX_PROPOSAL_OBJECTS
     )
-    soa: list[ProposalObject] = Field(max_length=15_000)
-    odm: list[ProposalObject] = Field(max_length=15_000)
-    extensions: list[ProposalObject] = Field(max_length=15_000)
+    soa: list[ProposalObject] = Field(max_length=MAX_PROPOSAL_OBJECTS)
+    odm: list[ProposalObject] = Field(max_length=MAX_PROPOSAL_OBJECTS)
+    extensions: list[ProposalObject] = Field(max_length=MAX_PROPOSAL_OBJECTS)
     retained_narrative: list[ProposalObject] = Field(
-        alias="retainedNarrative", max_length=15_000
+        alias="retainedNarrative", max_length=MAX_PROPOSAL_OBJECTS
     )
-    unresolved: list[ProposalObject] = Field(max_length=15_000)
+    unresolved: list[ProposalObject] = Field(max_length=MAX_PROPOSAL_OBJECTS)
 
 
 class ProposalSourceDisposition(StrictProposalModel):
@@ -323,35 +350,35 @@ class ProposalSourceDisposition(StrictProposalModel):
 
 
 class ProposalReconciliation(StrictProposalModel):
-    source_facts: Annotated[int, Field(ge=0, le=5_000)]
-    eligible_approved_facts: Annotated[int, Field(ge=0, le=5_000)]
-    proposed_objects: Annotated[int, Field(ge=0, le=15_000)]
-    native_study_mutation_targets: Annotated[int, Field(ge=0, le=15_000)]
-    governed_library_reference_targets: Annotated[int, Field(ge=0, le=15_000)]
-    governed_extension_targets: Annotated[int, Field(ge=0, le=15_000)]
-    retained_narrative_targets: Annotated[int, Field(ge=0, le=15_000)]
-    unresolved_targets: Annotated[int, Field(ge=0, le=15_000)]
-    native_target_source_facts: Annotated[int, Field(ge=0, le=5_000)]
-    fully_native_target_source_facts: Annotated[int, Field(ge=0, le=5_000)]
-    mapped_source_facts: Annotated[int, Field(ge=0, le=5_000)]
-    exact: Annotated[int, Field(ge=0, le=15_000)]
-    review: Annotated[int, Field(ge=0, le=15_000)]
-    create_requests: Annotated[int, Field(ge=0, le=15_000)]
-    unresolved: Annotated[int, Field(ge=0, le=15_000)]
-    not_applicable: Annotated[int, Field(ge=0, le=5_000)]
-    excluded: Annotated[int, Field(ge=0, le=5_000)]
-    quarantined: Annotated[int, Field(ge=0, le=5_000)]
-    rejected: Annotated[int, Field(ge=0, le=5_000)]
-    not_build_feeding: Annotated[int, Field(ge=0, le=5_000)]
-    archived: Annotated[int, Field(ge=0, le=5_000)]
-    unreviewed: Annotated[int, Field(ge=0, le=5_000)]
-    duplicate_links: Annotated[int, Field(ge=0, le=5_000)]
-    supersession_links: Annotated[int, Field(ge=0, le=5_000)]
-    signed_exclusions: Annotated[int, Field(ge=0, le=5_000)]
+    source_facts: Annotated[int, Field(ge=0, le=MAX_PROPOSAL_FACTS)]
+    eligible_approved_facts: Annotated[int, Field(ge=0, le=MAX_PROPOSAL_FACTS)]
+    proposed_objects: Annotated[int, Field(ge=0, le=MAX_PROPOSAL_OBJECTS)]
+    native_study_mutation_targets: Annotated[int, Field(ge=0, le=MAX_PROPOSAL_OBJECTS)]
+    governed_library_reference_targets: Annotated[int, Field(ge=0, le=MAX_PROPOSAL_OBJECTS)]
+    governed_extension_targets: Annotated[int, Field(ge=0, le=MAX_PROPOSAL_OBJECTS)]
+    retained_narrative_targets: Annotated[int, Field(ge=0, le=MAX_PROPOSAL_OBJECTS)]
+    unresolved_targets: Annotated[int, Field(ge=0, le=MAX_PROPOSAL_OBJECTS)]
+    native_target_source_facts: Annotated[int, Field(ge=0, le=MAX_PROPOSAL_FACTS)]
+    fully_native_target_source_facts: Annotated[int, Field(ge=0, le=MAX_PROPOSAL_FACTS)]
+    mapped_source_facts: Annotated[int, Field(ge=0, le=MAX_PROPOSAL_FACTS)]
+    exact: Annotated[int, Field(ge=0, le=MAX_PROPOSAL_OBJECTS)]
+    review: Annotated[int, Field(ge=0, le=MAX_PROPOSAL_OBJECTS)]
+    create_requests: Annotated[int, Field(ge=0, le=MAX_PROPOSAL_OBJECTS)]
+    unresolved: Annotated[int, Field(ge=0, le=MAX_PROPOSAL_OBJECTS)]
+    not_applicable: Annotated[int, Field(ge=0, le=MAX_PROPOSAL_FACTS)]
+    excluded: Annotated[int, Field(ge=0, le=MAX_PROPOSAL_FACTS)]
+    quarantined: Annotated[int, Field(ge=0, le=MAX_PROPOSAL_FACTS)]
+    rejected: Annotated[int, Field(ge=0, le=MAX_PROPOSAL_FACTS)]
+    not_build_feeding: Annotated[int, Field(ge=0, le=MAX_PROPOSAL_FACTS)]
+    archived: Annotated[int, Field(ge=0, le=MAX_PROPOSAL_FACTS)]
+    unreviewed: Annotated[int, Field(ge=0, le=MAX_PROPOSAL_FACTS)]
+    duplicate_links: Annotated[int, Field(ge=0, le=MAX_PROPOSAL_FACTS)]
+    supersession_links: Annotated[int, Field(ge=0, le=MAX_PROPOSAL_FACTS)]
+    signed_exclusions: Annotated[int, Field(ge=0, le=MAX_PROPOSAL_FACTS)]
     balanced: Literal[True]
-    duplicate_fact_ids: list[ShortString] = Field(max_length=5_000)
-    missing_source_fact_ids: list[ShortString] = Field(max_length=5_000)
-    dispositions: list[ProposalSourceDisposition] = Field(max_length=5_000)
+    duplicate_fact_ids: list[ShortString] = Field(max_length=MAX_PROPOSAL_FACTS)
+    missing_source_fact_ids: list[ShortString] = Field(max_length=MAX_PROPOSAL_FACTS)
+    dispositions: list[ProposalSourceDisposition] = Field(max_length=MAX_PROPOSAL_FACTS)
 
 
 class OsbStudyProposalV21(StrictProposalModel):
@@ -363,16 +390,19 @@ class OsbStudyProposalV21(StrictProposalModel):
     tenant_id: ShortString
     study_id: ShortString
     project_id: ShortString | None
-    source_run_ids: list[ShortString] = Field(max_length=5_000)
+    source_run_ids: list[ShortString] = Field(max_length=MAX_PROPOSAL_FACTS)
     source_document_version_ids: list[ShortString] = Field(min_length=1, max_length=100)
     source_documents: list[ProposalSourceDocument] = Field(min_length=1, max_length=100)
+    source_authority: ProposalSourceAuthority | None = None
     previous_proposal_hash: Hash64 | None
     osb_open_api_hash: Hash64
     osb_mapping_context_hash: Hash64
     authority_mode: Literal["shadow", "enforced"]
     sections: ProposalSections
     reconciliation: ProposalReconciliation
-    source_fact_refs: list[ProposalSourceFactRef] = Field(max_length=5_000)
+    source_fact_refs: list[ProposalSourceFactRef] = Field(
+        max_length=MAX_PROPOSAL_FACTS
+    )
 
 
 ProposalDecisionAction = Literal[
@@ -408,6 +438,37 @@ class ProposalObjectDecision(BaseModel):
     decided_at: datetime
 
 
+class ProposalExecutionAuthorizationInput(StrictProposalModel):
+    """Reviewer attestation for one immutable review state and OSB draft target."""
+
+    target_study_uid: ShortString
+    # OSB draft StudyValue relationships deliberately have no numeric version
+    # (`version_number` is null until a study is locked/released).  Bind the
+    # authorization to the logical live draft plus its immutable node/timestamp
+    # tokens instead of inventing a version such as "0.1".
+    target_study_version: Literal["DRAFT"]
+    expected_decision_set_hash: Hash64
+    signature_id: ShortString
+
+
+class ProposalExecutionAuthorization(BaseModel):
+    authorization_id: str
+    proposal_hash: str
+    target_study_uid: str
+    target_study_version: Literal["DRAFT"]
+    target_study_status: Literal["DRAFT"]
+    target_study_value_node_id: str
+    target_study_owner_id: str
+    target_ownership_basis: Literal["initial_version_author"]
+    target_version_start_date: datetime
+    decision_set_hash: str
+    signature_id: str
+    signature_verified: bool
+    actor_id: str
+    authorized_at: datetime
+    authorization_content_hash: str
+
+
 class ProposalReviewObject(BaseModel):
     proposal_object_id: str
     concept_id: str
@@ -430,7 +491,7 @@ class ProposalReviewObject(BaseModel):
 
 
 class ProposalReviewStatus(BaseModel):
-    schema_version: Literal["osb-proposal-review/1.1"] = "osb-proposal-review/1.1"
+    schema_version: Literal["osb-proposal-review/1.3"] = "osb-proposal-review/1.3"
     mapping_authority: Literal["OpenStudyBuilder"] = "OpenStudyBuilder"
     proposal_hash: str
     proposal_id: str
@@ -447,6 +508,18 @@ class ProposalReviewStatus(BaseModel):
     decided_object_count: int
     rejected_object_count: int
     review_complete: bool
+    decision_set_hash: str
+    target_study_uid: str | None = None
+    target_study_version: str | None = None
+    target_study_status: str | None = None
+    target_study_value_node_id: str | None = None
+    target_study_owner_id: str | None = None
+    target_ownership_basis: str | None = None
+    target_ownership_verified: bool = False
+    target_snapshot_verified: bool = False
+    execution_authorization: ProposalExecutionAuthorization | None = None
     native_execution_ready: bool
     execution_blockers: list[str] = Field(default_factory=list)
+    release_ready: bool = False
+    release_blockers: list[str] = Field(default_factory=list)
     objects: list[ProposalReviewObject] = Field(default_factory=list)

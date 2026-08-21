@@ -394,6 +394,80 @@ class ApiBinding:
             )
         return None
 
+    def proposal_v2_get(self, path, params=None):
+        """Read one Proposal V2 native-execution resource, failing closed.
+
+        The legacy import helpers commonly translate HTTP failures to ``None``.
+        Native Proposal V2 execution cannot do that because a missing read-back
+        must never be mistaken for a successful reconciliation.
+        """
+        response = requests.get(
+            path_join(self.api_base_url, path),
+            params=params,
+            headers=self.api_headers,
+            timeout=30,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        self.metrics.icrement(path + "--PROPOSAL-V2-GET")
+        return payload
+
+    def proposal_v2_post(
+        self,
+        path,
+        body,
+        params=None,
+        *,
+        idempotency_key,
+        proposal_object_id,
+    ):
+        """Execute one typed Proposal V2 POST through the shared API binding."""
+        headers = {
+            **self.api_headers,
+            "Idempotency-Key": idempotency_key,
+            "X-OSB-Proposal-Object-ID": proposal_object_id,
+        }
+        response = requests.post(
+            path_join(self.api_base_url, path),
+            params=params,
+            headers=headers,
+            json=body,
+            timeout=30,
+        )
+        response.raise_for_status()
+        self.metrics.icrement(path + "--PROPOSAL-V2-POST")
+        if not response.content:
+            return None
+        return response.json()
+
+    def proposal_v2_patch(
+        self,
+        path,
+        body,
+        params=None,
+        *,
+        idempotency_key,
+        proposal_object_id,
+    ):
+        """Execute one typed Proposal V2 PATCH through the shared API binding."""
+        headers = {
+            **self.api_headers,
+            "Idempotency-Key": idempotency_key,
+            "X-OSB-Proposal-Object-ID": proposal_object_id,
+        }
+        response = requests.patch(
+            path_join(self.api_base_url, path),
+            params=params,
+            headers=headers,
+            json=body,
+            timeout=30,
+        )
+        response.raise_for_status()
+        self.metrics.icrement(path + "--PROPOSAL-V2-PATCH")
+        if not response.content:
+            return None
+        return response.json()
+
     def get_all_from_api_paged(
         self, path, params=None, items_only=True, page_size=1000
     ):

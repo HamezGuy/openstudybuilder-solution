@@ -3,7 +3,7 @@
 import os
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, Path, Query, Request
+from fastapi import APIRouter, Body, Depends, Path, Query, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import Field
 
@@ -148,7 +148,12 @@ from common.exceptions import ValidationException
 from common.models.error import ErrorResponse
 
 # Mounted without a path-prefix
-router = APIRouter()
+from clinical_mdr_api.routers.studies.study_access import (
+    empty_cross_study_page,
+    enforce_visible_study,
+)
+
+router = APIRouter(dependencies=[Depends(enforce_visible_study)])
 
 studyUID = Path(description="The unique id of the study.")
 study_objective_uid_path = Path(description="The unique id of the study objective.")
@@ -226,6 +231,9 @@ def get_a_paginated_list_of_study_data_suppliers(
         str | None, _generic_descriptions.STUDY_VALUE_VERSION_QUERY
     ] = None,
 ) -> CustomPage[StudySelectionDataSupplier]:
+    empty = empty_cross_study_page(page_number, page_size)
+    if empty is not None:
+        return empty
     service = StudyDataSupplierSelectionService()
 
     all_items = service.get_all_selections(
@@ -543,6 +551,9 @@ def get_all_selected_objectives_for_all_studies(
     operator: _generic_descriptions.FILTER_OPERATOR_QUERY = settings.default_filter_operator,
     total_count: _generic_descriptions.TOTAL_COUNT_QUERY = False,
 ) -> CustomPage[StudySelectionObjective]:
+    empty = empty_cross_study_page(page_number, page_size)
+    if empty is not None:
+        return empty
     service = StudyObjectiveSelectionService()
     all_selections = service.get_all_selections_for_all_studies(
         no_brackets=no_brackets,
@@ -1093,6 +1104,9 @@ def get_all_selected_endpoints_for_all_studies(
     operator: _generic_descriptions.FILTER_OPERATOR_QUERY = settings.default_filter_operator,
     total_count: _generic_descriptions.TOTAL_COUNT_QUERY = False,
 ) -> CustomPage[StudySelectionEndpoint]:
+    empty = empty_cross_study_page(page_number, page_size)
+    if empty is not None:
+        return empty
     service = StudyEndpointSelectionService()
     all_selections = service.get_all_selections_for_all_studies(
         no_brackets=no_brackets,
@@ -1772,6 +1786,9 @@ def get_all_selected_compounds_for_all_studies(
     operator: _generic_descriptions.FILTER_OPERATOR_QUERY = settings.default_filter_operator,
     total_count: _generic_descriptions.TOTAL_COUNT_QUERY = False,
 ) -> CustomPage[StudySelectionCompound]:
+    empty = empty_cross_study_page(page_number, page_size)
+    if empty is not None:
+        return empty
     service = StudyCompoundSelectionService()
     all_selections = service.get_all_selections_for_all_studies(
         project_name=project_name,
@@ -2460,6 +2477,9 @@ def get_all_selected_criteria_for_all_studies(
     operator: _generic_descriptions.FILTER_OPERATOR_QUERY = settings.default_filter_operator,
     total_count: _generic_descriptions.TOTAL_COUNT_QUERY = False,
 ) -> CustomPage[StudySelectionCriteria]:
+    empty = empty_cross_study_page(page_number, page_size)
+    if empty is not None:
+        return empty
     service = StudyCriteriaSelectionService()
     all_selections = service.get_all_selections_for_all_studies(
         no_brackets=no_brackets,
@@ -3283,6 +3303,9 @@ def get_all_selected_activity_instances_for_all_studies(
     operator: _generic_descriptions.FILTER_OPERATOR_QUERY = settings.default_filter_operator,
     total_count: _generic_descriptions.TOTAL_COUNT_QUERY = False,
 ) -> CustomPage[StudySelectionActivityInstance]:
+    empty = empty_cross_study_page(page_number, page_size)
+    if empty is not None:
+        return empty
     service = StudyActivityInstanceSelectionService()
     all_selections: GenericFilteringReturn[StudySelectionActivityInstance] = (
         service.get_all_selections_for_all_studies(
@@ -3812,6 +3835,9 @@ def get_all_selected_activities_for_all_studies(
     operator: _generic_descriptions.FILTER_OPERATOR_QUERY = settings.default_filter_operator,
     total_count: _generic_descriptions.TOTAL_COUNT_QUERY = False,
 ) -> CustomPage[StudySelectionActivity]:
+    empty = empty_cross_study_page(page_number, page_size)
+    if empty is not None:
+        return empty
     service = StudyActivitySelectionService()
     all_selections: GenericFilteringReturn[StudySelectionActivity] = (
         service.get_all_selections_for_all_studies(
@@ -4963,6 +4989,9 @@ def get_all_selected_arms_for_all_studies(
     operator: _generic_descriptions.FILTER_OPERATOR_QUERY = settings.default_filter_operator,
     total_count: _generic_descriptions.TOTAL_COUNT_QUERY = False,
 ) -> CustomPage[StudySelectionArmWithConnectedBranchArms]:
+    empty = empty_cross_study_page(page_number, page_size)
+    if empty is not None:
+        return empty
     service = StudyArmSelectionService()
     all_selections = service.get_all_selections_for_all_studies(
         project_name=project_name,

@@ -1,11 +1,10 @@
 from typing import Any
 
 import pytest
-
-from common.auth.dependencies import dummy_user
 from authlib.jose.rfc7519.claims import JWTClaims
 
-from common.auth.models import AccessTokenClaims, Auth, User
+from common.auth.dependencies import dummy_user
+from common.auth.models import AccessTokenClaims, Auth, User, validate_delegated_claims
 from common.exceptions import ForbiddenException
 
 user_obj = dummy_user()
@@ -46,6 +45,8 @@ def test_auth_projection_preserves_distinct_username_and_email_claims():
         aud=["accuratrial-openstudybuilder"],
         exp=2_000_000_000,
         iat=1_999_999_000,
+        sid="authority-session-id",
+        uti="entra-token-identity",
         oid="edc:42",
         azp="accuratrial-command-center",
         username="jdoe",
@@ -54,11 +55,114 @@ def test_auth_projection_preserves_distinct_username_and_email_claims():
         name="Jane Doe",
         roles={"Study.Read"},
     )
-    auth = Auth(jwt_claims=JWTClaims(dict(claims), {}), access_token_claims=claims)
+    auth = Auth(
+        jwt_claims=JWTClaims(dict(claims), {}),
+        access_token_claims=claims,
+        authentication_verified=True,
+    )
 
     assert auth.user.id() == "edc:42"
     assert auth.user.username == "jdoe"
     assert auth.user.email == "jdoe@example.com"
+    assert claims.uti == "entra-token-identity"
+    assert claims.sid == "authority-session-id"
+    assert auth.authentication_verified is True
+
+
+def delegated_claims(**overrides):
+    payload = {
+        "iss": "https://command-center.example.test",
+        "sub": "https://idp.example.test|human-42",
+        "aud": ["accuratrial-openstudybuilder"],
+        "exp": 2_000_000_000,
+        "iat": 1_999_999_900,
+        "azp": "accuratrial-command-center",
+        "client_id": "accuratrial-command-center",
+        "tenant_id": "tenant-1",
+        "study_ids": ["Study_1"],
+        "roles": ["Study.Read"],
+        "type": "access",
+        "subject_type": "human",
+        "human_subject": "https://idp.example.test|human-42",
+        "service_actor": "service:accuratrial-command-center",
+        "act": {
+            "sub": "service:accuratrial-command-center",
+            "client_id": "accuratrial-command-center",
+            "iss": "https://command-center.example.test",
+        },
+        "actor_chain": [
+            {"subject": "https://idp.example.test|human-42", "type": "human", "issuer": "https://idp.example.test"},
+            {"subject": "service:accuratrial-command-center", "type": "service", "issuer": "https://command-center.example.test"},
+        ],
+        "idp_iss": "https://idp.example.test",
+        "purpose": "interactive-domain-access",
+        "capabilities": ["study:read", "candidate:read"],
+    }
+    payload.update(overrides)
+    return AccessTokenClaims.model_validate(payload)
+
+
+def test_delegated_profile_preserves_human_and_rejects_upscope():
+    claims = delegated_claims()
+    validate_delegated_claims(
+        claims,
+        exchanging_clients={"accuratrial-command-center"},
+        allowed_purposes={"interactive-domain-access"},
+        allowed_capabilities={"study:read", "candidate:read"},
+        allowed_roles={"Study.Read"},
+    )
+    auth = Auth(JWTClaims(dict(claims), {}), claims, authentication_verified=True)
+    assert auth.user.id() == "https://idp.example.test|human-42"
+    assert auth.user.human_signature_eligible is True
+    with pytest.raises(ValueError, match="Capability"):
+        validate_delegated_claims(
+            delegated_claims(capabilities=["configuration:activate"]),
+            exchanging_clients={"accuratrial-command-center"},
+            allowed_purposes={"interactive-domain-access"},
+            allowed_capabilities={"study:read"},
+            allowed_roles={"Study.Read"},
+        )
+
+
+def test_service_profile_cannot_carry_human_reauthentication():
+    claims = delegated_claims(
+        sub="service:accuratrial-command-center",
+        subject_type="service",
+        human_subject=None,
+        service_actor="service:accuratrial-command-center",
+        act=None,
+        actor_chain=[{"subject": "service:accuratrial-command-center", "type": "service", "issuer": "https://command-center.example.test"}],
+        idp_iss=None,
+        auth_time=1_999_999_950,
+    )
+    with pytest.raises(ValueError, match="forged human"):
+        validate_delegated_claims(
+            claims,
+            exchanging_clients={"accuratrial-command-center"},
+            allowed_purposes={"interactive-domain-access"},
+            allowed_capabilities={"study:read", "candidate:read"},
+            allowed_roles={"Study.Read"},
+        )
+
+
+def test_access_token_scope_claims_accept_command_center_camel_case_names():
+    claims = AccessTokenClaims.model_validate(
+        {
+            "iss": "https://command-center.example.test",
+            "sub": "worker-client",
+            "aud": ["accuratrial-openstudybuilder"],
+            "exp": 2_000_000_000,
+            "iat": 1_999_999_000,
+            "azp": "worker-client",
+            "tenantId": "tenant-1",
+            "studyIds": ["Study_1", 42],
+            "organizationIds": ["org-1"],
+        }
+    )
+
+    assert claims.tenant_id == "tenant-1"
+    assert claims.study_ids == ["Study_1", 42]
+    assert claims.organization_ids == ["org-1"]
 
 
 def test_has_role():

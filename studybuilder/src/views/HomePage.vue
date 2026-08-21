@@ -116,6 +116,10 @@ export default {
   position: relative;
   text-align: center;
   color: white;
+  z-index: 0;
+}
+.v-img {
+  z-index: 0;
 }
 .env-center {
   position: absolute;
@@ -124,5 +128,7 @@ export default {
   transform: translate(-50%, -50%);
   font-weight: bold;
   font-size: 128px;
+  z-index: 0;
+  pointer-events: none;
 }
 </style>

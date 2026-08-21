@@ -12,7 +12,7 @@ review -> activate lifecycle. Configure EDC_BASE_URL and EDC_API_KEY.
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, Path
+from fastapi import APIRouter, Body, Depends, Path
 from pydantic import BaseModel, Field
 
 from clinical_mdr_api.routers import _generic_descriptions
@@ -25,7 +25,9 @@ from common.auth.dependencies import security
 from common.exceptions import ValidationException
 
 # Prefixed with "/integrations/edc"
-router = APIRouter()
+from clinical_mdr_api.routers.studies.study_access import enforce_visible_study
+
+router = APIRouter(dependencies=[Depends(enforce_visible_study)])
 
 
 class EdcSendInput(BaseModel):

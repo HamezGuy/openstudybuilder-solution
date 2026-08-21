@@ -17,7 +17,6 @@ from opencensus.trace.tracer import Tracer
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.responses import Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
-from starlette_context import context
 
 from common.config import settings
 from common.telemetry.request_metrics import (
@@ -68,25 +67,16 @@ class TracingMiddleware:
             "host", None
         )  # always lowercase, may contain :port
 
-        if host in self.exclude_hosts or host.split(":", 1)[0] in self.exclude_hosts:
-            log.debug(
-                "Bypassing middleware %s because host '%s' is in exclude list: %s",
-                type(self).__name__,
-                host,
-                self.exclude_hosts,
-            )
+        host_name = host or ""
+        if host_name in self.exclude_hosts or host_name.split(":", 1)[0] in self.exclude_hosts:
+            log.debug("Bypassing %s for an excluded host", type(self).__name__)
             await self.app(scope, receive, send)
             return
 
         # Skip tracing if client IPv4 or IPv6 is in the exclusion list
         client_ip = scope.get("client", [None])[0]
         if client_ip and client_ip in self.exclude_clients:
-            log.debug(
-                "Bypassing middleware %s because client '%s' is in exclude list: %s",
-                type(self).__name__,
-                client_ip,
-                self.exclude_clients,
-            )
+            log.debug("Bypassing %s for an excluded client", type(self).__name__)
             await self.app(scope, receive, send)
             return
 
@@ -94,12 +84,7 @@ class TracingMiddleware:
         path = scope.get("path", "")
         for exclude_path in self.exclude_paths:
             if fnmatch(path, exclude_path):
-                log.debug(
-                    "Bypassing middleware %s because '%s' matches exclude path: %s",
-                    type(self).__name__,
-                    path,
-                    exclude_path,
-                )
+                log.debug("Bypassing %s for an excluded route", type(self).__name__)
                 await self.app(scope, receive, send)
                 return
 
@@ -115,24 +100,18 @@ class TracingMiddleware:
 
         init_request_metrics()
 
-        request_body = None
         request_body_size = 0
 
         async def _receive() -> Message:
             """Saves the first portion of request body and counts the total size of response body"""
 
-            nonlocal request_body, request_body_size
+            nonlocal request_body_size
 
             message = await receive()
 
             if message.get("type") == "http.request":
                 if (body := message.get("body")) is not None:
                     request_body_size += len(body)
-
-                    if not request_body and settings.trace_request_body:
-                        request_body = body[
-                            : settings.trace_request_body_truncate_bytes
-                        ]
 
             return message
 
@@ -146,8 +125,6 @@ class TracingMiddleware:
                 self.log_access(scope, message)
                 self.add_attributes_form_request_body(
                     request_size=request_body_size,
-                    request_body=request_body,
-                    status_code=message.get("status", 0),
                 )
                 self.add_attributes_from_response(message, span)
 
@@ -155,7 +132,7 @@ class TracingMiddleware:
 
             await send(message)
 
-        with tracer.span(f"{scope.get('method')} {scope.get('path')}") as span:
+        with tracer.span(f"{scope.get('method')} request") as span:
             span.span_kind = SpanKind.SERVER
 
             self.add_attributes_form_request_scope(span, scope, headers=headers)
@@ -176,51 +153,26 @@ class TracingMiddleware:
         if headers is None:
             headers = Headers(scope=scope)
 
-        span.add_attribute(
-            COMMON_ATTRIBUTES["HTTP_HOST"], headers.get("host", "None").split(":", 1)[0]
-        )
-        user_agent = headers.get("user-agent")
-        if user_agent:
-            span.add_attribute(COMMON_ATTRIBUTES["HTTP_USER_AGENT"], user_agent)
-            span.add_attribute("ai.user.userAgent", user_agent)
-
-        path_qs = TracingMiddleware.get_path_qs(scope)
-        query_string = scope.get("query_string")
-        if query_string:
-            query_string = query_string.decode("utf-8", "replace")
+        path = TracingMiddleware.get_path(scope)
 
         span.add_attribute(COMMON_ATTRIBUTES["HTTP_METHOD"], scope.get("method"))
-        span.add_attribute(COMMON_ATTRIBUTES["HTTP_PATH"], path_qs[0])
-        span.add_attribute(COMMON_ATTRIBUTES["HTTP_URL"], "?".join(path_qs))
+        span.add_attribute(COMMON_ATTRIBUTES["HTTP_PATH"], path)
+        span.add_attribute(COMMON_ATTRIBUTES["HTTP_URL"], path)
         span.add_attribute(
             COMMON_ATTRIBUTES["HTTP_CLIENT_PROTOCOL"],
             f"{scope.get('type', '').upper()}/{scope.get('http_version')}",
         )
 
-        client = scope.get("client", [])
-        if len(client):
-            span.add_attribute("http.client_ip", client[0])
-            span.add_attribute("ai.device.ip", client[0])
-
     @staticmethod
     def add_attributes_form_request_body(
         request_size: int | None = None,
-        request_body: bytes | None = None,
-        status_code: int = 0,
     ) -> None:
-        """Adds information collected from request body to current tracing span."""
+        """Adds only the byte count; body content is never captured."""
 
         if span := execution_context.get_current_span():
             if request_size is not None:
                 span.add_attribute(COMMON_ATTRIBUTES["HTTP_REQUEST_SIZE"], request_size)
 
-            if (
-                settings.trace_request_body
-                and status_code >= settings.trace_request_body_min_status_code
-                and request_body is not None
-            ):
-                _request_body = request_body.decode("utf-8", errors="replace")
-                span.add_attribute("http.request_body", _request_body)
 
     @staticmethod
     def add_attributes_from_response(
@@ -263,21 +215,9 @@ class TracingMiddleware:
             headers = Headers(raw=response.get("headers", []))
             status = response["status"]
 
-        client = scope.get("client", "")
-        if len(client) == 2:
-            client = f"{client[0]}:{client[1]}"
-
-        path = "?".join(TracingMiddleware.get_path_qs(scope))
+        path = TracingMiddleware.get_path(scope)
 
         protocol = f"{scope.get('type', '').upper()}/{scope.get('http_version')}"
-
-        user = "-"
-        access_token_claims = context.get("access_token_claims")
-        if access_token_claims:
-            if access_token_claims.preferred_username:
-                user = access_token_claims.preferred_username
-            elif access_token_claims.azp:
-                user = access_token_claims.azp
 
         content_type = headers.get("content-type", "-")
         content_type = content_type.split(";", 1)[0] if content_type else "-"
@@ -285,9 +225,7 @@ class TracingMiddleware:
         content_length = headers.get("content-length", "-")
 
         log.info(
-            '%s %s "%s %s %s" %s %s %s',
-            client,
-            user,
+            '"%s %s %s" %s %s %s',
             scope.get("method"),
             path,
             protocol,
@@ -298,18 +236,16 @@ class TracingMiddleware:
 
     @staticmethod
     def get_path_qs(scope) -> list[str]:
-        path_qs = [TracingMiddleware.get_path(scope)]
-
-        query_string = scope.get("query_string")
-        if query_string:
-            query_string = query_string.decode("utf-8", "replace")
-            path_qs.append(query_string)
-
-        return path_qs
+        """Compatibility helper that intentionally excludes the query string."""
+        return [TracingMiddleware.get_path(scope)]
 
     @staticmethod
     def get_path(scope):
-        return "".join(filter(None, (scope.get("root_path"), scope.get("path"))))
+        route = scope.get("route")
+        route_path = getattr(route, "path_format", None) or getattr(route, "path", None)
+        if not route_path:
+            return "[unmatched]"
+        return "".join(filter(None, (scope.get("root_path"), route_path)))
 
     @staticmethod
     def add_traceresponse_header(

@@ -64,6 +64,7 @@ class Settings(BaseSettings):
     @field_validator(
         "allow_credentials",
         "oauth_enabled",
+        "delegated_claims_required",
         "ms_graph_integration_enabled",
         "tracing_enabled",
         "tracing_metrics_header",
@@ -164,6 +165,60 @@ class Settings(BaseSettings):
     oauth_metadata_url: str = ""
     oauth_api_app_id: str = ""
     oauth_api_app_secret: SecretStr = SecretStr("")
+    delegated_claims_required: bool = Field(
+        default=False, alias="OIDC_DELEGATED_CLAIMS_REQUIRED"
+    )
+    ENV_OAUTH_EXCHANGING_CLIENTS: str = Field(
+        default="accuratrial-command-center,accuratrial-control-worker", alias="OIDC_EXCHANGING_CLIENTS"
+    )
+    ENV_OAUTH_ALLOWED_PURPOSES: str = Field(
+        default="interactive-domain-access,workflow-orchestration",
+        alias="OIDC_ALLOWED_PURPOSES",
+    )
+    ENV_OAUTH_ALLOWED_CAPABILITIES: str = Field(
+        default="study:read,study:write,candidate:read,candidate:generate,candidate:apply,package:release,native-identity:bind,native-identity:inventory,platform-command:execute",
+        alias="OIDC_ALLOWED_CAPABILITIES",
+    )
+    ENV_OAUTH_ALLOWED_ROLES: str = Field(
+        default="Admin.Read,Admin.Write,Study.Read,Study.Write,Library.Read,Library.Write,service",
+        alias="OIDC_ALLOWED_ROLES",
+    )
+    oauth_max_access_token_ttl_seconds: int = Field(
+        default=300, alias="OIDC_MAX_ACCESS_TOKEN_TTL_SECONDS", ge=30, le=300
+    )
+    oauth_jwks_cache_ttl_seconds: int = Field(
+        default=300, alias="OIDC_JWKS_CACHE_TTL_SECONDS", ge=30, le=900
+    )
+    ENV_OAUTH_REVOKED_KIDS: str = Field(default="", alias="OIDC_REVOKED_KIDS")
+
+    @property
+    def oauth_exchanging_clients(self) -> list[str]:
+        return [value.strip() for value in self.ENV_OAUTH_EXCHANGING_CLIENTS.split(",") if value.strip()]
+
+    @property
+    def oauth_allowed_purposes(self) -> list[str]:
+        return [value.strip() for value in self.ENV_OAUTH_ALLOWED_PURPOSES.split(",") if value.strip()]
+
+    @property
+    def oauth_allowed_capabilities(self) -> list[str]:
+        return [value.strip() for value in self.ENV_OAUTH_ALLOWED_CAPABILITIES.split(",") if value.strip()]
+
+    @property
+    def oauth_allowed_roles(self) -> list[str]:
+        return [value.strip() for value in self.ENV_OAUTH_ALLOWED_ROLES.split(",") if value.strip()]
+
+    @property
+    def oauth_revoked_kids(self) -> list[str]:
+        return [value.strip() for value in self.ENV_OAUTH_REVOKED_KIDS.split(",") if value.strip()]
+
+    def assert_delegated_auth_startup_safe(self) -> None:
+        if self.deployment_environment.strip().lower() in {"prod", "production"}:
+            if not self.oauth_enabled or not self.delegated_claims_required:
+                raise ValueError(
+                    "OIDC_DELEGATED_PROFILE_REQUIRED: production OSB must require delegated OIDC claims"
+                )
+        if not self.oauth_exchanging_clients or not self.oauth_allowed_purposes or not self.oauth_allowed_capabilities or not self.oauth_allowed_roles:
+            raise ValueError("OIDC delegated client, purpose, and capability allowlists cannot be empty")
 
     ENV_OAUTH_API_APP_ID_URI: str = Field(default="", alias="OAUTH_API_APP_ID_URI")
 
@@ -203,6 +258,30 @@ class Settings(BaseSettings):
     allow_unsafe_legacy_edc_send: bool = Field(
         default=False, alias="ALLOW_UNSAFE_LEGACY_EDC_SEND"
     )
+    native_identity_endpoint_enabled: bool = Field(
+        default=False, alias="OSB_NATIVE_IDENTITY_ENDPOINT_ENABLED"
+    )
+    native_identity_inventory_enabled: bool = Field(
+        default=False, alias="OSB_NATIVE_IDENTITY_INVENTORY_ENABLED"
+    )
+    platform_commands_prototype_enabled: bool = Field(
+        default=False, alias="OSB_PLATFORM_COMMANDS_PROTOTYPE_ENABLED"
+    )
+
+    def assert_native_identity_startup_safe(self) -> None:
+        """P1 lands the endpoint while P2 still owns signed publication."""
+        if (
+            self.deployment_environment.strip().lower() in {"prod", "production"}
+            and (
+                self.native_identity_endpoint_enabled
+                or self.native_identity_inventory_enabled
+                or self.platform_commands_prototype_enabled
+            )
+        ):
+            raise ValueError(
+                "OSB_NATIVE_IDENTITY_PRODUCTION_PROHIBITED: "
+                "prototype identity/command migration surfaces may not run in production"
+            )
 
     def assert_mapping_authority_startup_safe(self) -> None:
         """Refuse implicit or legacy production authority before startup."""

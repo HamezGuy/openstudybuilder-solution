@@ -22,7 +22,7 @@
       </template>
       <template #actions="">
         <v-btn
-          v-if="!readOnly"
+          v-if="!readOnly && accessGuard.checkPermission($roles.STUDY_WRITE)"
           data-cy="add-study"
           class="ml-2"
           icon
@@ -177,6 +177,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import NNTable from '@/components/tools/NNTable.vue'
 import StudyForm from '@/components/studies/StudyForm.vue'
 import StudyCreationForm from '@/components/studies/StudyCreationForm.vue'
@@ -197,6 +198,7 @@ const emit = defineEmits(['refreshStudies', 'enableFiltering', 'sort'])
 const { t } = useI18n()
 const accessGuard = useAccessGuard()
 const studiesGeneralStore = useStudiesGeneralStore()
+const router = useRouter()
 
 const selectedStudyUid = computed(() => studiesGeneralStore.studyUid)
 
@@ -293,10 +295,16 @@ const exportDataUrl = computed(() => {
 
 async function selectStudy(study) {
   study.loading = true
-  let resp
-  resp = await api.getStudy(study.uid, true)
-  await studiesGeneralStore.selectStudy(resp.data, true)
-  study.loading = false
+  try {
+    const resp = await api.getStudy(study.uid, true)
+    await studiesGeneralStore.selectStudy(resp.data)
+    await router.push({
+      name: 'StudyStructure',
+      params: { study_id: study.uid },
+    })
+  } finally {
+    study.loading = false
+  }
 }
 
 function sort(data) {

@@ -1,6 +1,7 @@
 import { inject } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 
+import { useGlobalConfig } from '@/main'
 import { auth } from '@/plugins/auth'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
@@ -15,6 +16,10 @@ const routes = [
     name: 'Library',
     component: () => import('../components/layout/PassThrough.vue'),
     redirect: { name: 'LibrarySummary' },
+    meta: {
+      authRequired: true,
+      requiredPermission: roles.LIBRARY_READ,
+    },
     children: [
       {
         path: 'summary',
@@ -1244,64 +1249,110 @@ const router = createRouter({
 
 async function saveStudyUid(studyUid) {
   const store = useStudiesGeneralStore()
-  const currentlySelectedStudy = JSON.parse(
-    localStorage.getItem('selectedStudy')
-  )
+  store.hydrateSelectedStudy()
+  const currentlySelectedStudy = store.selectedStudy
   if (
     !currentlySelectedStudy ||
-    (currentlySelectedStudy && currentlySelectedStudy.uid !== studyUid)
+    currentlySelectedStudy.uid !== studyUid
   ) {
     try {
       const resp = await study.getStudy(studyUid)
       await store.selectStudy(resp.data)
     } catch (_err) {
-      store.unselectStudy
-      store.studyId = null
+      store.unselectStudy()
       router.push('/studies')
     }
   }
 }
 
+function runtimeConfig() {
+  try {
+    return inject('$config', null) || useGlobalConfig() || {}
+  } catch {
+    return useGlobalConfig() || {}
+  }
+}
+
 router.beforeEach(async (to, from, next) => {
-  const $config = inject('$config')
-  const studiesGeneralStore = useStudiesGeneralStore()
-  const authStore = useAuthStore()
-  const featureFlagsStore = useFeatureFlagsStore()
-
-  await featureFlagsStore.fetchFeatureFlags()
-  if (
-    to.meta.featureFlag &&
-    featureFlagsStore.getFeatureFlag(to.meta.featureFlag) === false
-  ) {
-    next(false)
-    return
+  let settled = false
+  const go = (location) => {
+    if (settled) return
+    settled = true
+    if (location === undefined) next()
+    else next(location)
   }
 
-  if (to.params.study_id && to.params.study_id !== '*') {
-    await saveStudyUid(to.params.study_id)
-  }
-
-  if ($config.OAUTH_ENABLED) {
-    await authStore.initialize()
-    if (to.matched.some((record) => record.meta.authRequired)) {
-      auth.validateAccess(to, from, next)
+  try {
+    const $config = runtimeConfig()
+    const studiesGeneralStore = useStudiesGeneralStore()
+    studiesGeneralStore.hydrateSelectedStudy()
+    try {
+      useAppStore().syncStudyMenuParams(studiesGeneralStore.selectedStudy?.uid)
+    } catch {
+      // Menu sync is best-effort; study pages still hydrate from the store.
     }
-    if (to.matched.some((record) => record.meta.requiredPermission)) {
-      if (!authStore.userInfo.roles.includes(to.meta.requiredPermission)) {
-        next(false)
+    const authStore = useAuthStore()
+    const featureFlagsStore = useFeatureFlagsStore()
+
+    try {
+      await featureFlagsStore.fetchFeatureFlags()
+    } catch {
+      // Feature flags are optional chrome. A 401 here must not blank the app.
+    }
+    if (
+      to.meta.featureFlag &&
+      featureFlagsStore.getFeatureFlag(to.meta.featureFlag) === false
+    ) {
+      go(false)
+      return
+    }
+
+    if (to.params.study_id && to.params.study_id !== '*') {
+      await saveStudyUid(to.params.study_id)
+    }
+
+    await authStore.initialize()
+
+    if ($config.OAUTH_ENABLED) {
+      if (to.matched.some((record) => record.meta.authRequired)) {
+        auth.validateAccess(to, from, next)
+      }
+      if (to.matched.some((record) => record.meta.requiredPermission)) {
+        const needed = to.matched
+          .map((record) => record.meta.requiredPermission)
+          .filter(Boolean)
+        if (
+          needed.some(
+            (permission) => !authStore.userInfo?.roles?.includes(permission)
+          )
+        ) {
+          go(false)
+          return
+        }
+      }
+    } else {
+      // Command Center gateway SSO still carries roles when OAuth is off.
+      const needed = to.matched
+        .map((record) => record.meta.requiredPermission)
+        .filter(Boolean)
+      const callerRoles = authStore.userInfo?.roles
+      if (needed.length && Array.isArray(callerRoles) && callerRoles.length > 0) {
+        if (needed.some((permission) => !callerRoles.includes(permission))) {
+          go({ name: 'Home' })
+          return
+        }
       }
     }
-  }
 
-  if (to.meta && to.meta.studyRequired && !studiesGeneralStore.selectedStudy) {
-    if (from.name === 'AuthCallback') {
-      // Special case for after-login process
-      next({ name: 'SelectOrAddStudy' })
-    } else {
-      next(false)
+    if (to.meta && to.meta.studyRequired && !studiesGeneralStore.selectedStudy) {
+      go({ name: 'SelectOrAddStudy' })
+      return
     }
+    go()
+  } catch (error) {
+    console.error(error)
+    go()
   }
-  next()
 })
 
 router.onError((error) => {

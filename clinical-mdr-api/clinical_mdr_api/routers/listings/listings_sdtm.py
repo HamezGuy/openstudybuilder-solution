@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Path
+from fastapi import APIRouter, Depends, Path
 from starlette.requests import Request
 
 from clinical_mdr_api.models.listings.listings_sdtm import (
@@ -22,7 +22,9 @@ from common.auth.dependencies import security
 from common.config import settings
 
 # Prefixed with "/listings"
-router = APIRouter()
+from clinical_mdr_api.routers.studies.study_access import enforce_visible_study
+
+router = APIRouter(dependencies=[Depends(enforce_visible_study)])
 
 
 @router.get(

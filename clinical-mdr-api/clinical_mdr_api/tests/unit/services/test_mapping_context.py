@@ -164,6 +164,61 @@ def test_context_is_bounded_pinned_and_hash_deterministic(monkeypatch):
     assert "ORDER BY match_rank" in observed["text"]
 
 
+def test_data_model_family_is_graph_owned_and_cannot_be_relabelled(monkeypatch):
+    observed = []
+
+    def query(text, params):
+        observed.append((text, params))
+        # Mirror the graph: only SDTM/SDTMIG exists. A caller that labels the
+        # same pair CDASH must not make it pass merely by changing `family`.
+        if (
+            params["model_catalogue"] == "SDTM"
+            and params["ig_catalogue"] == "SDTMIG"
+            and params["model_uid"] == "SDTM"
+            and params["ig_uid"] == "SDTMIG"
+        ):
+            return ([["SDTM", "SDTMIG"]], None)
+        return ([], None)
+
+    monkeypatch.setattr(
+        "clinical_mdr_api.services.integrations.mapping_context.db.cypher_query",
+        query,
+    )
+    blockers = []
+    selected = MappingContextService._selected_data_models(
+        MappingContextRequest(
+            requested_data_models=[
+                {
+                    "family": "SDTM",
+                    "model_uid": "SDTM",
+                    "model_version": "2.0",
+                    "implementation_guide_uid": "SDTMIG",
+                    "implementation_guide_version": "3.4",
+                },
+                {
+                    "family": "CDASH",
+                    "model_uid": "SDTM",
+                    "model_version": "2.0",
+                    "implementation_guide_uid": "SDTMIG",
+                    "implementation_guide_version": "3.4",
+                },
+            ]
+        ),
+        blockers,
+    )
+
+    assert [item.family for item in selected] == ["SDTM"]
+    assert blockers == ["MAPPING_CONTEXT_MODEL_IG_NOT_FOUND:CDASH:SDTM:SDTMIG"]
+    assert all(
+        "DataModelCatalogue {name: $model_catalogue}" in text for text, _ in observed
+    )
+    assert all(
+        "DataModelCatalogue {name: $ig_catalogue}" in text for text, _ in observed
+    )
+    assert observed[0][1]["model_catalogue"] == "SDTM"
+    assert observed[1][1]["model_catalogue"] == "CDASH"
+
+
 def _v2_request(groups, maximum=1, as_of=None):
     return MappingContextV2Request(
         requested_packages=[
@@ -188,6 +243,91 @@ def _v2_request(groups, maximum=1, as_of=None):
         maximum_candidates_per_group=maximum,
         as_of=as_of,
     )
+
+
+def test_v2_usdm_context_requires_only_pinned_ddf_package(monkeypatch):
+    saved = []
+    service = MappingContextService(
+        context_registry=SimpleNamespace(
+            save_context=lambda context_hash, content: saved.append(
+                (context_hash, content)
+            )
+        )
+    )
+    monkeypatch.setattr(
+        service,
+        "_selected_packages",
+        lambda *_: [
+            SimpleNamespace(
+                catalogue_name="DDF CT",
+                package_uid="DDF CT-2025",
+                effective_date="2025-09-26",
+                automatically_created=False,
+            )
+        ],
+    )
+    monkeypatch.setattr(service, "_selected_data_models", lambda *_: [])
+
+    context = service.get_context_v2(
+        MappingContextV2Request(
+            requested_packages=[
+                {
+                    "catalogue_name": "DDF CT",
+                    "package_uid": "DDF CT-2025",
+                    "effective_date": "2025-09-26",
+                }
+            ],
+            requested_data_models=[],
+            candidate_groups=[],
+        ),
+        "a" * 64,
+    )
+
+    assert context.governed is True
+    assert context.release_blockers == []
+    assert context.selected_data_models == []
+    assert len(saved) == 1
+
+
+def test_v2_cdash_family_still_requires_collection_packages_and_models(monkeypatch):
+    service = MappingContextService(
+        context_registry=SimpleNamespace(save_context=lambda *_: None)
+    )
+    monkeypatch.setattr(
+        service,
+        "_selected_packages",
+        lambda *_: [
+            SimpleNamespace(
+                catalogue_name="DDF CT",
+                package_uid="DDF CT-2025",
+                effective_date="2025-09-26",
+                automatically_created=False,
+            )
+        ],
+    )
+    monkeypatch.setattr(service, "_selected_data_models", lambda *_: [])
+
+    context = service.get_context_v2(
+        MappingContextV2Request(
+            candidate_groups=[
+                {
+                    "fact_id": "fact-1",
+                    "concept_id": "concept-1",
+                    "target_key": "collection-variable",
+                    "semantic_role": "explicit auxiliary CDASH export mapping",
+                    "resource_family": "cdash_variables",
+                    "search_strings": ["systolic blood pressure"],
+                }
+            ]
+        ),
+        "a" * 64,
+    )
+
+    assert context.governed is False
+    assert "MAPPING_CONTEXT_CDASH_CT_PACKAGE_MISSING" in context.release_blockers
+    assert "MAPPING_CONTEXT_SDTM_CT_PACKAGE_MISSING" in context.release_blockers
+    assert "MAPPING_CONTEXT_CDASH_MODEL_IG_MISSING" in context.release_blockers
+    assert "MAPPING_CONTEXT_SDTM_MODEL_IG_MISSING" in context.release_blockers
 
 
 def test_v2_request_rejects_duplicate_groups_and_oversized_search_terms():
@@ -528,6 +668,48 @@ def test_v2_historical_family_query_uses_only_explicit_temporal_validity(monkeyp
     assert "version.start_date <= datetime($as_of)" in observed["text"]
     assert "version.end_date > datetime($as_of)" in observed["text"]
     assert observed["params"]["as_of"] == as_of.isoformat()
+
+
+def test_v2_timeframe_family_returns_instance_identity_not_template(monkeypatch):
+    observed = {}
+
+    def query(text, params):
+        observed["text"] = text
+        observed["params"] = params
+        return (
+            [
+                [
+                    "Timeframe_1",
+                    "Week 24",
+                    "1.0",
+                    "Final",
+                    "2025-01-01T00:00:00Z",
+                    None,
+                    "Sponsor",
+                    None,
+                    None,
+                    0,
+                ]
+            ],
+            None,
+        )
+
+    monkeypatch.setattr(
+        "clinical_mdr_api.services.integrations.mapping_context.db.cypher_query",
+        query,
+    )
+
+    candidates, incomplete = MappingContextService._versioned_library_family_v2(
+        "timeframes", ["week 24"], [], 2, None
+    )
+
+    assert incomplete == 0
+    assert candidates[0].resource_family == "timeframes"
+    assert candidates[0].resource_type == "Timeframe"
+    assert candidates[0].uid == "Timeframe_1"
+    assert "TimeframeRoot" in observed["text"]
+    assert "TimeframeValue" in observed["text"]
+    assert "TimeframeTemplateRoot" not in observed["text"]
 
 
 def test_v2_criteria_template_requires_native_type_and_parameter_identity(monkeypatch):

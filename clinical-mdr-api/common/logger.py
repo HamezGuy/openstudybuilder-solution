@@ -5,6 +5,7 @@ from fastapi import Request
 
 from common.config import settings
 from common.exceptions import MDRApiBaseException
+from common.observability_privacy import safe_error
 
 
 class CustomFormatter(logging.Formatter):
@@ -49,11 +50,17 @@ LOGGING_CONFIG = {
             "colors": settings.color_logs,
         },
     },
+    "filters": {
+        "control_plane_privacy": {
+            "()": "common.observability_privacy.ObservabilityPrivacyFilter"
+        }
+    },
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
             "level": "DEBUG" if settings.app_debug else "INFO",
             "formatter": "custom",
+            "filters": ["control_plane_privacy"],
         },
     },
     "root": {
@@ -81,33 +88,18 @@ log = logging.getLogger(__name__)
 
 
 async def log_exception(request: Request, exception: MDRApiBaseException | Exception):
-    if isinstance(exception, MDRApiBaseException):
-        log.error(
-            "Handled %d %s: %s %s -> %s",
-            exception.status_code,
-            exception.__class__.__name__,
-            request.method,
-            request.url,
-            exception.msg,
-        )
-    else:
-        log.error(
-            "Handled %s: %s %s -> %s",
-            exception.__class__.__name__,
-            request.method,
-            request.url,
-            str(getattr(exception, "msg", None) or exception),
-        )
-
-    # Log exception traceback with info level
-    log.info(exception, exc_info=True)
-
-    if not request._stream_consumed and settings.app_debug:
-        curl_cmd = f"curl -X {request.method} '{request.url}'"
-        for header, value in request.headers.items():
-            curl_cmd += f" -H '{header}: {value}'"
-
-        if body := await request.body():
-            curl_cmd += f" -d '{body.decode('utf-8')}'"
-
-        log.debug("Reproduce with: %s", curl_cmd)
+    safe = safe_error(exception)
+    status_code = (
+        exception.status_code
+        if isinstance(exception, MDRApiBaseException)
+        else 500
+    )
+    log.error(
+        "Request failed status=%d type=%s method=%s route=%s errorCode=%s rejectionId=%s",
+        status_code,
+        exception.__class__.__name__,
+        request.method,
+        request.url.path,
+        safe["errorCode"],
+        safe["rejectionId"],
+    )

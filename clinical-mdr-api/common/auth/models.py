@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 from authlib.jose import JWTClaims
-from pydantic import BaseModel, field_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator
 
 from common.exceptions import ForbiddenException
 
@@ -32,6 +32,9 @@ class JWTTokenClaims(BaseModel):
     nbf: int | None = None
     iat: int
     jti: str | None = None
+    # OIDC session identifier. Command Center preserves this signed claim when
+    # it exchanges a browser token for a fresh child-API audience token.
+    sid: str | None = None
 
     # RFC-8693 #4.2 common for both id and access token
     scp: list[str] | None = None
@@ -49,6 +52,7 @@ class AccessTokenClaims(JWTTokenClaims):
     """Access token claims"""
 
     roles: set[str] | None = None
+    type: str | None = None
 
     # OpenID Connect Core 1.0 Standard Claims
     name: str | None = None
@@ -60,8 +64,38 @@ class AccessTokenClaims(JWTTokenClaims):
     username: str | None = None
     oid: str | None = None
     tid: str | None = None
+    # Microsoft Entra access tokens commonly expose the unique token id as
+    # ``uti`` rather than the RFC 7519 ``jti`` claim.
+    uti: str | None = None
+
+    # Command Center authorization scope.  Keep the external camelCase names
+    # as validation aliases so the signed JWT values are not silently dropped.
+    tenant_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("tenantId", "tenant_id"),
+    )
+    study_ids: list[int | str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("studyIds", "study_ids"),
+    )
+    organization_ids: list[int | str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("organizationIds", "organization_ids"),
+    )
 
     azp: str | None = None
+    client_id: str | None = None
+    subject_type: str | None = None
+    human_subject: str | None = None
+    service_actor: str | None = None
+    act: dict[str, str] | None = None
+    actor_chain: list[dict[str, str]] = Field(default_factory=list)
+    idp_iss: str | None = None
+    purpose: str | None = None
+    capabilities: list[str] = Field(default_factory=list)
+    auth_time: int | None = None
+    acr: str | None = None
+    amr: list[str] = Field(default_factory=list)
 
 
 @dataclass(init=False)
@@ -73,6 +107,16 @@ class User:
     username: str
     email: str
     roles: set[str]
+    tenant_id: str
+    study_ids: set[str]
+    subject_type: str
+    issuer: str
+    human_subject: str
+    service_actor: str
+    purpose: str
+    capabilities: set[str]
+    actor_chain: tuple[dict[str, str], ...]
+    human_signature_eligible: bool
 
     def __init__(
         self,
@@ -83,6 +127,15 @@ class User:
         username: str,
         email: str,
         roles: set[str] | None = None,
+        tenant_id: str = "",
+        study_ids: set[str] | list[int | str] | None = None,
+        subject_type: str = "human",
+        issuer: str = "",
+        human_subject: str = "",
+        service_actor: str = "",
+        purpose: str = "",
+        capabilities: set[str] | list[str] | None = None,
+        actor_chain: list[dict[str, str]] | None = None,
     ) -> None:
         if roles is None:
             roles = set()
@@ -94,15 +147,25 @@ class User:
         self.username = username
         self.email = email
         self.roles = roles
+        self.tenant_id = tenant_id
+        self.study_ids = {str(value) for value in (study_ids or []) if str(value).strip()}
+        self.subject_type = subject_type
+        self.issuer = issuer
+        self.human_subject = human_subject
+        self.service_actor = service_actor
+        self.purpose = purpose
+        self.capabilities = set(capabilities or [])
+        self.actor_chain = tuple(actor_chain or [])
+        self.human_signature_eligible = subject_type == "human"
 
     # pylint: disable=invalid-name
     def id(self):
         """Returns the user id
 
-        For end-users, it is the `oid` claim from the access token.
-        For applications authenticated with client secret, it is the `azp` claim from the access token.
+        The issuer-qualified RFC 7519 subject is authoritative for both people
+        and services. ``oid`` and ``azp`` remain metadata, never identity joins.
         """
-        return self.oid or self.azp
+        return self.sub
 
     def has_role(self, role: str) -> bool:
         """
@@ -226,8 +289,15 @@ class Auth:
     user: User
     jwt_claims: JWTClaims
     access_token_claims: AccessTokenClaims
+    authentication_verified: bool
 
-    def __init__(self, jwt_claims: JWTClaims, access_token_claims: AccessTokenClaims):
+    def __init__(
+        self,
+        jwt_claims: JWTClaims,
+        access_token_claims: AccessTokenClaims,
+        *,
+        authentication_verified: bool,
+    ):
         self.user = User(
             sub=access_token_claims.sub,
             azp=access_token_claims.azp or "",
@@ -244,6 +314,95 @@ class Auth:
                 or ""
             ),
             roles=access_token_claims.roles,
+            tenant_id=access_token_claims.tenant_id or "",
+            study_ids=access_token_claims.study_ids,
+            subject_type=access_token_claims.subject_type or "human",
+            issuer=access_token_claims.iss,
+            human_subject=access_token_claims.human_subject or "",
+            service_actor=access_token_claims.service_actor or "",
+            purpose=access_token_claims.purpose or "",
+            capabilities=access_token_claims.capabilities,
+            actor_chain=access_token_claims.actor_chain,
         )
         self.jwt_claims = jwt_claims
         self.access_token_claims = access_token_claims
+        self.authentication_verified = authentication_verified
+
+
+def validate_delegated_claims(
+    claims: AccessTokenClaims,
+    *,
+    exchanging_clients: set[str],
+    allowed_purposes: set[str],
+    allowed_capabilities: set[str],
+    allowed_roles: set[str],
+    max_ttl_seconds: int = 300,
+) -> None:
+    """Validate mandatory OBO/downscope claims after JWT crypto validation."""
+
+    if claims.type != "access":
+        raise ValueError("Token is not an access token")
+    if claims.exp <= claims.iat or claims.exp - claims.iat > max_ttl_seconds:
+        raise ValueError("Access token violates the five-minute lifetime bound")
+    client_id = claims.azp or claims.client_id or ""
+    if not client_id or claims.azp != claims.client_id or client_id not in exchanging_clients:
+        raise ValueError("Exchanging client is absent, inconsistent, or not allowlisted")
+    if not claims.tenant_id:
+        raise ValueError("tenant_id is required")
+    if not claims.purpose or claims.purpose not in allowed_purposes:
+        raise ValueError("Purpose is absent or outside the OSB profile")
+    if not claims.capabilities or any(
+        value not in allowed_capabilities or "*" in value or len(value) > 256
+        for value in claims.capabilities
+    ):
+        raise ValueError("Capability is absent, wildcarded, or outside the OSB profile")
+    if any("*" in str(value) or len(str(value)) > 256 for value in claims.study_ids):
+        raise ValueError("Study scope contains a wildcard or oversized value")
+    token_roles = set(claims.roles or set())
+    if not token_roles or any(
+        role not in allowed_roles or "*" in role or len(role) > 256
+        for role in token_roles
+    ):
+        raise ValueError("Role is absent, wildcarded, or outside the OSB profile")
+    if not claims.actor_chain or any(
+        not actor.get("subject")
+        or not actor.get("issuer")
+        or actor.get("type") not in {"human", "service"}
+        for actor in claims.actor_chain
+    ):
+        raise ValueError("Actor chain contains an invalid actor")
+
+    if claims.subject_type == "human":
+        first = claims.actor_chain[0] if claims.actor_chain else {}
+        last = claims.actor_chain[-1] if claims.actor_chain else {}
+        if (
+            claims.human_subject != claims.sub
+            or not claims.service_actor
+            or not claims.act
+            or claims.act.get("sub") != claims.service_actor
+            or claims.act.get("client_id") != client_id
+            or first.get("subject") != claims.sub
+            or first.get("type") != "human"
+            or last.get("subject") != claims.service_actor
+            or last.get("type") != "service"
+            or not claims.idp_iss
+        ):
+            raise ValueError("Delegated human actor chain is missing or inconsistent")
+        return
+
+    if claims.subject_type == "service":
+        actor = claims.actor_chain[0] if len(claims.actor_chain) == 1 else {}
+        if (
+            claims.sub != f"service:{client_id}"
+            or claims.service_actor != claims.sub
+            or claims.human_subject
+            or claims.auth_time is not None
+            or claims.acr
+            or claims.amr
+            or actor.get("subject") != claims.sub
+            or actor.get("type") != "service"
+        ):
+            raise ValueError("Service token contains a forged human or actor context")
+        return
+
+    raise ValueError("subject_type must be human or service")

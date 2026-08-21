@@ -250,6 +250,11 @@ CONSTRAINTS = [
     ("OsbProposalReview", "proposal_hash", CONSTRAINT_TYPE_NODE_KEY),
     ("OsbProposalReviewObject", "object_key", CONSTRAINT_TYPE_NODE_KEY),
     ("OsbProposalReviewDecision", "decision_id", CONSTRAINT_TYPE_NODE_KEY),
+    (
+        "OsbProposalExecutionAuthorization",
+        "authorization_id",
+        CONSTRAINT_TYPE_NODE_KEY,
+    ),
     ("ComplexityBurden", "burden_id", CONSTRAINT_TYPE_UNIQUE),
     ("CTTermNameRoot", "uid", CONSTRAINT_TYPE_UNIQUE),
 ]
