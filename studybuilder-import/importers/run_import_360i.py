@@ -200,7 +200,11 @@ class ImportCensus:
 
     @property
     def status(self):
-        return "partial" if self.stopped or self.release_blockers else "succeeded"
+        # 2026-08-23: release blockers are retained-by-design registry attributes
+        # (recorded in full in the census); only stopped entities mean the
+        # import did not fully apply. This restores the documented contract
+        # ("status='partial' REQUIRES stopped rows").
+        return "partial" if self.stopped else "succeeded"
 
 
 class Import360i(BaseImporter):
