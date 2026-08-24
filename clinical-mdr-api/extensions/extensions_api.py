@@ -171,9 +171,9 @@ async def extension_api_exception_handler(
 ):
     """Returns an HTTP error code associated to given exception."""
 
-    await log_exception(request, exception)
+    safe = await log_exception(request, exception)
 
-    ExceptionTracebackMiddleware.add_traceback_attributes(exception)
+    ExceptionTracebackMiddleware.add_traceback_attributes(exception, safe["rejectionId"])
 
     return JSONResponse(
         status_code=exception.status_code,
@@ -189,9 +189,9 @@ async def pydantic_validation_error_handler(
     """Returns `400 Bad Request` http error status code in case Pydantic detects validation issues
     with supplied payloads or parameters."""
 
-    await log_exception(request, exception)
+    safe = await log_exception(request, exception)
 
-    ExceptionTracebackMiddleware.add_traceback_attributes(exception)
+    ExceptionTracebackMiddleware.add_traceback_attributes(exception, safe["rejectionId"])
 
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
@@ -203,9 +203,9 @@ async def pydantic_validation_error_handler(
 async def handle_request_validation_error(
     request: Request, exception: RequestValidationError
 ) -> JSONResponse:
-    await log_exception(request, exception)
+    safe = await log_exception(request, exception)
 
-    ExceptionTracebackMiddleware.add_traceback_attributes(exception)
+    ExceptionTracebackMiddleware.add_traceback_attributes(exception, safe["rejectionId"])
 
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
@@ -218,9 +218,9 @@ async def handle_request_validation_error(
 async def value_error_handler(request: Request, exception: ValueError):
     """Returns `400 Bad Request` http error status code in case ValueError is raised"""
 
-    await log_exception(request, exception)
+    safe = await log_exception(request, exception)
 
-    ExceptionTracebackMiddleware.add_traceback_attributes(exception)
+    ExceptionTracebackMiddleware.add_traceback_attributes(exception, safe["rejectionId"])
 
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,

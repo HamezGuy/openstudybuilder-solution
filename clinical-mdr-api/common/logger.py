@@ -87,12 +87,23 @@ def default_logging_config():
 log = logging.getLogger(__name__)
 
 
-async def log_exception(request: Request, exception: MDRApiBaseException | Exception):
+async def log_exception(
+    request: Request, exception: MDRApiBaseException | Exception
+) -> dict[str, str]:
+    """Log one handled failure and RETURN its correlation metadata.
+
+    The return value is what makes the rejection id usable. `safe_error` mints a
+    fresh uuid4 on every call, so a caller that wanted the id for the tracing
+    span could only get it by calling `safe_error` a second time - which yields a
+    DIFFERENT id, and an operator handed two ids for one failure cannot correlate
+    the log line with the span. The handlers now reuse this exact dict.
+    """
+
     safe = safe_error(exception)
     status_code = (
         exception.status_code
         if isinstance(exception, MDRApiBaseException)
-        else 500
+        else getattr(exception, "status_code", 500)
     )
     log.error(
         "Request failed status=%d type=%s method=%s route=%s errorCode=%s rejectionId=%s",
@@ -103,3 +114,4 @@ async def log_exception(request: Request, exception: MDRApiBaseException | Excep
         safe["errorCode"],
         safe["rejectionId"],
     )
+    return safe

@@ -158,9 +158,9 @@ Microsoft Identity Platform documentation can be read
 async def http_exception_handler(request: Request, exception: HTTPException):
     """Returns an HTTP error code associated to given exception."""
 
-    await log_exception(request, exception)
+    safe = await log_exception(request, exception)
 
-    ExceptionTracebackMiddleware.add_traceback_attributes(exception)
+    ExceptionTracebackMiddleware.add_traceback_attributes(exception, safe["rejectionId"])
 
     return JSONResponse(
         status_code=exception.status_code,
@@ -173,9 +173,9 @@ async def http_exception_handler(request: Request, exception: HTTPException):
 async def mdr_api_exception_handler(request: Request, exception: MDRApiBaseException):
     """Returns an HTTP error code associated to given exception."""
 
-    await log_exception(request, exception)
+    safe = await log_exception(request, exception)
 
-    ExceptionTracebackMiddleware.add_traceback_attributes(exception)
+    ExceptionTracebackMiddleware.add_traceback_attributes(exception, safe["rejectionId"])
 
     return JSONResponse(
         status_code=exception.status_code,
@@ -188,9 +188,9 @@ async def mdr_api_exception_handler(request: Request, exception: MDRApiBaseExcep
 async def handle_validation_error(
     request: Request, exception: ValidationError
 ) -> JSONResponse:
-    await log_exception(request, exception)
+    safe = await log_exception(request, exception)
 
-    ExceptionTracebackMiddleware.add_traceback_attributes(exception)
+    ExceptionTracebackMiddleware.add_traceback_attributes(exception, safe["rejectionId"])
 
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
@@ -203,9 +203,9 @@ async def handle_validation_error(
 async def handle_request_validation_error(
     request: Request, exception: RequestValidationError
 ) -> JSONResponse:
-    await log_exception(request, exception)
+    safe = await log_exception(request, exception)
 
-    ExceptionTracebackMiddleware.add_traceback_attributes(exception)
+    ExceptionTracebackMiddleware.add_traceback_attributes(exception, safe["rejectionId"])
 
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
