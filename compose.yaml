@@ -87,6 +87,18 @@ services:
       MAPPING_AUTHORITY_MODE: "${MAPPING_AUTHORITY_MODE:-shadow}"
       ALLOW_UNSAFE_LEGACY_EDC_SEND: "${ALLOW_UNSAFE_LEGACY_EDC_SEND:-false}"
 
+      # Platform control plane (governed candidate round-trip). Both default OFF
+      # so an ordinary local preview is unchanged; the router is mounted either
+      # way and every handler refuses 503 OSB_PLATFORM_COMMANDS_DISABLED until
+      # the flag is on. They live here rather than in an ad-hoc `docker run`
+      # override because the flag alone is not enough to serve a command: the
+      # candidate-set handler verifies the CSL request signature through the
+      # development signing gateway, and `_platform_principal` needs a Command
+      # Center assertion carrying purpose=workflow-orchestration plus
+      # candidate:generate, which means OSB_API_AUTH_ENABLED=True as well.
+      OSB_PLATFORM_COMMANDS_PROTOTYPE_ENABLED: "${OSB_PLATFORM_COMMANDS_PROTOTYPE_ENABLED:-False}"
+      OSB_CANDIDATE_REQUEST_SIGNATURE_VERIFICATION_URL: "${OSB_CANDIDATE_REQUEST_SIGNATURE_VERIFICATION_URL:-}"
+
       UVICORN_PORT: 5003
       UVICORN_ROOT_PATH: "/api"
       # deprecated #
