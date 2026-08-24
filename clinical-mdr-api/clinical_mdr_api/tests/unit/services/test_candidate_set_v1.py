@@ -56,16 +56,30 @@ def _fixture() -> tuple[dict, dict, dict, dict]:
         intents.append(intent)
     rows = [{
         "unitId": f'{intent["factId"]}@1:primary',
-        "sourcePath": f"/activeClaimRevisions/{index}",
-        "targetPath": f"/typedSourceIntents/{index}",
-        "sourceValueHash": members[index]["valueHash"],
-        "targetValueHash": canonical_json_hash_ref(
-            intent, schema_version="OsbTypedSourceIntentV1@1.0.0"
-        ),
+        "source": {
+            "artifactId": "99999999-9999-4999-8999-999999999999",
+            "contract": "accuratrials.csl.SemanticSnapshotV1@1.0.0",
+            "type": "active-claim-revision",
+            "path": f"#/activeClaimRevisions/{index}",
+            "valueHash": members[index]["valueHash"],
+        },
+        "target": {
+            "artifactId": "66666666-6666-4666-8666-666666666666",
+            "contract": "accuratrials.osb.OsbCandidateRequestV1@1.0.0",
+            "type": "typed-source-intent",
+            "path": f"#/typedSourceIntents/{index}",
+            "valueHash": canonical_json_hash_ref(
+                intent, schema_version="OsbTypedSourceIntentV1@1.0.0"
+            ),
+        },
         "multiplicity": {"source": 1, "target": 1},
+        "splitMergeGroup": None,
+        "splitMergeRule": None,
         "ordering": {"significant": True, "sourceIndex": index, "targetIndex": index},
         "disposition": "native",
+        "exclusionPolicy": None,
         "evidenceRefs": [f'source-fact:{intent["factId"]}@1'],
+        "receiptRefs": [],
     } for index, intent in enumerate(intents)]
     snapshot_hash = canonical_json_hash_ref(
         {"snapshot": True}, schema_version="SemanticSnapshotV1@1.0.0"
@@ -110,7 +124,7 @@ def _fixture() -> tuple[dict, dict, dict, dict]:
         "projectionRuleset": {
             "id": "csl-to-osb-candidate-request", "version": "1.0.0",
             "hash": canonical_json_hash_ref(
-                {"mapping": "prototype-complete-family-router", "version": "1.0.0"},
+                {"mapping": "fail-closed-family-router", "version": "1.0.0"},
                 schema_version="ProjectionRulesetV1@1.0.0",
             ),
         },
@@ -119,7 +133,10 @@ def _fixture() -> tuple[dict, dict, dict, dict]:
             "rowSetHash": canonical_json_hash_ref(
                 rows, schema_version="ConservationCensusRowsV1@1.0.0"
             ),
-            "counts": {"source": 2, "target": 2, "dropped": 0},
+            "counts": {
+                "rows": 2, "native": 2, "governedExtension": 0, "excludedSigned": 0,
+                "deferredBlocking": 0, "quarantined": 0, "rejected": 0,
+            },
         },
         "checkpointPreconditions": {
             "osbNativeVersion": "0.1", "semanticSnapshotHash": snapshot_hash,

@@ -23,6 +23,10 @@ from clinical_mdr_api.models.integrations.mapping_context import (
     MappingContextV2Request,
 )
 from clinical_mdr_api.services.integrations.mapping_context import MappingContextService
+from clinical_mdr_api.services.integrations.osb_family_map import (
+    SUPPORTED_RESOURCE_FAMILIES,
+    canonicalize_family,
+)
 
 CANDIDATE_REQUEST_MEDIA_TYPE = (
     "application/vnd.accuratrials.osb-candidate-request-v1+json"
@@ -30,11 +34,6 @@ CANDIDATE_REQUEST_MEDIA_TYPE = (
 CANDIDATE_SET_MEDIA_TYPE = (
     "application/vnd.accuratrials.osb-candidate-set-v1+json"
 )
-SUPPORTED_RESOURCE_FAMILIES = frozenset({
-    "activities", "compound_product_relationships", "controlled_terminology",
-    "criteria_templates", "endpoint_templates", "objective_templates", "odm_forms",
-    "odm_item_groups", "odm_items", "study_compound_dosing_relationships", "units",
-})
 
 
 class OsbCandidateSetError(RuntimeError):
@@ -155,16 +154,20 @@ def _assert_request_projection(payload: dict[str, Any], artifact: dict[str, Any]
 
     families: list[str] = []
     for intent in intents:
-        family = intent.get("resourceFamily")
+        family = canonicalize_family(str(intent.get("resourceFamily") or ""))
         if family not in SUPPORTED_RESOURCE_FAMILIES:
             raise OsbCandidateSetError("OSB_CANDIDATE_REQUEST_FAMILY_UNSUPPORTED", "Unsupported OSB resource family.", 422)
         if intent.get("targetKey") != "primary" or any(
             key in intent for key in ("selectedCandidate", "nativeIdentity", "nativeVersion", "candidateId")
         ):
             raise OsbCandidateSetError("OSB_CANDIDATE_REQUEST_TARGET_SELECTION_FORBIDDEN", "CSL may not select an OSB target.", 422)
-        families.append(str(family))
+        families.append(family)
     expected_families = sorted(set(families))
-    if payload.get("requestedObjectFamilies") != expected_families:
+    requested_families = sorted({
+        canonicalize_family(str(family))
+        for family in _list(payload.get("requestedObjectFamilies"), "OSB_CANDIDATE_REQUEST_FAMILY_MISMATCH")
+    })
+    if requested_families != expected_families:
         raise OsbCandidateSetError("OSB_CANDIDATE_REQUEST_FAMILY_MISMATCH", "Requested families differ from intents.", 422)
 
     ruleset = _record(payload.get("projectionRuleset"), "OSB_CANDIDATE_REQUEST_RULESET_REQUIRED")
@@ -641,7 +644,7 @@ def generate_candidate_set(
         if key in observed_keys:
             raise OsbCandidateSetError("OSB_CANDIDATE_SET_DUPLICATE_MEMBER", "Duplicate candidate intent.", 422)
         observed_keys.add(key)
-        family = str(intent.get("resourceFamily") or "")
+        family = canonicalize_family(str(intent.get("resourceFamily") or ""))
         search_strings = [str(value) for value in _list(intent.get("searchStrings", []), "OSB_SEARCH_STRINGS_INVALID")]
         group: dict[str, Any] = {
             "fact_id": str(intent["factId"]),
@@ -649,6 +652,11 @@ def generate_candidate_set(
             "target_key": str(intent["targetKey"]),
             "semantic_role": str(intent["semanticRole"]),
             "resource_family": family,
+            "fact_id": str(intent["factId"]),
+            "concept_id": str(intent["conceptId"]),
+            "target_key": str(intent["targetKey"]),
+            "semantic_role": str(intent["semanticRole"]),
+            "resource_family": canonicalize_family(str(family)),
             "search_strings": search_strings,
             "search_codes": [str(value) for value in _list(intent.get("searchCodes", []), "OSB_SEARCH_CODES_INVALID")],
         }

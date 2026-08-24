@@ -519,7 +519,7 @@ async def upload_mapping_decision(request: Request) -> dict[str, Any]:
     dependencies=[security],
     summary="Apply one CSL mapping decision and emit exact native read-back evidence",
 )
-def execute_mapping_decision_command(body: dict[str, Any]) -> dict[str, Any]:
+def execute_mapping_decision_command(body: dict[str, Any], request: Request) -> dict[str, Any]:
     if (
         not settings.platform_commands_prototype_enabled
         or settings.deployment_environment.strip().lower() in {"prod", "production"}
@@ -539,6 +539,7 @@ def execute_mapping_decision_command(body: dict[str, Any]) -> dict[str, Any]:
             platform_study_id=body["platformStudyId"],
             decision_artifact=artifact,
             actor=body["requestingActor"]["issuerQualifiedSubject"],
+            osb_openapi_hash=canonical_hash(request.app.openapi()),
         )
         evidence_records = applied["payload"]["evidenceRecords"]
         blockers = [

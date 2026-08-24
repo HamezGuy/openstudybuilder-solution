@@ -22,6 +22,15 @@ server {
     server_name  localhost;
     include      mime.types;
 
+    # A missing static asset must 404 and never fall through to index.html.
+    # Returning HTML for a .js request makes the browser execute HTML as a
+    # module: it fails silently, leaves a blank page, and logs nothing anywhere.
+    location ~* \.(js|mjs|css|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf|eot|json|txt|xml)$ {
+        root   /usr/share/nginx/html;
+        expires $expires;
+        try_files $uri =404;
+    }
+
     location / {
         root   /usr/share/nginx/html;
         try_files $uri $uri/ /index.html;
@@ -29,7 +38,7 @@ server {
         expires $expires;
     }
 
-    location $API_PATH {
+    location ^~ $API_PATH {
         proxy_pass http://$API_HOST:$API_PORT/;
         # The EDC export (/integrations/edc/.../study-bundle) walks every ODM
         # item and takes >60s on a full study; nginx's default 60s
@@ -38,19 +47,19 @@ server {
         proxy_send_timeout 300s;
     }
 
-    location $CONSUMER_API_PATH {
+    location ^~ $CONSUMER_API_PATH {
         proxy_pass http://$CONSUMER_API_HOST:$CONSUMER_API_PORT/;
     }
 
-    location $EXTENSIONS_API_PATH {
+    location ^~ $EXTENSIONS_API_PATH {
         proxy_pass http://$EXTENSIONS_API_HOST:$EXTENSIONS_API_PORT/;
     }
 
-    location $DOC_PATH {
+    location ^~ $DOC_PATH {
         proxy_pass http://$DOC_HOST:$DOC_PORT/;
     }
 
-    location $NEODASH_PATH {
+    location ^~ $NEODASH_PATH {
         proxy_pass http://$NEODASH_HOST:$NEODASH_PORT/;
     }
 

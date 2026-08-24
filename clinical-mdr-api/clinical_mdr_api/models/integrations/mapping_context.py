@@ -15,6 +15,7 @@ MappingResourceFamily = Literal[
     "objective_templates",
     "endpoint_templates",
     "criteria_templates",
+    "activity_instruction_templates",
     "timeframe_templates",
     "timeframes",
     "compound_product_relationships",
@@ -23,6 +24,10 @@ MappingResourceFamily = Literal[
     "odm_forms",
     "odm_item_groups",
     "odm_items",
+    "odm_conditions",
+    "odm_methods",
+    "odm_aliases",
+    "activity_schedules",
 ]
 
 
@@ -50,7 +55,7 @@ class MappingContextRequest(BaseModel):
         default_factory=list, max_length=2
     )
     resource_families: list[MappingResourceFamily] = Field(
-        default_factory=list, max_length=15
+        default_factory=list, max_length=24
     )
     search_strings: list[Annotated[str, Field(min_length=1, max_length=256)]] = Field(
         default_factory=list, max_length=50

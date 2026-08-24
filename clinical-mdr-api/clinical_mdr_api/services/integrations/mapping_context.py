@@ -40,6 +40,11 @@ _FAMILY_NODE_MODELS = {
         "CriteriaTemplateValue",
         "CriteriaTemplate",
     ),
+    "activity_instruction_templates": (
+        "ActivityInstructionTemplateRoot",
+        "ActivityInstructionTemplateValue",
+        "ActivityInstructionTemplate",
+    ),
     "timeframe_templates": (
         "TimeframeTemplateRoot",
         "TimeframeTemplateValue",
@@ -53,6 +58,8 @@ _FAMILY_NODE_MODELS = {
     "odm_forms": ("OdmFormRoot", "OdmFormValue", "OdmForm"),
     "odm_item_groups": ("OdmItemGroupRoot", "OdmItemGroupValue", "OdmItemGroup"),
     "odm_items": ("OdmItemRoot", "OdmItemValue", "OdmItem"),
+    "odm_conditions": ("OdmConditionRoot", "OdmConditionValue", "OdmCondition"),
+    "odm_methods": ("OdmMethodRoot", "OdmMethodValue", "OdmMethod"),
 }
 
 _BLOCKER_ONLY_FAMILY_CODES = {
@@ -170,6 +177,17 @@ class MappingContextService:
                         request.maximum_candidates_per_family,
                         None,
                         data_models,
+                    )
+                    if incomplete:
+                        release_blockers.append(
+                            f"MAPPING_CONTEXT_CANDIDATE_IDENTITY_INCOMPLETE:{incomplete}"
+                        )
+                elif family in {"odm_aliases", "activity_schedules"}:
+                    rows, incomplete = self._unversioned_name_family_v2(
+                        family,
+                        searches,
+                        codes,
+                        request.maximum_candidates_per_family,
                     )
                     if incomplete:
                         release_blockers.append(
@@ -308,6 +326,10 @@ class MappingContextService:
                 elif requested.resource_family == "cdash_variables":
                     candidates, incomplete_count = self._cdash_variables_v2(
                         searches, codes, query_limit, request.as_of, data_models
+                    )
+                elif requested.resource_family in {"odm_aliases", "activity_schedules"}:
+                    candidates, incomplete_count = self._unversioned_name_family_v2(
+                        requested.resource_family, searches, codes, query_limit,
                     )
                 else:
                     candidates, incomplete_count = self._versioned_library_family_v2(
@@ -1218,6 +1240,54 @@ class MappingContextService:
                     implementation_guide_version=str(row[12]),
                     mapping_target_uid=row[13],
                     mapping_target_version=str(row[14]),
+                )
+            )
+        return candidates, incomplete
+
+    @staticmethod
+    def _unversioned_name_family_v2(family, searches, codes, limit):
+        if family == "odm_aliases":
+            query = """
+                MATCH (root:OdmAlias)
+                WHERE any(needle IN $searches WHERE toLower(coalesce(root.name, '')) CONTAINS needle)
+                   OR any(code IN $codes WHERE toLower(coalesce(root.uid, root.name, '')) = code)
+                RETURN coalesce(root.uid, root.name) AS uid, root.name AS label,
+                       '0.1' AS version, 'Final' AS status
+                ORDER BY toLower(label), uid
+                LIMIT $limit
+            """
+            resource_type = "OdmAlias"
+        elif family == "activity_schedules":
+            query = """
+                MATCH (root:StudyActivitySchedule)
+                WHERE any(code IN $codes WHERE toLower(root.uid) = code)
+                   OR any(needle IN $searches WHERE toLower(root.uid) CONTAINS needle)
+                RETURN root.uid AS uid, root.uid AS label,
+                       '0.1' AS version, 'Final' AS status
+                ORDER BY uid
+                LIMIT $limit
+            """
+            resource_type = "StudyActivitySchedule"
+        else:
+            raise KeyError(family)
+        result, _ = db.cypher_query(
+            query, {"searches": searches, "codes": codes, "limit": limit},
+        )
+        candidates: list[MappingContextCandidate] = []
+        incomplete = 0
+        for row in result:
+            uid, label, version, status = row[0], row[1], row[2], row[3]
+            if not uid or not label or not version:
+                incomplete += 1
+                continue
+            candidates.append(
+                MappingContextCandidate(
+                    resource_family=family,
+                    resource_type=resource_type,
+                    uid=str(uid),
+                    label=str(label),
+                    version=str(version),
+                    status=str(status or "Final"),
                 )
             )
         return candidates, incomplete

@@ -1,5 +1,5 @@
 """AUTO-GENERATED from CSL-owned SemanticSnapshotV1.
-Schema sha256:a23506fb1f1ec60206cc6c60abe6ea165c5fffb27079760b2db08a63e60088e6
+Schema sha256:5df0855651e84f760ba433d7ae0afd1af0977d4d1501786b59705ebc2b1d72e0
 Do not edit by hand. Run generate-p4-request-contracts.mjs.
 """
 
@@ -43,6 +43,7 @@ class SemanticSnapshotV1(TypedDict):
     platformStudyId: str
     semanticStudyIdentity: SemanticStudyIdentityV1
     sourceFactPackage: SemanticSnapshotSourcePackageRefV1
+    producingBuild: NotRequired[None | dict[str, Any]]
     activeClaimRevisions: list[SemanticSnapshotActiveClaimRevisionV1]
     exclusions: list[SemanticSnapshotDispositionV1]
     quarantine: list[SemanticSnapshotDispositionV1]

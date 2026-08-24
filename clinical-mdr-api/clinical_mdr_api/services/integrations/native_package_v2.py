@@ -32,8 +32,8 @@ INBOUND_RELEASE_CONTRACTS = {
 }
 
 CAPTURE_FAMILIES = {
-    "odm_forms", "odm_item_groups", "odm_items", "edit_checks", "conditions",
-    "branching", "assignments", "activities", "activity_schedules",
+    "odm_forms", "odm_item_groups", "odm_items", "odm_methods", "odm_conditions",
+    "odm_aliases", "activity_schedules", "cdash_variables",
 }
 
 

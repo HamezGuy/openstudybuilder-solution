@@ -1,0 +1,270 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.accuratrials.invalid/osb/native-operation-evidence-v1.schema.json",
+  "title": "NativeOperationEvidenceV1",
+  "description": "OSB-owned evidence for exactly one executed operation of a signed mapping decision. It records what the executor was told to expect, what it actually wrote, and the normalized read-back of the result. A consumer verifies a transformation by comparing this read-back, never by trusting that the call returned success.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "evidenceId",
+    "decisionId",
+    "operationId",
+    "idempotencyKey",
+    "effectId",
+    "adapterVersion",
+    "executorVersion",
+    "executorKind",
+    "expectedTargetPrecondition",
+    "sourceInputHash",
+    "nativeTargetIdentity",
+    "preTargetVersion",
+    "postTargetVersion",
+    "normalizedReadBack",
+    "normalizedReadBackHash",
+    "disposition",
+    "operationTime"
+  ],
+  "properties": {
+    "contractVersion": {
+      "const": "NativeOperationEvidenceV1@1.0.0"
+    },
+    "evidenceId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "decisionId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "operationId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "idempotencyKey": {
+      "description": "Stable key for the effect this operation produces. Replaying the same operation must not create a second effect.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 512
+    },
+    "effectId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "adapterVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "executorVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "executorKind": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "expectedTargetPrecondition": {
+      "$ref": "#/$defs/precondition"
+    },
+    "sourceInputHash": {
+      "$ref": "#/$defs/hashRef"
+    },
+    "nativeTargetIdentity": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/nativeTargetIdentity"
+        }
+      ]
+    },
+    "preTargetVersion": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 64
+    },
+    "postTargetVersion": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 64
+    },
+    "normalizedReadBack": {
+      "description": "The target as read back after the write, normalized for comparison. Null when the disposition wrote nothing.",
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": true
+    },
+    "normalizedReadBackHash": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/hashRef"
+        }
+      ]
+    },
+    "disposition": {
+      "$ref": "#/$defs/disposition"
+    },
+    "operationTime": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "allOf": [
+    {
+      "description": "An operation that changed the target must present a read-back and its hash; one that did not must present neither.",
+      "if": {
+        "properties": {
+          "disposition": {
+            "enum": [
+              "native",
+              "governed_extension"
+            ]
+          }
+        },
+        "required": [
+          "disposition"
+        ]
+      },
+      "then": {
+        "properties": {
+          "normalizedReadBack": {
+            "type": "object"
+          },
+          "normalizedReadBackHash": {
+            "$ref": "#/$defs/hashRef"
+          }
+        },
+        "required": [
+          "normalizedReadBack",
+          "normalizedReadBackHash"
+        ]
+      },
+      "else": {
+        "properties": {
+          "normalizedReadBack": {
+            "type": "null"
+          },
+          "normalizedReadBackHash": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "hashRef": {
+      "title": "PlatformHashRefV1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "canonicalizationVersion",
+        "value",
+        "mediaType",
+        "schemaVersion",
+        "excludedPaths"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "sha-256"
+        },
+        "canonicalizationVersion": {
+          "enum": [
+            "canonical-json/1.0",
+            "raw-bytes/1.0"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "mediaType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "schemaVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "excludedPaths": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "disposition": {
+      "title": "TransformationDispositionV1",
+      "description": "How one adjudicated operation was carried out. Only native and governed_extension changed the target; the rest are conserved refusals.",
+      "enum": [
+        "native",
+        "governed_extension",
+        "excluded_signed",
+        "deferred_blocking",
+        "quarantined",
+        "rejected"
+      ]
+    },
+    "nativeTargetIdentity": {
+      "title": "NativeTargetIdentityV1",
+      "description": "The native object an operation produced or selected. Use sites state nullability explicitly; an absent target is null, never an empty object.",
+      "type": "object",
+      "additionalProperties": true
+    },
+    "precondition": {
+      "title": "NativeOperationPreconditionV1",
+      "description": "The target state the executor required before writing. A mismatch aborts the operation rather than overwriting an unexpected state.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nativeStudyId",
+        "nativeVersion",
+        "candidateSetVersionId"
+      ],
+      "properties": {
+        "nativeStudyId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 256
+        },
+        "nativeVersion": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 64
+        },
+        "candidateSetVersionId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        }
+      }
+    }
+  }
+}
