@@ -113,11 +113,21 @@ class MappingContextService:
         # (`functools.wraps` keeps it on `__wrapped__`) and let the surrounding
         # transaction provide the atomicity it already provides. Standalone
         # callers are unaffected and still get their own transaction.
-        if getattr(db, "_active_transaction", None) is not None:
-            inner = getattr(reader, "__wrapped__", None)
-            if inner is not None:
-                return inner(service, **kwargs)
-        return reader(**kwargs)
+        inner = getattr(reader, "__wrapped__", None)
+        if inner is not None and getattr(db, "_active_transaction", None) is not None:
+            return inner(service, **kwargs)
+        try:
+            return reader(**kwargs)
+        except SystemError:
+            # The detection above reads a PRIVATE neomodel attribute, so a driver
+            # upgrade that renames it would silently put us back to a hard 500 on
+            # every governed command. Retrying undecorated on the one error that
+            # nesting raises costs nothing and cannot mask a real fault: if a
+            # transaction is genuinely open, running the read inside it is what
+            # was wanted; if one is not, this call does not raise SystemError.
+            if inner is None:
+                raise
+            return inner(service, **kwargs)
 
     def get_context(
         self,

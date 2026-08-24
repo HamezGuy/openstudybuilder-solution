@@ -962,6 +962,19 @@ def test_v2_codelist_retrieval_is_package_pinned_and_uses_submission_value(monke
 
 
 def test_v2_candidate_group_bound_is_protocol_sized_but_fail_closed():
+    # The bound is 75,000 - the model was raised to protocol size and this test
+    # was left asserting the previous 10,000, so it had been failing since before
+    # the Phase-4 commit. The assertion the name describes is that a bound EXISTS,
+    # is large enough for a real protocol, and refuses one item past it; that is
+    # what is checked here, against the bound the model actually declares.
+    bound = MappingContextV2Request.model_fields["candidate_groups"].metadata
+    maximum = next(
+        constraint.max_length
+        for constraint in bound
+        if getattr(constraint, "max_length", None) is not None
+    )
+    assert maximum == 75_000, "the candidate-group bound must stay protocol-sized"
+
     group = {
         "fact_id": "fact-1",
         "concept_id": "concept-1",
@@ -970,25 +983,18 @@ def test_v2_candidate_group_bound_is_protocol_sized_but_fail_closed():
         "resource_family": "activities",
         "search_strings": ["blood pressure"],
     }
-    request = _v2_request(
-        [
+
+    def groups(count):
+        return [
             {
                 **group,
                 "fact_id": f"fact-{index}",
                 "concept_id": f"concept-{index}",
             }
-            for index in range(10_000)
+            for index in range(count)
         ]
-    )
-    assert len(request.candidate_groups) == 10_000
-    with pytest.raises(ValidationError, match="at most 10000 items"):
-        _v2_request(
-            [
-                {
-                    **group,
-                    "fact_id": f"fact-{index}",
-                    "concept_id": f"concept-{index}",
-                }
-                for index in range(10_001)
-            ]
-        )
+
+    request = _v2_request(groups(maximum))
+    assert len(request.candidate_groups) == maximum
+    with pytest.raises(ValidationError, match=f"at most {maximum} items"):
+        _v2_request(groups(maximum + 1))
