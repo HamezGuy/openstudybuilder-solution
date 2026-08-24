@@ -98,6 +98,13 @@ services:
       # candidate:generate, which means OSB_API_AUTH_ENABLED=True as well.
       OSB_PLATFORM_COMMANDS_PROTOTYPE_ENABLED: "${OSB_PLATFORM_COMMANDS_PROTOTYPE_ENABLED:-False}"
       OSB_CANDIDATE_REQUEST_SIGNATURE_VERIFICATION_URL: "${OSB_CANDIDATE_REQUEST_SIGNATURE_VERIFICATION_URL:-}"
+      # Native study-root binding. `create-or-bind` is the ONLY governed way to
+      # obtain the active PlatformNativeStudyBinding that candidate-set
+      # generation requires, and it fails closed without a signing endpoint.
+      OSB_NATIVE_IDENTITY_ENDPOINT_ENABLED: "${OSB_NATIVE_IDENTITY_ENDPOINT_ENABLED:-False}"
+      OSB_NATIVE_IDENTITY_INVENTORY_ENABLED: "${OSB_NATIVE_IDENTITY_INVENTORY_ENABLED:-False}"
+      OSB_NATIVE_IDENTITY_SIGNING_URL: "${OSB_NATIVE_IDENTITY_SIGNING_URL:-}"
+      OSB_PLATFORM_COMMAND_SIGNING_URL: "${OSB_PLATFORM_COMMAND_SIGNING_URL:-}"
 
       UVICORN_PORT: 5003
       UVICORN_ROOT_PATH: "/api"

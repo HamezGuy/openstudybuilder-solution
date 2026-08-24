@@ -4,6 +4,7 @@ import base64
 import json
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any, cast
 
@@ -53,7 +54,7 @@ from clinical_mdr_api.services.integrations.native_package_v2 import (
 )
 from clinical_mdr_api.services.integrations.canonical_json import canonical_hash
 from clinical_mdr_api.generated.platform_contracts.hash_signing_v1 import canonical_json
-from common.auth.dependencies import security
+from common.auth.dependencies import platform_security
 from common.auth.user import user
 from common.config import settings
 
@@ -61,6 +62,8 @@ router = APIRouter()
 
 
 class _UnavailablePublisher:
+    """The fail-closed publisher: used when no signing endpoint is configured."""
+
     @staticmethod
     def publish(_receipt: NativeIdentityBindingReceiptV1) -> dict[str, Any]:
         raise NativeIdentityCommandError(
@@ -70,6 +73,106 @@ class _UnavailablePublisher:
         )
 
 
+class _RemoteNativeIdentityReceiptPublisher:
+    """Sign one binding receipt on the platform's receipt route.
+
+    Until now the processor was constructed with `_UnavailablePublisher`
+    unconditionally, so `create-or-bind` could only ever answer 503 - and since
+    `generate_candidate_set` requires exactly one ACTIVE
+    `PlatformNativeStudyBinding`, the whole governed candidate round-trip was
+    unreachable through the API. The only way to obtain a binding was the
+    out-of-band verification bridge, which writes the graph directly against its
+    own private database; that is a stand-in for this route, not a substitute
+    for it.
+
+    Two details are load-bearing and neither is optional:
+
+    * The receipt is signed with `signingPurpose: 'native-identity-binding'`.
+      `_validate_signed_publication` refuses any envelope whose descriptor
+      purpose or signing statement says otherwise, so the generic command-receipt
+      purpose would produce a signature that verifies cryptographically and is
+      still rejected - the confusing kind of failure.
+    * The signer's own verification must come back `verified: true`. A publisher
+      that returned an unverified envelope would hand the processor something to
+      store that nobody had checked.
+
+    Transport is deliberately the same shape as
+    `RemotePlatformCommandReceiptPublisherV1`: no redirects, a bounded response,
+    https unless an insecure prototype endpoint is explicitly allowed.
+    """
+
+    def __init__(self, endpoint: str) -> None:
+        parsed = urllib.parse.urlsplit(endpoint)
+        production = settings.deployment_environment.strip().lower() in {"prod", "production"}
+        if (
+            not parsed.hostname
+            or parsed.username
+            or parsed.password
+            or parsed.query
+            or parsed.fragment
+            or (parsed.scheme != "https" and not (not production and parsed.scheme == "http"))
+        ):
+            raise NativeIdentityCommandError(
+                "OSB_SIGNED_PUBLICATION_ENDPOINT_INVALID",
+                "Native-identity signing endpoint transport is not allowed.",
+                503,
+            )
+        self.endpoint = endpoint
+
+    def publish(self, receipt: NativeIdentityBindingReceiptV1) -> dict[str, Any]:
+        body = json.dumps(
+            {
+                "receipt": receipt,
+                "producerService": "osb.package",
+                "signingPurpose": "native-identity-binding",
+            },
+            separators=(",", ":"),
+        ).encode("utf-8")
+        request = urllib.request.Request(
+            self.endpoint,
+            data=body,
+            method="POST",
+            headers={
+                "content-type": "application/json",
+                "accept": "application/json",
+                "x-platform-producer-service": "osb.package",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=15) as response:
+                payload = json.loads(response.read(2_000_001).decode("utf-8"))
+        except (urllib.error.URLError, TimeoutError, ValueError) as error:
+            raise NativeIdentityCommandError(
+                "OSB_SIGNED_PUBLICATION_UNAVAILABLE",
+                "Native-identity signing service is unavailable.",
+                503,
+            ) from error
+        envelope = payload.get("signedReceiptEnvelope")
+        verification = payload.get("verification")
+        if not isinstance(envelope, dict) or not isinstance(verification, dict):
+            raise NativeIdentityCommandError(
+                "OSB_SIGNED_PUBLICATION_RESPONSE_INVALID",
+                "Native-identity signing response is incomplete.",
+                503,
+            )
+        if verification.get("verified") is not True:
+            raise NativeIdentityCommandError(
+                "OSB_SIGNED_PUBLICATION_UNVERIFIED",
+                "Native-identity signer did not verify its own publication.",
+                503,
+            )
+        return envelope
+
+
+def _native_identity_publisher() -> Any:
+    """The real publisher when an endpoint is configured; fail-closed otherwise."""
+
+    endpoint = os.getenv("OSB_NATIVE_IDENTITY_SIGNING_URL", "").strip()
+    if not endpoint:
+        return _UnavailablePublisher()
+    return _RemoteNativeIdentityReceiptPublisher(endpoint)
+
+
 processor = NativeIdentityCommandProcessorV1(
     target_system="osb",
     producer_service="osb.package",
@@ -77,7 +180,7 @@ processor = NativeIdentityCommandProcessorV1(
     object_types=("study-draft-root",),
     allowed_roles=("Admin.Write", "Study.Write", "service"),
     store=Neo4jOsbNativeIdentityStoreV1(),
-    publisher=_UnavailablePublisher(),
+    publisher=_native_identity_publisher(),
 )
 platform_command_store = Neo4jOsbPlatformCommandStore()
 
@@ -146,7 +249,7 @@ def _verify_candidate_request_signature(
 
 @router.get(
     "/commands/{command_id}/receipt",
-    dependencies=[security],
+    dependencies=[platform_security],
     summary="Read the immutable original platform-command result",
 )
 def get_platform_command_receipt(command_id: str, request: Request) -> dict[str, Any]:
@@ -166,7 +269,7 @@ def get_platform_command_receipt(command_id: str, request: Request) -> dict[str,
 
 @router.get(
     "/native-study-roots",
-    dependencies=[security],
+    dependencies=[platform_security],
     summary="Inventory tenant-scoped legacy OSB roots for human review",
 )
 def inventory_native_study_roots() -> dict[str, Any]:
@@ -187,9 +290,13 @@ def inventory_native_study_roots() -> dict[str, Any]:
         MATCH (scope:DomainStudyScope {tenant_id: $tenant_id, status: 'active'})
         MATCH (study:StudyRoot {uid: scope.study_uid})
         OPTIONAL MATCH (study)-[version_rel:LATEST_DRAFT|LATEST|LATEST_LOCKED|LATEST_RELEASED]->(value:StudyValue)
+        OPTIONAL MATCH (binding:PlatformNativeStudyBinding {
+          tenant_id: $tenant_id, namespace: 'accuratrials-osb',
+          object_type: 'study-draft-root', native_study_id: study.uid, status: 'active'})
         RETURN study.uid, type(version_rel), version_rel.version, version_rel.status,
                value.study_title, value.study_number, value.study_acronym,
-               value.project_number
+               value.project_number, binding.binding_id, binding.platform_study_id,
+               binding.native_version
         ORDER BY study.uid,
           CASE type(version_rel)
             WHEN 'LATEST_DRAFT' THEN 0
@@ -208,7 +315,15 @@ def inventory_native_study_roots() -> dict[str, Any]:
         if not native_identity or native_identity in observed:
             continue
         observed.add(native_identity)
-        version = str(row[2] or "").strip()
+        # THE BOUND CHECKPOINT WINS.
+        #
+        # `version_rel.version` is NULL on every real OSB draft, so reporting it
+        # raw made the inventory answer "no version" for a root whose binding
+        # records a perfectly good checkpoint - and a caller that then named that
+        # missing version in a candidate request could not produce one at all.
+        # The binding's stored value is the checkpoint the rest of the platform
+        # compares against, so it is the one to report when a binding exists.
+        version = str(row[10] or row[2] or "").strip()
         status = str(row[3] or row[1] or "unknown").strip().lower()
         title = str(row[4] or row[6] or row[5] or row[7] or native_identity).strip()
         identifiers = [
@@ -220,6 +335,17 @@ def inventory_native_study_roots() -> dict[str, Any]:
             )
             if value is not None and str(value).strip()
         ]
+        # THE ACTIVE BINDING IS PART OF THE ANSWER.
+        #
+        # Without it this inventory could say a root exists but not which platform
+        # study it is bound to or under which binding id - and nothing else in the
+        # API exposes that. So once a root was bound, a caller that had lost the
+        # create-or-bind response had no way to discover the binding it needed to
+        # name in a candidate request, short of reading the graph directly. Both
+        # keys are omitted rather than nulled when the root is unbound, so "no
+        # binding" stays distinguishable from "bound to nothing".
+        binding_id = str(row[8] or "").strip()
+        bound_platform_study_id = str(row[9] or "").strip()
         roots.append(
             {
                 "nativeIdentity": native_identity,
@@ -227,6 +353,8 @@ def inventory_native_study_roots() -> dict[str, Any]:
                 "status": status,
                 "label": title,
                 "identifiers": identifiers,
+                **({"bindingId": binding_id} if binding_id else {}),
+                **({"platformStudyId": bound_platform_study_id} if bound_platform_study_id else {}),
             }
         )
     return {
@@ -243,7 +371,7 @@ def inventory_native_study_roots() -> dict[str, Any]:
 
 @router.post(
     "/native-study-roots/create-or-bind",
-    dependencies=[security],
+    dependencies=[platform_security],
     summary="Create or bind one exact OSB draft root (disabled until P2)",
 )
 def create_or_bind_native_study_root(body: dict[str, Any]) -> dict[str, Any]:
@@ -277,7 +405,7 @@ def create_or_bind_native_study_root(body: dict[str, Any]) -> dict[str, Any]:
 
 @router.post(
     "/commands/conformance",
-    dependencies=[security],
+    dependencies=[platform_security],
     summary="Execute a durable prototype platform conformance command",
 )
 def execute_conformance_command(body: dict[str, Any]) -> dict[str, Any]:
@@ -330,7 +458,7 @@ def execute_conformance_command(body: dict[str, Any]) -> dict[str, Any]:
 
 @router.post(
     "/artifacts/osb-candidate-requests",
-    dependencies=[security],
+    dependencies=[platform_security],
     summary="Store exact canonical CSL candidate-request bytes",
 )
 async def upload_candidate_request(request: Request) -> dict[str, Any]:
@@ -342,16 +470,28 @@ async def upload_candidate_request(request: Request) -> dict[str, Any]:
     platform_study_id = str(request.headers.get("x-platform-study-id") or "").strip()
     expected_hash = str(request.headers.get("x-content-sha256") or "").strip()
     principal = _platform_principal("candidate:generate", platform_study_id)
+    # READ THE BODY BEFORE OPENING THE TRANSACTION.
+    #
+    # `await` inside `with db.transaction` suspends the coroutine while a
+    # neomodel transaction is open, and neomodel's transaction state is a single
+    # shared attribute on the module-level `db`, not per-request state. So the
+    # event loop was free to run other work - including the very next request in
+    # the same workflow - against a connection that already had a transaction
+    # open, and the second one died with `SystemError: Transaction in progress`.
+    # Reading the request body first keeps the transaction to code that cannot
+    # yield.
+    payload_bytes = await request.body()
+    signed_envelope = decode_signed_artifact_envelope_header(
+        request.headers.get("x-signed-artifact-envelope")
+    )
     try:
         with db.transaction:
             result = store_candidate_request_bytes(
                 tenant_id=principal.tenant_id,
                 platform_study_id=platform_study_id,
-                bytes_value=await request.body(),
+                bytes_value=payload_bytes,
                 expected_hash=expected_hash,
-                signed_envelope=decode_signed_artifact_envelope_header(
-                    request.headers.get("x-signed-artifact-envelope")
-                ),
+                signed_envelope=signed_envelope,
             )
         return {"ok": True, "data": result}
     except OsbCandidateSetError as error:
@@ -363,7 +503,7 @@ async def upload_candidate_request(request: Request) -> dict[str, Any]:
 
 @router.post(
     "/commands/candidate-set",
-    dependencies=[security],
+    dependencies=[platform_security],
     summary="Generate one immutable OSB candidate set from an exact CSL request",
 )
 def execute_candidate_set_command(body: dict[str, Any], request: Request) -> dict[str, Any]:
@@ -462,7 +602,7 @@ def execute_candidate_set_command(body: dict[str, Any], request: Request) -> dic
 
 @router.get(
     "/artifacts/osb-candidate-sets/{candidate_set_version_id}",
-    dependencies=[security],
+    dependencies=[platform_security],
     summary="Read exact canonical OSB candidate-set bytes",
 )
 def get_candidate_set(candidate_set_version_id: str, request: Request) -> Response:
@@ -488,7 +628,7 @@ def get_candidate_set(candidate_set_version_id: str, request: Request) -> Respon
 
 @router.post(
     "/artifacts/study-mapping-decisions",
-    dependencies=[security],
+    dependencies=[platform_security],
     summary="Store exact canonical CSL mapping-decision bytes",
 )
 async def upload_mapping_decision(request: Request) -> dict[str, Any]:
@@ -500,12 +640,23 @@ async def upload_mapping_decision(request: Request) -> dict[str, Any]:
     platform_study_id = str(request.headers.get("x-platform-study-id") or "").strip()
     expected_hash = str(request.headers.get("x-content-sha256") or "").strip()
     principal = _platform_principal("candidate:apply", platform_study_id)
+    # READ THE BODY BEFORE OPENING THE TRANSACTION.
+    #
+    # `await` inside `with db.transaction` suspends the coroutine while a
+    # neomodel transaction is open, and neomodel's transaction state is a single
+    # shared attribute on the module-level `db`, not per-request state. So the
+    # event loop was free to run other work - including the very next request in
+    # the same workflow - against a connection that already had a transaction
+    # open, and the second one died with `SystemError: Transaction in progress`.
+    # Reading the request body first keeps the transaction to code that cannot
+    # yield.
+    payload_bytes = await request.body()
     try:
         with db.transaction:
             result = store_mapping_decision_bytes(
                 tenant_id=principal.tenant_id,
                 platform_study_id=platform_study_id,
-                bytes_value=await request.body(),
+                bytes_value=payload_bytes,
                 expected_hash=expected_hash,
             )
         return {"ok": True, "data": result}
@@ -516,7 +667,7 @@ async def upload_mapping_decision(request: Request) -> dict[str, Any]:
 
 @router.post(
     "/commands/mapping-decision",
-    dependencies=[security],
+    dependencies=[platform_security],
     summary="Apply one CSL mapping decision and emit exact native read-back evidence",
 )
 def execute_mapping_decision_command(body: dict[str, Any], request: Request) -> dict[str, Any]:
@@ -581,7 +732,7 @@ def execute_mapping_decision_command(body: dict[str, Any], request: Request) -> 
 
 @router.get(
     "/artifacts/native-evidence-sets/{evidence_set_version_id}",
-    dependencies=[security],
+    dependencies=[platform_security],
     summary="Read exact canonical OSB native-evidence bytes",
 )
 def get_native_evidence_set(evidence_set_version_id: str, request: Request) -> Response:
@@ -603,7 +754,7 @@ def get_native_evidence_set(evidence_set_version_id: str, request: Request) -> R
 
 @router.post(
     "/artifacts/release-prerequisites/{artifact_kind}",
-    dependencies=[security],
+    dependencies=[platform_security],
     summary="Store exact canonical release prerequisite bytes",
 )
 async def upload_release_prerequisite(artifact_kind: str, request: Request) -> dict[str, Any]:
@@ -615,13 +766,24 @@ async def upload_release_prerequisite(artifact_kind: str, request: Request) -> d
     platform_study_id = str(request.headers.get("x-platform-study-id") or "").strip()
     expected_hash = str(request.headers.get("x-content-sha256") or "").strip()
     principal = _platform_principal("package:release", platform_study_id)
+    # READ THE BODY BEFORE OPENING THE TRANSACTION.
+    #
+    # `await` inside `with db.transaction` suspends the coroutine while a
+    # neomodel transaction is open, and neomodel's transaction state is a single
+    # shared attribute on the module-level `db`, not per-request state. So the
+    # event loop was free to run other work - including the very next request in
+    # the same workflow - against a connection that already had a transaction
+    # open, and the second one died with `SystemError: Transaction in progress`.
+    # Reading the request body first keeps the transaction to code that cannot
+    # yield.
+    payload_bytes = await request.body()
     try:
         with db.transaction:
             result = store_release_artifact_bytes(
                 kind=artifact_kind,
                 tenant_id=principal.tenant_id,
                 platform_study_id=platform_study_id,
-                bytes_value=await request.body(),
+                bytes_value=payload_bytes,
                 expected_hash=expected_hash,
             )
         return {"ok": True, "data": result}
@@ -632,7 +794,7 @@ async def upload_release_prerequisite(artifact_kind: str, request: Request) -> d
 
 @router.post(
     "/commands/specialist-review",
-    dependencies=[security],
+    dependencies=[platform_security],
     summary="Record immutable OSB specialist review against a transformation checkpoint",
 )
 def execute_specialist_review_command(body: dict[str, Any]) -> dict[str, Any]:
@@ -687,7 +849,7 @@ def execute_specialist_review_command(body: dict[str, Any]) -> dict[str, Any]:
 
 @router.get(
     "/artifacts/specialist-reviews/{review_version_id}",
-    dependencies=[security],
+    dependencies=[platform_security],
     summary="Read exact canonical specialist-review bytes",
 )
 def get_specialist_review(review_version_id: str, request: Request) -> Response:
@@ -709,7 +871,7 @@ def get_specialist_review(review_version_id: str, request: Request) -> Response:
 
 @router.post(
     "/commands/native-package-v2",
-    dependencies=[security],
+    dependencies=[platform_security],
     summary="Generate immutable raw-byte OSB-native Package V2",
 )
 def execute_native_package_v2_command(body: dict[str, Any]) -> dict[str, Any]:
@@ -771,7 +933,7 @@ def execute_native_package_v2_command(body: dict[str, Any]) -> dict[str, Any]:
 
 @router.get(
     "/artifacts/native-packages-v2/{package_version_id}",
-    dependencies=[security],
+    dependencies=[platform_security],
     summary="Read exact canonical raw Package V2 bytes",
 )
 def get_native_package_v2(package_version_id: str, request: Request) -> Response:

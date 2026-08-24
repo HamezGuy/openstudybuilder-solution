@@ -244,3 +244,26 @@ else:
         "WARNING: Authentication is disabled. "
         "See OAUTH_ENABLED and OAUTH_RBAC_ENABLED environment variables."
     )
+
+# MACHINE BOUNDARIES ARE NEVER SERVED BY THE DUMMY PRINCIPAL.
+#
+# `security` above is the INTERACTIVE boundary, and switching it off for local
+# development is a deliberate convenience: the browser gets a dummy user with
+# broad roles and no tenant, study, purpose or capabilities.
+#
+# The platform control plane is a different kind of boundary. Its routes are
+# driven by Command Center on behalf of a delegated principal, and every one of
+# them decides what it may do from that principal's `purpose` and
+# `capabilities`. Binding them to `security` tied a service boundary to an
+# interactive switch, with two consequences: with authentication off the routes
+# were unreachable for anyone (the dummy carries no capabilities, so they all
+# refused), and the only way to reach them was to turn interactive
+# authentication on for the WHOLE application - which changes sign-in for the
+# SPA and the sibling APIs to enable one machine route family.
+#
+# `platform_security` always validates a real RS256 assertion against the
+# configured issuer, whatever `OAUTH_ENABLED` says. That is strictly stricter
+# than what it replaces: there is now no configuration in which the control
+# plane accepts an unauthenticated caller, and no reason to widen interactive
+# authentication in order to use it.
+platform_security = Security(validate_token)

@@ -96,7 +96,28 @@ class MappingContextService:
         # Construct the auth-aware OSB service only when a study-scoped context
         # actually needs it. Requested-package contexts and pure unit tests must
         # not require a Starlette request merely to instantiate this service.
-        return StudyStandardVersionService().get_standard_versions_in_study(**kwargs)
+        service = StudyStandardVersionService()
+        reader = service.get_standard_versions_in_study
+
+        # A READ MUST NOT DEMAND ITS OWN TRANSACTION.
+        #
+        # `get_standard_versions_in_study` is decorated `@db.transaction`, and
+        # neomodel refuses to nest: `begin()` raises `SystemError: Transaction in
+        # progress`. Every governed command runs its body inside one serializable
+        # transaction, so reaching this read from a command - which is exactly
+        # what candidate-set generation does - killed the command with an
+        # unhandled SystemError and a generic 500. The whole governed candidate
+        # round-trip failed here, on a read.
+        #
+        # When a transaction is already open, call the undecorated function
+        # (`functools.wraps` keeps it on `__wrapped__`) and let the surrounding
+        # transaction provide the atomicity it already provides. Standalone
+        # callers are unaffected and still get their own transaction.
+        if getattr(db, "_active_transaction", None) is not None:
+            inner = getattr(reader, "__wrapped__", None)
+            if inner is not None:
+                return inner(service, **kwargs)
+        return reader(**kwargs)
 
     def get_context(
         self,

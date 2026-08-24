@@ -130,13 +130,30 @@ class Neo4jOsbNativeIdentityTransactionV1:
             )
         native_version = _text(rows[0][1], "nativeVersion", required=False)
         native_status = _text(rows[0][2], "nativeStatus", required=False)
-        if not native_version or not native_status:
+        if not native_status:
             raise NativeIdentityCommandError(
                 "IDENTITY_NATIVE_VERSION_UNAVAILABLE",
                 "OSB root has no verifiable current native version checkpoint.",
                 409,
             )
-        return native_version, native_status.lower()
+        # A DRAFT STUDY HAS NO VERSION NUMBER, AND THAT IS NOT A FAULT.
+        #
+        # This required both a version and a status, which no real OpenStudyBuilder
+        # study can satisfy: `StudyService().create()` writes LATEST_DRAFT with a
+        # status and NO `version` property - every draft in this database has
+        # `version = NULL`. So `create-or-bind` refused
+        # IDENTITY_NATIVE_VERSION_UNAVAILABLE for every genuine root, and the only
+        # thing that ever got past it was the verification bridge, which fabricates
+        # `version = 0.1` when it MERGEs its own graph. The check had been written
+        # against the stand-in rather than against the system.
+        #
+        # What this value is FOR is change detection: the binding stores it, and a
+        # candidate set is invalidated when the root's checkpoint no longer matches.
+        # A draft's honest checkpoint is its status - and it still detects the
+        # change that matters, because a study that becomes locked or released
+        # moves to a different version relationship and gains a real version, so
+        # the checkpoint changes exactly when the native root does.
+        return native_version or native_status.lower(), native_status.lower()
 
     def _assert_native_available(self, native_identity: str) -> None:
         rows, _ = db.cypher_query(
