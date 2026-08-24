@@ -17,6 +17,9 @@ from clinical_mdr_api.models.integrations.mapping_context import (
     MappingContextV2Response,
 )
 from clinical_mdr_api.services.integrations.canonical_json import canonical_hash
+from clinical_mdr_api.services.integrations.nested_transaction import (
+    call_in_ambient_transaction,
+)
 from clinical_mdr_api.services.integrations.proposal_review import (
     Neo4jProposalReviewRepository,
 )
@@ -97,37 +100,22 @@ class MappingContextService:
         # actually needs it. Requested-package contexts and pure unit tests must
         # not require a Starlette request merely to instantiate this service.
         service = StudyStandardVersionService()
-        reader = service.get_standard_versions_in_study
 
         # A READ MUST NOT DEMAND ITS OWN TRANSACTION.
         #
         # `get_standard_versions_in_study` is decorated `@db.transaction`, and
-        # neomodel refuses to nest: `begin()` raises `SystemError: Transaction in
-        # progress`. Every governed command runs its body inside one serializable
-        # transaction, so reaching this read from a command - which is exactly
-        # what candidate-set generation does - killed the command with an
-        # unhandled SystemError and a generic 500. The whole governed candidate
-        # round-trip failed here, on a read.
+        # neomodel refuses to nest. Every governed command runs its body inside
+        # one serializable transaction, so reaching this read from a command -
+        # which is exactly what candidate-set generation does - killed the
+        # command with an unhandled SystemError and a generic 500. The whole
+        # governed candidate round-trip failed here, on a read.
         #
-        # When a transaction is already open, call the undecorated function
-        # (`functools.wraps` keeps it on `__wrapped__`) and let the surrounding
-        # transaction provide the atomicity it already provides. Standalone
-        # callers are unaffected and still get their own transaction.
-        inner = getattr(reader, "__wrapped__", None)
-        if inner is not None and getattr(db, "_active_transaction", None) is not None:
-            return inner(service, **kwargs)
-        try:
-            return reader(**kwargs)
-        except SystemError:
-            # The detection above reads a PRIVATE neomodel attribute, so a driver
-            # upgrade that renames it would silently put us back to a hard 500 on
-            # every governed command. Retrying undecorated on the one error that
-            # nesting raises costs nothing and cannot mask a real fault: if a
-            # transaction is genuinely open, running the read inside it is what
-            # was wanted; if one is not, this call does not raise SystemError.
-            if inner is None:
-                raise
-            return inner(service, **kwargs)
+        # `nested_transaction` carries the reasoning, the driver-upgrade
+        # fallback, and the fork-wide sweep that establishes this is the only
+        # such call site inside a command transaction today.
+        return call_in_ambient_transaction(
+            service.get_standard_versions_in_study, **kwargs
+        )
 
     def get_context(
         self,
