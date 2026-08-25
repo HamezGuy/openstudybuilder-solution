@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from datetime import UTC, datetime
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
@@ -310,9 +311,15 @@ def _assert_request_projection(payload: dict[str, Any], artifact: dict[str, Any]
     upstream = census.get("upstreamExclusions")
     if upstream is not None:
         # Package-boundary exclusions referenced by hash — informational, NOT
-        # rows in this census. Loose type validation only.
+        # rows in this census. Loose type validation only. The hash is the
+        # STRING form ("sha256:<hex>") or null when the snapshot predates the
+        # package census hash — null still carries the counts.
         upstream = _record(upstream, "OSB_CANDIDATE_REQUEST_CENSUS_MISMATCH")
-        if not isinstance(upstream.get("sourcePackageCensusHash"), str) or any(
+        upstream_hash = upstream.get("sourcePackageCensusHash")
+        hash_ok = upstream_hash is None or (
+            isinstance(upstream_hash, str) and re.fullmatch(r"sha256:[0-9a-f]{64}", upstream_hash)
+        )
+        if not hash_ok or any(
             not isinstance(upstream.get(name), int) or isinstance(upstream.get(name), bool)
             or upstream.get(name) < 0
             for name in ("excludedSigned", "quarantined")
