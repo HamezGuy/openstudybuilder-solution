@@ -566,7 +566,11 @@ class ProposalReviewService:
         live_openapi_hash: str,
         principal: ProposalReviewPrincipal,
     ) -> ProposalReviewStatus:
-        proposal = intake.proposal.model_dump(by_alias=True)
+        # exclude_unset keeps the dump wire-exact: `proposalHash` covers the
+        # proposal AS RECEIVED, where an omitted optional (e.g. sourceAuthority)
+        # and an explicit null hash differently. Plain model_dump would invent
+        # nulls for every optional the producer omitted and refuse valid intakes.
+        proposal = intake.proposal.model_dump(by_alias=True, exclude_unset=True)
         principal.assert_proposal_access(
             proposal.get("tenantId") or "",
             proposal.get("studyId") or "",

@@ -40,9 +40,14 @@ def _review_principal() -> ProposalReviewPrincipal:
         ),
         roles=frozenset(claims.roles or set()),
         authentication_verified=authenticated.authentication_verified,
-        purpose=claims.purpose or "",
-        capabilities=frozenset(claims.capabilities or []),
-        enforce_delegated_scope=settings.delegated_claims_required,
+        # Delegated-claim surfaces postdate the original token contract, so a
+        # session cookie or dummy principal may not carry them at all. Absence
+        # must read as "no grant" (fail closed), never as an attribute error.
+        purpose=getattr(claims, "purpose", None) or "",
+        capabilities=frozenset(getattr(claims, "capabilities", None) or []),
+        enforce_delegated_scope=bool(
+            getattr(settings, "delegated_claims_required", False)
+        ),
         development_access=(
             not settings.oauth_enabled
             and settings.deployment_environment.strip().lower() == "development"
