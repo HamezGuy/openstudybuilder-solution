@@ -298,3 +298,81 @@ def test_v1_real_send_is_always_prohibited(monkeypatch):
     service = _service()
     with pytest.raises(EdcExportError, match="LEGACY_EDC_ACTIVATION_PROHIBITED"):
         service.send_to_edc("Study_1", dry_run=False)
+
+
+def test_export_census_counts_gate_on_actual_loss_only():
+    service = _service()
+    service.census = [
+        {"kind": "mapping_authority", "ref": "Study_1", "detail": "warning"},
+        {"kind": "carrier_preserved", "ref": "study.sponsor", "detail": "kept"},
+        {"kind": "field_type_downgrade", "ref": "AE.TERM", "detail": "select->text"},
+        {"kind": "field_type_downgrade", "ref": "CM.DOSE", "detail": "number->text"},
+        {"kind": "ambiguous_join", "ref": "V_1", "detail": "two candidate visits"},
+    ]
+    counts = service._export_census_counts()
+    assert counts == {
+        "total": 5,
+        "downgrades": 2,
+        "ambiguous_joins": 1,
+        "lossy": 3,
+    }
+
+
+def _sendable_service(monkeypatch, bundle, body):
+    from clinical_mdr_api.services.integrations import edc_export
+
+    monkeypatch.setattr(edc_export.config.settings, "mapping_authority_mode", "legacy")
+    monkeypatch.setattr(edc_export.config.settings, "deployment_environment", "development")
+    monkeypatch.setattr(edc_export.config.settings, "allow_unsafe_legacy_edc_send", True)
+    monkeypatch.setattr(edc_export.config.settings, "edc_base_url", "http://edc.test")
+    monkeypatch.setattr(
+        edc_export.config.settings, "edc_api_key", type(
+            "Key", (), {"get_secret_value": lambda self: "secret"}
+        )()
+    )
+    service = _service()
+    service.build_bundle = lambda study_uid: json.loads(json.dumps(bundle))
+    captured = {}
+
+    class _Response:
+        status_code = 200
+        is_success = True
+
+        @staticmethod
+        def json():
+            return body
+
+    def _post(url, **kwargs):
+        captured["url"] = url
+        captured["json"] = kwargs.get("json")
+        return _Response()
+
+    monkeypatch.setattr(edc_export.httpx, "post", _post)
+    return service, captured
+
+
+def test_send_keeps_export_census_on_the_wire(monkeypatch):
+    census = {"rows": [{"kind": "mapping_authority", "ref": "s", "detail": "d"}],
+              "counts": {"total": 1, "downgrades": 0, "ambiguous_joins": 0, "lossy": 0}}
+    bundle = {"study": {"name": "S"}, "_exportCensus": census, "_mappingAuthority": {"mode": "legacy"}}
+    service, captured = _sendable_service(monkeypatch, bundle, {"success": True})
+    result = service.send_to_edc("Study_1", dry_run=True)
+    assert captured["json"]["bundle"]["_exportCensus"] == census
+    assert result["exportCensus"] == census
+
+
+@pytest.mark.parametrize("body,expect", [
+    ({"success": True, "partial": True}, "partial=True"),
+    ({"success": True, "census": {"counts": {"unknown": 2}}}, r"census\.counts\.unknown=2"),
+    ({"success": True, "assignmentsSkipped": 3}, "assignmentsSkipped=3"),
+    ({"success": True, "census": {"counts": {"unknown": 0}, "studyTasksSkipped": [{"ref": "T1"}]}},
+     "studyTasksSkipped="),
+])
+def test_send_rejects_narrowed_edc_acceptance(monkeypatch, body, expect):
+    bundle = {"study": {"name": "S"}, "_exportCensus": {"rows": [], "counts": {}}}
+    service, _ = _sendable_service(monkeypatch, bundle, body)
+    with pytest.raises(EdcExportError, match="EDC_IMPORT_NARROWED") as caught:
+        service.send_to_edc("Study_1", dry_run=True)
+    import re as _re
+
+    assert _re.search(expect, str(caught.value))

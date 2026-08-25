@@ -194,7 +194,7 @@ def _code(values: tuple[dict, dict, dict, dict]) -> str:
 
 def _refresh(values: list[dict]) -> None:
     values[1]["payloadHash"] = canonical_json_hash_ref(
-        values[0], schema_version="OsbCandidateRequestV1@1.0.0",
+        values[0], schema_version=values[0]["contractVersion"],
         media_type=CANDIDATE_REQUEST_MEDIA_TYPE,
     )
     values[1]["byteSize"] = len(canonical_json(values[0]).encode())
@@ -247,3 +247,30 @@ def test_expired_mutated_and_unsigned_requests_fail() -> None:
     unsigned = list(_fixture())
     unsigned[3]["verified"] = False
     assert _code(tuple(unsigned)) == "OSB_CANDIDATE_REQUEST_SIGNATURE_UNVERIFIED"
+
+
+def _set_contract_version(values: list[dict], minor: str) -> None:
+    values[0]["contractVersion"] = f"OsbCandidateRequestV1@{minor}"
+    values[1]["payloadContractVersion"] = minor
+    values[2]["signingStatement"]["payloadContractVersion"] = minor
+    _refresh(values)
+
+
+def test_incremented_minor_contract_version_is_accepted() -> None:
+    """CSL's change-window bump inside the V1 major must not 422."""
+    values = list(_fixture())
+    _set_contract_version(values, "1.1.0")
+    verify_candidate_request_artifact(*values[:2], TENANT_ID, STUDY_ID, *values[2:])
+
+
+def test_unknown_contract_version_is_rejected() -> None:
+    values = list(_fixture())
+    _set_contract_version(values, "1.2.0")
+    assert _code(tuple(values)) == "OSB_CANDIDATE_REQUEST_ARTIFACT_INVALID"
+
+
+def test_contract_version_mismatch_between_payload_and_artifact_is_rejected() -> None:
+    values = list(_fixture())
+    values[0]["contractVersion"] = "OsbCandidateRequestV1@1.1.0"
+    _refresh(values)
+    assert _code(tuple(values)) == "OSB_CANDIDATE_REQUEST_SCOPE_INVALID"

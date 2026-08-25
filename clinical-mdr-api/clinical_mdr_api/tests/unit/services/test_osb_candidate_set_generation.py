@@ -25,6 +25,7 @@ from clinical_mdr_api.services.integrations.candidate_set import (
 from clinical_mdr_api.tests.unit.services.test_osb_candidate_request_projection import (
     _intent,
     _payload,
+    _routed,
 )
 
 TENANT = "11111111-1111-4111-8111-111111111111"
@@ -65,10 +66,12 @@ class FakeMapping:
         self.omit = omit
         self.reorder = reorder
         self.incomplete = incomplete
+        self.requested_fact_ids: list[list[str]] = []
 
     def get_context_v2(self, request, osb_openapi_hash):
         groups = []
         requested = list(request.candidate_groups)
+        self.requested_fact_ids.append([str(group.fact_id) for group in requested])
         if self.omit:
             requested = requested[:-1]
         if self.reorder:
@@ -96,9 +99,12 @@ class FakeMapping:
         )
 
 
-def _request_bundle(intents=None, family: str = "criteria_templates"):
+def _request_bundle(intents=None, family: str = "criteria_templates", routed=None):
     now = datetime.now(UTC).replace(microsecond=0)
-    payload = _payload(intents=intents or [_intent("fact-eligibility-age-18", family=family)])
+    payload = _payload(
+        intents=intents or [_intent("fact-eligibility-age-18", family=family)],
+        routed=routed,
+    )
     payload["contractVersion"] = "OsbCandidateRequestV1@1.0.0"
     payload["createdAt"] = now.isoformat().replace("+00:00", "Z")
     payload["expiresAt"] = (now + timedelta(minutes=30)).isoformat().replace("+00:00", "Z")
@@ -137,10 +143,10 @@ def _request_bundle(intents=None, family: str = "criteria_templates"):
     return payload, artifact, envelope, verification
 
 
-def _generate(monkeypatch, mapping=None, openapi_hash=OPENAPI_HASH, intents=None):
+def _generate(monkeypatch, mapping=None, openapi_hash=OPENAPI_HASH, intents=None, routed=None):
     store = FakeQuery()
     monkeypatch.setattr(candidate_set_module, "db", store)
-    payload, artifact, envelope, verification = _request_bundle(intents=intents)
+    payload, artifact, envelope, verification = _request_bundle(intents=intents, routed=routed)
     generated = generate_candidate_set(
         request_payload=payload, artifact=artifact, tenant_id=TENANT, platform_study_id=STUDY,
         osb_openapi_hash=openapi_hash, actor="service:osb",
@@ -248,3 +254,68 @@ def test_incomplete_native_identity_is_rejected(monkeypatch):
     with pytest.raises(OsbCandidateSetError) as error:
         _generate(monkeypatch, mapping=FakeMapping(incomplete=True))
     assert error.value.code == "OSB_CANDIDATE_SET_TARGET_UNREADABLE"
+
+
+def test_deferred_and_governed_members_flow_to_set_without_search_work(monkeypatch):
+    """2 native + 1 deferred + 1 governed_extension: the set carries 2
+    candidate records, 2 deferred members, and a summing census; the routed
+    members produce zero library-search work."""
+    mapping = FakeMapping()
+    generated, *_ = _generate(
+        monkeypatch,
+        mapping=mapping,
+        intents=[
+            _intent("fact-native-a", family="criteria_templates"),
+            _intent("fact-native-b", family="criteria_templates"),
+        ],
+        routed=[
+            _routed("fact-x-deferred", "deferred_blocking"),
+            _routed("fact-y-governed", "governed_extension"),
+        ],
+    )
+    payload = generated["payload"]
+    assert [record["factId"] for record in payload["candidateRecords"]] == [
+        "fact-native-a", "fact-native-b",
+    ]
+    assert payload["deferredMembers"] == [
+        {"factId": "fact-x-deferred", "revision": 1, "disposition": "deferred_blocking",
+         "reasonCodes": ["source-fact:fact-x-deferred@1",
+                         "routing:OSB_RESOURCE_TYPE_WITHOUT_CANDIDATE_FAMILY"]},
+        {"factId": "fact-y-governed", "revision": 1, "disposition": "governed_extension",
+         "reasonCodes": ["source-fact:fact-y-governed@1",
+                         "routing:OSB_RESOURCE_TYPE_WITHOUT_CANDIDATE_FAMILY"]},
+    ]
+    census = payload["conservation"]
+    assert census["counts"] == {"rows": 4, "native": 2, "governedExtension": 1,
+                                "excludedSigned": 0, "deferredBlocking": 1,
+                                "quarantined": 0, "rejected": 0}
+    tally = {"native": 0, "governed_extension": 0, "deferred_blocking": 0}
+    for row in census["rows"]:
+        tally[row["disposition"]] += 1
+        if row["disposition"] != "native":
+            assert row["target"] is None
+            assert row["multiplicity"] == {"source": 1, "target": 0}
+            assert any(ref.startswith("routing:") for ref in row["evidenceRefs"])
+    assert tally == {"native": 2, "governed_extension": 1, "deferred_blocking": 1}
+    # The mapping context was asked about the native subset only.
+    assert mapping.requested_fact_ids == [["fact-native-a", "fact-native-b"]]
+
+
+def test_all_native_request_produces_empty_deferred_section(monkeypatch):
+    generated, *_ = _generate(monkeypatch)
+    assert generated["payload"]["deferredMembers"] == []
+    assert generated["payload"]["conservation"]["counts"]["deferredBlocking"] == 0
+
+
+def test_candidate_record_carries_claim_content_and_both_family_spellings(monkeypatch):
+    """The adjudicating human sees the claim's source and evidence on the
+    record, plus the raw requested family alongside the canonical one."""
+    intent = _intent("fact-check-1", family="edit_checks")
+    intent["source"]["exactQuote"] = "Check AE term against MedDRA."
+    generated, *_ = _generate(monkeypatch, intents=[intent])
+    record = generated["payload"]["candidateRecords"][0]
+    assert record["requestedResourceFamily"] == "edit_checks"
+    assert record["resourceFamily"] == "odm_methods"
+    assert record["source"]["label"] == "Age at least 18 years"
+    assert record["source"]["exactQuote"] == "Check AE term against MedDRA."
+    assert record["evidence"] == {"locator": "synthetic"}

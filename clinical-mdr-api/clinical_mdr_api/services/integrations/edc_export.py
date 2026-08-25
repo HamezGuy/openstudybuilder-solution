@@ -373,15 +373,7 @@ class EdcExportService:
             "_mappingAuthority": disclosure,
             "_exportCensus": {
                 "rows": self.census,
-                "counts": {
-                    "total": len(self.census),
-                    "downgrades": sum(
-                        1 for r in self.census if r["kind"] == "field_type_downgrade"
-                    ),
-                    "ambiguous_joins": sum(
-                        1 for r in self.census if r["kind"] == "ambiguous_join"
-                    ),
-                },
+                "counts": self._export_census_counts(),
             },
         }
 
@@ -395,6 +387,24 @@ class EdcExportService:
                 "nothing for an EDC to import"
             )
         return bundle
+
+    def _export_census_counts(self) -> dict[str, int]:
+        """Census counts with the lossy total kept apart from informational
+        rows (the unconditional mapping_authority row, carrier notes, ...):
+        consumers gate on `lossy`, which counts only rows naming actual loss.
+        """
+        downgrades = sum(
+            1 for r in self.census if r["kind"] == "field_type_downgrade"
+        )
+        ambiguous_joins = sum(
+            1 for r in self.census if r["kind"] == "ambiguous_join"
+        )
+        return {
+            "total": len(self.census),
+            "downgrades": downgrades,
+            "ambiguous_joins": ambiguous_joins,
+            "lossy": downgrades + ambiguous_joins,
+        }
 
     @staticmethod
     def _ref(value: Any) -> str:
@@ -1139,10 +1149,10 @@ class EdcExportService:
             )
 
         bundle = self.build_bundle(study_uid)
-        # This is OSB's local audit artifact, not part of StudyBundleV1.
-        # Return it to the caller, but do not make an older EDC classify it as
-        # an unknown study key.
-        export_census = bundle.pop("_exportCensus", None)
+        # The export census STAYS on the bundle: the EDC's import treats
+        # underscore-prefixed blocks as stored, so stripping it here silently
+        # discarded the audit trail on the receiving side.
+        export_census = bundle.get("_exportCensus")
         mapping_authority = bundle.get("_mappingAuthority")
 
         try:
@@ -1165,6 +1175,28 @@ class EdcExportService:
         if not body.get("success", False):
             raise EdcExportError(
                 f"EDC returned HTTP 2xx without success=true: {body}"
+            )
+        # success=true alone is not acceptance: the EDC may have narrowed the
+        # bundle (partial import, unknown census rows, skipped assignments or
+        # study tasks). Name exactly what narrowed instead of reporting success.
+        narrowed: list[str] = []
+        if body.get("partial"):
+            narrowed.append(f"partial={body.get('partial')!r}")
+        response_census = body.get("census")
+        if isinstance(response_census, dict):
+            unknown = (response_census.get("counts") or {}).get("unknown")
+            if unknown:
+                narrowed.append(f"census.counts.unknown={unknown!r}")
+        for key in ("assignmentsSkipped", "studyTasksSkipped"):
+            value = body.get(key)
+            if not value and isinstance(response_census, dict):
+                value = response_census.get(key)
+            if value:
+                narrowed.append(f"{key}={value!r}")
+        if narrowed:
+            raise EdcExportError(
+                "EDC_IMPORT_NARROWED: the EDC accepted the bundle but narrowed "
+                f"it ({', '.join(narrowed)}): {body}"
             )
         return {
             "dryRun": dry_run,

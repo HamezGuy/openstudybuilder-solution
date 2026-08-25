@@ -35,6 +35,29 @@ CANDIDATE_SET_MEDIA_TYPE = (
     "application/vnd.accuratrials.osb-candidate-set-v1+json"
 )
 
+# CSL is evolving OsbCandidateRequestV1 additively inside the V1 major; accept
+# the current minor and the incremented one so the change-window is not a
+# wholesale 422. The payload hash is computed against the DECLARED version so
+# hash_refs_equal keeps matching the CSL-computed reference.
+ACCEPTED_REQUEST_CONTRACT_MINOR_VERSIONS = ("1.0.0", "1.1.0")
+ACCEPTED_REQUEST_CONTRACT_VERSIONS = tuple(
+    f"OsbCandidateRequestV1@{version}"
+    for version in ACCEPTED_REQUEST_CONTRACT_MINOR_VERSIONS
+)
+
+# The six conservation dispositions, and how each tallies into census counts.
+CENSUS_DISPOSITION_COUNT_KEYS = {
+    "native": "native",
+    "governed_extension": "governedExtension",
+    "excluded_signed": "excludedSigned",
+    "deferred_blocking": "deferredBlocking",
+    "quarantined": "quarantined",
+    "rejected": "rejected",
+}
+# Dispositions CSL's family router assigns to claims OSB cannot execute
+# natively: census rows with target null and multiplicity.target == 0.
+ROUTED_NON_NATIVE_DISPOSITIONS = frozenset({"governed_extension", "deferred_blocking"})
+
 
 class OsbCandidateSetError(RuntimeError):
     def __init__(self, code: str, message: str, status_code: int = 409):
@@ -84,6 +107,57 @@ def _fact_key(value: dict[str, Any], id_field: str) -> str:
     return f"{fact_id}@{revision}"
 
 
+def _request_contract_minor(payload: dict[str, Any]) -> str | None:
+    """Return the bare minor version ('1.0.0'/'1.1.0') the payload declares,
+    or None when the declared contract version is unsupported."""
+    declared = payload.get("contractVersion")
+    if isinstance(declared, str) and declared in ACCEPTED_REQUEST_CONTRACT_VERSIONS:
+        return declared.split("@", 1)[1]
+    return None
+
+
+def _assert_intent_additive_fields(intent: dict[str, Any]) -> None:
+    """Loosely validate the additive intent fields CSL's parallel change may
+    send: correct types when present, never a rejection of unknown keys."""
+    source = intent.get("source")
+    if source is not None and not isinstance(source, dict):
+        raise OsbCandidateSetError(
+            "OSB_TYPED_SOURCE_INTENT_INVALID", "Intent source must be an object.", 422
+        )
+    if isinstance(source, dict) and source.get("classification") is not None \
+            and not isinstance(source["classification"], dict):
+        raise OsbCandidateSetError(
+            "OSB_TYPED_SOURCE_INTENT_INVALID",
+            "Intent source classification must be an object.",
+            422,
+        )
+    for name in ("searchStringsOmitted", "searchCodesOmitted"):
+        value = intent.get(name)
+        if value is not None and (
+            not isinstance(value, int) or isinstance(value, bool) or value < 0
+        ):
+            raise OsbCandidateSetError(
+                "OSB_TYPED_SOURCE_INTENT_INVALID",
+                f"Intent {name} must be a non-negative integer.",
+                422,
+            )
+    create_option = intent.get("createOption")
+    if create_option is not None and not isinstance(create_option, dict):
+        raise OsbCandidateSetError(
+            "OSB_TYPED_SOURCE_INTENT_INVALID", "Intent createOption must be an object.", 422
+        )
+    if isinstance(create_option, dict):
+        # requestedNativeType may now be null: 'no specific native type
+        # requested'. It must never be coerced into a family search.
+        requested = create_option.get("requestedNativeType")
+        if requested is not None and not isinstance(requested, str):
+            raise OsbCandidateSetError(
+                "OSB_TYPED_SOURCE_INTENT_INVALID",
+                "createOption.requestedNativeType must be a string or null.",
+                422,
+            )
+
+
 def _assert_signed_request(
     payload: dict[str, Any], artifact: dict[str, Any], signed_envelope: dict[str, Any] | None,
     signature_verification: dict[str, Any] | None,
@@ -101,7 +175,7 @@ def _assert_signed_request(
             or statement.get("signingPurpose") != "osb-candidate-request" \
             or statement.get("producerService") != "csl.attestation" \
             or statement.get("payloadContract") != "accuratrials.osb.OsbCandidateRequestV1" \
-            or statement.get("payloadContractVersion") != "1.0.0":
+            or statement.get("payloadContractVersion") != _request_contract_minor(payload):
         raise OsbCandidateSetError("OSB_CANDIDATE_REQUEST_SIGNATURE_INVALID", "Signed request envelope differs.", 422)
     envelope_hash = canonical_json_hash_ref(
         envelope, schema_version="SignedArtifactEnvelopeV1@1.0.0"
@@ -144,7 +218,11 @@ def _assert_request_projection(payload: dict[str, Any], artifact: dict[str, Any]
     intent_keys = [_fact_key(intent, "factId") for intent in intents]
     if len(set(member_keys)) != len(member_keys) or len(set(intent_keys)) != len(intent_keys):
         raise OsbCandidateSetError("OSB_CANDIDATE_REQUEST_DUPLICATE_MEMBER", "Duplicate candidate request member.", 422)
-    if member_keys != sorted(member_keys) or member_keys != intent_keys:
+    # Members stay sorted and complete; intents are the NATIVE SUBSET of the
+    # members (CSL's family router deliberately routes the rest to
+    # governed_extension / deferred_blocking). The exact subset is checked
+    # against the census dispositions below.
+    if member_keys != sorted(member_keys) or not set(intent_keys) <= set(member_keys):
         raise OsbCandidateSetError("OSB_CANDIDATE_REQUEST_MEMBER_MISMATCH", "Candidate work order differs from snapshot.", 422)
     expected_member_hash = canonical_json_hash_ref(
         members, schema_version="SemanticSnapshotMemberSetV1@1.0.0"
@@ -161,6 +239,7 @@ def _assert_request_projection(payload: dict[str, Any], artifact: dict[str, Any]
             key in intent for key in ("selectedCandidate", "nativeIdentity", "nativeVersion", "candidateId")
         ):
             raise OsbCandidateSetError("OSB_CANDIDATE_REQUEST_TARGET_SELECTION_FORBIDDEN", "CSL may not select an OSB target.", 422)
+        _assert_intent_additive_fields(intent)
         families.append(family)
     expected_families = sorted(set(families))
     requested_families = sorted({
@@ -184,53 +263,61 @@ def _assert_request_projection(payload: dict[str, Any], artifact: dict[str, Any]
     if not isinstance(request_id, str) or not request_id.strip() \
             or not isinstance(snapshot_version_id, str) or not snapshot_version_id.strip():
         raise OsbCandidateSetError("OSB_CANDIDATE_REQUEST_CENSUS_MISMATCH", "Candidate request census identity is missing.", 422)
-    expected_rows = []
-    for index, (member, intent) in enumerate(zip(members, intents, strict=True)):
-        expected_rows.append({
-            "unitId": f'{intent["factId"]}@{intent["revision"]}:primary',
-            "source": {
-                "artifactId": snapshot_version_id,
-                "contract": "accuratrials.csl.SemanticSnapshotV1@1.0.0",
-                "type": "active-claim-revision",
-                "path": f"#/activeClaimRevisions/{index}",
-                "valueHash": member.get("valueHash"),
-            },
-            "target": {
-                "artifactId": request_id,
-                "contract": "accuratrials.osb.OsbCandidateRequestV1@1.0.0",
-                "type": "typed-source-intent",
-                "path": f"#/typedSourceIntents/{index}",
-                "valueHash": canonical_json_hash_ref(
-                    intent, schema_version="OsbTypedSourceIntentV1@1.0.0"
-                ),
-            },
-            "multiplicity": {"source": 1, "target": 1},
-            "splitMergeGroup": None,
-            "splitMergeRule": None,
-            "ordering": {"significant": True, "sourceIndex": index, "targetIndex": index},
-            "disposition": "native",
-            "exclusionPolicy": None,
-            "evidenceRefs": [f'source-fact:{intent["factId"]}@{intent["revision"]}'],
-            "receiptRefs": [],
-        })
+    # Expectations are derived from the census ROWS themselves, not from an
+    # assumed all-native shape: CSL's family router legitimately emits
+    # governed_extension / deferred_blocking rows (target null,
+    # multiplicity.target == 0, routing reason codes in evidenceRefs).
     census = _record(payload.get("inputConservation"), "OSB_CANDIDATE_REQUEST_CENSUS_REQUIRED")
+    rows = [_record(row, "OSB_CANDIDATE_REQUEST_CENSUS_MISMATCH") for row in
+            _list(census.get("rows"), "OSB_CANDIDATE_REQUEST_CENSUS_MISMATCH")]
     expected_census_hash = canonical_json_hash_ref(
-        expected_rows, schema_version="ConservationCensusRowsV1@1.0.0"
+        rows, schema_version="ConservationCensusRowsV1@1.0.0"
     )
-    expected_counts = {
-        "rows": len(members),
-        "native": len(intents),
-        "governedExtension": 0,
-        "excludedSigned": 0,
-        "deferredBlocking": 0,
-        "quarantined": 0,
-        "rejected": 0,
-    }
     if census.get("contractVersion") != "ConservationCensusV1@1.0.0" \
-            or not _same(census.get("rows"), expected_rows) \
-            or not _same(census.get("rowSetHash"), expected_census_hash) \
-            or census.get("counts") != expected_counts:
+            or not _same(census.get("rowSetHash"), expected_census_hash):
         raise OsbCandidateSetError("OSB_CANDIDATE_REQUEST_CENSUS_MISMATCH", "Candidate request census differs.", 422)
+    member_key_set = set(member_keys)
+    tally = {"rows": len(rows), "native": 0, "governedExtension": 0, "excludedSigned": 0,
+             "deferredBlocking": 0, "quarantined": 0, "rejected": 0}
+    disposition_by_key: dict[str, str] = {}
+    for row in rows:
+        disposition = str(row.get("disposition") or "")
+        count_key = CENSUS_DISPOSITION_COUNT_KEYS.get(disposition)
+        if count_key is None:
+            raise OsbCandidateSetError("OSB_CANDIDATE_REQUEST_CENSUS_MISMATCH", "Census disposition is unsupported.", 422)
+        tally[count_key] += 1
+        unit_id = row.get("unitId")
+        row_key = unit_id.rsplit(":", 1)[0] if isinstance(unit_id, str) and ":" in unit_id else None
+        if row_key is None or row_key in disposition_by_key or row_key not in member_key_set:
+            raise OsbCandidateSetError("OSB_CANDIDATE_REQUEST_CENSUS_MISMATCH", "Census row does not name a unique snapshot member.", 422)
+        disposition_by_key[row_key] = disposition
+        target = row.get("target")
+        multiplicity = row.get("multiplicity") if isinstance(row.get("multiplicity"), dict) else {}
+        if disposition == "native" and not isinstance(target, dict):
+            raise OsbCandidateSetError("OSB_CANDIDATE_REQUEST_CENSUS_MISMATCH", "Native census row must name a target.", 422)
+        if disposition in ROUTED_NON_NATIVE_DISPOSITIONS \
+                and (target is not None or multiplicity.get("target") != 0):
+            raise OsbCandidateSetError("OSB_CANDIDATE_REQUEST_CENSUS_MISMATCH", "Routed census row must carry no target.", 422)
+    if census.get("counts") != tally:
+        raise OsbCandidateSetError("OSB_CANDIDATE_REQUEST_CENSUS_MISMATCH", "Candidate request census differs.", 422)
+    if len(disposition_by_key) != len(member_keys):
+        raise OsbCandidateSetError("OSB_CANDIDATE_REQUEST_CENSUS_MISMATCH", "Census must cover every snapshot member.", 422)
+    # The typed source intents must be exactly the native-disposition members,
+    # in the same (sorted) order.
+    native_member_keys = [key for key in member_keys if disposition_by_key[key] == "native"]
+    if intent_keys != native_member_keys:
+        raise OsbCandidateSetError("OSB_CANDIDATE_REQUEST_MEMBER_MISMATCH", "Candidate work order differs from snapshot.", 422)
+    upstream = census.get("upstreamExclusions")
+    if upstream is not None:
+        # Package-boundary exclusions referenced by hash — informational, NOT
+        # rows in this census. Loose type validation only.
+        upstream = _record(upstream, "OSB_CANDIDATE_REQUEST_CENSUS_MISMATCH")
+        if not isinstance(upstream.get("sourcePackageCensusHash"), str) or any(
+            not isinstance(upstream.get(name), int) or isinstance(upstream.get(name), bool)
+            or upstream.get(name) < 0
+            for name in ("excludedSigned", "quarantined")
+        ):
+            raise OsbCandidateSetError("OSB_CANDIDATE_REQUEST_CENSUS_MISMATCH", "Upstream exclusion summary is invalid.", 422)
 
     evidence = _list(payload.get("evidenceArtifactRefs"), "OSB_CANDIDATE_REQUEST_EVIDENCE_REQUIRED")
     if len(evidence) != 1:
@@ -255,13 +342,15 @@ def verify_candidate_request_artifact(
         or artifact.get("kind") != "osb-candidate-request"
         or artifact.get("tenantId") != tenant_id
         or artifact.get("payloadContract") != "accuratrials.osb.OsbCandidateRequestV1"
-        or artifact.get("payloadContractVersion") != "1.0.0"
+        or artifact.get("payloadContractVersion") not in ACCEPTED_REQUEST_CONTRACT_MINOR_VERSIONS
         or artifact.get("producerService") != "csl.attestation"
         or artifact.get("purpose") != "osb-candidate-generation"
     ):
         raise OsbCandidateSetError("OSB_CANDIDATE_REQUEST_ARTIFACT_INVALID", "Candidate request artifact metadata differs.", 422)
+    contract_minor = _request_contract_minor(payload)
     if (
-        payload.get("contractVersion") != "OsbCandidateRequestV1@1.0.0"
+        contract_minor is None
+        or contract_minor != artifact.get("payloadContractVersion")
         or payload.get("tenantId") != tenant_id
         or payload.get("platformStudyId") != platform_study_id
         or payload.get("requestVersionId") != artifact.get("artifactVersionId")
@@ -270,7 +359,7 @@ def verify_candidate_request_artifact(
         raise OsbCandidateSetError("OSB_CANDIDATE_REQUEST_SCOPE_INVALID", "Candidate request scope or identity differs.", 422)
     actual_payload_hash = canonical_json_hash_ref(
         payload,
-        schema_version="OsbCandidateRequestV1@1.0.0",
+        schema_version=str(payload["contractVersion"]),
         media_type=CANDIDATE_REQUEST_MEDIA_TYPE,
     )
     if not hash_refs_equal(actual_payload_hash, artifact.get("payloadHash")):
@@ -311,7 +400,7 @@ def assert_candidate_request_transfer_envelope(
         or envelope.get("signatureProfile") != "jws-detached-rfc7797/1.0"
         or descriptor.get("kind") != "osb-candidate-request"
         or descriptor.get("payloadContract") != "accuratrials.osb.OsbCandidateRequestV1"
-        or descriptor.get("payloadContractVersion") != "1.0.0"
+        or descriptor.get("payloadContractVersion") != _request_contract_minor(payload)
         or descriptor.get("producerService") != "csl.attestation"
         or descriptor.get("purpose") != "osb-candidate-generation"
         or descriptor.get("artifactId") != payload.get("requestId")
@@ -376,7 +465,7 @@ def store_candidate_request_bytes(
     if not isinstance(payload, dict) or canonical_json(payload).encode("utf-8") != bytes_value:
         raise OsbCandidateSetError("OSB_CANDIDATE_REQUEST_NONCANONICAL", "Candidate request bytes are not canonical.", 422)
     if (
-        payload.get("contractVersion") != "OsbCandidateRequestV1@1.0.0"
+        payload.get("contractVersion") not in ACCEPTED_REQUEST_CONTRACT_VERSIONS
         or payload.get("tenantId") != tenant_id
         or payload.get("platformStudyId") != platform_study_id
     ):
@@ -466,17 +555,34 @@ def _census_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
         "rows": len(rows), "native": 0, "governedExtension": 0, "excludedSigned": 0,
         "deferredBlocking": 0, "quarantined": 0, "rejected": 0,
     }
-    mapped = {
-        "native": "native", "governed_extension": "governedExtension",
-        "excluded_signed": "excludedSigned", "deferred_blocking": "deferredBlocking",
-        "quarantined": "quarantined", "rejected": "rejected",
-    }
     for row in rows:
-        key = mapped.get(str(row.get("disposition") or ""))
+        key = CENSUS_DISPOSITION_COUNT_KEYS.get(str(row.get("disposition") or ""))
         if key is None:
             raise OsbCandidateSetError("OSB_CANDIDATE_SET_CENSUS_MISMATCH", "Census disposition is unsupported.", 422)
         counts[key] += 1
     return counts
+
+
+def _routed_census_row(
+    *, unit_id: str, request_id: str, member_index: int, member_hash: Any,
+    disposition: str, evidence_refs: list[str], index: int,
+) -> dict[str, Any]:
+    """A candidate-set census row for a member CSL routed away from native
+    execution: the disposition and routing reason survive, no target exists."""
+    return {
+        "unitId": unit_id,
+        "source": {
+            "artifactId": request_id, "contract": "accuratrials.osb.OsbCandidateRequestV1",
+            "type": "active-claim-revision", "path": f"#/activeClaimRevisions/{member_index}",
+            "valueHash": member_hash,
+        },
+        "target": None,
+        "multiplicity": {"source": 1, "target": 0},
+        "splitMergeGroup": None, "splitMergeRule": None,
+        "ordering": {"significant": False, "sourceIndex": index, "targetIndex": None},
+        "disposition": disposition, "exclusionPolicy": None,
+        "evidenceRefs": evidence_refs, "receiptRefs": [],
+    }
 
 
 def _census_row(
@@ -637,6 +743,28 @@ def generate_candidate_set(
     intents = [_record(item, "OSB_TYPED_SOURCE_INTENT_INVALID") for item in _list(
         request_payload.get("typedSourceIntents"), "OSB_TYPED_SOURCE_INTENTS_REQUIRED"
     )]
+    # Members CSL routed away from native execution (governed_extension /
+    # deferred_blocking) have no typed source intent: they must produce NO
+    # library-search work, only conserved census rows and deferredMembers
+    # entries the adjudicating human can see.
+    request_members = [_record(item, "OSB_CANDIDATE_REQUEST_MEMBER_INVALID") for item in _list(
+        request_payload.get("activeClaimRevisions"), "OSB_CANDIDATE_REQUEST_MEMBERS_REQUIRED"
+    )]
+    member_index_by_key = {
+        f'{member.get("sourceFactId")}@{member.get("revision")}': index
+        for index, member in enumerate(request_members)
+    }
+    routed_request_rows = [
+        row for row in (
+            _record(item, "OSB_CANDIDATE_REQUEST_CENSUS_REQUIRED") for item in _list(
+                _record(
+                    request_payload.get("inputConservation"), "OSB_CANDIDATE_REQUEST_CENSUS_REQUIRED"
+                ).get("rows"),
+                "OSB_CANDIDATE_REQUEST_CENSUS_REQUIRED",
+            )
+        )
+        if str(row.get("disposition") or "") in ROUTED_NON_NATIVE_DISPOSITIONS
+    ]
     observed_keys: set[str] = set()
     groups: list[MappingContextCandidateGroupRequest] = []
     for index, intent in enumerate(intents):
@@ -652,11 +780,6 @@ def generate_candidate_set(
             "target_key": str(intent["targetKey"]),
             "semantic_role": str(intent["semanticRole"]),
             "resource_family": family,
-            "fact_id": str(intent["factId"]),
-            "concept_id": str(intent["conceptId"]),
-            "target_key": str(intent["targetKey"]),
-            "semantic_role": str(intent["semanticRole"]),
-            "resource_family": canonicalize_family(str(family)),
             "search_strings": search_strings,
             "search_codes": [str(value) for value in _list(intent.get("searchCodes", []), "OSB_SEARCH_CODES_INVALID")],
         }
@@ -689,7 +812,16 @@ def generate_candidate_set(
         record = {
             "factId": intent["factId"], "revision": intent["revision"],
             "conceptId": intent["conceptId"], "targetKey": intent["targetKey"],
-            "semanticRole": intent["semanticRole"], "resourceFamily": intent["resourceFamily"],
+            "semanticRole": intent["semanticRole"],
+            # Both spellings survive: the family CSL asked for verbatim, and
+            # the canonical family the search actually ran against.
+            "resourceFamily": canonicalize_family(str(intent["resourceFamily"])),
+            "requestedResourceFamily": intent["resourceFamily"],
+            # The claim's content and provenance ride on the record so the
+            # adjudicating human sees what they are mapping without
+            # dereferencing the stored request payload.
+            "source": intent.get("source"),
+            "evidence": intent.get("evidence"),
             "nativeCandidates": candidate_records,
             "createOption": intent.get("createOption") or None,
             "complete": group.complete, "truncated": group.truncated,
@@ -712,6 +844,32 @@ def generate_candidate_set(
             disposition=disposition,
             evidence_refs=[f"osb-context:{context.context_hash}"],
         ))
+    deferred_members: list[dict[str, Any]] = []
+    for offset, request_row in enumerate(routed_request_rows):
+        member_key = str(request_row.get("unitId") or "").rsplit(":", 1)[0]
+        member_index = member_index_by_key.get(member_key)
+        if member_index is None:
+            raise OsbCandidateSetError(
+                "OSB_CANDIDATE_SET_CENSUS_MISMATCH",
+                "Routed census row does not name a request member.",
+                422,
+            )
+        member = request_members[member_index]
+        disposition = str(request_row["disposition"])
+        reason_codes = [str(ref) for ref in (request_row.get("evidenceRefs") or [])]
+        deferred_members.append({
+            "factId": member["sourceFactId"], "revision": member["revision"],
+            "disposition": disposition, "reasonCodes": reason_codes,
+        })
+        census_rows.append(_routed_census_row(
+            unit_id=str(request_row.get("unitId")),
+            request_id=request_id,
+            member_index=member_index,
+            member_hash=member.get("valueHash"),
+            disposition=disposition,
+            evidence_refs=reason_codes,
+            index=len(intents) + offset,
+        ))
     candidate_set_id = str(uuid5(NAMESPACE_URL, f"accuratrials:osb-candidate-set:v1:{request_hash}"))
     set_seed = canonical_json_hash_ref(
         {"requestHash": request_hash, "contextHash": context.context_hash, "candidates": candidates},
@@ -719,7 +877,8 @@ def generate_candidate_set(
     )["value"]
     candidate_set_version_id = str(uuid5(NAMESPACE_URL, f"{candidate_set_id}:{set_seed}"))
     for row in census_rows:
-        row["target"]["artifactId"] = candidate_set_id
+        if isinstance(row.get("target"), dict):
+            row["target"]["artifactId"] = candidate_set_id
     census_hash = canonical_json_hash_ref(census_rows, schema_version="ConservationCensusRowsV1@1.0.0")
     created_at = datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
     assignment = candidate_assignment_identity(
@@ -742,6 +901,7 @@ def generate_candidate_set(
                                  "nativeVersion": binding["nativeVersion"], "governed": context.governed},
         "mappingContext": context_value,
         "candidateRecords": candidates,
+        "deferredMembers": deferred_members,
         "conservation": {"contractVersion": "ConservationCensusV1@1.0.0", "rows": census_rows,
                          "rowSetHash": census_hash, "counts": _census_counts(census_rows)},
         "assignment": assignment,

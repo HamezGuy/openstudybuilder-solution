@@ -548,6 +548,7 @@ def execute_candidate_set_command(body: dict[str, Any], request: Request) -> dic
             signature_verification=signature_verification,
         )
         candidate_records = generated["payload"]["candidateRecords"]
+        deferred_members = generated["payload"].get("deferredMembers") or []
         blocker_count = len(generated["payload"].get("blockers") or [])
         return {
             "status": "no_op" if generated.get("replay") else "succeeded",
@@ -563,6 +564,7 @@ def execute_candidate_set_command(body: dict[str, Any], request: Request) -> dic
             "conservationCounts": {
                 "sourceIntents": len(candidate_records),
                 "candidateRecords": len(candidate_records),
+                "deferredMembers": len(deferred_members),
                 "dropped": 0,
             },
             "blockers": generated["payload"].get("blockers") or [],
