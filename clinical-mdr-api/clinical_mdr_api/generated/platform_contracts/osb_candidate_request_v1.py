@@ -1,5 +1,5 @@
 """AUTO-GENERATED from OSB-owned OsbCandidateRequestV1.
-Schema sha256:e23d31a0ada365fd254fcc7a1856537e8da1e6a5e98daee20ba856efc31828df
+Schema sha256:56e536ed278f63ffbc517c4fc5386f9ac86624166c5688fb38526dfa024d447e
 Do not edit by hand. Run generate-p4-request-contracts.mjs.
 """
 
@@ -43,6 +43,7 @@ class ConservationCensusV1(TypedDict):
     rows: list[ConservationCensusRowV1]
     rowSetHash: OsbCandidateHashRefV1
     counts: ConservationCensusCountsV1
+    upstreamExclusions: NotRequired[OsbCandidateUpstreamExclusionsV1]
 
 class ConservationEndpointV1(TypedDict):
     artifactId: str
@@ -97,7 +98,7 @@ class OsbCandidateHashRefV1(TypedDict):
     excludedPaths: list[str]
 
 class OsbCandidateRequestV1(TypedDict):
-    contractVersion: Literal["OsbCandidateRequestV1@1.0.0"]
+    contractVersion: Literal["OsbCandidateRequestV1@1.0.0", "OsbCandidateRequestV1@1.1.0"]
     requestId: str
     requestVersionId: str
     tenantId: str
@@ -126,16 +127,21 @@ class OsbCandidateSourcePackageRefV1(TypedDict):
     payloadHash: OsbCandidateHashRefV1
     factSetHash: OsbCandidateHashRefV1
 
+class OsbCandidateUpstreamExclusionsV1(TypedDict):
+    sourcePackageCensusHash: str | None
+    excludedSigned: int
+    quarantined: int
+
 class OsbCreateOptionV1(TypedDict):
     allowed: Literal[True]
-    requestedNativeType: str
+    requestedNativeType: str | None
 
 class OsbProjectionRulesetV1(TypedDict):
     id: Literal["csl-to-osb-candidate-request"]
     version: Literal["1.0.0"]
     hash: OsbCandidateHashRefV1
 
-OsbResourceFamilyV1 = Literal["activities", "compound_product_relationships", "controlled_terminology", "criteria_templates", "endpoint_templates", "objective_templates", "odm_forms", "odm_item_groups", "odm_items", "study_compound_dosing_relationships", "units"]
+OsbResourceFamilyV1 = Literal["activities", "activity_instruction_templates", "activity_schedules", "cdash_variables", "compound_product_relationships", "controlled_terminology", "controlled_terminology_codelists", "criteria_templates", "endpoint_templates", "objective_templates", "odm_aliases", "odm_conditions", "odm_forms", "odm_item_groups", "odm_items", "odm_methods", "study_compound_dosing_relationships", "timeframe_templates", "timeframes", "units"]
 
 class OsbStudyIdentityV1(TypedDict):
     contractVersion: Literal["1.0.0"]
@@ -155,6 +161,7 @@ class OsbTypedSourceIntentSourceV1(TypedDict):
     candidateType: str | None
     exactQuote: str | None
     label: str | None
+    classification: NotRequired[dict[str, Any] | None]
     values: list[OsbTypedSourceValueV1]
 
 class OsbTypedSourceIntentV1(TypedDict):
@@ -168,6 +175,8 @@ class OsbTypedSourceIntentV1(TypedDict):
     evidence: Any
     searchStrings: list[str]
     searchCodes: list[str]
+    searchStringsOmitted: NotRequired[int]
+    searchCodesOmitted: NotRequired[int]
     createOption: OsbCreateOptionV1
 
 class OsbTypedSourceValueV1(TypedDict):

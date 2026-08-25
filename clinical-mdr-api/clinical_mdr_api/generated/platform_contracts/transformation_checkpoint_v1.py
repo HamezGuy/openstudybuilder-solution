@@ -1,5 +1,5 @@
 """AUTO-GENERATED from CSL-owned TransformationCheckpointV1.
-Schema sha256:daf8c0ee26ab279ebdcd61bcefa6ec94a36d4ddb16da60df59980201de9741a7
+Schema sha256:6e336aaddfdf335655da32e7f088340e75dd97b099b09a3515d8f60ebc3ffd0b
 Do not edit by hand. Run generate-p4-request-contracts.mjs.
 """
 

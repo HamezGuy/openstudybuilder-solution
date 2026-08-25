@@ -1,5 +1,5 @@
 """AUTO-GENERATED from CSL-owned TransformationReceiptV2.
-Schema sha256:7a3426bbba2af1c8d71cdef9344dcf9b782411742ef59c9e5294c824c3b4a802
+Schema sha256:d8329d3ef4fecfdb6b0fc7151fddd47041ba36189716c29f0820599bb41b7e21
 Do not edit by hand. Run generate-p4-request-contracts.mjs.
 """
 
@@ -24,12 +24,14 @@ class TransformationAdapterV1(TypedDict):
 
 TransformationDispositionV1 = Literal["native", "governed_extension", "excluded_signed", "deferred_blocking", "quarantined", "rejected"]
 
+TransformationFieldDispositionV1 = Literal["native", "governed_extension", "excluded_signed", "deferred_blocking", "quarantined", "rejected", "missing_in_read_back"]
+
 class TransformationFieldReceiptV1(TypedDict):
     sourcePath: str
     targetPath: str | None
     sourceValueHash: PlatformHashRefV1
     targetValueHash: None | PlatformHashRefV1
-    disposition: TransformationDispositionV1
+    disposition: TransformationFieldDispositionV1
 
 class TransformationReceiptV2(TypedDict):
     contractVersion: Literal["TransformationReceiptV2@1.0.0"]

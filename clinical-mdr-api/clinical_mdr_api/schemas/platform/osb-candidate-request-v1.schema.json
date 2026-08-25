@@ -26,7 +26,7 @@
     "createdBy"
   ],
   "properties": {
-    "contractVersion": { "const": "OsbCandidateRequestV1@1.0.0" },
+    "contractVersion": { "enum": ["OsbCandidateRequestV1@1.0.0", "OsbCandidateRequestV1@1.1.0"] },
     "requestId": { "type": "string", "format": "uuid" },
     "requestVersionId": { "type": "string", "format": "uuid" },
     "tenantId": { "type": "string", "format": "uuid" },
@@ -83,15 +83,24 @@
       "title": "OsbResourceFamilyV1",
       "enum": [
         "activities",
+        "activity_instruction_templates",
+        "activity_schedules",
+        "cdash_variables",
         "compound_product_relationships",
         "controlled_terminology",
+        "controlled_terminology_codelists",
         "criteria_templates",
         "endpoint_templates",
         "objective_templates",
+        "odm_aliases",
+        "odm_conditions",
         "odm_forms",
         "odm_item_groups",
         "odm_items",
+        "odm_methods",
         "study_compound_dosing_relationships",
+        "timeframe_templates",
+        "timeframes",
         "units"
       ]
     },
@@ -188,6 +197,10 @@
             "candidateType": { "type": ["string", "null"] },
             "exactQuote": { "type": ["string", "null"] },
             "label": { "type": ["string", "null"] },
+            "classification": {
+              "description": "1.1.0: the claim's classification object carried VERBATIM (already inside the hash-pinned fact). Deliberately open — its shape is the IL fact's, not this contract's.",
+              "type": ["object", "null"]
+            },
             "values": {
               "type": "array",
               "maxItems": 1000,
@@ -206,6 +219,16 @@
           "maxItems": 20,
           "items": { "type": "string", "minLength": 1, "maxLength": 128 }
         },
+        "searchStringsOmitted": {
+          "description": "1.1.0: entries the 20-item/256-char caps dropped — truncation is receipted, never silent.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "searchCodesOmitted": {
+          "description": "1.1.0: entries the 20-item/128-char caps dropped.",
+          "type": "integer",
+          "minimum": 0
+        },
         "createOption": {
           "title": "OsbCreateOptionV1",
           "type": "object",
@@ -213,7 +236,12 @@
           "required": ["allowed", "requestedNativeType"],
           "properties": {
             "allowed": { "const": true },
-            "requestedNativeType": { "type": "string", "minLength": 1, "maxLength": 128 }
+            "requestedNativeType": {
+              "description": "1.1.0: null when the claim states no candidate type — the manufactured 'governed-extension' default is gone.",
+              "type": ["string", "null"],
+              "minLength": 1,
+              "maxLength": 128
+            }
           }
         }
       }
@@ -287,6 +315,21 @@
             "deferredBlocking": { "type": "integer", "minimum": 0 },
             "quarantined": { "type": "integer", "minimum": 0 },
             "rejected": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "upstreamExclusions": {
+          "title": "OsbCandidateUpstreamExclusionsV1",
+          "description": "1.1.0: package-boundary exclusions referenced by hash — informational, NOT rows in this census. The counts stay row-derived; this block tells OSB that M facts were suppressed before the request was built.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sourcePackageCensusHash", "excludedSigned", "quarantined"],
+          "properties": {
+            "sourcePackageCensusHash": {
+              "type": ["string", "null"],
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "excludedSigned": { "type": "integer", "minimum": 0 },
+            "quarantined": { "type": "integer", "minimum": 0 }
           }
         }
       }
