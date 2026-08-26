@@ -28,7 +28,7 @@ import psycopg
 
 from ..functions.utils import load_env
 
-IMPORTER_VERSION = "360i-importer/1.9"
+IMPORTER_VERSION = "360i-importer/1.13"
 
 
 class EcrfPlatformDb:

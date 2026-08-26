@@ -1,4 +1,10 @@
-"""Import a 360i study (EDCProtocolToECRF) into OpenStudyBuilder.
+"""
+# Patched 20260826-draftgate: an already-Draft parent is not re-drafted.
+# Patched 20260826-stealfix: stale item->group attachments are detached
+# from their pre-1.9 holders before the owner write retries.
+# Patched 20260826-patchfix: ODM Patch-input completeness + authoritative
+# relationship writes. See tmp-ora-wire-20260826/patch-360i-importer.py.
+Import a 360i study (EDCProtocolToECRF) into OpenStudyBuilder.
 
 Reads the OSB-shaped payload the 360i pipeline persisted to its Postgres
 (`ecrf_platform.osb_study_payloads`, written at every study build), populates
@@ -206,6 +212,33 @@ class ImportCensus:
         # ("status='partial' REQUIRES stopped rows").
         return "partial" if self.stopped else "succeeded"
 
+
+
+# Fields that OSB requires on an ODM *Patch* input but not on the matching
+# *Post* input (computed from the live OpenAPI: the union of required keys on
+# every Odm*PatchInput minus the union on every Odm*PostInput). _reconcile
+# builds Post-shaped bodies, so _patch_through_version carries these forward
+# from the concept being patched.
+PATCH_ONLY_REQUIRED_FIELDS = (
+    "codelist",
+    "comment",
+    "data_type",
+    "effective_date",
+    "is_reference_data",
+    "length",
+    "method_type",
+    "origin",
+    "prompt",
+    "purpose",
+    "retired_date",
+    "sas_dataset_name",
+    "sas_field_name",
+    "sds_var_name",
+    "sdtm_version",
+    "significant_digits",
+    "terms",
+    "value_regex",
+)
 
 class Import360i(BaseImporter):
     logging_name = "import_360i"
@@ -1414,8 +1447,19 @@ class Import360i(BaseImporter):
                     {
                         "kind": "visit_day",
                         "ref": plan["refKey"],
-                        "reason": "the protocol stated no numeric day; imported at day 0 "
-                        "of the anchor reference — set the timing in OSB",
+                        "reason": "the protocol stated no numeric day; placed after the last "
+                        f"dated visit at day {plan['time_value']} of the anchor reference to "
+                        "satisfy OSB's chronological-order rule — set the real timing in OSB",
+                    }
+                )
+            if plan.get("unscheduled_demoted"):
+                self.census.carried.append(
+                    {
+                        "kind": "visit_class",
+                        "ref": plan["refKey"],
+                        "reason": "the payload typed this visit 'unscheduled'; OSB permits one "
+                        "UNSCHEDULED_VISIT per study, so it is imported as a manually-defined "
+                        "visit keeping its protocol name, number and schedule links",
                     }
                 )
 
@@ -2590,6 +2634,19 @@ class Import360i(BaseImporter):
             body.setdefault("change_description", "360i re-import: content changed")
             body.setdefault("vendor_elements", [])
             body.setdefault("vendor_element_attributes", [])
+            body.setdefault("vendor_attributes", [])
+            # OSB's ODM *Patch* inputs require a further set of fields that the
+            # matching *Post* inputs treat as optional -- verified against the
+            # live OpenAPI, 23 of them across Odm*PatchInput (item groups alone
+            # add is_reference_data / sas_dataset_name / origin / purpose /
+            # comment). A PATCH that does not intend to change one must still
+            # SEND it: null validates, absent is a 400 RequestValidationError.
+            # Carry the concept's current values forward, and only fields the
+            # fetched object actually carries, so no kind is sent a key its
+            # own Patch input does not define.
+            for field in PATCH_ONLY_REQUIRED_FIELDS:
+                if field not in body and field in existing:
+                    body[field] = existing.get(field)
             if self.api.patch_to_api(body, path) is None:
                 self.census.stop(kind, ref, f"{kind} patch failed")
                 return None
@@ -2674,7 +2731,11 @@ class Import360i(BaseImporter):
                     return _approve(kind, path, uid, ref)
                 return True
 
-            if state == "unchanged":
+            if state == "unchanged" and str((prior or {}).get("status") or "").lower() != "draft":
+                # A parent left in Draft by an earlier partial run must NOT be
+                # re-drafted: POST /versions on a Draft is a 400 ("New draft
+                # version can be created only for FINAL versions") and used to
+                # census-stop the whole group. Draft only a Final parent.
                 if self.api.simple_post_to_api(f"{path}/{uid}/versions", {}) is None:
                     self.census.stop(kind, ref, f"{kind} new-version (draft) failed")
                     return False
@@ -2684,6 +2745,84 @@ class Import360i(BaseImporter):
                 refs_to_write,
                 params={"override": "true"} if replace else None,
             )
+            if result is None and child_key == "items":
+                # OSB enforces one OdmItem <-> one OdmItemGroup, and importer
+                # versions <=1.8 attached base-OID items to whichever group
+                # claimed them first. Under the 1.9+ placement-ownership rules
+                # those are STALE holders: override=true replaces only the
+                # TARGET group's set and never detaches an item from its
+                # current group, so the write is refused with "already
+                # connected to another OdmItemGroup". Resolve authoritatively:
+                # rewrite each stale holder without the contested items (draft
+                # it first if Final, re-approve after), then retry the target.
+                desired_uids = {entry["uid"] for entry in desired}
+                stale_holders = []
+                for holder in self.api.get_all_from_api(
+                    path, params={"page_number": 1, "page_size": 0}
+                ) or []:
+                    if holder.get("uid") == uid:
+                        continue
+                    held = holder.get(child_key) or []
+                    contested = [c for c in held if c.get("uid") in desired_uids]
+                    if contested:
+                        stale_holders.append((holder, contested))
+                for holder, contested in stale_holders:
+                    h_uid = holder["uid"]
+                    if (holder.get("status") or "").lower() != "draft":
+                        self.api.simple_post_to_api(f"{path}/{h_uid}/versions", {})
+                    keep = [c for c in (holder.get(child_key) or [])
+                            if c.get("uid") not in desired_uids]
+                    kept_refs = []
+                    for order, entry in enumerate(keep, start=1):
+                        mand = entry.get("mandatory")
+                        if isinstance(mand, bool):
+                            mand = "Yes" if mand else "No"
+                        kept_refs.append({
+                            "uid": entry["uid"],
+                            "order_number": entry.get("order_number") or order,
+                            "mandatory": mand or "No",
+                            "key_sequence": None,
+                            "method_oid": None,
+                            "imputation_method_oid": None,
+                            "role": None,
+                            "role_codelist_oid": None,
+                            "collection_exception_condition_oid": None,
+                            "vendor": {"attributes": []},
+                        })
+                    detached = self.api.simple_post_to_api(
+                        f"{path}/{h_uid}/{child_key.replace('_', '-')}",
+                        kept_refs,
+                        params={"override": "true"},
+                    )
+                    self.log.info(
+                        "Detached %d stale item(s) from %s (%s): %s",
+                        len(contested), holder.get("oid") or h_uid, h_uid,
+                        "ok" if detached is not None else "FAILED",
+                    )
+                    if detached is not None:
+                        self.api.simple_approve(f"{path}/{h_uid}/approvals")
+                if stale_holders:
+                    if state == "unchanged":
+                        self.api.simple_post_to_api(f"{path}/{uid}/versions", {})
+                    refs_to_write = desired
+                    replace = True
+                    result = self.api.simple_post_to_api(
+                        f"{path}/{uid}/{child_key.replace('_', '-')}",
+                        refs_to_write,
+                        params={"override": "true"},
+                    )
+            elif result is None and not replace:
+                # Non-items relationship refused in append mode (e.g. a parent
+                # no longer in Draft): draft the parent and assert the desired
+                # set once.
+                self.api.simple_post_to_api(f"{path}/{uid}/versions", {})
+                refs_to_write = desired
+                replace = True
+                result = self.api.simple_post_to_api(
+                    f"{path}/{uid}/{child_key.replace('_', '-')}",
+                    refs_to_write,
+                    params={"override": "true"},
+                )
             if result is None:
                 self.census.stop(
                     kind,

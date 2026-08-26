@@ -16,6 +16,7 @@ Doctrine carried over from the payload's own contract:
 
 import hashlib
 import json
+import os
 import re
 
 # OSB validates a vendor-namespace `prefix` as letters-only, so the prefix
@@ -189,12 +190,68 @@ FLOWCHART_GROUP_BY_ACTIVITY_NAME = {
     "vital signs": "SAFETY",
     "blood sample for pk": "PHARMACOKINETICS",
     "urine collection": "PHARMACODYNAMICS",
+    # ORA-D-017 (NCT04150107) SoA rows, added 20260826-orasoa. Exact payload
+    # labels; terms verified Final in the live Flowchart Group codelist.
+    "informed consent": "INFORMED CONSENT",
+    "serum pregnancy test": "SAFETY",
+    "urine pregnancy test": "SAFETY",
+    "infectious serology hiv hbv hcv": "SAFETY",
+    "c peptide tsh fsh": "SAFETY",
+    "hematology": "SAFETY",
+    "serum chemistry with fpg": "SAFETY",
+    # HbA1c and CGM are the trial's glycemic-control measures (T1D crossover):
+    # efficacy, not safety monitoring.
+    "hba1c": "EFFICACY",
+    "cgm monitoring": "EFFICACY",
+    "treatment crossover": "SUBJECT RELATED INFORMATION",
+    "treatment compliance": "SUBJECT RELATED INFORMATION",
+    "treatment dispensing returning": "TRIAL MATERIAL",
+    "diary 3 dispensing collecting": "TRIAL MATERIAL",
+    "study disposition table 1 footnotes": "SUBJECT RELATED INFORMATION",
 }
 
 
 def semantic_identity(value):
     """Case/spacing/punctuation-insensitive identity, never fuzzy similarity."""
     return re.sub(r"[^a-z0-9]+", " ", str(value or "").casefold()).strip()
+
+
+# Deployment-local Flowchart Group decisions, as DATA rather than a source edit.
+#
+# The table above is exact and small on purpose — a row stating no recognised
+# semantic must block rather than land in a generic bucket. Real protocols
+# still arrive with study-local row labels ("Blood draw for clinical lab
+# tests", "Diary 3 dispensing/collecting"), and until now the only way to admit
+# one was to edit the dict above per study. This reads the same decisions from
+# a file the operator can review and diff, keyed by the SAME semantic identity.
+#
+# Consulted LAST (see `_flowchart_group_name`): an override cannot mask a CDASH
+# domain or a category the payload itself stated, and a row with no entry here
+# still blocks. No file = the behaviour before this existed.
+FLOWCHART_GROUP_OVERRIDES_FILE = os.environ.get(
+    "FLOWCHART_GROUP_OVERRIDES_FILE",
+    "/opt/accuratrial/ingest/flowchart-overrides.json",
+)
+
+
+def _load_flowchart_overrides():
+    try:
+        with open(FLOWCHART_GROUP_OVERRIDES_FILE, "r", encoding="utf-8") as handle:
+            raw = json.load(handle)
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    loaded = {}
+    for key, value in raw.items():
+        identity = semantic_identity(key)
+        group = str(value or "").strip().upper()
+        if identity and group:
+            loaded[identity] = group
+    return loaded
+
+
+FLOWCHART_GROUP_OVERRIDES = _load_flowchart_overrides()
 
 
 def _flowchart_group_name(activity):
@@ -204,7 +261,11 @@ def _flowchart_group_name(activity):
     category = str(activity.get("category") or "").strip().upper()
     if category in set(FLOWCHART_GROUP_BY_CDASH_DOMAIN.values()):
         return category
-    return FLOWCHART_GROUP_BY_ACTIVITY_NAME.get(semantic_identity(activity.get("name")))
+    identity = semantic_identity(activity.get("name"))
+    return (
+        FLOWCHART_GROUP_BY_ACTIVITY_NAME.get(identity)
+        or FLOWCHART_GROUP_OVERRIDES.get(identity)
+    )
 
 
 def native_soa_plan(payload, library_activities):
@@ -601,10 +662,52 @@ def visit_plan(payload, epoch_uid_by_ref):
     chrono_order = sorted(range(len(visits)), key=_sort_key)
     chrono_rank = {idx: rank + 1 for rank, idx in enumerate(chrono_order)}
 
+    # _DAY_MISSING_PLACEMENT. OSB enforces that visit_number increases with
+    # visit TIMING, so a day-missing visit cannot sit at the anchor's day 0
+    # while an earlier-numbered visit sits at day 56 — that is exactly the
+    # "not defined in chronological order by study visit timing" rejection.
+    # Place each day-missing visit one day past the last DATED visit, in the
+    # order the protocol listed them: no clinical timing is asserted that the
+    # protocol did not state (day 0 was itself such an assertion), the stated
+    # ORDER is preserved, and the importer censuses each placement.
+    _dated_tvs = [_effective_tv(idx, visits[idx]) for idx in range(len(visits))]
+    _next_tv = max([tv for tv in _dated_tvs if tv is not None], default=0)
+    _missing_tv = {}
+    for _idx in chrono_order:
+        if _dated_tvs[_idx] is None:
+            _next_tv += 1
+            _missing_tv[_idx] = _next_tv
+
+    # OSB permits exactly ONE UNSCHEDULED_VISIT per study (study_visit.py), so a
+    # protocol stating several would lose all but the first. Tracked here and
+    # applied in the loop below.
+    _unscheduled_claimed = False
+
     plans = []
     for i, v in enumerate(visits):
         type_key = (v.get("type") or "scheduled").strip().lower()
         mapping = VISIT_TYPE_MAP.get(type_key)
+        # _ALL_VISITS_MANUALLY_DEFINED. OSB derives the name of any visit that is
+        # not MANUALLY_DEFINED_VISIT — an UNSCHEDULED_VISIT always comes back as
+        # settings.unscheduled_visit_name, whatever the protocol called it. The
+        # study bundle then carries that derived name AND the protocol name from
+        # the x360i carrier, and the EDC imports one visit as two events (11 for
+        # 10 on NCT03472885). OSB also permits only one UNSCHEDULED_VISIT per
+        # study, so a protocol stating several loses the rest outright.
+        #
+        # Every payload visit is therefore manually defined: names, short names,
+        # numbers and refKeys survive, the counts match end to end, and the only
+        # thing not natively represented is OSB's class-level "unscheduled" flag
+        # — which the payload `type`, the x360i carrier and the EDC's own event
+        # type all still state. Censused per visit, never silent.
+        _unscheduled_demoted = False
+        if mapping is not None and mapping["visit_class"] == "UNSCHEDULED_VISIT":
+            mapping = {
+                "visit_type_names": list(mapping["visit_type_names"])
+                + list(VISIT_TYPE_MAP["scheduled"]["visit_type_names"]),
+                "visit_class": "MANUALLY_DEFINED_VISIT",
+            }
+            _unscheduled_demoted = True
         if mapping is None:
             plans.append(
                 {
@@ -617,7 +720,7 @@ def visit_plan(payload, epoch_uid_by_ref):
         is_anchor = i == anchor_idx and mapping["visit_class"] == "MANUALLY_DEFINED_VISIT"
         # time_value is rebased relative to the anchor's day (anchor -> 0).
         tv = _effective_tv(i, v)
-        time_value = tv if tv is not None else 0
+        time_value = tv if tv is not None else _missing_tv[i]
         # Windows relative to the scheduled day (OSB's convention): a payload
         # visit carries absolute minDay/maxDay; OSB wants offsets like -2/+2.
         min_window = 0
@@ -639,6 +742,7 @@ def visit_plan(payload, epoch_uid_by_ref):
             "is_global_anchor_visit": is_anchor,
             "time_value": time_value,
             "day_missing": day is None,
+            "unscheduled_demoted": _unscheduled_demoted,
             "visit_name": v["name"],
             "visit_short_name": v["refKey"][:20],
             # Chronological rank (by effective day), NOT the payload ordinal —
@@ -729,6 +833,12 @@ def odm_item_body(item, codelist_uid_by_name, unit_uid_by_name):
     datatype = item["datatype"]
     if length is None and str(datatype).lower() in ("text", "string"):
         length = 200
+    # OSB pairs length with significant_digits for floats: both set or both
+    # null. This body never states significant digits, so a float with a
+    # stated length must drop it (20260826-floatpair); the collection
+    # constraint remains in the EDC item definition.
+    if str(datatype).lower() == "float":
+        length = None
     return {
         "name": item["name"][:200],
         "oid": item["refKey"],
