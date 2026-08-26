@@ -426,11 +426,21 @@ class EdcExportService:
             for key in (
                 "name",
                 "ordinal",
-                "type",
                 "repeating",
             ):
                 if key in original and key in current_visit:
                     merged[key] = current_visit[key]
+            # _VISIT_TYPE_FROM_SOURCE. `type` is NOT taken from OSB unless OSB's
+            # class actually encodes it. OSB derives type from visit_class, and
+            # permits one UNSCHEDULED_VISIT per study (whose name it also
+            # hard-derives), so every further protocol visit must be imported as
+            # MANUALLY_DEFINED_VISIT to keep its name — and that class says
+            # nothing about scheduled-ness. Letting it win turned the protocol's
+            # stated `unscheduled` into `scheduled` on the way to the EDC.
+            if current_visit.get("type") == "unscheduled":
+                merged["type"] = "unscheduled"
+            elif "type" not in merged and "type" in current_visit:
+                merged["type"] = current_visit["type"]
             if original.get("refKey"):
                 merged["refKey"] = original["refKey"]
             restored.append(merged)
