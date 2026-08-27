@@ -83,6 +83,14 @@ CODELIST_FLOWCHART_GROUP = "Flowchart Group"
 CODELIST_OBJECTIVE_LEVEL = "Objective Level"
 CODELIST_ENDPOINT_LEVEL = "Endpoint Level"
 CODELIST_CRITERIA_TYPE = "Criteria Type"
+CODELIST_ARM_TYPE = "Arm Type"
+CODELIST_ELEMENT_SUBTYPE = "Element Sub Type"
+
+SCAFFOLDING_ELEMENT_DESCRIPTION = (
+    "Scaffolding element created by the 360i importer: OSB models a study's "
+    "structure as design cells (arm x epoch -> element) and the protocol states "
+    "no elements. One element per arm, named for the arm. NOT protocol content."
+)
 
 NATIVE_CODELIST_UIDS = {
     CODELIST_STUDY_TYPE: "C99077",
@@ -1521,12 +1529,34 @@ class Import360i(BaseImporter):
         current_by_ref = self._current_arms_by_ref(study_uid)
         diff = mapping.arm_diff(payload, current_by_ref)
 
+        # ARM TYPE. OSB's Study Structure screen shows every arm's role, and it
+        # shipped empty for every 360i study because nothing ever resolved one.
+        # `arm_type_names` derives it from the arm's own name and the study's
+        # stated control type only; an arm that states neither gets no type and
+        # is created exactly as before. A name that resolves to no Final term is
+        # a census entry, never a coerced value.
+        def _arm_type_uid(plan):
+            for candidate in plan.get("arm_type_names") or []:
+                term, error = self._lookup_final_ct_term(CODELIST_ARM_TYPE, candidate)
+                if not error and term:
+                    return term["term_uid"]
+            if plan.get("arm_type_names"):
+                self.census.carried.append({
+                    "kind": "arm_type_unresolved", "ref": plan["name"],
+                    "reason": "no Final term for "
+                              f"{plan['arm_type_names']} in '{CODELIST_ARM_TYPE}'",
+                })
+            return None
+
         for plan in diff["create"]:
             body = {
                 "name": plan["name"],
                 "short_name": plan["short_name"],
                 "description": plan.get("description"),
             }
+            arm_type_uid = _arm_type_uid(plan)
+            if arm_type_uid:
+                body["arm_type_uid"] = arm_type_uid
             res = self.api.simple_post_to_api(
                 f"/studies/{study_uid}/study-arms", body, "/study-arms"
             )
@@ -1544,6 +1574,9 @@ class Import360i(BaseImporter):
                 "short_name": plan["short_name"],
                 "description": plan.get("description"),
             }
+            arm_type_uid = _arm_type_uid(plan)
+            if arm_type_uid:
+                body["arm_type_uid"] = arm_type_uid
             res = self.api.patch_to_api(body, f"/studies/{study_uid}/study-arms")
             if res is None:
                 self.census.stop("arm", plan["name"], "arm patch failed")
@@ -1556,6 +1589,22 @@ class Import360i(BaseImporter):
         for entry in diff["unchanged"]:
             self.uid_map["arms"][entry["ref"]] = entry["uid"]
             self.census.unchanged.append({"kind": "arm", "ref": entry["ref"]})
+            # An arm created before arm types were resolved carries none, and
+            # `arm_diff` cannot see that (it compares name/short_name only). Set
+            # it here so an existing study gains the type without a rebuild.
+            plan = next((p for p in mapping.arms_plan(payload)
+                         if p["name"] == entry["ref"]), None)
+            current = current_by_ref.get(entry["ref"]) or {}
+            if plan and not current.get("arm_type"):
+                arm_type_uid = _arm_type_uid(plan)
+                if arm_type_uid and self.api.patch_to_api(
+                    {"uid": entry["uid"], "name": plan["name"],
+                     "short_name": plan["short_name"], "arm_type_uid": arm_type_uid},
+                    f"/studies/{study_uid}/study-arms",
+                ) is not None:
+                    self.census.updated.append(
+                        {"kind": "arm_type", "ref": entry["ref"]}
+                    )
 
         for entry in diff["delete"]:
             ok = self.api.simple_delete(
@@ -1576,6 +1625,104 @@ class Import360i(BaseImporter):
                     "arm (doctrine: never presented to OSB as StudyArm)",
                 }
             )
+
+    def ensure_design_structure(self, payload, study_uid, epoch_uids):
+        """StudyElements + StudyDesignCells, so OSB's design matrix is not empty.
+
+        OSB models a study's structure as (arm x epoch) -> element. With no cells
+        the Study Structure screen renders an empty grid and the arms and epochs
+        read as two unrelated lists — ACTT-1 landed with 3 arms, 1 epoch, 0
+        elements and 0 design cells, which is what "the study is not linked up"
+        looks like to a reviewer.
+
+        The elements are declared SCAFFOLDING (see
+        SCAFFOLDING_ELEMENT_DESCRIPTION), exactly as the carrier epoch is: one per
+        arm, named for the arm, asserting nothing the arm does not already say.
+        Idempotent — an element or cell that already exists is reused, and this
+        never deletes a cell a human added.
+        """
+        plan = mapping.design_structure_plan(payload)
+        if not plan["elements"] or not epoch_uids:
+            return
+
+        subtype_uid = None
+        for candidate in mapping.SCAFFOLDING_ELEMENT_SUBTYPES:
+            term, error = self._lookup_final_ct_term(CODELIST_ELEMENT_SUBTYPE, candidate)
+            if not error and term:
+                subtype_uid = term["term_uid"]
+                break
+        if subtype_uid is None:
+            self.census.stop(
+                "study_element", study_uid,
+                f"no Final term in '{CODELIST_ELEMENT_SUBTYPE}' for any of "
+                f"{mapping.SCAFFOLDING_ELEMENT_SUBTYPES}; design cells not created",
+            )
+            return
+
+        existing = {
+            str(e.get("name")): (e.get("element_uid") or e.get("uid"))
+            for e in (self.api.get_all_from_api(
+                f"/studies/{study_uid}/study-elements", params={"page_size": 0}) or [])
+        }
+        element_uid_by_arm = {}
+        for item in plan["elements"]:
+            uid = existing.get(item["name"])
+            if uid is None:
+                res = self.api.simple_post_to_api(
+                    f"/studies/{study_uid}/study-elements",
+                    {
+                        "name": item["name"],
+                        "short_name": item["short_name"],
+                        "element_subtype_uid": subtype_uid,
+                        "description": SCAFFOLDING_ELEMENT_DESCRIPTION,
+                    },
+                    "/study-elements",
+                )
+                if res is None:
+                    self.census.stop("study_element", item["name"], "element create failed")
+                    continue
+                uid = res.get("element_uid") or res.get("uid")
+                self.census.scaffolding.append(
+                    {"kind": "study_element", "ref": item["name"],
+                     "reason": SCAFFOLDING_ELEMENT_DESCRIPTION}
+                )
+            else:
+                self.census.unchanged.append({"kind": "study_element", "ref": item["name"]})
+            if uid:
+                element_uid_by_arm[item["arm_ref"]] = uid
+
+        current_cells = {
+            (c.get("study_arm_uid"), c.get("study_epoch_uid"))
+            for c in (self.api.get_all_from_api(
+                f"/studies/{study_uid}/study-design-cells") or [])
+        }
+        for arm_ref, element_uid in element_uid_by_arm.items():
+            arm_uid = self.uid_map["arms"].get(arm_ref)
+            if not arm_uid:
+                continue
+            for epoch_uid in epoch_uids:
+                if (arm_uid, epoch_uid) in current_cells:
+                    self.census.unchanged.append(
+                        {"kind": "study_design_cell", "ref": f"{arm_ref}::{epoch_uid}"})
+                    continue
+                res = self.api.simple_post_to_api(
+                    f"/studies/{study_uid}/study-design-cells",
+                    {
+                        "study_arm_uid": arm_uid,
+                        "study_epoch_uid": epoch_uid,
+                        "study_element_uid": element_uid,
+                    },
+                    "/study-design-cells",
+                )
+                if res is None:
+                    self.census.stop(
+                        "study_design_cell", f"{arm_ref}::{epoch_uid}", "design cell create failed")
+                    continue
+                self.census.scaffolding.append(
+                    {"kind": "study_design_cell", "ref": f"{arm_ref}::{epoch_uid}",
+                     "reason": "arm x epoch cell placing the arm's own element; "
+                               "the protocol states no elements"}
+                )
 
     # ------------------------------------------------------------------
     # Native Schedule of Activities: governed activity -> study selection -> cell
@@ -2079,12 +2226,31 @@ class Import360i(BaseImporter):
         )
         for item in plan["endpoints"]:
             ref = item["ref"]
-            objective_uid = objective_uid_by_ref.get(item["objective_ref"])
-            if objective_uid is None:
+            # An endpoint the payload declared UNLINKED (its stated objective is
+            # absent from the source or is itself under review) is created without
+            # a study objective — OSB models study_objective_uid as optional — and
+            # censused so a reviewer can attach it. Only an endpoint that claims a
+            # link the import then failed to make is a stop.
+            unresolved = item.get("unresolved_objective")
+            objective_uid = (
+                objective_uid_by_ref.get(item["objective_ref"])
+                if item.get("objective_ref")
+                else None
+            )
+            if objective_uid is None and unresolved is None:
                 self.census.stop(
                     "study_endpoint", ref, "linked objective was not reconciled"
                 )
                 continue
+            if objective_uid is None:
+                self.census.carried.append(
+                    {
+                        "kind": "study_endpoint_objective_unlinked",
+                        "ref": ref,
+                        "stated_objective": unresolved.get("statedRef"),
+                        "reason": unresolved.get("reason"),
+                    }
+                )
             term, error = self._lookup_final_ct_term(
                 CODELIST_ENDPOINT_LEVEL, item["level_name"]
             )
@@ -2410,6 +2576,10 @@ class Import360i(BaseImporter):
         ) = self.ensure_epochs(payload, study_uid)
         stale_visits = self.ensure_visits(payload, study_uid, epoch_uid_by_visit_ref)
         self.ensure_arms(payload, study_uid)
+        # Arms and epochs both exist by here, which is what a design cell joins.
+        self.ensure_design_structure(
+            payload, study_uid, sorted(set(epoch_uid_by_visit_ref.values()))
+        )
 
         # This is the protocol's activity×visit matrix, independent of ODM
         # FORM_REF. It selects only governed exact-match activity concepts.
@@ -2834,6 +3004,10 @@ class Import360i(BaseImporter):
             return _approve(kind, path, uid, ref)
 
         # Items (all groups, all forms), then groups, then forms — leaf first.
+        # Every OID below is STUDY-SCOPED (`mapping.odm_oid`): a payload's
+        # refKeys are minted per study, so an unscoped OID makes two studies
+        # fight over one library object. See the note on `odm_oid`.
+        odm_study_id = payload["source"]["studyId"]
         placement_item_uids = {}
         existing_items_by_oid = {}
         if self.same_payload_replay:
@@ -2852,8 +3026,12 @@ class Import360i(BaseImporter):
                     group_ref = group["refKey"]
                     item_ref = item["refKey"]
                     placement_key = mapping.placement_item_key(group_ref, item_ref)
-                    item_oid = mapping.placement_item_oid(
-                        item_ref, group_ref, item_owner[item_ref]
+                    item_oid = mapping.odm_oid(
+                        "item",
+                        odm_study_id,
+                        mapping.placement_item_oid(
+                            item_ref, group_ref, item_owner[item_ref]
+                        ),
                     )
                     body = mapping.odm_item_body(item, codelist_by_ref, unit_uid_by_name)
                     body["oid"] = item_oid
@@ -2900,9 +3078,10 @@ class Import360i(BaseImporter):
         # Item groups + their item refs.
         for form in odm.get("forms", []):
             for group in form.get("itemGroups", []):
+                group_oid = mapping.odm_oid("item_group", odm_study_id, group["refKey"])
                 body = {
                     "name": group["name"][:200],
-                    "oid": group["refKey"],
+                    "oid": group_oid,
                     "repeating": "no",
                     "translated_texts": [
                         {"text_type": "Description", "language": "en", "text": group.get("description") or group["name"]}
@@ -2915,7 +3094,7 @@ class Import360i(BaseImporter):
                 # Create as Draft: ITEM_REFs attach only to a Draft element,
                 # so defer approval until after they're wired.
                 uid, state, prior = _reconcile(
-                    "item_group", "/odms/item-groups", group["refKey"], body,
+                    "item_group", "/odms/item-groups", group_oid, body,
                     defer_approve=True,
                 )
                 if uid is None:
@@ -2960,9 +3139,10 @@ class Import360i(BaseImporter):
         forms = odm.get("forms", [])
         bundle_meta_carriers = _chunk_carrier(bundle_meta, max(len(forms), 1))
         for form_index, form in enumerate(forms):
+            form_oid = mapping.odm_oid("form", odm_study_id, form["refKey"])
             body = {
                 "name": form["name"][:200],
-                "oid": form["refKey"],
+                "oid": form_oid,
                 "sdtm_version": None,
                 "repeating": "no",
                 "translated_texts": [
@@ -2985,7 +3165,7 @@ class Import360i(BaseImporter):
             # Create as Draft: ITEM_GROUP_REFs attach only to a Draft element,
             # so defer approval until after they're wired.
             uid, state, prior = _reconcile(
-                "form", "/odms/forms", form["refKey"], body, defer_approve=True
+                "form", "/odms/forms", form_oid, body, defer_approve=True
             )
             if uid is None:
                 continue

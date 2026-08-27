@@ -28,7 +28,12 @@ import psycopg
 
 from ..functions.utils import load_env
 
-IMPORTER_VERSION = "360i-importer/1.13"
+# 1.14 (2026-08-26): study-scoped ODM OIDs, unlinked endpoints, stated-order
+# placement for day-missing visits, arm types, and StudyElement/StudyDesignCell
+# scaffolding. Bumping this is what makes the hash gate re-run an UNCHANGED
+# payload against a CHANGED importer — the gate compares both, precisely so a
+# mapper fix reaches studies whose payload did not move.
+IMPORTER_VERSION = "360i-importer/1.14"
 
 
 class EcrfPlatformDb:

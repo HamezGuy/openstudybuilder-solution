@@ -495,11 +495,27 @@ def study_purpose_plan(payload):
         ref, text, source_ids = common("endpoint", item)
         level = str(item.get("level") or "").upper()
         level_name = PURPOSE_LEVEL_NAMES["endpoint"].get(level)
-        objective_ref = objective_aliases.get(str(item.get("objectiveRef") or ""))
         if level_name is None:
             raise ValueError(f"OSB_STUDY_PURPOSE_ENDPOINT_LEVEL_INVALID:{ref}")
-        if objective_ref is None:
+        # AN ENDPOINT MAY SHIP UNLINKED. The payload states either `objectiveRef`
+        # (a published objective) or `unresolvedObjectiveRef` (the id it stated,
+        # plus why it could not be published) — never both, never neither. OSB's
+        # own model makes study_objective_uid optional, so an endpoint whose
+        # objective is absent or under review is created WITHOUT the link rather
+        # than refused: refusing it deleted 60 reviewed ACTT-1 endpoints to
+        # protect a relationship they did not own. The unresolved record rides
+        # into the census so a reviewer can attach it in OSB.
+        stated = item.get("objectiveRef")
+        unresolved = item.get("unresolvedObjectiveRef") or None
+        if stated and unresolved:
+            raise ValueError(f"OSB_STUDY_PURPOSE_ENDPOINT_OBJECTIVE_AMBIGUOUS:{ref}")
+        objective_ref = objective_aliases.get(str(stated or ""))
+        if stated and objective_ref is None:
+            # The payload named a published objective that this payload does not
+            # contain. That is an INTERNAL inconsistency, not a degraded link.
             raise ValueError(f"OSB_STUDY_PURPOSE_ENDPOINT_OBJECTIVE_MISSING:{ref}")
+        if objective_ref is None and unresolved is None:
+            raise ValueError(f"OSB_STUDY_PURPOSE_ENDPOINT_OBJECTIVE_UNDECLARED:{ref}")
         result["endpoints"].append(
             {
                 "ref": ref,
@@ -507,6 +523,7 @@ def study_purpose_plan(payload):
                 "level": level,
                 "level_name": level_name,
                 "objective_ref": objective_ref,
+                "unresolved_objective": unresolved,
                 "timeframe": item.get("timeframe"),
                 "source_assertion_ids": source_ids,
                 "evidence": list(item.get("evidence") or []),
@@ -653,30 +670,52 @@ def visit_plan(payload, epoch_uid_by_ref):
         d = v.get("scheduleDay")
         return int(d) - origin if d is not None else None
 
-    # Number visits by effective time (anchor first at 0), day-missing last,
-    # ties broken by original order — OSB requires monotonic visit_number.
-    def _sort_key(idx):
-        tv = _effective_tv(idx, visits[idx])
-        return (tv if tv is not None else 10**9, idx)
-
-    chrono_order = sorted(range(len(visits)), key=_sort_key)
-    chrono_rank = {idx: rank + 1 for rank, idx in enumerate(chrono_order)}
-
     # _DAY_MISSING_PLACEMENT. OSB enforces that visit_number increases with
     # visit TIMING, so a day-missing visit cannot sit at the anchor's day 0
     # while an earlier-numbered visit sits at day 56 — that is exactly the
     # "not defined in chronological order by study visit timing" rejection.
-    # Place each day-missing visit one day past the last DATED visit, in the
-    # order the protocol listed them: no clinical timing is asserted that the
-    # protocol did not state (day 0 was itself such an assertion), the stated
-    # ORDER is preserved, and the importer censuses each placement.
+    # A day-missing visit therefore needs SOME slot, and the only honest source
+    # for it is the order the protocol listed the visits in.
+    #
+    # WHICH SIDE. Placing every day-missing visit after the last dated one put
+    # ACTT-1's "Screen" column at Day 30 — after the Day 29 follow-up — because
+    # the protocol dates its Day 1..29 visits but heads the screening column with
+    # a name rather than a day. A screening visit sorted last is not a censused
+    # approximation, it is the calendar backwards. So the stated ORDER decides
+    # the side: a visit the protocol lists BEFORE its first dated visit is placed
+    # before it (descending from origin-1, keeping their stated order), and one
+    # listed after is placed past the last dated visit, as before. Both remain
+    # census-visible as `day_missing`; neither asserts a clinical day.
     _dated_tvs = [_effective_tv(idx, visits[idx]) for idx in range(len(visits))]
+    _first_dated_idx = next((i for i in range(len(visits)) if _dated_tvs[i] is not None), None)
     _next_tv = max([tv for tv in _dated_tvs if tv is not None], default=0)
+    _before_tv = min([tv for tv in _dated_tvs if tv is not None], default=0)
     _missing_tv = {}
-    for _idx in chrono_order:
-        if _dated_tvs[_idx] is None:
+    # Trailing placements ascend in stated order; leading ones descend, so that
+    # reversing the stated order below keeps the earliest-listed visit earliest.
+    for _idx in range(len(visits)):
+        if _dated_tvs[_idx] is not None:
+            continue
+        if _first_dated_idx is None or _idx > _first_dated_idx:
             _next_tv += 1
             _missing_tv[_idx] = _next_tv
+    for _idx in range(len(visits) - 1, -1, -1):
+        if _dated_tvs[_idx] is not None or _idx in _missing_tv:
+            continue
+        _before_tv -= 1
+        _missing_tv[_idx] = _before_tv
+
+    # Number visits by their FINAL effective time — a day-missing visit's placed
+    # slot included, which is what makes visit_number and timing agree. (Ranking
+    # before placement sorted every day-missing visit last, so a leading one got
+    # the lowest time and the highest number: OSB's own contradiction.) Ties break
+    # on the protocol's stated order.
+    def _final_tv(idx):
+        tv = _dated_tvs[idx]
+        return tv if tv is not None else _missing_tv[idx]
+
+    chrono_order = sorted(range(len(visits)), key=lambda idx: (_final_tv(idx), idx))
+    chrono_rank = {idx: rank + 1 for rank, idx in enumerate(chrono_order)}
 
     # OSB permits exactly ONE UNSCHEDULED_VISIT per study (study_visit.py), so a
     # protocol stating several would lose all but the first. Tracked here and
@@ -758,9 +797,54 @@ def visit_plan(payload, epoch_uid_by_ref):
     return plans
 
 
+# A placebo arm names itself. Word-bounded, and the `-controlled` lookahead is
+# load-bearing: "Placebo-controlled Remdesivir" is the INVESTIGATIONAL arm of a
+# placebo-controlled study, not the placebo arm, and a bare word boundary reads
+# it the wrong way round because '-' is a non-word character.
+_PLACEBO_ARM = re.compile(
+    r"(?:^|\W)(placebo|sham)(?![\s-]*controlled)(?:\W|$)", re.IGNORECASE)
+_COMPARATOR_ARM = re.compile(
+    r"(?:^|\W)(comparator|active control|standard of care|standard-of-care|"
+    r"usual care|best supportive care)(?:\W|$)",
+    re.IGNORECASE,
+)
+# The study-level `control` values that mean "the non-control arms are the
+# investigational ones". Read from the payload's own stated study block.
+_PLACEBO_CONTROLLED = re.compile(r"placebo|sham", re.IGNORECASE)
+
+
+def arm_type_names(arm_name, stated_control):
+    """Candidate OSB 'Arm Type' term names for one arm, most specific first.
+
+    Resolved from what the SOURCE says, never from position or count:
+
+      * the arm's OWN NAME calls it a placebo/sham arm  -> Placebo Arm;
+      * the arm's own name calls it a comparator/active control -> Comparator Arm;
+      * otherwise, IF the study block states a placebo control, an arm that is
+        not the placebo arm is by definition the investigational one -> Investigational Arm.
+
+    A study that states no control type and an arm that names no role yields []
+    — the arm is still created, with no type, exactly as before. The importer
+    resolves these names against live CT and censuses a miss; nothing is coerced.
+    """
+    name = str(arm_name or "")
+    if _PLACEBO_ARM.search(name):
+        return ["Placebo Arm"]
+    if _COMPARATOR_ARM.search(name):
+        return ["Comparator Arm"]
+    if stated_control and _PLACEBO_CONTROLLED.search(str(stated_control)):
+        return ["Investigational Arm"]
+    return []
+
+
 def arms_plan(payload):
     """StudyArm create-bodies — genuine arms only (the payload already
     separated non-arm group classes, which ride the census as carried)."""
+    stated_control = (
+        ((payload.get("study") or {}).get("nativeMetadata") or {})
+        .get("studyIntervention", {})
+        .get("controlType")
+    )
     plans = []
     for i, arm in enumerate(payload.get("arms", []), start=1):
         name = arm["name"].strip()
@@ -770,9 +854,51 @@ def arms_plan(payload):
                 "short_name": name[:20],
                 "order": i,
                 "description": arm.get("description"),
+                "arm_type_names": arm_type_names(name, stated_control),
             }
         )
     return plans
+
+
+# The element sub-type a scaffolding element carries. The carrier epoch is a
+# Treatment epoch (see `epoch_subtype_candidates`), and an arm's assignment
+# inside a treatment epoch is a treatment element. Tried in order against live
+# CT; a miss is censused, never invented.
+SCAFFOLDING_ELEMENT_SUBTYPES = ["Treatment", "Basic"]
+
+
+def design_structure_plan(payload):
+    """StudyElements + StudyDesignCells, so OSB's design matrix is not empty.
+
+    WHAT OSB NEEDS AND WHY THIS EXISTS. OSB models a study's structure as a
+    matrix of DESIGN CELLS: (arm x epoch) -> element. Without cells the Study
+    Structure screen renders an empty grid, the arms and the epoch appear as two
+    unrelated lists, and nothing downstream can tell which arm is active when —
+    which is exactly what "the study is not linked up" looks like in the UI.
+    Measured on ACTT-1: 3 arms, 1 epoch, **0 elements and 0 design cells**.
+
+    WHAT IS AND IS NOT CLAIMED. A protocol that states its own epochs, elements
+    and cells would ride them first-class; none of ours state elements, so this
+    is SCAFFOLDING and is declared as such — the same treatment
+    `CARRIER_EPOCH_NAME` already gets. It asserts nothing the arm does not: one
+    element per arm, named for the arm, and one cell placing that arm's element
+    in every epoch the study has. For a parallel-group study that IS the arm
+    restated in OSB's structural vocabulary. It is not a schedule, a dose, or a
+    duration, and it never invents an epoch the protocol did not state.
+    """
+    arms = [a["name"].strip() for a in payload.get("arms", []) if a.get("name")]
+    elements = [
+        {
+            "arm_ref": name,
+            "name": name[:200],
+            "short_name": name[:20],
+            "order": i,
+            "element_subtype_names": list(SCAFFOLDING_ELEMENT_SUBTYPES),
+            "scaffolding": True,
+        }
+        for i, name in enumerate(arms, start=1)
+    ]
+    return {"elements": elements, "arms": arms}
 
 
 def codelists_plan(payload):
@@ -912,6 +1038,33 @@ def bundle_meta_value(payload):
 def placement_item_key(group_ref, item_ref):
     """Stable uid-map key for an item placement, not merely its data element."""
     return f"{group_ref}::{item_ref}"
+
+
+# ODM OIDs are STUDY-SCOPED, exactly as study-event OIDs already are.
+#
+# THE LOSS THIS CLOSES. A payload's form/group/item refKeys are minted from one
+# study's own CRF ("F_LABORATORY", "F_MEDICAL_HISTORY_SEC_3", "AGE", "LBCAT"),
+# so two studies importing into one OSB collided on every shared name — and an
+# OSB ItemDef may belong to exactly ONE ItemGroupDef. Measured on ACTT-1 against
+# an instance that already held NCT03167411:
+#   * F_MEDICAL_HISTORY_SEC_3 held 136 of the OTHER study's items and none of
+#     ACTT-1's 5; F_DISPOSITION_SEC_4 held 126 of them and none of ACTT-1's 3;
+#   * 10 item-group writes failed outright with "OdmItem is already connected to
+#     another OdmItemGroup", emptying F_LABORATORY_SEC_4 (42 fields),
+#     F_PROCEDURES_INTERVENTIONS_SEC_4 (23), F_ADVERSE_EVENTS_SEC_4 (17) and
+#     four more — 106 protocol-stated fields with nowhere to attach.
+# Both studies were wrong afterwards, and neither import reported a loss,
+# because each one's own writes had "succeeded".
+#
+# `SE.360I.<studyId>.<visitRef>` was already doing this correctly for visits.
+# This is the same rule for the other three ODM kinds. Identity is unaffected:
+# the exporter matches x360i vendor attributes by NAME (refKey), never by OID.
+ODM_OID_PREFIX = {"form": "F", "item_group": "IG", "item": "IT"}
+
+
+def odm_oid(kind, study_id, ref):
+    """`<kind>.360I.<studyId>.<ref>` — one study's ODM object, addressable."""
+    return f"{ODM_OID_PREFIX[kind]}.360I.{study_id}.{ref}"
 
 
 def placement_item_oid(item_ref, group_ref, owner_group_ref):
