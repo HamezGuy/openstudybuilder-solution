@@ -1395,14 +1395,24 @@ class MappingContextService:
                 "limit": limit,
                 "as_of": as_of.isoformat(),
             }
+        # CONTAINMENT RUNS BOTH WAYS, because the two vocabularies are cut
+        # differently. A protocol-derived needle is often a phrase AROUND the
+        # library's canonical name — 'medical history field' vs the library's
+        # 'Medical History' — and needle-inside-name containment can never see
+        # that pair, though the reverse containment is exact. The reverse
+        # direction is guarded (name length >= 5) so a short library name like
+        # 'ECG' does not claim every needle mentioning those letters, and it
+        # ranks BELOW an exact or forward match rather than beside one.
         query = relationship + """
             WITH root, version, value,
                  CASE
                    WHEN any(code IN $codes WHERE toLower(root.uid) = code) THEN 0
                    WHEN any(needle IN $searches WHERE toLower(value.name) = needle) THEN 1
-                   ELSE 2
+                   WHEN any(needle IN $searches WHERE toLower(value.name) CONTAINS needle) THEN 2
+                   ELSE 3
                  END AS match_rank
             WHERE any(needle IN $searches WHERE toLower(value.name) CONTAINS needle)
+               OR any(needle IN $searches WHERE size(value.name) >= 5 AND needle CONTAINS toLower(value.name))
                OR any(code IN $codes WHERE toLower(root.uid) = code)
             OPTIONAL MATCH (library:Library)-[]->(root)
             OPTIONAL MATCH (root)-[:HAS_TYPE]->(:CTTermContext)

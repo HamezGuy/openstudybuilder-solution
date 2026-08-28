@@ -13,8 +13,24 @@ from clinical_mdr_api.generated.platform_contracts.hash_signing_v1 import canoni
 from clinical_mdr_api.generated.platform_contracts.models_v1 import ExternalIdentityCreateIntentV1
 from clinical_mdr_api.generated.platform_contracts.native_identity_command_processor_v1 import NativeIdentityCommandError
 from clinical_mdr_api.models.study_selections.study import StudyCreateInput
+from clinical_mdr_api.models.study_selections.study_standard_version import (
+    StudyStandardVersionInput,
+)
 from clinical_mdr_api.services.integrations.canonical_json import canonical_hash
+from clinical_mdr_api.services.integrations.nested_transaction import (
+    call_in_ambient_transaction,
+)
 from clinical_mdr_api.services.studies.study import StudyService
+from clinical_mdr_api.services.studies.study_standard_version_selection import (
+    StudyStandardVersionService,
+)
+
+# The catalogues a governed mapping context REQUIRES. MappingContextService
+# demands "DDF CT" for every request and adds "SDTM CT"/"CDASH CT" as soon as a
+# request asks for the cdash_variables family; without them it skips every
+# library search. A platform-created draft root that cannot be mapped is not a
+# usable draft root, so the catalogues are selected at creation.
+PLATFORM_REQUIRED_CT_CATALOGUES = ("DDF CT", "SDTM CT", "CDASH CT")
 
 T = TypeVar("T")
 NAMESPACE = "accuratrials-osb"
@@ -332,10 +348,12 @@ class Neo4jOsbNativeIdentityTransactionV1:
                 )
             )
             native_identity, effect_type = created.uid, "created"
+            standards_refs = self._select_required_standards(native_identity)
         else:
             if not supplied:
                 raise NativeIdentityCommandError("IDENTITY_NATIVE_ROOT_NOT_FOUND", "Exact OSB root identity is required.", 404)
             native_identity, effect_type = supplied, "claimed_existing"
+            standards_refs = []
 
         self._assert_tenant_scope(native_identity)
         self._assert_native_available(native_identity)
@@ -358,8 +376,56 @@ class Neo4jOsbNativeIdentityTransactionV1:
                 "status": native_status,
                 "domainBindingId": binding_id,
             },
-            "evidenceRefs": [f"osb-study:{native_identity}"],
+            "evidenceRefs": [f"osb-study:{native_identity}", *standards_refs],
         }
+
+    def _select_required_standards(self, native_identity: str) -> list[str]:
+        """Select the CT standards a governed mapping context requires.
+
+        A draft root created for platform mapping and left with no
+        StudyStandardVersion is not merely incomplete — every library search
+        against it is skipped, so every fact the platform sends comes back
+        unresolved. Measured before this: NCT03167411's 415 typed intents
+        against a bare draft returned zero candidates in all seven resource
+        families, because this deployment had no StudyStandardVersion at all.
+
+        The LATEST package per catalogue is chosen, from the graph rather than a
+        pinned uid, so the selection follows whatever CT the deployment actually
+        loaded. Failure here does NOT fail the binding: the study exists and is
+        governed either way, and a catalogue this deployment has not imported is
+        an operator fact, not a reason to refuse an identity. What must not
+        happen is silence — the outcome rides on the receipt's evidence refs,
+        and the mapping context now blocks every group it could not search.
+        """
+        refs: list[str] = []
+        for catalogue in PLATFORM_REQUIRED_CT_CATALOGUES:
+            try:
+                rows, _ = db.cypher_query(
+                    """
+                    MATCH (catalogue:CTCatalogue {name: $catalogue})
+                          -[:CONTAINS_PACKAGE]->(package:CTPackage)
+                    RETURN package.uid AS uid
+                    ORDER BY package.effective_date DESC
+                    LIMIT 1
+                    """,
+                    {"catalogue": catalogue},
+                )
+                if not rows:
+                    refs.append(f"osb-standard-version-absent:{catalogue}")
+                    continue
+                package_uid = str(rows[0][0])
+                selection = call_in_ambient_transaction(
+                    StudyStandardVersionService().create,
+                    study_uid=native_identity,
+                    study_standard_version_input=StudyStandardVersionInput(
+                        ct_package_uid=package_uid,
+                        description="Selected at platform native-root creation for governed candidate mapping",
+                    ),
+                )
+                refs.append(f"osb-standard-version:{selection.uid}:{package_uid}")
+            except Exception as error:  # noqa: BLE001 - recorded, never raised
+                refs.append(f"osb-standard-version-failed:{catalogue}:{type(error).__name__}")
+        return refs
 
     def publish(self, result: dict[str, Any]) -> None:
         if not self.actor_subject:

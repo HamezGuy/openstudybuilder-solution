@@ -223,7 +223,18 @@ def _assert_request_projection(payload: dict[str, Any], artifact: dict[str, Any]
     # members (CSL's family router deliberately routes the rest to
     # governed_extension / deferred_blocking). The exact subset is checked
     # against the census dispositions below.
-    if member_keys != sorted(member_keys) or not set(intent_keys) <= set(member_keys):
+    #
+    # SORTEDNESS IS CHECKED UNDER THE PRODUCER'S OWN RULE — codepoint order of
+    # (factId, revision) as a TUPLE, which is what CSL's snapshot builder
+    # states. This used to sort the concatenated "factId@revision" STRING,
+    # a different relation whenever one fact id is a prefix of another:
+    # '-' < '@', so 'act-vitals-phrase@1' < 'act-vitals@1' while the tuple
+    # rule puts 'act-vitals' first. Every id IL emits is fixed-length, which
+    # is the only reason the divergence never fired on a real protocol; the
+    # first synthetic package with prefix-related ids refused here with
+    # OSB_CANDIDATE_REQUEST_MEMBER_MISMATCH against a correctly-built request.
+    member_tuples = [(str(member.get("sourceFactId")), int(member.get("revision"))) for member in members]
+    if member_tuples != sorted(member_tuples) or not set(intent_keys) <= set(member_keys):
         raise OsbCandidateSetError("OSB_CANDIDATE_REQUEST_MEMBER_MISMATCH", "Candidate work order differs from snapshot.", 422)
     expected_member_hash = canonical_json_hash_ref(
         members, schema_version="SemanticSnapshotMemberSetV1@1.0.0"
@@ -680,6 +691,22 @@ def _assert_readable_or_create(record: dict[str, Any]) -> str:
             if not offered.get("uid") or not offered.get("version") or not offered.get("resourceType"):
                 raise OsbCandidateSetError("OSB_CANDIDATE_SET_TARGET_UNREADABLE", "Native candidate identity is incomplete.", 422)
         return "native"
+    # AN EMPTY RESULT ONLY MEANS "NO NATIVE OBJECT EXISTS" IF A SEARCH RAN.
+    #
+    # `governed_extension` is OSB asserting, of its own authority, that it holds
+    # nothing for this concept and the platform may create one. That assertion
+    # is only earned by a completed retrieval. When the group carries blockers -
+    # a missing CT package, an unavailable family, an incomplete candidate
+    # identity - the retrieval did not conclude, and booking the fact as a
+    # governed extension launders an unanswered question into a decision.
+    # Measured before this: NCT03167411's 415 intents were ALL booked
+    # `governed_extension` against a study with no StudyStandardVersion, i.e.
+    # against searches that never executed. `deferred_blocking` is the honest
+    # disposition - the fact is conserved, named, and still awaiting an answer -
+    # and it is already a disposition this census carries and the request's own
+    # router uses for exactly this meaning.
+    if record.get("blockers"):
+        return "deferred_blocking"
     if create_allowed:
         return "governed_extension"
     raise OsbCandidateSetError(
@@ -794,10 +821,23 @@ def generate_candidate_set(
             group["parent_resource_type"] = "CTCodelist"
             group["parent_search_strings"] = search_strings[:10] or [str(intent["semanticRole"])[:256]]
         groups.append(MappingContextCandidateGroupRequest(**group))
+    # THE BINDING'S CHECKPOINT IS NOT A STUDY VALUE VERSION. For a draft root,
+    # `_native_checkpoint` returns `native_version or native_status.lower()` —
+    # the literal string "draft" — and forwarding that here made the standard-
+    # version repository filter `HAS_VERSION.version = 'draft'` against
+    # relationships whose version is NULL on every draft in the database
+    # (measured: 31/31). Packages therefore resolved to [] for every study,
+    # the DDF CT prerequisite fired, and every group's library search was
+    # skipped — even on a study whose StudyStandardVersions were correctly
+    # selected. A numbered version (a LOCKED/RELEASED checkpoint) is a real
+    # study value version and is forwarded; a status word means "the draft's
+    # latest value", which is exactly the repository's None branch.
+    native_version = str(binding["nativeVersion"] or "")
+    study_value_version = native_version if native_version.replace(".", "", 1).isdigit() else None
     context = (mapping_context_service or MappingContextService()).get_context_v2(
         MappingContextV2Request(
             study_uid=binding["nativeIdentity"],
-            study_value_version=binding["nativeVersion"],
+            study_value_version=study_value_version,
             candidate_groups=groups,
             maximum_candidates_per_group=10,
         ),
