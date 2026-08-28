@@ -170,6 +170,21 @@ def _iso(value: datetime) -> str:
     return value.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
+def _signer_skew_seconds(
+    statement: dict[str, Any], receipt: NativeIdentityBindingReceiptV1
+) -> float | None:
+    """Distance between when the signer says it signed and when the receipt was
+    produced, or None when either instant is unreadable."""
+    try:
+        asserted = datetime.fromisoformat(
+            str(statement.get("signerAssertedIat") or "").replace("Z", "+00:00")
+        )
+        produced = datetime.fromisoformat(str(receipt["producedAt"]).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return abs((asserted - produced).total_seconds())
+
+
 def _validate_signed_publication(
     receipt: NativeIdentityBindingReceiptV1,
     envelope: dict[str, Any],
@@ -180,6 +195,20 @@ def _validate_signed_publication(
     expected_hash = platform_identity_hash(
         receipt, "NativeIdentityBindingReceiptV1@1.0.0"
     )
+    # THE SIGNER ASSERTS ITS OWN CLOCK, NOT THE RECEIPT'S.
+    #
+    # This required `signerAssertedIat == producedAt` exactly. That held only
+    # while every signature was made in the same instant as the receipt it
+    # covers — so the moment the platform signer stopped restating producedAt
+    # (re-attesting an existing receipt's custody would otherwise claim the
+    # signature was made days ago, which the trust bundle's anti-backdating
+    # check rightly refuses), EVERY native-identity binding here began failing
+    # with IDENTITY_SIGNED_PUBLICATION_INVALID, and no study could be bound to
+    # a platform tenant at all. The CSL port of this same processor already
+    # carries the resolution — a bounded skew window — and this is that rule,
+    # stated identically. The receipt's own producedAt stays inside the signed
+    # bytes; the envelope says when it was signed.
+    skew_seconds = _signer_skew_seconds(statement, receipt)
     if (
         envelope.get("contractVersion") != "SignedArtifactEnvelopeV1@1.0.0"
         or envelope.get("signatureProfile") != "jws-detached-rfc7797/1.0"
@@ -192,7 +221,8 @@ def _validate_signed_publication(
         or descriptor.get("purpose") != "native-identity-binding"
         or canonical_json(descriptor.get("payloadHash")) != canonical_json(expected_hash)
         or statement.get("signingPurpose") != "native-identity-binding"
-        or statement.get("signerAssertedIat") != receipt["producedAt"]
+        or skew_seconds is None
+        or skew_seconds > 300
     ):
         raise NativeIdentityCommandError(
             "IDENTITY_SIGNED_PUBLICATION_INVALID",

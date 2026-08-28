@@ -310,7 +310,23 @@ class MappingContextService:
                 requested.parent_resource_type != "CTCodelist" or not parent_searches
             ):
                 group_blockers.append("MAPPING_CONTEXT_CT_PARENT_REQUIRED")
-            elif not prerequisite_blockers:
+            elif prerequisite_blockers:
+                # "WE LOOKED AND FOUND NOTHING" vs "WE NEVER LOOKED."
+                #
+                # A missing global prerequisite skips every search — and the
+                # group used to be emitted with NO blocker of its own, so
+                # `complete` came out True and the record read as an exhaustive
+                # empty result. Downstream that is not a cosmetic difference:
+                # candidate_set's `_assert_readable_or_create` sees no native
+                # candidate plus an allowed create option and books the fact as
+                # `governed_extension` — OSB asserting it holds no native object
+                # for this concept, on a search it never ran. Measured on a real
+                # protocol: NCT03167411 sent 421 native intents to a study with
+                # no StudyStandardVersion (this deployment has none at all), and
+                # all 421 came back complete, unblocked, and empty. The
+                # prerequisites now ride on every group they silenced.
+                group_blockers.extend(prerequisite_blockers)
+            else:
                 query_limit = request.maximum_candidates_per_group + 1
                 if requested.resource_family == "controlled_terminology":
                     candidates, incomplete_count = self._controlled_terminology_v2(
@@ -384,6 +400,11 @@ class MappingContextService:
             release_blockers.extend(
                 f"{code}:{requested.fact_id}:{requested.concept_id}:{requested.target_key}"
                 for code in group_blockers
+                # A prerequisite is a property of the CONTEXT, not of any one
+                # group; it is already listed once, unqualified. Re-listing it
+                # per group would restate one missing CT package as hundreds of
+                # distinct release blockers.
+                if code not in prerequisite_blockers
             )
 
         release_blockers = sorted(set(release_blockers))
