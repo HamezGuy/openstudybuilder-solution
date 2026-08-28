@@ -185,9 +185,16 @@ class ImportCensus:
         self.scaffolding = []
         self.carried = []
         self.release_blockers = []
+        # Deliberate non-mint decisions ("this member maps to nothing on the
+        # OSB side, by rule") — recorded so the census stays total without
+        # reading as a failure the way `stopped` does (stopped => partial).
+        self.skipped = []
 
     def stop(self, kind, ref, reason):
         self.stopped.append({"kind": kind, "ref": ref, "reason": reason})
+
+    def skip(self, kind, ref, reason):
+        self.skipped.append({"kind": kind, "ref": ref, "reason": reason})
 
     def block_release(self, kind, ref, reason):
         self.release_blockers.append({"kind": kind, "ref": ref, "reason": reason})
@@ -201,6 +208,7 @@ class ImportCensus:
             "importer_scaffolding": self.scaffolding,
             "carried": self.carried,
             "release_blockers": self.release_blockers,
+            "skipped": self.skipped,
             "counts": {
                 "created": len(self.created),
                 "updated": len(self.updated),
@@ -209,6 +217,7 @@ class ImportCensus:
                 "importer_scaffolding": len(self.scaffolding),
                 "carried": len(self.carried),
                 "release_blockers": len(self.release_blockers),
+                "skipped": len(self.skipped),
             },
         }
 
@@ -3224,6 +3233,22 @@ class Import360i(BaseImporter):
                         existing,
                         "unchanged",
                         "forms",
+                    )
+                else:
+                    # The census contract is "every payload member's fate, in
+                    # exactly one bucket" — and this branch used to be a bare
+                    # continue: a visit with no form assignments and no
+                    # pre-existing event simply vanished (measured on ACTT-1:
+                    # 12 visits in, 10 ODM study events out, the two band-header
+                    # visits undispositioned). No event is created for a
+                    # form-less visit ON PURPOSE (an empty StudyEventDef says
+                    # nothing); the choice is now recorded instead of silent.
+                    self.census.skip(
+                        "study_event",
+                        event_oid,
+                        f"visit '{visit.get('name', visit_ref)}' has no form "
+                        "assignments in formVisitMatrix; no ODM study event is "
+                        "minted for a form-less visit",
                     )
                 continue
 

@@ -1102,6 +1102,15 @@ class StudyVisitService(StudySelectionMixin):
             )
 
             if study_visit_vo.visit_class == VisitClass.MANUALLY_DEFINED_VISIT:
+                # A manually defined visit is the one class whose identity the
+                # caller states rather than the service deriving it; a missing
+                # name previously reached visit_name.lower() and answered 500.
+                # The refusal belongs to validation, named, at 400.
+                ValidationException.raise_if(
+                    create_input.visit_name is None
+                    or not str(create_input.visit_name).strip(),
+                    msg="visit_name is required for a Manually defined visit.",
+                )
                 study_visit_vo.visit_number = create_input.visit_number  # type: ignore[assignment]
                 study_visit_vo.vis_unique_number = create_input.unique_visit_number
                 study_visit_vo.vis_short_name = create_input.visit_short_name
