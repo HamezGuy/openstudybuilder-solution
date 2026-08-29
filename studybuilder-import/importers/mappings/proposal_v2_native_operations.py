@@ -81,6 +81,28 @@ _METADATA_PATHS = {
     # CSL ruleset 1.8.0 (M4): stopping rules route to the dedicated
     # free-text field; the string fallback below carries it verbatim.
     "high_level_study_design.study_stop_rules",
+    # OsbCollectionContractV1: the full writable-protocol metadata surface.
+    # CT-coded slots ride the _code branch, durations the duration branch,
+    # booleans/strings their typed branches, and *_codes multiselects the
+    # multi-term branch below.
+    "high_level_study_design.development_stage_code",
+    "high_level_study_design.is_extension_trial",
+    "high_level_study_design.is_adaptive_design",
+    "high_level_study_design.post_auth_indicator",
+    "high_level_study_design.confirmed_response_minimum_duration",
+    "high_level_study_design.trial_type_codes",
+    "study_intervention.intervention_type_code",
+    "study_intervention.add_on_to_existing_treatments",
+    "study_intervention.trial_intent_types_codes",
+    "study_population.therapeutic_area_codes",
+    "study_population.disease_condition_or_indication_codes",
+    "study_population.diagnosis_group_codes",
+    "study_population.rare_disease_indicator",
+    "study_population.stable_disease_minimum_duration",
+    "study_population.pediatric_study_indicator",
+    "study_population.pediatric_postmarket_study_indicator",
+    "study_population.pediatric_investigation_plan_indicator",
+    "study_population.relapse_criteria",
     "study_intervention.intervention_model_code",
     "study_intervention.trial_blinding_schema_code",
     "study_intervention.control_type_code",
@@ -149,10 +171,29 @@ def _metadata_operation_value(item, dependencies):
         match = {f"current_metadata.{path}.term_uid": ct_term["uid"]}
         return value, match, None
 
+    if path.endswith("_codes"):
+        # OSB's multiselect study fields take a LIST of term references; every
+        # resolved CT or dictionary term dependency contributes one element,
+        # ordered by uid so the patch is deterministic.
+        term_uids = sorted(
+            {
+                value.get("uid")
+                for value in selected_dependencies
+                if value.get("resourceType") in ("CTTerm", "DictionaryTerm") and value.get("uid")
+            }
+        )
+        if not term_uids:
+            return None, None, "OSB_NATIVE_V2_METADATA_CT_TERM_REQUIRED"
+        value = [{"term_uid": uid} for uid in term_uids]
+        match = {f"current_metadata.{path}": [{"term_uid": uid} for uid in term_uids]}
+        return value, match, None
+
     if path in {
         "study_population.planned_minimum_age_of_subjects",
         "study_population.planned_maximum_age_of_subjects",
         "study_intervention.planned_study_length",
+        "study_population.stable_disease_minimum_duration",
+        "high_level_study_design.confirmed_response_minimum_duration",
     }:
         numeric = values.get("numericValue")
         if (
@@ -177,6 +218,14 @@ def _metadata_operation_value(item, dependencies):
     if path in {
         "study_intervention.is_trial_randomised",
         "study_population.healthy_subject_indicator",
+        "high_level_study_design.is_extension_trial",
+        "high_level_study_design.is_adaptive_design",
+        "high_level_study_design.post_auth_indicator",
+        "study_intervention.add_on_to_existing_treatments",
+        "study_population.rare_disease_indicator",
+        "study_population.pediatric_study_indicator",
+        "study_population.pediatric_postmarket_study_indicator",
+        "study_population.pediatric_investigation_plan_indicator",
     }:
         value = values.get("booleanValue")
         if not isinstance(value, bool):
