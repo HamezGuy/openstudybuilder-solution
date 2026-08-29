@@ -11,6 +11,15 @@ Tenancy: every table involved has FORCEd row-level security keyed on the
 A wrong or missing tenant does not error — it sees zero rows — which is why
 `read_latest_payload` distinguishes "no payload" loudly.
 
+RLS is NOT the only guard here, deliberately. FORCEd row-level security is
+skipped entirely for a role holding BYPASSRLS, and the documented dev fallback
+DSN connects as the platform superuser: under it every SELECT below sees EVERY
+tenant's rows, and `read_latest_payload` — which takes the NEWEST row for a
+study id — would import whichever tenant happened to build that study last.
+So each read also states `tenant_id = %s` explicitly. The predicate is redundant
+under the least-privilege role it was designed for, and it is the only thing
+standing between two tenants under the role people actually run in dev.
+
 Auth: connect with a least-privilege role (`osb_importer`: SELECT on
 osb_study_payloads, SELECT+INSERT on osb_import_ledger). Dev falls back to
 whatever ECRF_PG_DSN carries (typically app_rw).
@@ -28,12 +37,20 @@ import psycopg
 
 from ..functions.utils import load_env
 
+# 1.15 (2026-08-28): the form-less-visit SKIPPED census bucket (run_import_360i,
+# OSB 9d8b6c53) and tenant-scoped reads below. 9d8b6c53 changed the census
+# CONTRACT without touching this stamp, which meant the fix could not reach a
+# single already-imported study: the gate at run_import_360i.py no-ops when the
+# payload hash, the succeeded status AND this version all match, so an unchanged
+# payload kept replaying against the OLD importer and kept reporting a census with
+# no skipped row. A census-shape change is exactly the "CHANGED importer" this
+# stamp exists to detect.
 # 1.14 (2026-08-26): study-scoped ODM OIDs, unlinked endpoints, stated-order
 # placement for day-missing visits, arm types, and StudyElement/StudyDesignCell
 # scaffolding. Bumping this is what makes the hash gate re-run an UNCHANGED
 # payload against a CHANGED importer — the gate compares both, precisely so a
 # mapper fix reaches studies whose payload did not move.
-IMPORTER_VERSION = "360i-importer/1.14"
+IMPORTER_VERSION = "360i-importer/1.15"
 
 
 class EcrfPlatformDb:
@@ -80,11 +97,11 @@ class EcrfPlatformDb:
                        census_out_of_scope, census_unmapped,
                        payload_jsonb, payload_gzip
                   FROM osb_study_payloads
-                 WHERE study_id = %s
+                 WHERE tenant_id = %s AND study_id = %s
                  ORDER BY created_at DESC, payload_hash
                  LIMIT 1
                 """,
-                (study_id,),
+                (self.tenant_id, study_id),
             )
             row = cur.fetchone()
         return self._row_to_payload(row)
@@ -99,9 +116,9 @@ class EcrfPlatformDb:
                        census_out_of_scope, census_unmapped,
                        payload_jsonb, payload_gzip
                   FROM osb_study_payloads
-                 WHERE payload_hash = %s
+                 WHERE tenant_id = %s AND payload_hash = %s
                 """,
-                (payload_hash,),
+                (self.tenant_id, payload_hash),
             )
             row = cur.fetchone()
         return self._row_to_payload(row)
@@ -113,9 +130,11 @@ class EcrfPlatformDb:
                 """
                 SELECT study_id, MAX(created_at)
                   FROM osb_study_payloads
+                 WHERE tenant_id = %s
                  GROUP BY study_id
                  ORDER BY MAX(created_at) DESC
-                """
+                """,
+                (self.tenant_id,),
             )
             return cur.fetchall()
 
