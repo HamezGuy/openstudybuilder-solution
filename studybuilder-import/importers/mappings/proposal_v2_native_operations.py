@@ -78,6 +78,9 @@ def _nested_value(path, value):
 _METADATA_PATHS = {
     "high_level_study_design.trial_phase_code",
     "high_level_study_design.study_type_code",
+    # CSL ruleset 1.8.0 (M4): stopping rules route to the dedicated
+    # free-text field; the string fallback below carries it verbatim.
+    "high_level_study_design.study_stop_rules",
     "study_intervention.intervention_model_code",
     "study_intervention.trial_blinding_schema_code",
     "study_intervention.control_type_code",
@@ -89,7 +92,22 @@ _METADATA_PATHS = {
     "study_description.study_title",
     "study_description.study_short_title",
     "identification_metadata.study_id",
+    # CSL 1.8.0 (M5/C4): all 13 registry-identifier slots accept the id the
+    # protocol stated — the CSL planner classifies the slot, the value rides
+    # verbatim through the plain-string branch.
     "identification_metadata.registry_identifiers.ct_gov_id",
+    "identification_metadata.registry_identifiers.eudract_id",
+    "identification_metadata.registry_identifiers.universal_trial_number_utn",
+    "identification_metadata.registry_identifiers.japanese_trial_registry_id_japic",
+    "identification_metadata.registry_identifiers.investigational_new_drug_application_number_ind",
+    "identification_metadata.registry_identifiers.eu_trial_number",
+    "identification_metadata.registry_identifiers.civ_id_sin_number",
+    "identification_metadata.registry_identifiers.national_clinical_trial_number",
+    "identification_metadata.registry_identifiers.japanese_trial_registry_number_jrct",
+    "identification_metadata.registry_identifiers.national_medical_products_administration_nmpa_number",
+    "identification_metadata.registry_identifiers.eudamed_srn_number",
+    "identification_metadata.registry_identifiers.investigational_device_exemption_ide_number",
+    "identification_metadata.registry_identifiers.eu_pas_number",
     "study_population.planned_minimum_age_of_subjects",
     "study_population.planned_maximum_age_of_subjects",
     "study_intervention.planned_study_length",
