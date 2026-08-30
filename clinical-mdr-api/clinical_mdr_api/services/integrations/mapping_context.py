@@ -74,6 +74,15 @@ _BLOCKER_ONLY_FAMILY_CODES = {
     ),
 }
 
+# Families whose retrieval consults the SDTM/CDASH data models and IGs.
+# Their prerequisites (SDTM CT + CDASH CT packages, SDTM + CDASH model/IG
+# selections) are prerequisites of THESE searches, not of the request: riding
+# them on every group let one collection-standard intent zero the native
+# resolution of every library family in the same request. Measured on a real
+# protocol: 96 cdash_variables intents out of 2,700 blocked all 2,604 others,
+# including 1,233 in families that had resolved natively one ruleset earlier.
+_COLLECTION_MODE_FAMILIES = frozenset({"cdash_variables"})
+
 
 def _canonical_hash(value: Any) -> str:
     return canonical_hash(jsonable_encoder(value))
@@ -269,26 +278,41 @@ class MappingContextService:
         requested_families = {
             group.resource_family for group in request.candidate_groups
         }
-        collection_mapping_requested = "cdash_variables" in requested_families
-        required_catalogues = {"DDF CT"}
-        if collection_mapping_requested:
-            required_catalogues.update({"SDTM CT", "CDASH CT"})
+        collection_mapping_requested = bool(
+            requested_families & _COLLECTION_MODE_FAMILIES
+        )
         selected_catalogues = {package.catalogue_name for package in packages}
-        for catalogue in sorted(required_catalogues - selected_catalogues):
+        for catalogue in sorted({"DDF CT"} - selected_catalogues):
             release_blockers.append(
                 f"MAPPING_CONTEXT_{catalogue.replace(' ', '_')}_PACKAGE_MISSING"
             )
-        selected_model_families = {model.family for model in data_models}
-        required_model_families = (
-            {"SDTM", "CDASH"} if collection_mapping_requested else set()
-        )
-        for family in sorted(required_model_families - selected_model_families):
-            release_blockers.append(f"MAPPING_CONTEXT_{family}_MODEL_IG_MISSING")
-
         # Group outcomes must never starve later groups. Only immutable context
         # prerequisites may prevent retrieval for every group; truncation or an
         # incomplete candidate in one concept is recorded without skipping others.
         prerequisite_blockers = tuple(release_blockers)
+
+        # The collection-standard prerequisites are computed SEPARATELY and ride
+        # only on collection-mode groups. They are real prerequisites — a CDASH
+        # search that never ran must say "we never looked", loudly, on every
+        # group it silenced — but they are properties of the collection
+        # families' searches, not of the whole request, and the library
+        # families' searches run under their own pins regardless.
+        collection_prerequisites: list[str] = []
+        if collection_mapping_requested:
+            for catalogue in sorted({"SDTM CT", "CDASH CT"} - selected_catalogues):
+                collection_prerequisites.append(
+                    f"MAPPING_CONTEXT_{catalogue.replace(' ', '_')}_PACKAGE_MISSING"
+                )
+            selected_model_families = {model.family for model in data_models}
+            for family in sorted({"SDTM", "CDASH"} - selected_model_families):
+                collection_prerequisites.append(
+                    f"MAPPING_CONTEXT_{family}_MODEL_IG_MISSING"
+                )
+        collection_prerequisite_blockers = tuple(collection_prerequisites)
+        # Listed once at context level, unqualified, exactly like the global
+        # prerequisites — a reader of the set's blockers still sees the missing
+        # models named without scanning thousands of group entries.
+        release_blockers.extend(collection_prerequisites)
 
         package_uids = [package.package_uid for package in packages]
         groups: list[MappingContextCandidateGroup] = []
@@ -326,6 +350,15 @@ class MappingContextService:
                 # all 421 came back complete, unblocked, and empty. The
                 # prerequisites now ride on every group they silenced.
                 group_blockers.extend(prerequisite_blockers)
+            elif (
+                requested.resource_family in _COLLECTION_MODE_FAMILIES
+                and collection_prerequisite_blockers
+            ):
+                # The same discipline, scoped: a collection-standard search that
+                # cannot run is skipped LOUDLY on its own groups — and only on
+                # them. The library families in the same request keep their
+                # searches; one absent data model no longer zeroes the study.
+                group_blockers.extend(collection_prerequisite_blockers)
             else:
                 query_limit = request.maximum_candidates_per_group + 1
                 if requested.resource_family == "controlled_terminology":
@@ -400,19 +433,24 @@ class MappingContextService:
             release_blockers.extend(
                 f"{code}:{requested.fact_id}:{requested.concept_id}:{requested.target_key}"
                 for code in group_blockers
-                # A prerequisite is a property of the CONTEXT, not of any one
-                # group; it is already listed once, unqualified. Re-listing it
+                # A prerequisite is a property of the CONTEXT (or, for the
+                # collection-scoped ones, of a whole family), not of any one
+                # group; each is already listed once, unqualified. Re-listing it
                 # per group would restate one missing CT package as hundreds of
                 # distinct release blockers.
                 if code not in prerequisite_blockers
+                and code not in collection_prerequisite_blockers
             )
 
         release_blockers = sorted(set(release_blockers))
         # A bounded/pinned snapshot remains governed even when one candidate
         # group is unresolved or truncated. Group blockers prohibit release, but
         # the immutable context must still be persisted so OSB can review that
-        # unresolved concept. Only missing global package/model prerequisites
-        # make the snapshot itself ungoverned.
+        # unresolved concept. Only missing GLOBAL package/model prerequisites
+        # make the snapshot itself ungoverned: the collection-scoped
+        # prerequisites block their own groups (recorded on each), while the
+        # searches that did run ran under fully pinned packages and their
+        # results are real.
         governed = not prerequisite_blockers
         content = {
             "schemaVersion": "osb-mapping-context/2.0",

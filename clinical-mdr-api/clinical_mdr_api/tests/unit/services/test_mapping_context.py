@@ -290,8 +290,11 @@ def test_v2_usdm_context_requires_only_pinned_ddf_package(monkeypatch):
 
 
 def test_v2_cdash_family_still_requires_collection_packages_and_models(monkeypatch):
+    saved = []
     service = MappingContextService(
-        context_registry=SimpleNamespace(save_context=lambda *_: None)
+        context_registry=SimpleNamespace(
+            save_context=lambda context_hash, content: saved.append(context_hash)
+        )
     )
     monkeypatch.setattr(
         service,
@@ -323,11 +326,146 @@ def test_v2_cdash_family_still_requires_collection_packages_and_models(monkeypat
         "a" * 64,
     )
 
-    assert context.governed is False
+    # The prerequisites are COLLECTION-SCOPED now: they block the cdash group
+    # itself, loudly, and are named once at context level — but they no longer
+    # make the whole snapshot ungoverned, because every search that was
+    # supposed to run under the global pins did run (here: none).
     assert "MAPPING_CONTEXT_CDASH_CT_PACKAGE_MISSING" in context.release_blockers
     assert "MAPPING_CONTEXT_SDTM_CT_PACKAGE_MISSING" in context.release_blockers
     assert "MAPPING_CONTEXT_CDASH_MODEL_IG_MISSING" in context.release_blockers
     assert "MAPPING_CONTEXT_SDTM_MODEL_IG_MISSING" in context.release_blockers
+    group = context.candidate_groups[0]
+    assert group.complete is False
+    assert group.candidates == []
+    assert "MAPPING_CONTEXT_CDASH_MODEL_IG_MISSING" in group.release_blockers
+    assert "MAPPING_CONTEXT_SDTM_MODEL_IG_MISSING" in group.release_blockers
+    assert context.governed is True
+    assert saved, "a governed context must persist its snapshot for review"
+
+
+def test_v2_collection_prerequisites_do_not_zero_library_families(monkeypatch):
+    """One absent data model must not silence every other family's search.
+
+    Measured on ACTT-1: 96 cdash_variables intents in a 2,700-intent request
+    rode MAPPING_CONTEXT_{SDTM,CDASH}_MODEL_IG_MISSING onto all 2,604 other
+    groups, so no library search ran for ANY family and the study's native
+    resolution went 609/846 -> 0/2,700 between rulesets. The prerequisites are
+    real — for the cdash groups. The library groups must still search.
+    """
+    saved = []
+    service = MappingContextService(
+        context_registry=SimpleNamespace(
+            save_context=lambda context_hash, content: saved.append(context_hash)
+        )
+    )
+    monkeypatch.setattr(
+        service,
+        "_selected_packages",
+        lambda *_: [
+            SimpleNamespace(
+                catalogue_name="DDF CT",
+                package_uid="DDF CT-2025",
+                effective_date="2025-09-26",
+                automatically_created=False,
+            )
+        ],
+    )
+    monkeypatch.setattr(service, "_selected_data_models", lambda *_: [])
+    searched = []
+
+    def retrieve(family, searches, codes, limit, as_of):
+        searched.append((family, tuple(searches)))
+        return [
+            MappingContextCandidate(
+                resource_family=family,
+                resource_type="EndpointTemplate",
+                uid="EndpointTemplate_000001",
+                version="1.0",
+                status="Final",
+                label=searches[0],
+                library_name="Sponsor",
+                parent_resource_type="Library",
+                parent_uid="Sponsor",
+                parent_version="unversioned-library-name",
+            )
+        ], 0
+
+    monkeypatch.setattr(service, "_versioned_library_family_v2", retrieve)
+
+    context = service.get_context_v2(
+        MappingContextV2Request(
+            candidate_groups=[
+                {
+                    "fact_id": "fact-endpoint",
+                    "concept_id": "concept-endpoint",
+                    "target_key": "primary",
+                    "semantic_role": "endpoint",
+                    "resource_family": "endpoint_templates",
+                    "search_strings": ["time to recovery"],
+                },
+                {
+                    "fact_id": "fact-cdash",
+                    "concept_id": "concept-cdash",
+                    "target_key": "primary",
+                    "semantic_role": "collection variable",
+                    "resource_family": "cdash_variables",
+                    "search_strings": ["systolic blood pressure"],
+                },
+            ]
+        ),
+        "a" * 64,
+    )
+
+    # The library family searched and resolved.
+    assert searched == [("endpoint_templates", ("time to recovery",))]
+    endpoint_group, cdash_group = context.candidate_groups
+    assert endpoint_group.complete is True
+    assert endpoint_group.release_blockers == []
+    assert [candidate.uid for candidate in endpoint_group.candidates] == [
+        "EndpointTemplate_000001"
+    ]
+    # The collection group is blocked, loudly, with the specific codes.
+    assert cdash_group.complete is False
+    assert cdash_group.candidates == []
+    assert "MAPPING_CONTEXT_SDTM_MODEL_IG_MISSING" in cdash_group.release_blockers
+    assert "MAPPING_CONTEXT_CDASH_MODEL_IG_MISSING" in cdash_group.release_blockers
+    # Context level: the collection codes are named once, unqualified, and are
+    # not restated per group; the snapshot stays governed and persisted.
+    assert context.governed is True
+    assert saved
+    assert (
+        context.release_blockers.count("MAPPING_CONTEXT_SDTM_MODEL_IG_MISSING") == 1
+    )
+    assert not any(
+        code.startswith("MAPPING_CONTEXT_SDTM_MODEL_IG_MISSING:")
+        for code in context.release_blockers
+    )
+    # A missing GLOBAL prerequisite still zeroes everything: the DDF CT pin is
+    # a property of the whole context, and its absence must keep silencing
+    # every group — the discipline the scoping change must not loosen.
+    monkeypatch.setattr(service, "_selected_packages", lambda *_: [])
+    searched.clear()
+    ungoverned = service.get_context_v2(
+        MappingContextV2Request(
+            candidate_groups=[
+                {
+                    "fact_id": "fact-endpoint",
+                    "concept_id": "concept-endpoint",
+                    "target_key": "primary",
+                    "semantic_role": "endpoint",
+                    "resource_family": "endpoint_templates",
+                    "search_strings": ["time to recovery"],
+                },
+            ]
+        ),
+        "a" * 64,
+    )
+    assert searched == []
+    assert ungoverned.governed is False
+    assert (
+        "MAPPING_CONTEXT_DDF_CT_PACKAGE_MISSING"
+        in ungoverned.candidate_groups[0].release_blockers
+    )
 
 
 def test_v2_request_rejects_duplicate_groups_and_oversized_search_terms():
