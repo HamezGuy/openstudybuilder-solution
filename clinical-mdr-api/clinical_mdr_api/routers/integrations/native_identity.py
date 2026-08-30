@@ -1,6 +1,5 @@
 """Default-off CC-commanded OSB draft-root create/bind endpoint."""
 
-import base64
 import json
 import os
 import urllib.error
@@ -53,7 +52,10 @@ from clinical_mdr_api.services.integrations.native_package_v2 import (
     store_release_artifact_bytes,
 )
 from clinical_mdr_api.services.integrations.canonical_json import canonical_hash
-from clinical_mdr_api.generated.platform_contracts.hash_signing_v1 import canonical_json
+from clinical_mdr_api.generated.platform_contracts.hash_signing_v1 import (
+    canonical_json,
+    sha256_bytes,
+)
 from common.auth.dependencies import platform_security
 from common.auth.user import user
 from common.config import settings
@@ -218,8 +220,19 @@ def _verify_candidate_request_signature(
             "Candidate-request signature verification is not configured.",
             503,
         )
+    # BY-HASH verification: this service holds the exact canonical bytes it is
+    # about to execute, so its OWN hash of its OWN bytes is what the verifier
+    # needs — never the bytes themselves. The base64-in-JSON shape shipped the
+    # whole request over the wire and put a payload-size ceiling on the round
+    # trip: a 20.7 MB request became a 27.6 MB verify body, the dev gateway's
+    # fixture ran past this call's former 10-second timeout, and the command
+    # failed 503 while the same verification succeeded from a patient caller.
+    # The gateway's by-hash mode exists for exactly this (the envelope stays
+    # the authority: the claimed hash must equal the SIGNED payloadHash).
+    payload_bytes = canonical_json(payload).encode("utf-8")
     request_body = json.dumps({
-        "payloadBase64": base64.b64encode(canonical_json(payload).encode("utf-8")).decode("ascii"),
+        "payloadHashValue": sha256_bytes(payload_bytes),
+        "payloadByteSize": len(payload_bytes),
         "envelope": signed_envelope,
     }, separators=(",", ":")).encode("utf-8")
     remote_request = urllib.request.Request(
@@ -229,7 +242,7 @@ def _verify_candidate_request_signature(
         headers={"content-type": "application/json"},
     )
     try:
-        with urllib.request.urlopen(remote_request, timeout=10) as response:
+        with urllib.request.urlopen(remote_request, timeout=30) as response:
             response_body = json.loads(response.read().decode("utf-8"))
     except (urllib.error.URLError, TimeoutError, ValueError) as error:
         raise OsbCandidateSetError(
