@@ -779,20 +779,36 @@ class StudyVisitService(StudySelectionMixin):
                 )
                 timeline.collect_visits_to_epochs(study_epochs)
 
+                # A visit without timing (an unscheduled visit riding an epoch)
+                # has no absolute duration; it cannot bound an epoch, and the
+                # comparison below TypeErrors on int<None if it is allowed to.
+                new_visit_duration = visit_vo.get_absolute_duration()
                 for epoch in study_epochs:
                     if epoch.uid == visit_input.study_epoch_uid:
-                        if epoch.previous_visit and (
-                            visit_vo.get_absolute_duration()
-                            < epoch.previous_visit.get_absolute_duration()
+                        previous_visit_duration = (
+                            epoch.previous_visit.get_absolute_duration()
+                            if epoch.previous_visit
+                            else None
+                        )
+                        if (
+                            previous_visit_duration is not None
+                            and new_visit_duration is not None
+                            and new_visit_duration < previous_visit_duration
                         ):
                             raise exceptions.BusinessLogicException(
                                 msg="The following visit can't be created as previous Epoch Name "
                                 f"'{epoch.previous_visit.epoch.epoch.sponsor_preferred_name}' "
                                 f"ends at the '{epoch.previous_visit.study_day_number}' Study Day"
                             )
-                        if epoch.next_visit and (
-                            visit_vo.get_absolute_duration()
-                            > epoch.next_visit.get_absolute_duration()
+                        next_visit_duration = (
+                            epoch.next_visit.get_absolute_duration()
+                            if epoch.next_visit
+                            else None
+                        )
+                        if (
+                            next_visit_duration is not None
+                            and new_visit_duration is not None
+                            and new_visit_duration > next_visit_duration
                         ):
                             raise exceptions.BusinessLogicException(
                                 msg="The following visit can't be created as the next Epoch Name "
