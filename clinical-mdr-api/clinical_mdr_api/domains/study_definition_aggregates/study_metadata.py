@@ -483,7 +483,7 @@ class HighLevelStudyDesignVO:
         validate_value_and_associated_null_value_valid(
             self.post_auth_indicator,
             self.post_auth_indicator_null_value_code,
-            "confirmed_response_minimum_duration",
+            "post_auth_indicator",
         )
 
         exceptions.ValidationException.raise_if(
