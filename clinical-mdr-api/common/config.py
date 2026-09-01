@@ -3,6 +3,7 @@
 import os
 import string
 from typing import Any, Final, Literal
+from urllib.parse import urlparse
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -242,6 +243,31 @@ class Settings(BaseSettings):
 
     edc_base_url: str = Field(default="", alias="EDC_BASE_URL")
     edc_api_key: SecretStr = Field(default=SecretStr(""), alias="EDC_API_KEY")
+
+    @field_validator("edc_base_url")
+    @classmethod
+    def refuse_production_edc_host(cls, value: str) -> str:
+        """Platform-wide safety policy: accuratrials.com (double "c") is the
+        live production EDC and must be structurally unreachable; the
+        acuratrials.com (single "c") testing estate stays allowed. An empty
+        value (push disabled) remains valid."""
+        if not value:
+            return value
+        hostname = (
+            urlparse(value).hostname
+            # Tolerate a scheme-less value so omitting the protocol
+            # cannot bypass the policy.
+            or urlparse(f"https://{value}").hostname
+            or ""
+        ).lower()
+        if hostname == "accuratrials.com" or hostname.endswith(".accuratrials.com"):
+            raise ValueError(
+                "EDC_BASE_URL_PRODUCTION_PROHIBITED: edc_base_url resolves to the "
+                "live production EDC (accuratrials.com); policy makes production "
+                "structurally unreachable - target the acuratrials.com testing "
+                "estate instead"
+            )
+        return value
 
     # Authority transition for OSB -> EDC releases:
     # - legacy: current carrier-compatible StudyBundleV1 export is available;
