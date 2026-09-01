@@ -260,6 +260,9 @@ class Settings(BaseSettings):
             or urlparse(f"https://{value}").hostname
             or ""
         ).lower()
+        # A root-anchored FQDN ("accuratrials.com.") is the same host to DNS
+        # and TLS - strip the trailing dot before matching.
+        hostname = hostname.rstrip(".")
         if hostname == "accuratrials.com" or hostname.endswith(".accuratrials.com"):
             raise ValueError(
                 "EDC_BASE_URL_PRODUCTION_PROHIBITED: edc_base_url resolves to the "
