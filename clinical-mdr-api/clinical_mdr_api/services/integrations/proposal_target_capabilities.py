@@ -48,6 +48,12 @@ NATIVE_EXECUTOR_RESOURCE_TYPES = frozenset(
         "StudySelectionCriteria",
         "StudySelectionActivity",
         "StudyActivitySchedule",
+        # IL register GAP-8 (2026-09-02): the importer builds typed operations
+        # for these four through the routes named in TARGET_CAPABILITIES.
+        "StudyStandardVersion",
+        "StudySelectionCompound",
+        "StudyCompoundDosing",
+        "StudyActivityInstruction",
     }
 )
 
@@ -57,6 +63,8 @@ NATIVE_SELECTION_RESOURCE_TYPES = frozenset(
         "StudySelectionEndpoint",
         "StudySelectionCriteria",
         "StudySelectionActivity",
+        "StudySelectionCompound",
+        "StudyActivityInstruction",
     }
 )
 
@@ -71,6 +79,20 @@ NATIVE_CREATE_REQUEST_RESOURCE_TYPES = frozenset(
         "StudyDesignCell",
         "StudyVisit",
         "StudyActivitySchedule",
+        "StudyStandardVersion",
+        "StudyCompoundDosing",
+    }
+)
+
+# Study attributes a reviewer may decline: a signed not_applicable decision on
+# one of these is a recorded deferral, not an execution blocker. The study's
+# spine (metadata, design, visits, activities, schedule) stays all-or-nothing.
+NATIVE_DECLINABLE_RESOURCE_TYPES = frozenset(
+    {
+        "StudyStandardVersion",
+        "StudySelectionCompound",
+        "StudyCompoundDosing",
+        "StudyActivityInstruction",
     }
 )
 

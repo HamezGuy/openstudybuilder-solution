@@ -60,6 +60,16 @@ TARGET_CAPABILITIES = {
     ),
     "Timeframe": ("governed_library_reference", "/timeframes"),
     "MedicinalProduct": ("governed_library_reference", "/concepts/medicinal-products"),
+    "CompoundAlias": ("governed_library_reference", "/concepts/compound-aliases"),
+    "NumericValueWithUnit": (
+        "governed_library_reference",
+        "/concepts/numeric-values-with-unit",
+    ),
+    "ActivityInstructionTemplate": (
+        "governed_library_reference",
+        "/activity-instruction-templates",
+    ),
+    "ActivityInstruction": ("governed_library_reference", "/activity-instructions"),
     "PharmaceuticalProduct": (
         "governed_library_reference",
         "/concepts/pharmaceutical-products",

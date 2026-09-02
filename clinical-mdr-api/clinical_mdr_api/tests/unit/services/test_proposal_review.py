@@ -849,3 +849,117 @@ def test_rejection_requires_a_reason_and_blocks_native_execution():
     assert rejected.review_complete is True
     assert rejected.rejected_object_count == 1
     assert rejected.native_execution_ready is False
+
+
+def _with_declinable_object(proposal, resource_type, target_key, section):
+    """Add one object of a declinable family and re-derive the proposal ids."""
+    from clinical_mdr_api.tests.fixtures.osb_proposal_v21 import _object
+
+    added = _object(proposal["sourceBuildHash"], target_key, section, resource_type)
+    proposal["sections"][section] = [*proposal["sections"][section], added]
+    reconciliation = proposal["reconciliation"]
+    reconciliation["proposedObjects"] += 1
+    reconciliation["nativeStudyMutationTargets"] += 1
+    reconciliation["unresolved"] += 1
+    objects = [item for items in proposal["sections"].values() for item in items]
+    content = {key: value for key, value in proposal.items() if key != "proposalHash"}
+    content["proposalId"] = _canonical_hash(
+        {
+            "tenantId": content["tenantId"],
+            "studyId": content["studyId"],
+            "projectId": content["projectId"],
+            "authorityMode": content["authorityMode"],
+            "sourceBuildHash": content["sourceBuildHash"],
+            "osbOpenApiHash": content["osbOpenApiHash"],
+            "osbMappingContextHash": content["osbMappingContextHash"],
+            "proposalObjects": objects,
+            "sourceDispositions": reconciliation.get("dispositions") or [],
+        }
+    )
+    return {**content, "proposalHash": _canonical_hash(content)}, added
+
+
+def test_a_declined_optional_family_is_a_recorded_deferral_not_a_blocker():
+    """IL register GAP-8: StudyCompoundDosing (and the other three attribute
+    families) now have an executor, so an undecided one is an executor gap no
+    longer; a signed not_applicable decision on one is a deferral on the
+    record, while the study's spine keeps its all-or-nothing rule."""
+    repository = MemoryRepository()
+    service = ProposalReviewService(repository)
+    proposal, dosing = _with_declinable_object(
+        _proposal(), "StudyCompoundDosing", "dosing-regimen", "productsDosing"
+    )
+    service.intake(
+        ProposalReviewIntake(proposal=proposal, worker_id="worker-1"),
+        OPENAPI_HASH,
+        principal=_service_principal(),
+    )
+    service.decide(
+        proposal["proposalHash"],
+        _activity_object(proposal)["proposalObjectId"],
+        ProposalObjectDecisionInput(
+            action="selected_candidate",
+            candidate_key=_activity_object(proposal)["mapping"]["candidates"][0][
+                "candidateKey"
+            ],
+            signature_id="signature-1",
+        ),
+        principal=_principal("reviewer-1", "signature-1"),
+    )
+    service.decide(
+        proposal["proposalHash"],
+        _item_object(proposal)["proposalObjectId"],
+        ProposalObjectDecisionInput(
+            action="create_request", note="Create draft item", signature_id="signature-2"
+        ),
+        principal=_principal("reviewer-2", "signature-2"),
+    )
+    complete = service.decide(
+        proposal["proposalHash"],
+        dosing["proposalObjectId"],
+        ProposalObjectDecisionInput(
+            action="not_applicable",
+            note="Dose stated per arm; no library value to bind yet",
+            signature_id="signature-3",
+        ),
+        principal=_principal("reviewer-3", "signature-3"),
+    )
+    assert complete.review_complete is True
+    dosing_id = dosing["proposalObjectId"]
+    assert f"OSB_NATIVE_V2_CREATE_REQUEST_REQUIRED:{dosing_id}" not in complete.execution_blockers
+    assert f"OSB_NATIVE_V2_SELECTION_REQUIRED:{dosing_id}" not in complete.execution_blockers
+    assert not any(
+        blocker.startswith("OSB_RELEASE_NATIVE_FAMILY_EXECUTOR_UNAVAILABLE:")
+        and blocker.endswith(":StudyCompoundDosing")
+        for blocker in complete.release_blockers
+    )
+
+
+def test_the_spine_keeps_its_all_or_nothing_rule_under_not_applicable():
+    repository = MemoryRepository()
+    service = ProposalReviewService(repository)
+    proposal = _proposal()
+    service.intake(
+        ProposalReviewIntake(proposal=proposal, worker_id="worker-1"),
+        OPENAPI_HASH,
+        principal=_service_principal(),
+    )
+    declined_activity = service.decide(
+        proposal["proposalHash"],
+        _activity_object(proposal)["proposalObjectId"],
+        ProposalObjectDecisionInput(
+            action="not_applicable", note="declined", signature_id="signature-1"
+        ),
+        principal=_principal("reviewer-1", "signature-1"),
+    )
+    complete = service.decide(
+        proposal["proposalHash"],
+        _item_object(proposal)["proposalObjectId"],
+        ProposalObjectDecisionInput(
+            action="create_request", note="Create draft item", signature_id="signature-2"
+        ),
+        principal=_principal("reviewer-2", "signature-2"),
+    )
+    assert declined_activity.review_complete is False
+    activity_id = _activity_object(proposal)["proposalObjectId"]
+    assert f"OSB_NATIVE_V2_SELECTION_REQUIRED:{activity_id}" in complete.execution_blockers

@@ -676,6 +676,179 @@ def _activity_schedule_operation_values(item):
     return {}, {}, {"scheduleId": schedule_id}, references, None
 
 
+# Register GAP-8 (IL rework, 2026-09-02): the four families OSB writes through
+# its own routes that carried a capability entry but no operation builder.
+# Each builder is typed against the installed model; a source that cannot fill
+# the DTO is a named blocker, never a guessed body. A reviewer may decline any
+# of these families with a not_applicable decision: the object is then
+# deferred on the record instead of blocking the plan (they are study
+# attributes, not the study's spine).
+NATIVE_DECLINABLE_RESOURCE_TYPES = frozenset(
+    {
+        "StudyStandardVersion",
+        "StudySelectionCompound",
+        "StudyCompoundDosing",
+        "StudyActivityInstruction",
+    }
+)
+
+
+def _standard_version_operation_values(item):
+    values = _source_values(item)
+    ct_package_uid = _string(values.get("ctPackageUid"))
+    if not ct_package_uid:
+        return None, None, "OSB_NATIVE_V2_STANDARD_VERSION_DTO_INCOMPLETE"
+    body = {"ct_package_uid": ct_package_uid}
+    description = _source_description(values)
+    if description:
+        body["description"] = description
+    return body, {"ct_package.uid": ct_package_uid}, None
+
+
+def _compound_operation_values(item, candidate, dependencies):
+    values = _source_values(item)
+    resource_type = candidate.get("resourceType")
+    if resource_type == "MedicinalProduct":
+        medicinal_product_uid = _string(candidate.get("uid"))
+        compound_alias_uid = _string(candidate.get("compoundAliasUid"))
+    elif resource_type == "CompoundAlias":
+        compound_alias_uid = _string(candidate.get("uid"))
+        medicinal_product_uid = _string(candidate.get("medicinalProductUid"))
+    else:
+        medicinal_product_uid = compound_alias_uid = None
+    if not (medicinal_product_uid and compound_alias_uid):
+        return None, None, None, "OSB_NATIVE_V2_COMPOUND_DTO_INCOMPLETE"
+    body = {
+        "compound_alias_uid": compound_alias_uid,
+        "medicinal_product_uid": medicinal_product_uid,
+    }
+    type_of_treatment = _ct_dependency(
+        dependencies, "type-of-treatment", "Type of Treatment"
+    )
+    if type_of_treatment:
+        body["type_of_treatment_uid"] = type_of_treatment["uid"]
+    other_info = _source_description(values)
+    if other_info:
+        body["other_info"] = other_info
+    product_name = (
+        _string(values.get("productName"))
+        or _string(values.get("drugName"))
+        or _string(values.get("name"))
+    )
+    reconcile = {
+        "medicinal_product.uid": medicinal_product_uid,
+        "compound_alias.uid": compound_alias_uid,
+    }
+    source_identity = {"productName": product_name} if product_name else None
+    return body, reconcile, source_identity, None
+
+
+def _compound_dosing_operation_values(item, dependencies):
+    values = _source_values(item)
+    product_name = _string(values.get("productName")) or _string(
+        values.get("drugName")
+    )
+    element_id = _string(values.get("elementId")) or _string(
+        values.get("elementRef")
+    )
+    if not (product_name and element_id):
+        return None, None, None, None, "OSB_NATIVE_V2_COMPOUND_DOSING_DTO_INCOMPLETE"
+    body = {}
+    dose_value = dependencies.get("dose-value")
+    if (
+        dose_value
+        and dose_value.get("resourceType") == "NumericValueWithUnit"
+        and dose_value.get("uid")
+    ):
+        body["dose_value_uid"] = dose_value["uid"]
+    elif _string(values.get("dose")):
+        # The source states a dose the library did not resolve: a row without
+        # it would silently drop the dose. Resolve it or decline the object.
+        return (
+            None,
+            None,
+            None,
+            None,
+            "OSB_NATIVE_V2_COMPOUND_DOSING_DOSE_VALUE_UNRESOLVED",
+        )
+    references = [
+        {
+            "family": "StudySelectionCompound",
+            "identity_name": "productName",
+            "identity_value": product_name,
+            "body_path": "study_compound_uid",
+            "read_match_path": "study_compound.study_compound_uid",
+        },
+        {
+            "family": "StudySelectionElement",
+            "identity_name": "elementId",
+            "identity_value": element_id,
+            "body_path": "study_element_uid",
+            "read_match_path": "study_element.element_uid",
+        },
+    ]
+    reconcile = {}
+    if "dose_value_uid" in body:
+        reconcile["dose_value.uid"] = body["dose_value_uid"]
+    source_identity = {"dosingOf": f"{product_name}|{element_id}"}
+    return body, reconcile, source_identity, references, None
+
+
+def _activity_instruction_operation_values(item, candidate):
+    values = _source_values(item)
+    resource_type = candidate.get("resourceType")
+    uid = _string(candidate.get("uid"))
+    if resource_type == "ActivityInstructionTemplate" and uid:
+        data = {
+            "activity_instruction_template_uid": uid,
+            "parameter_terms": list(candidate.get("parameterTerms") or []),
+        }
+        if _string(candidate.get("libraryName")):
+            data["library_name"] = candidate["libraryName"]
+        content = {"activity_instruction_data": data}
+        reconcile = {}
+        name = _string(candidate.get("name"))
+        if name:
+            reconcile["activity_instruction_name"] = name
+    elif resource_type == "ActivityInstruction" and uid:
+        content = {"activity_instruction_uid": uid}
+        reconcile = {"activity_instruction_uid": uid}
+    else:
+        return (
+            None,
+            None,
+            None,
+            "OSB_NATIVE_V2_ACTIVITY_INSTRUCTION_DTO_INCOMPLETE",
+        )
+    # The instruction hangs under the study activity minted for the same
+    # source: by the activity's stated id when the source has one, otherwise
+    # by the fact both objects were read from.
+    fact_id = ((item.get("mapping") or {}).get("factIds") or [None])[0]
+    activity_id = _string(values.get("activityId"))
+    if activity_id:
+        identity_name, identity_value = "activityId", activity_id
+    elif fact_id:
+        identity_name, identity_value = "factId", fact_id
+    else:
+        return (
+            None,
+            None,
+            None,
+            "OSB_NATIVE_V2_ACTIVITY_INSTRUCTION_ACTIVITY_UNRESOLVED",
+        )
+    references = [
+        {
+            "family": "StudySelectionActivity",
+            "identity_name": identity_name,
+            "identity_value": identity_value,
+            "body_path": "0.content.study_activity_uid",
+            "read_match_path": "study_activity_uid",
+        }
+    ]
+    body = [{"method": "POST", "content": content}]
+    return body, reconcile, references, None
+
+
 def _idempotency_key(
     proposal_hash, object_id, operation, target_study_uid, target_study_version
 ):
@@ -702,6 +875,7 @@ def _operation(
     source_identity=None,
     body_references=None,
     record_hash_scope="record",
+    read_path=None,
 ):
     operation = {
         "proposal_object_id": object_id,
@@ -724,7 +898,7 @@ def _operation(
         },
         "read_after_write": {
             "method": "GET",
-            "path": path,
+            "path": read_path or path,
             "params": {"page_size": 0},
             "match": reconcile,
             **({"collection": False} if not read_collection else {}),
@@ -851,6 +1025,10 @@ def native_operation_plan(
         "StudySelectionCriteria",
         "StudySelectionActivity",
         "StudyActivitySchedule",
+        "StudyStandardVersion",
+        "StudySelectionCompound",
+        "StudyCompoundDosing",
+        "StudyActivityInstruction",
     }
     required_governed_dependencies = {
         (fact_id, dependency_target_key)
@@ -898,8 +1076,22 @@ def native_operation_plan(
             "StudySelectionEndpoint",
             "StudySelectionCriteria",
             "StudySelectionActivity",
+            "StudySelectionCompound",
+            "StudyActivityInstruction",
         }
         decision_action = decisions.get(object_id, {}).get("action")
+        if (
+            resource_type in NATIVE_DECLINABLE_RESOURCE_TYPES
+            and decision_action == "not_applicable"
+        ):
+            deferred_objects.append(
+                {
+                    "proposal_object_id": object_id,
+                    "resource_type": resource_type,
+                    "capability_kind": "declined_by_review",
+                }
+            )
+            continue
         requires_candidate = resource_type in selection_resource_types
         allowed_actions = {
             "selected_candidate" if requires_candidate else "create_request"
@@ -1304,6 +1496,11 @@ def native_operation_plan(
                 continue
             path += "/study-activities"
             activity_id = _string(_source_values(item).get("activityId"))
+            activity_identity = {}
+            if activity_id:
+                activity_identity["activityId"] = activity_id
+            if fact_id:
+                activity_identity["factId"] = fact_id
             operations.append(
                 _operation(
                     proposal_hash,
@@ -1322,9 +1519,111 @@ def native_operation_plan(
                     },
                     target_study_uid,
                     target_study_version,
-                    source_identity=(
-                        {"activityId": activity_id} if activity_id else None
-                    ),
+                    source_identity=activity_identity or None,
+                )
+            )
+        elif resource_type == "StudyStandardVersion":
+            body, reconcile, error = _standard_version_operation_values(item)
+            if error:
+                blockers.append(
+                    {"proposal_object_id": object_id, "code": error, "details": []}
+                )
+                continue
+            path += "/study-standard-versions"
+            operations.append(
+                _operation(
+                    proposal_hash,
+                    object_id,
+                    "StudyStandardVersion",
+                    path,
+                    body,
+                    None,
+                    reconcile,
+                    target_study_uid,
+                    target_study_version,
+                )
+            )
+        elif resource_type == "StudySelectionCompound":
+            body, reconcile, source_identity, error = _compound_operation_values(
+                item, candidate, dependencies
+            )
+            if error:
+                blockers.append(
+                    {"proposal_object_id": object_id, "code": error, "details": []}
+                )
+                continue
+            path += "/study-compounds"
+            operations.append(
+                _operation(
+                    proposal_hash,
+                    object_id,
+                    "StudySelectionCompound",
+                    path,
+                    body,
+                    None,
+                    reconcile,
+                    target_study_uid,
+                    target_study_version,
+                    source_identity=source_identity,
+                )
+            )
+        elif resource_type == "StudyCompoundDosing":
+            (
+                body,
+                reconcile,
+                source_identity,
+                body_references,
+                error,
+            ) = _compound_dosing_operation_values(item, dependencies)
+            if error:
+                blockers.append(
+                    {"proposal_object_id": object_id, "code": error, "details": []}
+                )
+                continue
+            path += "/study-compound-dosings"
+            operations.append(
+                _operation(
+                    proposal_hash,
+                    object_id,
+                    "StudyCompoundDosing",
+                    path,
+                    body,
+                    None,
+                    reconcile,
+                    target_study_uid,
+                    target_study_version,
+                    source_identity=source_identity,
+                    body_references=body_references,
+                    record_hash_scope="match",
+                )
+            )
+        elif resource_type == "StudyActivityInstruction":
+            (
+                body,
+                reconcile,
+                body_references,
+                error,
+            ) = _activity_instruction_operation_values(item, candidate)
+            if error:
+                blockers.append(
+                    {"proposal_object_id": object_id, "code": error, "details": []}
+                )
+                continue
+            path += "/study-activity-instructions"
+            operations.append(
+                _operation(
+                    proposal_hash,
+                    object_id,
+                    "StudyActivityInstruction",
+                    path + "/batch",
+                    body,
+                    None,
+                    reconcile,
+                    target_study_uid,
+                    target_study_version,
+                    body_references=body_references,
+                    record_hash_scope="match",
+                    read_path=path,
                 )
             )
         else:
@@ -1410,6 +1709,10 @@ def native_operation_plan(
         "StudySelectionActivity": 1,
         "StudyVisit": 2,
         "StudyActivitySchedule": 3,
+        "StudyStandardVersion": 0,
+        "StudySelectionCompound": 0,
+        "StudyCompoundDosing": 3,
+        "StudyActivityInstruction": 3,
         "StudyMetadata": 5,
     }
     operations.sort(key=lambda operation: family_rank.get(operation["family"], 3))

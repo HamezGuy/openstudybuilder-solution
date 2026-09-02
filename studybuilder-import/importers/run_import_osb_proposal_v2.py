@@ -345,11 +345,22 @@ class ImportOsbProposalV2(BaseImporter):
 
     @staticmethod
     def _set_nested(target, path, value):
+        # A batch route's body is a list of envelopes ("0.content.x"): a
+        # numeric segment indexes a list, every other segment a mapping.
         parts = path.split(".")
         cursor = target
-        for part in parts[:-1]:
-            cursor = cursor.setdefault(part, {})
-        cursor[parts[-1]] = value
+        for index, part in enumerate(parts):
+            last = index == len(parts) - 1
+            if isinstance(cursor, list):
+                position = int(part)
+                if last:
+                    cursor[position] = value
+                else:
+                    cursor = cursor[position]
+            elif last:
+                cursor[part] = value
+            else:
+                cursor = cursor.setdefault(part, {})
 
     def _resolve_operation_references(self, operation, receipts):
         if not operation.get("body_references"):
@@ -393,6 +404,10 @@ class ImportOsbProposalV2(BaseImporter):
             "StudySelectionCriteria": "study_criteria_uid",
             "StudySelectionActivity": "study_activity_uid",
             "StudyActivitySchedule": "study_activity_schedule_uid",
+            "StudyStandardVersion": "uid",
+            "StudySelectionCompound": "study_compound_uid",
+            "StudyCompoundDosing": "study_compound_dosing_uid",
+            "StudyActivityInstruction": "study_activity_instruction_uid",
         }[operation["family"]]
         return record.get(key)
 

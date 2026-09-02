@@ -28,6 +28,7 @@ from clinical_mdr_api.services.integrations.canonical_json import (
 )
 from clinical_mdr_api.services.integrations.proposal_target_capabilities import (
     NATIVE_CREATE_REQUEST_RESOURCE_TYPES,
+    NATIVE_DECLINABLE_RESOURCE_TYPES,
     NATIVE_DUAL_MODE_RESOURCE_TYPES,
     NATIVE_EXECUTOR_RESOURCE_TYPES,
     NATIVE_SELECTION_RESOURCE_TYPES,
@@ -554,6 +555,15 @@ class Neo4jProposalReviewRepository:
             "authorized_at": convert_to_datetime(row[13]),
             "authorization_content_hash": row[14],
         }
+
+
+def _declined_optional(item) -> bool:
+    """A signed not_applicable decision on a declinable family (GAP-8)."""
+    return (
+        item.proposed_resource_type in NATIVE_DECLINABLE_RESOURCE_TYPES
+        and item.latest_decision is not None
+        and item.latest_decision.action == "not_applicable"
+    )
 
 
 class ProposalReviewService:
@@ -1350,6 +1360,7 @@ class ProposalReviewService:
                     not in NATIVE_DUAL_MODE_RESOURCE_TYPES
                     and item.latest_decision
                     and item.latest_decision.action != "selected_candidate"
+                    and not _declined_optional(item)
                 ],
                 *[
                     f"OSB_NATIVE_V2_CREATE_REQUEST_REQUIRED:{item.proposal_object_id}"
@@ -1360,6 +1371,7 @@ class ProposalReviewService:
                     not in NATIVE_DUAL_MODE_RESOURCE_TYPES
                     and item.latest_decision
                     and item.latest_decision.action != "create_request"
+                    and not _declined_optional(item)
                 ],
                 *[
                     f"OSB_NATIVE_V2_SELECTION_OR_CREATE_REQUEST_REQUIRED:"

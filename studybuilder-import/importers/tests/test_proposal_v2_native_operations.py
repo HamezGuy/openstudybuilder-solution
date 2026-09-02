@@ -172,6 +172,9 @@ def test_activity_operation_uses_existing_ui_backed_route_and_complete_dto():
                     "study_soa_group.soa_group_term_uid": "FlowchartGroup_1",
                 },
             },
+            # The fact the activity was read from is an identity a sibling
+            # instruction can reference (GAP-8).
+            "source_identity": {"factId": "fact-1"},
         }
     ]
     assert len(plan["operations"][0]["idempotency_key"]) == 64
@@ -306,7 +309,8 @@ def test_soa_activity_visit_and_schedule_create_a_receipt_resolved_native_graph(
     activity_operation = plan["operations"][1]
     schedule_operation = plan["operations"][3]
     assert activity_operation["source_identity"] == {
-        "activityId": "soa-activity-bp"
+        "activityId": "soa-activity-bp",
+        "factId": "fact-activity",
     }
     assert schedule_operation["path"] == \
         "/studies/Study_1/study-activity-schedules"
@@ -1135,5 +1139,296 @@ def test_standalone_governed_reference_is_deferred_without_blocking_native_subse
             "proposal_object_id": "odm-item-object",
             "resource_type": "OdmItem",
             "capability_kind": "governed_library_reference",
+        }
+    ]
+
+
+def test_standard_version_create_request_builds_the_typed_body():
+    placeholder = candidate("standard-create", "StudyStandardVersion", "not-selected")
+    standard = proposal_object(
+        "standard-object", "study-standard-version", "StudyStandardVersion", placeholder
+    )
+    standard["mapping"]["candidates"] = []
+    standard["source"] = {"values": [
+        {"name": "ctPackageUid", "value": "SDTM__CT__2023-12-15"},
+        {"name": "description", "value": "SDTM CT 2023-12-15 per protocol section 12"},
+    ]}
+    review = receipt([standard], [placeholder])
+    mark_create_request(review, "standard-object")
+
+    plan = native_operation_plan(envelope([standard]), review, "Study_1", "DRAFT")
+
+    assert plan["blockers"] == []
+    [operation] = plan["operations"]
+    assert operation["family"] == "StudyStandardVersion"
+    assert operation["path"] == "/studies/Study_1/study-standard-versions"
+    assert operation["body"] == {
+        "ct_package_uid": "SDTM__CT__2023-12-15",
+        "description": "SDTM CT 2023-12-15 per protocol section 12",
+    }
+    assert operation["read_after_write"]["match"] == {
+        "ct_package.uid": "SDTM__CT__2023-12-15"
+    }
+
+
+def test_standard_version_without_a_package_is_a_named_blocker():
+    placeholder = candidate("standard-create", "StudyStandardVersion", "not-selected")
+    standard = proposal_object(
+        "standard-object", "study-standard-version", "StudyStandardVersion", placeholder
+    )
+    standard["mapping"]["candidates"] = []
+    standard["source"] = {"values": [{"name": "name", "value": "CDISC SDTM"}]}
+    review = receipt([standard], [placeholder])
+    mark_create_request(review, "standard-object")
+
+    plan = native_operation_plan(envelope([standard]), review, "Study_1", "DRAFT")
+
+    assert plan["operations"] == []
+    assert plan["blockers"] == [
+        {
+            "proposal_object_id": "standard-object",
+            "code": "OSB_NATIVE_V2_STANDARD_VERSION_DTO_INCOMPLETE",
+            "details": [],
+        }
+    ]
+
+
+def _compound_graph(dose_candidate=True, stated_dose="100"):
+    product = candidate(
+        "product-candidate", "MedicinalProduct", "MedicinalProduct_1",
+        compoundAliasUid="CompoundAlias_1",
+    )
+    treatment_type = candidate(
+        "treatment-type", "CTTerm", "TypeOfTreatment_Investigational",
+        parentSubmissionValue="Type of Treatment",
+    )
+    compound = proposal_object(
+        "compound-object", "medicinal-product", "StudySelectionCompound", product,
+        dependencies=["type-of-treatment"],
+    )
+    compound["mapping"]["factIds"] = ["fact-product"]
+    compound["source"] = {"values": [
+        {"name": "productName", "value": "Remdesivir"},
+        {"name": "description", "value": "Lyophilized formulation"},
+    ]}
+    treatment_object = proposal_object(
+        "treatment-type-object", "type-of-treatment", "CTTerm", treatment_type
+    )
+    treatment_object["mapping"]["factIds"] = ["fact-product"]
+
+    element_placeholder = candidate(
+        "element-create", "StudySelectionElement", "not-selected"
+    )
+    element_subtype = candidate(
+        "element-subtype", "CTTerm", "ElementSubtype_Treatment",
+        parentSubmissionValue="Element Sub Type",
+    )
+    element = proposal_object(
+        "element-object", "study-element", "StudySelectionElement",
+        element_placeholder, dependencies=["element-subtype"],
+    )
+    element["mapping"]["factIds"] = ["fact-element"]
+    element["mapping"]["candidates"] = []
+    element["source"] = {"values": [
+        {"name": "elementId", "value": "element-remdesivir"},
+        {"name": "name", "value": "Remdesivir treatment"},
+    ]}
+    element_subtype_object = proposal_object(
+        "element-subtype-object", "element-subtype", "CTTerm", element_subtype
+    )
+    element_subtype_object["mapping"]["factIds"] = ["fact-element"]
+
+    dose = candidate("dose-candidate", "NumericValueWithUnit", "NumericValueWithUnit_100mg")
+    dosing_placeholder = candidate("dosing-create", "StudyCompoundDosing", "not-selected")
+    dosing = proposal_object(
+        "dosing-object", "dosing-regimen", "StudyCompoundDosing", dosing_placeholder,
+        dependencies=["dose-value"] if dose_candidate else [],
+    )
+    dosing["mapping"]["factIds"] = ["fact-dosing"]
+    dosing["mapping"]["candidates"] = []
+    dosing["source"] = {"values": [
+        {"name": "drugName", "value": "Remdesivir"},
+        {"name": "elementRef", "value": "element-remdesivir"},
+        *([{"name": "dose", "value": stated_dose}] if stated_dose else []),
+        {"name": "unit", "value": "mg"},
+    ]}
+    dose_object = proposal_object("dose-object", "dose-value", "NumericValueWithUnit", dose)
+    dose_object["mapping"]["factIds"] = ["fact-dosing"]
+
+    objects = [compound, treatment_object, element, element_subtype_object, dosing]
+    candidates = [product, treatment_type, element_placeholder, element_subtype, dosing_placeholder]
+    if dose_candidate:
+        objects.append(dose_object)
+        candidates.append(dose)
+    review = receipt(objects, candidates)
+    mark_create_request(review, "element-object")
+    mark_create_request(review, "dosing-object")
+    return objects, review
+
+
+def test_compound_selection_and_dosing_create_a_receipt_resolved_graph():
+    objects, review = _compound_graph()
+
+    plan = native_operation_plan(envelope(objects), review, "Study_1", "DRAFT")
+
+    assert plan["blockers"] == []
+    families = [operation["family"] for operation in plan["operations"]]
+    assert families == [
+        "StudySelectionCompound",
+        "StudySelectionElement",
+        "StudyCompoundDosing",
+    ]
+    compound, element, dosing = plan["operations"]
+    assert compound["path"] == "/studies/Study_1/study-compounds"
+    assert compound["body"] == {
+        "compound_alias_uid": "CompoundAlias_1",
+        "medicinal_product_uid": "MedicinalProduct_1",
+        "type_of_treatment_uid": "TypeOfTreatment_Investigational",
+        "other_info": "Lyophilized formulation",
+    }
+    assert compound["source_identity"] == {"productName": "Remdesivir"}
+    assert compound["read_after_write"]["match"] == {
+        "medicinal_product.uid": "MedicinalProduct_1",
+        "compound_alias.uid": "CompoundAlias_1",
+    }
+    assert dosing["path"] == "/studies/Study_1/study-compound-dosings"
+    assert dosing["body"] == {"dose_value_uid": "NumericValueWithUnit_100mg"}
+    assert dosing["record_hash_scope"] == "match"
+    assert dosing["body_references"] == [
+        {
+            "family": "StudySelectionCompound",
+            "identity_name": "productName",
+            "identity_value": "Remdesivir",
+            "body_path": "study_compound_uid",
+            "read_match_path": "study_compound.study_compound_uid",
+            "proposal_object_id": "compound-object",
+        },
+        {
+            "family": "StudySelectionElement",
+            "identity_name": "elementId",
+            "identity_value": "element-remdesivir",
+            "body_path": "study_element_uid",
+            "read_match_path": "study_element.element_uid",
+            "proposal_object_id": "element-object",
+        },
+    ]
+    assert element["proposal_object_id"] == "element-object"
+
+
+def test_compound_dosing_with_a_stated_dose_blocks_without_a_governed_value():
+    objects, review = _compound_graph(dose_candidate=False)
+
+    plan = native_operation_plan(envelope(objects), review, "Study_1", "DRAFT")
+
+    assert [item["code"] for item in plan["blockers"]] == [
+        "OSB_NATIVE_V2_COMPOUND_DOSING_DOSE_VALUE_UNRESOLVED"
+    ]
+
+
+def test_compound_dosing_without_a_stated_dose_writes_no_dose_value():
+    objects, review = _compound_graph(dose_candidate=False, stated_dose=None)
+
+    plan = native_operation_plan(envelope(objects), review, "Study_1", "DRAFT")
+
+    assert plan["blockers"] == []
+    dosing = plan["operations"][-1]
+    assert dosing["family"] == "StudyCompoundDosing"
+    assert dosing["body"] == {}
+    assert dosing["read_after_write"]["match"] == {}
+
+
+def test_activity_instruction_from_a_template_batches_under_its_activity():
+    activity = candidate("activity-candidate", "Activity", "Activity_1")
+    flowchart = candidate(
+        "flowchart-candidate", "CTTerm", "FlowchartGroup_1",
+        parentSubmissionValue="Flowchart Group",
+    )
+    template = candidate(
+        "template-candidate", "ActivityInstructionTemplate",
+        "ActivityInstructionTemplate_1", name="Collect if phone visit",
+    )
+    activity_object = proposal_object(
+        "activity-object", "activity", "StudySelectionActivity", activity,
+        dependencies=["flowchart-group"],
+    )
+    activity_object["mapping"]["factIds"] = ["fact-conditional"]
+    flowchart_object = proposal_object(
+        "flowchart-object", "flowchart-group", "CTTerm", flowchart
+    )
+    flowchart_object["mapping"]["factIds"] = ["fact-conditional"]
+    instruction = proposal_object(
+        "instruction-object", "activity-instruction", "StudyActivityInstruction",
+        template,
+    )
+    instruction["mapping"]["factIds"] = ["fact-conditional"]
+    instruction["source"] = {"values": [
+        {"name": "name", "value": "mortality"},
+        {"name": "triggerCondition", "value": "If phone call only"},
+    ]}
+    objects = [activity_object, flowchart_object, instruction]
+
+    plan = native_operation_plan(
+        envelope(objects), receipt(objects, [activity, flowchart, template]),
+        "Study_1", "DRAFT",
+    )
+
+    assert plan["blockers"] == []
+    activity_operation, instruction_operation = plan["operations"]
+    assert activity_operation["source_identity"] == {"factId": "fact-conditional"}
+    assert instruction_operation["family"] == "StudyActivityInstruction"
+    assert instruction_operation["path"] == "/studies/Study_1/study-activity-instructions/batch"
+    assert instruction_operation["read_after_write"]["path"] == (
+        "/studies/Study_1/study-activity-instructions"
+    )
+    assert instruction_operation["body"] == [
+        {
+            "method": "POST",
+            "content": {
+                "activity_instruction_data": {
+                    "activity_instruction_template_uid": "ActivityInstructionTemplate_1",
+                    "parameter_terms": [],
+                }
+            },
+        }
+    ]
+    assert instruction_operation["body_references"] == [
+        {
+            "family": "StudySelectionActivity",
+            "identity_name": "factId",
+            "identity_value": "fact-conditional",
+            "body_path": "0.content.study_activity_uid",
+            "read_match_path": "study_activity_uid",
+            "proposal_object_id": "activity-object",
+        }
+    ]
+    assert instruction_operation["read_after_write"]["match"] == {
+        "activity_instruction_name": "Collect if phone visit"
+    }
+
+
+def test_a_declined_optional_family_is_deferred_on_the_record_not_blocked():
+    objects, review = _compound_graph()
+    declined = next(
+        item for item in review["objects"]
+        if item["proposal_object_id"] == "dosing-object"
+    )
+    declined["latest_decision"] = {
+        "action": "not_applicable",
+        "candidate_key": None,
+        "signature_verified": True,
+    }
+
+    plan = native_operation_plan(envelope(objects), review, "Study_1", "DRAFT")
+
+    assert plan["blockers"] == []
+    assert [operation["family"] for operation in plan["operations"]] == [
+        "StudySelectionCompound",
+        "StudySelectionElement",
+    ]
+    assert plan["deferred_objects"] == [
+        {
+            "proposal_object_id": "dosing-object",
+            "resource_type": "StudyCompoundDosing",
+            "capability_kind": "declined_by_review",
         }
     ]

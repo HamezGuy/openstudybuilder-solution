@@ -1586,3 +1586,19 @@ def test_ready_flag_cannot_bypass_unverified_object_signature(monkeypatch):
     assert "SIGNATURE_NOT_VERIFIED" in result["execution_blockers"][0]["code"]
     assert api.post_calls == []
     assert db.native_successes == []
+
+
+def test_nested_body_paths_index_batch_envelopes():
+    from ..run_import_osb_proposal_v2 import ImportOsbProposalV2
+
+    body = [{"method": "POST", "content": {"activity_instruction_uid": "AI_1"}}]
+    ImportOsbProposalV2._set_nested(body, "0.content.study_activity_uid", "SA_1")
+    assert body == [
+        {
+            "method": "POST",
+            "content": {"activity_instruction_uid": "AI_1", "study_activity_uid": "SA_1"},
+        }
+    ]
+    mapping = {}
+    ImportOsbProposalV2._set_nested(mapping, "study_compound_uid", "SC_1")
+    assert mapping == {"study_compound_uid": "SC_1"}
