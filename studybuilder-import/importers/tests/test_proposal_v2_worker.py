@@ -168,6 +168,7 @@ def test_validated_skeleton_never_marks_unimplemented_native_import_succeeded(
             json.dumps(
                 {
                     "proposal_hash": "proposal-hash",
+                    "object_count": 2,
                     "decided_object_count": 0,
                 }
             ).encode()
@@ -288,6 +289,7 @@ def test_incomplete_osb_review_is_deferred_without_reposting(monkeypatch):
             json.dumps(
                 {
                     "proposal_hash": "proposal-hash",
+                    "object_count": 2,
                     "review_complete": False,
                     "decided_object_count": 1,
                 }
@@ -312,6 +314,7 @@ def test_completed_osb_review_advances_only_to_review_complete(monkeypatch):
             json.dumps(
                 {
                     "proposal_hash": "proposal-hash",
+                    "object_count": 2,
                     "review_complete": True,
                     "decided_object_count": 2,
                     "rejected_object_count": 0,
@@ -342,6 +345,7 @@ def test_reviewer_rejection_is_terminal(monkeypatch):
             json.dumps(
                 {
                     "proposal_hash": "proposal-hash",
+                    "object_count": 2,
                     "review_complete": True,
                     "decided_object_count": 2,
                     "rejected_object_count": 1,
