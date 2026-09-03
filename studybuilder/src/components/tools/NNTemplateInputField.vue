@@ -19,6 +19,7 @@
         theme="snow"
         @update:content="onInputChanged"
         @blur="onBlur"
+        @ready="onEditorReady"
       />
       <div
         v-if="showDropDown && filteredItems.length > 0"
@@ -58,10 +59,12 @@
 
 <script>
 import { i18n } from '@/plugins/i18n'
-import { QuillEditor, Quill } from '@vueup/vue-quill'
+import { QuillEditor } from '@vueup/vue-quill'
 import '@vueup/vue-quill/dist/vue-quill.snow.css'
 
-const Delta = Quill.import('delta')
+// vue-quill loads Quill lazily, so the Delta class cannot be resolved at module
+// scope. It is taken from the editor instance once the ready event has fired.
+let Delta = null
 
 export default {
   components: {
@@ -108,6 +111,7 @@ export default {
   },
   emits: ['update:modelValue'],
   data: () => ({
+    editorReady: false,
     searchTerm: null,
     // keeps track of the selected item from the drop down menu
     // refers to the computed filteredItems
@@ -135,10 +139,6 @@ export default {
     },
   },
   mounted() {
-    this.focusInput()
-    const quill = this.$refs.editor.getQuill()
-    quill.root.addEventListener('dblclick', this.onDoubleClick)
-    this.initQuill(quill)
     window.addEventListener('resize', this.onResize)
   },
   updated() {
@@ -147,6 +147,17 @@ export default {
     })
   },
   methods: {
+    onEditorReady(quill) {
+      if (!Delta) {
+        Delta = quill.constructor.import('delta')
+      }
+      quill.root.addEventListener('dblclick', this.onDoubleClick)
+      this.initQuill(quill)
+      this.editorReady = true
+      this.textContent = quill.getText()
+      this.focusInput()
+      this.updateMinWidthProperty()
+    },
     initQuill(quill) {
       // Add matcher to remove any formatting when user pastes content
       quill.clipboard.addMatcher(Node.ELEMENT_NODE, (node, delta) => {
@@ -402,7 +413,7 @@ export default {
       this.updateMinWidthProperty()
     },
     updateMinWidthProperty() {
-      if (this.$refs.editor) {
+      if (this.editorReady && this.$refs.editor) {
         const quill = this.$refs.editor.getQuill()
         this.width = quill.root.clientWidth
       }
