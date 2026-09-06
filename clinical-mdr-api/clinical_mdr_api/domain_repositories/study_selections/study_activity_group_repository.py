@@ -199,7 +199,7 @@ class StudySelectionActivityGroupRepository(
                     ORDER BY study_activity.order ASC
                     MATCH (all_sa)<-[:AFTER]-(asa:StudyAction)
                     OPTIONAL MATCH (all_sa)<-[:BEFORE]-(bsa:StudyAction)
-                    WITH all_sa, ar, av, asa, bsa, ver, fgr
+                    WITH all_sa, ar, av, asa, bsa, ver
                     ORDER BY all_sa.uid, asa.date DESC
                     RETURN
                         all_sa.uid AS study_selection_uid,
@@ -210,7 +210,7 @@ class StudySelectionActivityGroupRepository(
                             | study_soa_group.uid]) as study_soa_group_uid,
                         apoc.coll.toSet([(all_sa)<-[:STUDY_ACTIVITY_HAS_STUDY_ACTIVITY_GROUP]-(:StudyActivity)-[:STUDY_ACTIVITY_HAS_STUDY_ACTIVITY_SUBGROUP]->(study_activity_subgroup:StudyActivitySubGroup) 
                             | study_activity_subgroup.uid]) as study_activity_subgroup_uids,
-                        sa.order AS order,
+                        all_sa.order AS order,
                         asa.date AS start_date,
                         asa.author_id AS author_id,
                         labels(asa) AS change_type,

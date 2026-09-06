@@ -355,7 +355,6 @@ class StudySelectionArmRepository:
             return Create()
         return Delete()
 
-    # pylint: disable=unused-argument
     def save(self, study_selection: StudySelectionArmAR, author_id: str) -> None:
         """
         Persist the set of selected study arms from the aggregate to the database
@@ -426,6 +425,7 @@ class StudySelectionArmRepository:
                     order,
                     selection,
                     audit_node,
+                    author_id=author_id,
                     for_deletion=True,
                     before_node=last_study_selection_node,
                 )
@@ -450,6 +450,7 @@ class StudySelectionArmRepository:
                 order,
                 selection,
                 audit_node,
+                author_id=author_id,
                 for_deletion=False,
                 before_node=last_study_selection_node,
             )
@@ -476,6 +477,7 @@ class StudySelectionArmRepository:
         order: int,
         selection: StudySelectionArmVO,
         audit_node: StudyAction,
+        author_id: str,
         for_deletion: bool = False,
         before_node: StudyArm | None = None,
     ):
@@ -521,7 +523,9 @@ class StudySelectionArmRepository:
             before=before_node,
             after=study_arm_selection_node,
             exclude_relationships=[CTTermContext],
-            author_id=selection.author_id,
+            # The action belongs to the current editor, including deletion or
+            # reordering of a selection last written by somebody else.
+            author_id=author_id,
         )
 
     def generate_uid(self) -> str:
