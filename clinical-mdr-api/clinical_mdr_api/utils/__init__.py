@@ -139,7 +139,9 @@ def convert_to_plain(text: str) -> str:
         >>> convert_to_plain("<p>Some [text] with <b>HTML</b> tags.</p>")
         "Some text with HTML tags."
     """
-    return strip_html(text).replace("[", "").replace("]", "")
+    # Raw brackets delimit template parameter values. Explicit numeric entities
+    # are literal source brackets and must survive the subsequent HTML decode.
+    return strip_html(text.replace("[", "").replace("]", ""))
 
 
 def extract_parameters(name: str) -> list[str]:

@@ -37,6 +37,9 @@ import psycopg
 
 from ..functions.utils import load_env
 
+# 1.16 (2026-09-06): commit the complete semantic source snapshot independently
+# of clinical form validation, and retain explicit literal-reference capacity.
+# Existing succeeded 1.15 imports must replay to backfill this source retention.
 # 1.15 (2026-08-28): the form-less-visit SKIPPED census bucket (run_import_360i,
 # OSB 9d8b6c53) and tenant-scoped reads below. 9d8b6c53 changed the census
 # CONTRACT without touching this stamp, which meant the fix could not reach a
@@ -50,7 +53,7 @@ from ..functions.utils import load_env
 # scaffolding. Bumping this is what makes the hash gate re-run an UNCHANGED
 # payload against a CHANGED importer — the gate compares both, precisely so a
 # mapper fix reaches studies whose payload did not move.
-IMPORTER_VERSION = "360i-importer/1.15"
+IMPORTER_VERSION = "360i-importer/1.17"
 
 
 class EcrfPlatformDb:

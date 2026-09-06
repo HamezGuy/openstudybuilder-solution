@@ -45,6 +45,7 @@ EXCLUDE_PROPERTY_ATTRIBUTES_FROM_SCHEMA = {
     "source",
     "exclude_from_model_validate",
     "is_json",
+    "preserve_literal_brackets",
 }
 
 
@@ -278,11 +279,16 @@ class InputModel(BaseModel):
             and field_info.json_schema_extra
             and field_info.json_schema_extra.get("format", "").lower() == "html"
         ):
+            sanitizer = (
+                sanitize_template_html
+                if field_info.json_schema_extra.get("preserve_literal_brackets")
+                else sanitize_html
+            )
             if isinstance(value, str):
-                value = sanitize_html(value)
+                value = sanitizer(value)
 
             elif isinstance(value, list):
-                value = [sanitize_html(v) if isinstance(v, str) else v for v in value]
+                value = [sanitizer(v) if isinstance(v, str) else v for v in value]
 
         # Strip whipespace from strings, items of lists and values of dicts
         value = strip_whitespace(value)
@@ -392,3 +398,31 @@ def sanitize_html(string: str) -> str:
     return nh3.clean(
         string, tags=ALLOWED_HTML_TAGS, attributes=ALLOWED_HTML_ATTRIBUTES
     ).strip()
+
+
+def sanitize_template_html(string: str) -> str:
+    """Keep explicit numeric bracket literals distinct from raw template DSL.
+
+    nh3 normally decodes bracket entities before the template parser sees them.
+    Protect only explicit decimal/hex bracket entities, sanitize with the same
+    HTML policy, then restore canonical entities. Double-encoded entity text
+    stays text. Marker prefixes cannot occur in either the original input or
+    its ordinary sanitized form, including text joined across removed tags.
+    """
+    bracket = re.compile(r"&#(?:0*9[13]|[xX]0*5[bBdD]);")
+    if not bracket.search(string):
+        return sanitize_html(string)
+    ordinary = sanitize_html(string)
+    prefix = "__OSB_LITERAL_BRACKET_"
+    while prefix in string or prefix in ordinary:
+        prefix += "_"
+
+    def protect(match):
+        digits = match.group(0)[2:-1]
+        number = int(digits[1:], 16) if digits[0].lower() == "x" else int(digits)
+        return f"{prefix}{number}__"
+
+    protected = sanitize_html(bracket.sub(protect, string))
+    return protected.replace(f"{prefix}91__", "&#91;").replace(
+        f"{prefix}93__", "&#93;"
+    )

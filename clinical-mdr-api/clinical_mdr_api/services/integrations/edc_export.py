@@ -1,7 +1,3 @@
-
-
-
-
 """Project an OSB study into an AccuraTrial EDC StudyBundleV1 and (optionally)
 push it to the EDC's import endpoint.
 
@@ -32,6 +28,7 @@ import gzip
 import json
 import logging
 import re
+from copy import deepcopy
 from typing import Any
 
 import httpx
@@ -41,6 +38,11 @@ from clinical_mdr_api.domains.study_definition_aggregates.study_metadata import 
 )
 from clinical_mdr_api.services.integrations.edc_field_types import (
     resolve_edc_field_type,
+)
+from clinical_mdr_api.services.integrations.edc_source_snapshot import (
+    SourceSnapshotError,
+    is_source_snapshot,
+    read_source_snapshot,
 )
 from common import config
 
@@ -108,7 +110,12 @@ def _carrier_json(value: str) -> Any:
 
 def _source_study_id(study: dict[str, Any]) -> str | None:
     """Recover the 360i identity stamped on the OSB study at import time."""
-    match = X360I_STUDY_DESCRIPTION.match(str(study.get("description") or ""))
+    identification = (study.get("current_metadata") or {}).get(
+        "identification_metadata"
+    ) or {}
+    match = X360I_STUDY_DESCRIPTION.match(
+        str(identification.get("description") or study.get("description") or "")
+    )
     return match.group("study_id") if match else None
 
 
@@ -218,9 +225,11 @@ class EdcExportService:
     def __init__(self):
         # Imported here (not module level) so importing this module never
         # drags the whole service graph in (test collection, docs build).
+        from clinical_mdr_api.services.odms.conditions import OdmConditionService
         from clinical_mdr_api.services.odms.forms import OdmFormService
         from clinical_mdr_api.services.odms.item_groups import OdmItemGroupService
         from clinical_mdr_api.services.odms.items import OdmItemService
+        from clinical_mdr_api.services.odms.methods import OdmMethodService
         from clinical_mdr_api.services.odms.study_events import OdmStudyEventService
         from clinical_mdr_api.services.studies.study import StudyService
         from clinical_mdr_api.services.studies.study_visit import StudyVisitService
@@ -231,17 +240,155 @@ class EdcExportService:
         self.form_service = OdmFormService()
         self.item_group_service = OdmItemGroupService()
         self.item_service = OdmItemService()
-        self.census: list[dict[str, str]] = []
+        self.method_service = OdmMethodService()
+        self.condition_service = OdmConditionService()
+        self.census: list[dict[str, Any]] = []
         self.source_bundle_meta: dict[str, Any] = {}
+
+    def _retain_native(
+        self,
+        kind: str,
+        record: dict[str, Any],
+        *,
+        uid: str | None = None,
+        scope: dict[str, Any] | None = None,
+    ) -> None:
+        """Keep the complete native reading, including relationship properties.
+
+        EDC's editable fields are a projection, so their scalar shape cannot
+        stand in for native aliases, translations, multiple units or method
+        and condition links. Identical repeated reads are shared; different
+        readings of the same UID are both retained.
+        """
+        if not hasattr(self, "_native_records"):
+            self._native_records: list[dict[str, Any]] = []
+            self._native_record_keys: set[str] = set()
+        key = kind + ":" + json.dumps(record, sort_keys=True, default=str)
+        if key not in self._native_record_keys:
+            self._native_record_keys.add(key)
+            self._native_records.append(
+                {
+                    "kind": kind,
+                    "uid": uid if uid is not None else record.get("uid"),
+                    "record": deepcopy(record),
+                    **({"scope": deepcopy(scope)} if scope is not None else {}),
+                }
+            )
+
+    def _uses_semantic_source(self) -> bool:
+        """Identify the existing CSL producer envelopes, including legacy previews.
+
+        This selects projection precedence, not release authorization. Preview
+        exports remain non-authoritative for deployment and require review.
+        """
+        provenance = self.source_bundle_meta.get("_provenance") or {}
+        custody = self.source_bundle_meta.get("semanticSourceCustody") or {}
+        return (
+            isinstance(provenance, dict)
+            and str(provenance.get("builtBy") or "").startswith("csl.bundle-builder/")
+        ) or (
+            isinstance(custody, dict)
+            and (
+                custody.get("contractVersion") or custody.get("custodyContractVersion")
+            )
+            == "SemanticSourceCustodyV1@1.0.0"
+        )
+
+    def _semantic_difference(self, ref: str, source: Any, native: Any) -> None:
+        if source != native:
+            self.census.append(
+                {
+                    "kind": "semantic_native_difference",
+                    "ref": ref,
+                    "detail": "Semantic source value retained; native variation requires reconciliation in the semantic layer",
+                    "sourceValue": deepcopy(source),
+                    "nativeValue": deepcopy(native),
+                }
+            )
+
+    def _retain_linked_definitions(self) -> None:
+        for kind, property_name in (
+            ("method", "method_oid"),
+            ("condition", "collection_exception_condition_oid"),
+        ):
+            refs = set()
+
+            def collect(value):
+                if isinstance(value, dict):
+                    if value.get(property_name):
+                        refs.add(str(value[property_name]))
+                    for child in value.values():
+                        collect(child)
+                elif isinstance(value, list):
+                    for child in value:
+                        collect(child)
+
+            # Read native relationship properties, not opaque source carriers.
+            for entry in getattr(self, "_native_records", []):
+                collect(entry["record"])
+            if not refs:
+                continue
+            service = getattr(self, kind + "_service")
+            result = service.get_all_odms(
+                page_size=0, filter_by={"oid": {"v": sorted(refs), "op": "eq"}}
+            )
+            items = result.items if hasattr(result, "items") else result
+            found = set()
+            for model in items:
+                record = (
+                    model.model_dump() if hasattr(model, "model_dump") else dict(model)
+                )
+                if record.get("oid") in refs:
+                    found.add(record["oid"])
+                    self._retain_native(kind, record)
+            for missing in sorted(refs - found):
+                self.census.append(
+                    {
+                        "kind": "unresolved_native_reference",
+                        "ref": f"{kind}/{missing}",
+                        "detail": "Native relationship retained, but its referenced definition was not found",
+                    }
+                )
+
+    def _retain_native_associated_records(self, study_uid: str) -> None:
+        from clinical_mdr_api.services.integrations.edc_native_library_definitions import (
+            collect_native_library_definitions,
+        )
+        from clinical_mdr_api.services.integrations.edc_native_study_records import (
+            NativeStudyRecordError,
+            collect_study_native_records,
+        )
+
+        try:
+            records, census = collect_study_native_records(study_uid)
+        except NativeStudyRecordError as error:
+            raise EdcExportError(str(error)) from error
+        for entry in records:
+            self._retain_native(
+                entry["kind"],
+                entry["record"],
+                uid=entry["uid"],
+                scope=entry.get("scope"),
+            )
+        self.census.extend(census)
+        definitions, associations, unresolved = collect_native_library_definitions(
+            self._native_records
+        )
+        for entry in definitions:
+            self._retain_native(entry["kind"], entry["record"], uid=entry["uid"])
+        self._native_associations = associations
+        self.census.extend(unresolved)
 
     # ------------------------------------------------------------------
     # Projection
     # ------------------------------------------------------------------
 
-
     def build_bundle(self, study_uid: str) -> dict[str, Any]:
         self.census = []
         self.source_bundle_meta = {}
+        self._native_records = []
+        self._native_record_keys = set()
+        self._native_associations = []
 
         authority_mode = config.settings.mapping_authority_mode
         if authority_mode == "enforced":
@@ -258,6 +405,7 @@ class EdcExportService:
         )
 
         study_dict = study.model_dump() if hasattr(study, "model_dump") else dict(study)
+        self._retain_native("study", study_dict)
 
         ident = (study_dict.get("current_metadata") or {}).get(
             "identification_metadata"
@@ -281,7 +429,7 @@ class EdcExportService:
             visit_ref_by_name, visits, source_study_id
         )
         forms, form_ref_by_uid, form_ref_by_oid = self._forms(
-            event_form_uids, source_study_ids
+            event_form_uids, source_study_ids, study_uid
         )
         assignments = self._assignments(
             study_uid,
@@ -292,8 +440,12 @@ class EdcExportService:
             source_study_ids,
         )
         arms = self._group_classes(study_uid)
+        self._retain_source_owned_odm_definitions(source_study_id)
+        self._retain_native_associated_records(study_uid)
+        self._retain_linked_definitions()
 
-        source_meta = self.source_bundle_meta
+        source_meta = dict(self.source_bundle_meta)
+        semantic_source_custody = source_meta.pop("semanticSourceCustody", None)
         source_study = dict(source_meta.get("study") or {})
         source_forms = dict(source_meta.get("forms") or {})
         source_overlay_active = bool(source_meta)
@@ -301,6 +453,13 @@ class EdcExportService:
         merged_study = dict(source_study)
         native_keys = set(native_study)
         for key, value in native_study.items():
+            if key == "studyParameters" and isinstance(value, dict):
+                # An empty native parameter projection says nothing about the
+                # source's design parameters; it must not erase that dictionary.
+                value = {**(source_study.get(key) or {}), **value}
+            if self._uses_semantic_source() and key in source_study:
+                self._semantic_difference(f"study.{key}", source_study[key], value)
+                continue
             if key in source_study and source_study[key] != value:
                 self.census.append(
                     {
@@ -325,11 +484,22 @@ class EdcExportService:
                 }
             )
         disclosure = authority_disclosure(authority_mode, source_overlay_active)
+        if "_mappingAuthority" in source_meta:
+            disclosure["sourceAuthority"] = deepcopy(source_meta["_mappingAuthority"])
+        if self._uses_semantic_source():
+            disclosure["sourceTruthSystem"] = "ClinicalSemanticLayer"
+            disclosure["nativeDifferencesRequireSemanticReconciliation"] = True
         authority_warning = (
             "NON-AUTHORITATIVE SHADOW EXPORT: this StudyBundleV1 may restore legacy Intelligence Layer source-carrier values for properties the native OSB V1 projection cannot yet represent. It is for parity review only; OpenStudyBuilder release authority has not been established."
             if authority_mode == "shadow"
             else "LEGACY EXPORT: mapping authority is not established by this StudyBundleV1."
         )
+        if self._uses_semantic_source():
+            authority_warning = (
+                "PREVIEW EXPORT: ClinicalSemanticLayer supplies the source values. "
+                "Native OpenStudyBuilder differences are retained for semantic reconciliation; "
+                "this export does not authorize deployment."
+            )
         self.census.append(
             {
                 "kind": "mapping_authority",
@@ -342,12 +512,8 @@ class EdcExportService:
             "formatVersion": source_meta.get(
                 "formatVersion", EDC_BUNDLE_FORMAT_VERSION
             ),
-            "exportedAt": source_meta.get(
-                "exportedAt", "1970-01-01T00:00:00.000Z"
-            ),
-            "exportedBy": source_meta.get(
-                "exportedBy", "openstudybuilder-edc-export"
-            ),
+            "exportedAt": source_meta.get("exportedAt", "1970-01-01T00:00:00.000Z"),
+            "exportedBy": source_meta.get("exportedBy", "openstudybuilder-edc-export"),
             "sourceStudyName": source_meta.get("sourceStudyName", str(name)),
             "study": merged_study or native_study,
             "visits": self._restore_source_visits(visits),
@@ -371,9 +537,31 @@ class EdcExportService:
             },
             **self._restore_source_group_classes(arms),
             "_mappingAuthority": disclosure,
+            "_osbNative": {
+                "formatVersion": "1.0",
+                "studyUid": study_uid,
+                "scope": "exported-study-records",
+                "records": self._native_records,
+                "associations": self._native_associations,
+                "unresolved": [
+                    deepcopy(row)
+                    for row in self.census
+                    if row["kind"] == "unresolved_native_reference"
+                ],
+            },
             "_exportCensus": {
                 "rows": self.census,
                 "counts": self._export_census_counts(),
+                **(
+                    {"sourceCensus": deepcopy(source_meta["_exportCensus"])}
+                    if "_exportCensus" in source_meta
+                    else {}
+                ),
+                **(
+                    {"semanticSourceCustody": semantic_source_custody}
+                    if semantic_source_custody is not None
+                    else {}
+                ),
             },
         }
 
@@ -393,30 +581,76 @@ class EdcExportService:
         rows (the unconditional mapping_authority row, carrier notes, ...):
         consumers gate on `lossy`, which counts only rows naming actual loss.
         """
-        downgrades = sum(
-            1 for r in self.census if r["kind"] == "field_type_downgrade"
-        )
-        ambiguous_joins = sum(
-            1 for r in self.census if r["kind"] == "ambiguous_join"
-        )
+        downgrades = sum(1 for r in self.census if r["kind"] == "field_type_downgrade")
+        ambiguous_joins = sum(1 for r in self.census if r["kind"] == "ambiguous_join")
         return {
             "total": len(self.census),
             "downgrades": downgrades,
             "ambiguous_joins": ambiguous_joins,
-            "lossy": downgrades + ambiguous_joins,
+            "lossy": sum(
+                1
+                for row in self.census
+                if row["kind"]
+                in {
+                    "field_type_downgrade",
+                    "ambiguous_join",
+                    "dangling_form_ref",
+                    "bundle_meta_unparseable",
+                    "source_form_unparseable",
+                    "source_field_unparseable",
+                    "ext_unparseable",
+                    "ext_value_unparseable",
+                    "unresolved_native_reference",
+                }
+            ),
         }
 
     @staticmethod
     def _ref(value: Any) -> str:
         return _sanitize_ref(str(value or ""))
 
+    @staticmethod
+    def _unique_index(rows, key, label):
+        index = {}
+        for row in rows:
+            identity = key(row)
+            if identity in index and index[identity] != row:
+                raise EdcExportError(
+                    f"AMBIGUOUS_SOURCE_REFERENCE:{label}:{identity}: "
+                    "distinct records cannot share one normalized lookup key"
+                )
+            index[identity] = row
+        return index
+
     def _restore_source_visits(self, current: list[dict[str, Any]]):
         source = self.source_bundle_meta.get("visits") or []
+        if self._uses_semantic_source() and "visits" in self.source_bundle_meta:
+            native_by_ref = {self._ref(row.get("refKey")): row for row in current}
+            for row in source:
+                native = native_by_ref.get(self._ref(row.get("refKey")))
+                if native:
+                    for key in ("name", "ordinal", "type", "repeating"):
+                        if key in row and key in native:
+                            self._semantic_difference(
+                                f"visits/{row.get('refKey')}/{key}",
+                                row[key],
+                                native[key],
+                            )
+                else:
+                    self._semantic_difference(f"visits/{row.get('refKey')}", row, None)
+            return deepcopy(source)
         if not source:
             return current
-        current_by_ref = {
-            self._ref(v.get("refKey") or v.get("name")): v for v in current
-        }
+        current_by_ref = self._unique_index(
+            current,
+            lambda row: self._ref(row.get("refKey") or row.get("name")),
+            "native visit",
+        )
+        self._unique_index(
+            source,
+            lambda row: self._ref(row.get("refKey") or row.get("name")),
+            "source visit",
+        )
         restored = []
         for original in source:
             current_visit = current_by_ref.pop(
@@ -449,12 +683,47 @@ class EdcExportService:
 
     def _restore_source_assignments(self, current: list[dict[str, Any]]):
         source = self.source_bundle_meta.get("visitFormAssignments") or []
+        if (
+            self._uses_semantic_source()
+            and "visitFormAssignments" in self.source_bundle_meta
+        ):
+            native_by_ref: dict[tuple, list[dict]] = {}
+            for native in current:
+                native_by_ref.setdefault(
+                    (native.get("visitRef"), native.get("formRef")), []
+                ).append(native)
+            for row in source:
+                candidates = native_by_ref.get(
+                    (row.get("visitRef"), row.get("formRef")), []
+                )
+                if len(candidates) != 1:
+                    self._semantic_difference(
+                        f"assignments/{row.get('visitRef')}/{row.get('formRef')}/nativeOccurrenceCount",
+                        1,
+                        len(candidates),
+                    )
+                else:
+                    native = candidates[0]
+                    for key in ("required", "ordinal"):
+                        if key in row and key in native:
+                            self._semantic_difference(
+                                f"assignments/{row.get('visitRef')}/{row.get('formRef')}/{key}",
+                                row[key],
+                                native[key],
+                            )
+            return deepcopy(source)
         if not source:
             return current
-        current_by_ref = {
-            (self._ref(a.get("visitRef")), self._ref(a.get("formRef"))): a
-            for a in current
-        }
+        current_by_ref = self._unique_index(
+            current,
+            lambda row: (self._ref(row.get("visitRef")), self._ref(row.get("formRef"))),
+            "native assignment",
+        )
+        self._unique_index(
+            source,
+            lambda row: (self._ref(row.get("visitRef")), self._ref(row.get("formRef"))),
+            "source assignment",
+        )
         restored = []
         for original in source:
             key = (
@@ -476,6 +745,11 @@ class EdcExportService:
 
     def _restore_source_group_classes(self, arms: list[dict[str, Any]]):
         source = self.source_bundle_meta.get("studyGroupClasses") or []
+        if (
+            self._uses_semantic_source()
+            and "studyGroupClasses" in self.source_bundle_meta
+        ):
+            return {"studyGroupClasses": deepcopy(source)}
         if not source:
             return {"studyGroupClasses": arms} if arms else {}
         current_arms = iter(arms)
@@ -495,10 +769,40 @@ class EdcExportService:
     def _restore_source_fields(
         self, current: list[dict[str, Any]], source_form: dict[str, Any]
     ):
-        source_by_ref = {
-            self._ref(field.get("refKey") or field.get("name")): field
-            for field in source_form.get("fields", [])
-        }
+        if self._uses_semantic_source() and "fields" in source_form:
+            native_by_ref = {row.get("refKey"): row for row in current}
+            for row in source_form["fields"]:
+                native = native_by_ref.get(row.get("refKey"))
+                if native:
+                    for key in (
+                        "name",
+                        "label",
+                        "type",
+                        "required",
+                        "sdtmVariable",
+                        "unit",
+                        "options",
+                        "section",
+                        "group",
+                    ):
+                        if key in row and key in native:
+                            self._semantic_difference(
+                                f"fields/{source_form.get('refKey')}/{row.get('refKey')}/{key}",
+                                row[key],
+                                native[key],
+                            )
+                else:
+                    self._semantic_difference(
+                        f"fields/{source_form.get('refKey')}/{row.get('refKey')}",
+                        row,
+                        None,
+                    )
+            return deepcopy(source_form["fields"])
+        source_by_ref = self._unique_index(
+            source_form.get("fields", []),
+            lambda row: self._ref(row.get("refKey") or row.get("name")),
+            "source field",
+        )
         restored = []
         for field in current:
             original = source_by_ref.get(
@@ -520,6 +824,10 @@ class EdcExportService:
                 "section",
                 "group",
             ):
+                if key == "group" and field.get("group") == original.get("section"):
+                    # The importer may name a generated ODM group with its
+                    # section ID. That identifier is not a new display label.
+                    continue
                 if key in original and key in field:
                     merged[key] = field[key]
             if "length" in original and "length" in field:
@@ -540,7 +848,10 @@ class EdcExportService:
             key=lambda v: (v.get("visit_number") or 0),
         )
         for i, v in enumerate(ordered, start=1):
-            base = _sanitize_ref(v.get("visit_short_name") or v.get("visit_name") or f"V{i}")
+            self._retain_native("visit", v)
+            base = _sanitize_ref(
+                v.get("visit_short_name") or v.get("visit_name") or f"V{i}"
+            )
             ref = base
             n = 2
             while ref in used:
@@ -579,11 +890,10 @@ class EdcExportService:
         self, visit_ref_by_name, visits, expected_source_study_id=None
     ):
         """OdmForm UIDs reached from THIS study's study-events' FORM_REFs. A
-        study-event belongs to the study when its OID carries a known visit
-        refKey (SE.360I.<studyId>.<visitRef>) or its name equals a visit name
-        (native OSB studies). These are the forms actually scheduled onto the
-        study calendar; forms the study defines but never schedules are added
-        by the x360i stamp in _forms (the direct 360i->EDC path ships those too)."""
+        stamped event belongs to its explicit source study even if its native
+        calendar projection is held. Unstamped native events require a visit
+        name match. Retaining an event definition does not establish a native
+        visit or assignment; those are projected separately."""
         events_result = self.study_event_service.get_all_odms(page_size=0)
         events = (
             events_result.items if hasattr(events_result, "items") else events_result
@@ -603,6 +913,17 @@ class EdcExportService:
             match = X360I_EVENT_OID.match(oid)
             if (
                 match
+                and not expected_source_study_id
+                and match.group("visit_ref") in visit_refs
+            ):
+                raise EdcExportError(
+                    "AMBIGUOUS_SOURCE_STUDY: a matching visit key does not establish ownership "
+                    "of a stamped source study; an explicit study identity is required"
+                )
+            if expected_source_study_id and not match:
+                continue
+            if (
+                match
                 and expected_source_study_id
                 and match.group("study_id") != expected_source_study_id
             ):
@@ -611,26 +932,68 @@ class EdcExportService:
                 continue
             claims_visit = bool(
                 match
-                and match.group("visit_ref") in visit_refs
-                and (
-                    expected_source_study_id is None
-                    or match.group("study_id") == expected_source_study_id
-                )
+                and expected_source_study_id
+                and match.group("study_id") == expected_source_study_id
             )
-            if claims_visit and match and not expected_source_study_id:
-                source_study_ids.add(match.group("study_id"))
             if not claims_visit:
                 if match:
                     continue
-                claims_visit = (event.get("name") or "").strip().lower() in visit_ref_by_name
+                claims_visit = (
+                    event.get("name") or ""
+                ).strip().lower() in visit_ref_by_name
             if not claims_visit:
                 continue
+            self._retain_native("studyEvent", event)
             for form_ref_model in event.get("forms", []) or []:
                 if form_ref_model.get("uid"):
                     form_uids.add(form_ref_model["uid"])
         return form_uids, source_study_ids
 
-    def _forms(self, event_form_uids=None, source_study_ids=None):
+    def _retain_source_owned_odm_definitions(self, source_study_id):
+        """Retain definitions whose parent projection failed after creation.
+
+        Exact source-stamped OIDs establish ownership independently of a
+        successful form/group link. Filtering is only an optimization; the
+        exact prefix and any vendor ownership stamp are checked again here.
+        """
+        if not source_study_id:
+            return
+        for kind, service_name, marker in (
+            ("itemGroup", "item_group_service", "IG"),
+            ("item", "item_service", "IT"),
+        ):
+            prefix = f"{marker}.360I.{source_study_id}."
+            result = getattr(self, service_name).get_all_odms(
+                page_size=0, filter_by={"oid": {"v": [prefix], "op": "co"}}
+            )
+            models = result.items if hasattr(result, "items") else result
+            reached = {
+                row["uid"]
+                for row in getattr(self, "_native_records", [])
+                if row["kind"] == kind
+            }
+            for model in models:
+                record = (
+                    model.model_dump() if hasattr(model, "model_dump") else dict(model)
+                )
+                if not str(record.get("oid") or "").startswith(prefix):
+                    continue
+                stamped_study = _vendor_attr(record, "studyId")
+                if stamped_study and stamped_study != source_study_id:
+                    raise EdcExportError(
+                        f"AMBIGUOUS_SOURCE_REFERENCE: conflicting owner of {record.get('oid')}"
+                    )
+                self._retain_native(kind, record)
+                if record.get("uid") not in reached:
+                    self.census.append(
+                        {
+                            "kind": "native_definition_retained_without_parent",
+                            "ref": f"{kind}/{record.get('uid')}",
+                            "detail": "Source-owned definition retained independently of its incomplete parent projection",
+                        }
+                    )
+
+    def _forms(self, event_form_uids=None, source_study_ids=None, study_uid=None):
         """The study's ODM forms, projected with sections (item groups) and
         fields (items). refKey = the form's OID when it has one (the 360i
         importer sets OID = refKey), else a sanitized name.
@@ -639,37 +1002,50 @@ class EdcExportService:
         study-events (event_form_uids) OR it carries an x360i vendor stamp (a
         360i-created form, including ones the study defines but never schedules).
         This excludes OSB's baked DDF seed forms and other unrelated library
-        forms. When event_form_uids is None AND no form carries an x360i stamp
-        (a fully-native OSB study), fall back to projecting the whole library so
-        the bundle is never silently empty."""
+        forms. A study with no scoped event links or source identity cannot
+        claim ownership of the shared ODM library."""
         forms_result = self.form_service.get_all_odms(page_size=0)
         forms_items = (
             forms_result.items if hasattr(forms_result, "items") else forms_result
         )
         all_forms = [
-            form_model.model_dump()
-            if hasattr(form_model, "model_dump")
-            else dict(form_model)
+            (
+                form_model.model_dump()
+                if hasattr(form_model, "model_dump")
+                else dict(form_model)
+            )
             for form_model in forms_items
         ]
         event_form_uids = event_form_uids or set()
         source_study_ids = source_study_ids or set()
 
-        def _is_x360i(form):
-            # A 360i-created form carries at least one x360i vendor attribute
-            # (refKey/content/ext); OSB's baked DDF seed forms carry none.
-            return any(
-                attr.get("name")
-                in ("refKey", "content", "ext", "fieldType", "source", "bundleMeta")
-                for attr in (form.get("vendor_attributes") or [])
+        try:
+            snapshot = read_source_snapshot(all_forms, study_uid, source_study_ids)
+        except SourceSnapshotError as error:
+            raise EdcExportError(
+                f"SEMANTIC_SOURCE_SNAPSHOT_INVALID: {error}"
+            ) from error
+        if snapshot:
+            self.source_bundle_meta, carriers = snapshot
+            for carrier in carriers:
+                self._retain_native("sourceSnapshotCarrier", carrier)
+            self.census.append(
+                {
+                    "kind": "semantic_source_snapshot",
+                    "ref": study_uid,
+                    "detail": "Complete committed semantic source snapshot verified independently of native clinical form mapping",
+                }
             )
+        # Source snapshot storage is metadata, never a patient form. This also
+        # excludes uncommitted chunks and older generations from clinical joins.
+        all_forms = [form for form in all_forms if not is_source_snapshot(form)]
 
         bundle_meta_chunks: dict[int, str] = {}
         bundle_meta_chunk_total: int | None = None
-        for form in all_forms:
+        for form in ([] if snapshot else all_forms):
             if (
-                source_study_ids
-                and _vendor_attr(form, "studyId") not in source_study_ids
+                not source_study_ids
+                or _vendor_attr(form, "studyId") not in source_study_ids
             ):
                 continue
             raw_meta = _vendor_attr(form, "bundleMeta")
@@ -677,9 +1053,7 @@ class EdcExportService:
                 continue
             if raw_meta.startswith(CARRIER_CHUNK_PREFIX):
                 try:
-                    header, chunk = raw_meta[len(CARRIER_CHUNK_PREFIX) :].split(
-                        ":", 1
-                    )
+                    header, chunk = raw_meta[len(CARRIER_CHUNK_PREFIX) :].split(":", 1)
                     index_text, total_text = header.split("/", 1)
                     index, total = int(index_text), int(total_text)
                     if not 1 <= index <= total:
@@ -689,6 +1063,13 @@ class EdcExportService:
                         and bundle_meta_chunk_total != total
                     ):
                         raise ValueError("inconsistent chunk totals")
+                    if (
+                        index in bundle_meta_chunks
+                        and bundle_meta_chunks[index] != chunk
+                    ):
+                        raise EdcExportError(
+                            "AMBIGUOUS_BUNDLE_METADATA: conflicting legacy source chunks"
+                        )
                     bundle_meta_chunk_total = total
                     bundle_meta_chunks[index] = chunk
                 except (TypeError, ValueError):
@@ -744,26 +1125,25 @@ class EdcExportService:
                     )
 
         def _in_scope(form):
+            stamped_study = _vendor_attr(form, "studyId")
+            if stamped_study and stamped_study not in source_study_ids:
+                return False
             if form.get("uid") in event_form_uids:
                 return True
             if _vendor_attr(form, "studyId") in source_study_ids:
                 return True
-            # A fully-native study with no event links can only safely fall
-            # back to native forms. Never absorb x360i forms from other studies.
-            return (
-                not source_study_ids
-                and not event_form_uids
-                and not _is_x360i(form)
-            )
+            return False
 
         forms = []
         ref_by_uid: dict[str, str] = {}
         ref_by_oid: dict[str, str] = {}
         used: set[str] = set()
+        exported_refs: set[str] = set()
 
         for form in all_forms:
             if not _in_scope(form):
                 continue
+            self._retain_native("form", form)
             source_form = {}
             raw_source = _vendor_attr(form, "source")
             if raw_source:
@@ -788,9 +1168,16 @@ class EdcExportService:
                 ref = f"{base}_{n}"
                 n += 1
             used.add(ref)
-            ref_by_uid[form["uid"]] = ref
+            exported_ref = source_form.get("refKey") or ref
+            if exported_ref in exported_refs:
+                raise EdcExportError(
+                    f"AMBIGUOUS_FORM_IDENTITY:{exported_ref}: multiple scoped native forms "
+                    "share this portable identity; reconcile their native records before export"
+                )
+            exported_refs.add(exported_ref)
+            ref_by_uid[form["uid"]] = exported_ref
             if form.get("oid"):
-                ref_by_oid[form["oid"]] = ref
+                ref_by_oid[form["oid"]] = exported_ref
 
             sections = []
             fields = []
@@ -800,6 +1187,7 @@ class EdcExportService:
                 group = (
                     group.model_dump() if hasattr(group, "model_dump") else dict(group)
                 )
+                self._retain_native("itemGroup", group)
                 section_id = _sanitize_ref(group.get("oid") or group.get("name"))
                 sections.append(
                     {
@@ -825,10 +1213,14 @@ class EdcExportService:
             fields = self._restore_source_fields(fields, source_form)
             if source_form:
                 restored_form = {**source_form, "fields": fields}
-                if "name" in source_form:
+                if "name" in source_form and not self._uses_semantic_source():
                     restored_form["name"] = form.get("name")
                 description = _english_text(form, "Description")
-                if "description" in source_form and description:
+                if (
+                    "description" in source_form
+                    and description
+                    and not self._uses_semantic_source()
+                ):
                     restored_form["description"] = description
                 forms.append(restored_form)
             else:
@@ -848,9 +1240,27 @@ class EdcExportService:
                         "formLinks": [],
                     }
                 )
+        source_forms = (self.source_bundle_meta.get("forms") or {}).get("forms")
+        if self._uses_semantic_source() and isinstance(source_forms, list):
+            # A native form can be blocked by an unmapped child. Its entire
+            # semantic definition must remain visible in the preview bundle.
+            # Native records document implementation coverage; they never
+            # replace the semantic source of truth.
+            canonical = self._unique_index(
+                source_forms, lambda form: str(form.get("refKey") or ""), "source forms"
+            )
+            native = self._unique_index(
+                forms, lambda form: str(form.get("refKey") or ""), "projected forms"
+            )
+            for ref in canonical.keys() - native.keys():
+                self._semantic_difference(f"forms/{ref}/nativePresence", True, False)
+            for ref in native.keys() - canonical.keys():
+                self._semantic_difference(f"forms/{ref}/sourcePresence", False, True)
+            forms = deepcopy(source_forms)
         return forms, ref_by_uid, ref_by_oid
 
     def _field(self, form_ref, section_name, item, item_ref, order):
+        self._retain_native("item", item)
         stamped_type = _vendor_attr(item, "fieldType")
         field_ref = _sanitize_ref(
             _vendor_attr(item, "refKey") or item.get("oid") or item.get("name")
@@ -862,7 +1272,8 @@ class EdcExportService:
         # ODM datatype for these exact scalar identities and disclose the override.
         if (
             stamped_type == "blood_pressure"
-            and str(item.get("datatype") or "").lower() in {"float", "double", "decimal"}
+            and str(item.get("datatype") or "").lower()
+            in {"float", "double", "decimal"}
             and field_ref in {"SYSBP", "DIABP"}
         ):
             self.census.append(
@@ -946,8 +1357,16 @@ class EdcExportService:
         if terms and "options" not in source_field:
             field["options"] = [
                 {
-                    "label": t.get("display_text") or t.get("name") or str(t.get("uid")),
-                    "value": t.get("display_text") or t.get("name") or str(t.get("uid")),
+                    "label": t.get("display_text")
+                    or t.get("name")
+                    or str(t.get("uid")),
+                    "value": (
+                        str(t["submission_value"])
+                        if t.get("submission_value") is not None
+                        else t.get("display_text")
+                        or t.get("name")
+                        or str(t.get("term_uid") or t.get("uid"))
+                    ),
                     "order": t.get("order") or ti + 1,
                 }
                 for ti, t in enumerate(terms)
@@ -1026,12 +1445,11 @@ class EdcExportService:
             )
             oid = event.get("oid") or ""
             match = X360I_EVENT_OID.match(oid)
+            if source_study_ids and not match:
+                continue
             visit_ref = None
             if match:
-                if (
-                    source_study_ids
-                    and match.group("study_id") not in source_study_ids
-                ):
+                if match.group("study_id") not in source_study_ids:
                     continue
                 candidate = match.group("visit_ref")
                 if candidate in visit_refs:
@@ -1039,7 +1457,9 @@ class EdcExportService:
             if visit_ref is None:
                 if match:
                     continue
-                by_name = visit_ref_by_name.get((event.get("name") or "").strip().lower())
+                by_name = visit_ref_by_name.get(
+                    (event.get("name") or "").strip().lower()
+                )
                 if by_name:
                     visit_ref = by_name
                     if not match:
@@ -1092,6 +1512,7 @@ class EdcExportService:
                 if hasattr(arm_model, "model_dump")
                 else dict(arm_model)
             )
+            self._retain_native("studyArm", arm)
             groups.append(
                 {
                     "name": arm.get("name"),
@@ -1183,9 +1604,7 @@ class EdcExportService:
                 f"EDC rejected the transfer (HTTP {response.status_code}): {body}"
             )
         if not body.get("success", False):
-            raise EdcExportError(
-                f"EDC returned HTTP 2xx without success=true: {body}"
-            )
+            raise EdcExportError(f"EDC returned HTTP 2xx without success=true: {body}")
         # success=true alone is not acceptance: the EDC may have narrowed the
         # bundle (partial import, unknown census rows, skipped assignments or
         # study tasks). Name exactly what narrowed instead of reporting success.

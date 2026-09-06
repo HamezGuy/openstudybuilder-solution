@@ -17,8 +17,11 @@ from copy import deepcopy
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
+from urllib.parse import quote
 
 import requests
+
+_MISSING_READBACK = object()
 
 from .mappings.proposal_v2_native_operations import (
     NativeOperationPlanError,
@@ -198,29 +201,62 @@ class ImportOsbProposalV2(BaseImporter):
     def _path_value(value, path):
         current = value
         for part in path.split("."):
+            if isinstance(current, list) and part.isdigit() and int(part) < len(current):
+                current = current[int(part)]
+                continue
             if not isinstance(current, dict) or part not in current:
-                return None
+                return _MISSING_READBACK
             current = current[part]
         return current
 
     @classmethod
     def _matching_records(cls, payload, expected, collection=True):
-        if isinstance(payload, dict) and isinstance(payload.get("items"), list):
+        if not collection and isinstance(payload, dict):
+            records = [payload]
+        elif isinstance(payload, dict) and isinstance(payload.get("items"), list):
             records = payload["items"]
         elif isinstance(payload, list):
             records = payload
-        elif not collection and isinstance(payload, dict):
-            records = [payload]
         else:
             raise NativeOperationReconciliationError(
                 "OSB_NATIVE_V2_READ_BACK_COLLECTION_INVALID"
             )
+        relation_keys = {
+            "unit_definitions": ("uid",), "terms": ("uid",), "aliases": ("context", "name"),
+            "translated_texts": ("language", "text_type", "text"),
+            "activity_instances": ("activity_instance_uid", "activity_item_class_uid"),
+            "vendor_elements": ("uid",), "vendor_element_attributes": ("uid",), "vendor_attributes": ("uid",),
+            "items": ("uid",), "item_groups": ("uid",),
+            "formal_expressions": ("context",), "attributes": ("uid",), "sdtm_domains": ("term_uid",),
+        }
+        def supplied_properties_match(actual, wanted, field=None):
+            if isinstance(wanted, dict):
+                return isinstance(actual, dict) and all(key in actual and supplied_properties_match(actual[key], child, key) for key, child in wanted.items())
+            if isinstance(wanted, list):
+                if not isinstance(actual, list) or len(actual) != len(wanted):
+                    return False
+                keys = relation_keys.get(field)
+                if keys and all(isinstance(row, dict) for row in actual + wanted):
+                    # Native DTOs sort these attachment sets. Supplied order and
+                    # every other relation property are still compared by identity.
+                    remaining = list(actual)
+                    for desired in wanted:
+                        matches = [row for row in remaining if all(row.get(key) == desired.get(key) for key in keys)]
+                        if len(matches) != 1 or not supplied_properties_match(matches[0], desired):
+                            return False
+                        remaining.remove(matches[0])
+                    return not remaining
+                return all(supplied_properties_match(a, b) for a, b in zip(actual, wanted))
+            # bool and int are equal in Python; they are different JSON values.
+            if isinstance(actual, (int, float)) and not isinstance(actual, bool) and isinstance(wanted, (int, float)) and not isinstance(wanted, bool):
+                return actual == wanted
+            return type(actual) is type(wanted) and actual == wanted
         return [
             record
             for record in records
             if isinstance(record, dict)
             and all(
-                cls._path_value(record, key) == value for key, value in expected.items()
+                supplied_properties_match(cls._path_value(record, key), value, key.split('.')[-1]) for key, value in expected.items()
             )
         ]
 
@@ -381,13 +417,23 @@ class ImportOsbProposalV2(BaseImporter):
                     "OSB_NATIVE_V2_REFERENCE_RECEIPT_MISSING:"
                     + operation["proposal_object_id"]
                 )
-            self._set_nested(resolved["body"], reference["body_path"], native_uid)
+            if reference.get("require_receipt_only"):
+                continue
+            if reference.get("path_parameter"):
+                placeholder = "{" + reference["path_parameter"] + "}"
+                if placeholder not in resolved["path"] or placeholder not in resolved["read_after_write"]["path"]:
+                    raise NativeOperationReconciliationError("OSB_NATIVE_V2_PATH_REFERENCE_INVALID")
+                resolved["path"] = resolved["path"].replace(placeholder, quote(native_uid, safe=""))
+                resolved["read_after_write"]["path"] = resolved["read_after_write"]["path"].replace(placeholder, quote(native_uid, safe=""))
+            else:
+                self._set_nested(resolved["body"], reference["body_path"], native_uid)
             # Reconciliation predicates intentionally use flat dotted-path
             # keys; `_matching_records` resolves each key against the native
             # response.  Only request bodies are nested DTO structures.
-            resolved["read_after_write"]["match"][
-                reference["read_match_path"]
-            ] = native_uid
+            if reference.get("read_match_nested_path"):
+                self._set_nested(resolved["read_after_write"]["match"], reference["read_match_nested_path"], native_uid)
+            else:
+                resolved["read_after_write"]["match"][reference["read_match_path"]] = native_uid
         return resolved
 
     @staticmethod
@@ -408,6 +454,11 @@ class ImportOsbProposalV2(BaseImporter):
             "StudySelectionCompound": "study_compound_uid",
             "StudyCompoundDosing": "study_compound_dosing_uid",
             "StudyActivityInstruction": "study_activity_instruction_uid",
+            "OdmForm": "uid", "OdmItemGroup": "uid", "OdmItem": "uid",
+            "OdmMethod": "uid", "OdmCondition": "uid",
+            "OdmItemActivityBinding": "uid",
+            "OdmFormItemGroupLink": "uid", "OdmItemGroupItemLink": "uid",
+            "StudySelectionActivityInstance": "study_activity_instance_uid",
         }[operation["family"]]
         return record.get(key)
 

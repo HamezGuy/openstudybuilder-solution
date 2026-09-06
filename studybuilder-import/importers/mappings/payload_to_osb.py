@@ -70,7 +70,7 @@ X360I_ATTRIBUTES = [
 # term exactly.
 VISIT_TYPE_MAP = {
     "scheduled": {
-        "visit_type_names": ["Treatment", "Visit", "Screening"],
+        "visit_type_names": [],
         "visit_class": "MANUALLY_DEFINED_VISIT",
     },
     "unscheduled": {
@@ -405,10 +405,29 @@ def native_soa_plan(payload, library_activities):
             raise ValueError(f"OSB_NATIVE_SOA_SCHEDULE_VISIT_MISSING:{source_visit_id or index}")
         source_cell = (activity_ref, source_visit_id)
         if source_cell in seen_source_cells:
-            raise ValueError(
-                f"OSB_NATIVE_SOA_SCHEDULE_DUPLICATE:{activity_ref}::{source_visit_id}"
-            )
+            blocked.append({"kind": "activity_schedule", "ref": f"{activity_ref}::{source_visit_id}",
+                            "reason": "OSB_NATIVE_SOA_SCHEDULE_OCCURRENCE_CONFLICT", "source": schedule})
+            # No duplicate winner is executable when the source occurrences differ.
+            schedules = [row for row in schedules if not (row["activity_ref"] == activity_ref and row["source_visit_id"] == source_visit_id)]
+            continue
         seen_source_cells.add(source_cell)
+        unsupported = []
+        rules = schedule.get("applicabilityRules", [])
+        rules_valid = isinstance(rules, list) and all(
+            isinstance(rule, dict) and rule.get("ruleType") == "ALWAYS"
+            and not set(rule).difference({"ruleType", "ruleId", "evidenceRef", "status", "scopeRef"})
+            and ("status" not in rule or rule["status"] == "INCLUDED")
+            and ("scopeRef" not in rule or rule["scopeRef"] in (None, "")) for rule in rules)
+        if schedule.get("conditional") or not rules_valid or schedule.get("required") is not True:
+            unsupported.append("OSB_NATIVE_SOA_APPLICABILITY_AUTHORITY_REQUIRED")
+        if schedule.get("unresolvedFootnoteRefs"):
+            unsupported.append("OSB_NATIVE_SOA_FOOTNOTE_DEFINITION_UNAVAILABLE")
+        if schedule.get("footnoteRefs"):
+            unsupported.append("OSB_NATIVE_SOA_FOOTNOTE_INSTRUCTION_BINDING_REQUIRED")
+        if unsupported:
+            blocked.append({"kind": "activity_schedule", "ref": f"{activity_ref}::{source_visit_id}",
+                            "reason": ";".join(unsupported), "source": schedule})
+            continue
         payload_visit_ref = schedule.get("payloadVisitRef")
         if not payload_visit_ref:
             blocked.append(
@@ -431,6 +450,8 @@ def native_soa_plan(payload, library_activities):
                 "required": schedule.get("required") is True,
                 "conditional": schedule.get("conditional"),
                 "footnote_refs": list(schedule.get("footnoteRefs") or []),
+                "source_occurrences": list(schedule.get("sourceOccurrences") or []),
+                "applicability_rules": list(schedule.get("applicabilityRules") or []),
             }
         )
     return {
@@ -525,6 +546,8 @@ def study_purpose_plan(payload):
                 "objective_ref": objective_ref,
                 "unresolved_objective": unresolved,
                 "timeframe": item.get("timeframe"),
+                "timeframe_sources": list(item.get("timeframeSources") or []),
+                "unresolved_timeframe": item.get("unresolvedTimeframe"),
                 "source_assertion_ids": source_ids,
                 "evidence": list(item.get("evidence") or []),
             }
@@ -549,6 +572,7 @@ def study_purpose_plan(payload):
         )
 
     result["blockers"] = list(purpose.get("blockers") or [])
+    result["review_queue"] = list(purpose.get("reviewQueue") or [])
     planned_assertions = {
         source_id
         for section in ("objectives", "endpoints", "criteria")
@@ -595,19 +619,8 @@ def epochs_plan(payload):
             ],
             False,
         )
-    # OSB requires an epoch on every visit; the protocol stated none. One
-    # carrier, declared as importer scaffolding in the census.
-    return (
-        [
-            {
-                "name": CARRIER_EPOCH_NAME,
-                "order": 1,
-                "visit_refs": [v["refKey"] for v in payload.get("visits", [])],
-                "scaffolding": True,
-            }
-        ],
-        True,
-    )
+    # Missing protocol structure is an explicit native binding requirement.
+    return ([], False)
 
 
 def epoch_subtype_candidates(epoch_name):
@@ -618,8 +631,6 @@ def epoch_subtype_candidates(epoch_name):
     name = epoch_name.strip()
     base = re.sub(r"\s*(period|phase)\s*$", "", name, flags=re.IGNORECASE).strip()
     candidates = [name, f"{name} Epoch", base, f"{base} Epoch"]
-    # The neutral fallbacks OSB seeds: keep last so a stated match wins.
-    candidates += ["Treatment", "Observation"]
     seen, unique = set(), []
     for c in candidates:
         key = c.lower()
@@ -630,170 +641,55 @@ def epoch_subtype_candidates(epoch_name):
 
 
 def visit_plan(payload, epoch_uid_by_ref):
-    """StudyVisit create-bodies in anchor-first order.
-
-    * The first visit with scheduleDay == 0, else the first visit, becomes the
-      global anchor (OSB requires exactly one time-reference root).
-    * Days ride verbatim; a visit with no derived day gets time_value 0 on the
-      anchor reference and a census note (the payload already warned).
-    * Names are the protocol's stated names: visit_class MANUALLY_DEFINED_VISIT
-      with explicit visit_name/short/number — never OSB's derived "Visit N".
-    """
+    """Preserve source timing; require explicit native type and occurrence context."""
     visits = list(payload.get("visits", []))
-    if not visits:
-        return []
+    def gate(visit):
+        type_key = str(visit.get("type") or "scheduled").strip().lower()
+        if type_key not in VISIT_TYPE_MAP:
+            return f"visit type '{type_key}' is outside the payload contract"
+        if type_key == "unscheduled":
+            return "OSB_UNSCHEDULED_OCCURRENCE_BINDING_REQUIRED"
+        if visit.get("scheduleDay") is None:
+            return "OSB_VISIT_TIMING_AUTHORITY_REQUIRED"
+        for key in ("scheduleDay", "minDay", "maxDay"):
+            value = visit.get(key)
+            if value is not None and (type(value) not in (int, float) or not float(value).is_integer()):
+                return "OSB_VISIT_FRACTIONAL_OR_INVALID_DAY_UNSUPPORTED"
+        if not isinstance(visit.get("visitTypeName"), str) or not visit["visitTypeName"].strip():
+            return "OSB_VISIT_TYPE_AUTHORITY_REQUIRED"
+        if epoch_uid_by_ref and not epoch_uid_by_ref.get(visit["refKey"]):
+            return "OSB_VISIT_EPOCH_BINDING_REQUIRED"
+        return None
 
-    # OSB timing model: the global anchor visit sits at day 0 and every other
-    # visit's time_value is measured RELATIVE to it. Choosing the anchor and a
-    # rebasing origin correctly is what keeps OSB's two hard constraints —
-    # (1) the anchor is at day 0, (2) visit_number increases with time — both
-    # satisfiable at once.
-    #
-    #   * A visit explicitly at scheduleDay 0 is the natural anchor, origin 0.
-    #   * Otherwise the chronologically EARLIEST dated visit is the anchor and
-    #     its day becomes the origin, so it rebases to 0 and all later visits
-    #     get positive offsets (no negatives before the anchor — which is what
-    #     produced the "not in chronological order" rejection).
-    dated = [(int(v["scheduleDay"]), i) for i, v in enumerate(visits)
-             if v.get("scheduleDay") is not None]
-    if any(d == 0 for d, _ in dated):
-        anchor_idx = next(i for i, v in enumerate(visits) if v.get("scheduleDay") == 0)
-        origin = 0
-    elif dated:
-        origin, anchor_idx = min(dated)  # earliest day -> anchor + rebase origin
-    else:
-        anchor_idx, origin = 0, 0  # no dated visits at all
-
-    def _effective_tv(idx, v):
-        if idx == anchor_idx:
-            return 0
-        d = v.get("scheduleDay")
-        return int(d) - origin if d is not None else None
-
-    # _DAY_MISSING_PLACEMENT. OSB enforces that visit_number increases with
-    # visit TIMING, so a day-missing visit cannot sit at the anchor's day 0
-    # while an earlier-numbered visit sits at day 56 — that is exactly the
-    # "not defined in chronological order by study visit timing" rejection.
-    # A day-missing visit therefore needs SOME slot, and the only honest source
-    # for it is the order the protocol listed the visits in.
-    #
-    # WHICH SIDE. Placing every day-missing visit after the last dated one put
-    # ACTT-1's "Screen" column at Day 30 — after the Day 29 follow-up — because
-    # the protocol dates its Day 1..29 visits but heads the screening column with
-    # a name rather than a day. A screening visit sorted last is not a censused
-    # approximation, it is the calendar backwards. So the stated ORDER decides
-    # the side: a visit the protocol lists BEFORE its first dated visit is placed
-    # before it (descending from origin-1, keeping their stated order), and one
-    # listed after is placed past the last dated visit, as before. Both remain
-    # census-visible as `day_missing`; neither asserts a clinical day.
-    _dated_tvs = [_effective_tv(idx, visits[idx]) for idx in range(len(visits))]
-    _first_dated_idx = next((i for i in range(len(visits)) if _dated_tvs[i] is not None), None)
-    _next_tv = max([tv for tv in _dated_tvs if tv is not None], default=0)
-    _before_tv = min([tv for tv in _dated_tvs if tv is not None], default=0)
-    _missing_tv = {}
-    # Trailing placements ascend in stated order; leading ones descend, so that
-    # reversing the stated order below keeps the earliest-listed visit earliest.
-    for _idx in range(len(visits)):
-        if _dated_tvs[_idx] is not None:
-            continue
-        if _first_dated_idx is None or _idx > _first_dated_idx:
-            _next_tv += 1
-            _missing_tv[_idx] = _next_tv
-    for _idx in range(len(visits) - 1, -1, -1):
-        if _dated_tvs[_idx] is not None or _idx in _missing_tv:
-            continue
-        _before_tv -= 1
-        _missing_tv[_idx] = _before_tv
-
-    # Number visits by their FINAL effective time — a day-missing visit's placed
-    # slot included, which is what makes visit_number and timing agree. (Ranking
-    # before placement sorted every day-missing visit last, so a leading one got
-    # the lowest time and the highest number: OSB's own contradiction.) Ties break
-    # on the protocol's stated order.
-    def _final_tv(idx):
-        tv = _dated_tvs[idx]
-        return tv if tv is not None else _missing_tv[idx]
-
-    chrono_order = sorted(range(len(visits)), key=lambda idx: (_final_tv(idx), idx))
-    chrono_rank = {idx: rank + 1 for rank, idx in enumerate(chrono_order)}
-
-    # OSB permits exactly ONE UNSCHEDULED_VISIT per study (study_visit.py), so a
-    # protocol stating several would lose all but the first. Tracked here and
-    # applied in the loop below.
-    _unscheduled_claimed = False
-
+    dated = [(int(v["scheduleDay"]), i) for i, v in enumerate(visits) if gate(v) is None]
+    zero = next(((d, i) for d, i in dated if d == 0), None)
+    origin, anchor_idx = zero or (min(dated) if dated else (0, -1))
+    chronological = sorted(dated)
+    rank_by_index = {idx: rank + 1 for rank, (_day, idx) in enumerate(chronological)}
     plans = []
-    for i, v in enumerate(visits):
-        type_key = (v.get("type") or "scheduled").strip().lower()
-        mapping = VISIT_TYPE_MAP.get(type_key)
-        # _ALL_VISITS_MANUALLY_DEFINED. OSB derives the name of any visit that is
-        # not MANUALLY_DEFINED_VISIT — an UNSCHEDULED_VISIT always comes back as
-        # settings.unscheduled_visit_name, whatever the protocol called it. The
-        # study bundle then carries that derived name AND the protocol name from
-        # the x360i carrier, and the EDC imports one visit as two events (11 for
-        # 10 on NCT03472885). OSB also permits only one UNSCHEDULED_VISIT per
-        # study, so a protocol stating several loses the rest outright.
-        #
-        # Every payload visit is therefore manually defined: names, short names,
-        # numbers and refKeys survive, the counts match end to end, and the only
-        # thing not natively represented is OSB's class-level "unscheduled" flag
-        # — which the payload `type`, the x360i carrier and the EDC's own event
-        # type all still state. Censused per visit, never silent.
-        _unscheduled_demoted = False
-        if mapping is not None and mapping["visit_class"] == "UNSCHEDULED_VISIT":
-            mapping = {
-                "visit_type_names": list(mapping["visit_type_names"])
-                + list(VISIT_TYPE_MAP["scheduled"]["visit_type_names"]),
-                "visit_class": "MANUALLY_DEFINED_VISIT",
-            }
-            _unscheduled_demoted = True
-        if mapping is None:
-            plans.append(
-                {
-                    "refKey": v["refKey"],
-                    "stop": f"visit type '{type_key}' is outside the payload contract",
-                }
-            )
+    for i, visit in enumerate(visits):
+        requirement = gate(visit)
+        if requirement:
+            plans.append({"refKey": visit["refKey"], "stop": requirement, "source": visit})
             continue
-        day = v.get("scheduleDay")
-        is_anchor = i == anchor_idx and mapping["visit_class"] == "MANUALLY_DEFINED_VISIT"
-        # time_value is rebased relative to the anchor's day (anchor -> 0).
-        tv = _effective_tv(i, v)
-        time_value = tv if tv is not None else _missing_tv[i]
-        # Windows relative to the scheduled day (OSB's convention): a payload
-        # visit carries absolute minDay/maxDay; OSB wants offsets like -2/+2.
-        min_window = 0
-        max_window = 0
-        if day is not None and v.get("minDay") is not None:
-            min_window = int(v["minDay"]) - int(day)
-        if day is not None and v.get("maxDay") is not None:
-            max_window = int(v["maxDay"]) - int(day)
-        body = {
-            "visit_class": mapping["visit_class"],
-            # Candidate VisitType term names, tried in order by the importer
-            # against the instance's seeded CT (first that exists wins).
-            "visit_type_names": list(mapping["visit_type_names"]),
-            # Back-compat single value = the first candidate (tests/readers).
-            "visit_type_name": mapping["visit_type_names"][0],
-            "epoch_ref": v.get("epochRef"),
-            "study_epoch_uid": epoch_uid_by_ref.get(v["refKey"]),
-            "refKey": v["refKey"],
-            "is_global_anchor_visit": is_anchor,
-            "time_value": time_value,
-            "day_missing": day is None,
-            "unscheduled_demoted": _unscheduled_demoted,
-            "visit_name": v["name"],
-            "visit_short_name": v["refKey"][:20],
-            # Chronological rank (by effective day), NOT the payload ordinal —
-            # OSB requires visit_number to increase with visit timing.
-            "visit_number": chrono_rank[i],
-            "unique_visit_number": chrono_rank[i] * 100,
-            "description": v.get("description"),
-            "show_visit": True,
-            "min_window": min_window,
-            "max_window": max_window,
-        }
-        plans.append(body)
+        day = int(visit["scheduleDay"])
+        plans.append({
+            "visit_class": "MANUALLY_DEFINED_VISIT",
+            "visit_type_names": [visit["visitTypeName"].strip()],
+            "visit_type_name": visit["visitTypeName"].strip(),
+            "visit_contact_mode_name": visit.get("visitContactModeName"),
+            "epoch_ref": visit.get("epochRef"),
+            "study_epoch_uid": epoch_uid_by_ref.get(visit["refKey"]),
+            "refKey": visit["refKey"],
+            "is_global_anchor_visit": i == anchor_idx,
+            "time_value": day - origin,
+            "day_missing": False, "unscheduled_demoted": False,
+            "visit_name": visit["name"], "visit_short_name": visit["refKey"][:20],
+            "visit_number": rank_by_index[i], "unique_visit_number": rank_by_index[i] * 100,
+            "description": visit.get("description"), "show_visit": True,
+            "min_window": int(visit["minDay"]) - day if visit.get("minDay") is not None else 0,
+            "max_window": int(visit["maxDay"]) - day if visit.get("maxDay") is not None else 0,
+        })
     return plans
 
 
@@ -906,13 +802,18 @@ def codelists_plan(payload):
     codelists. All our terms are sponsor terms (no C-codes extracted yet)."""
     plans = []
     for cl in payload.get("odm", {}).get("codelists", []):
+        codes = [str(term["value"]) for term in cl.get("terms", [])]
+        if any(len(code) > 200 for code in codes):
+            raise ValueError(f"OSB_CODELIST_VALUE_EXCEEDS_NATIVE_LIMIT:{cl['name']}")
+        if len(codes) != len(set(codes)):
+            raise ValueError(f"OSB_CODELIST_VALUE_COLLISION:{cl['name']}")
         plans.append(
             {
                 "name": cl["name"],
                 "terms": [
                     {
                         "name": t["decode"],
-                        "submission_value": str(t["value"])[:200],
+                        "submission_value": str(t["value"]),
                         "order": t.get("order"),
                     }
                     for t in cl.get("terms", [])
@@ -930,6 +831,8 @@ def units_plan(payload):
 
 def odm_item_body(item, codelist_uid_by_name, unit_uid_by_name):
     """POST /odms/items body for one payload item."""
+    if item.get("datatypeHint") in {"criteria_list", "readonly_reference", "static_text", "label", "header"}:
+        raise ValueError("OSB_CAPTURE_NONSCALAR_NATIVE_BINDING_REQUIRED")
     unit_defs = []
     unit_name = item.get("unitName")
     if unit_name and unit_name.lower() in unit_uid_by_name:
@@ -951,27 +854,20 @@ def odm_item_body(item, codelist_uid_by_name, unit_uid_by_name):
             }
             for t in codelist_uid_by_name[cl_ref]["terms"]
         ]
-    # OSB requires a non-null `length` for text/string datatypes. Honor a
-    # stated length; otherwise default free-text fields to 200 (OSB's own
-    # convention for un-sized text items) so the item validates instead of
-    # being censused as a failed create.
     length = item.get("length")
     datatype = item["datatype"]
     if length is None and str(datatype).lower() in ("text", "string"):
-        length = 200
-    # OSB pairs length with significant_digits for floats: both set or both
-    # null. This body never states significant digits, so a float with a
-    # stated length must drop it (20260826-floatpair); the collection
-    # constraint remains in the EDC item definition.
-    if str(datatype).lower() == "float":
-        length = None
+        raise ValueError("OSB_CAPTURE_TEXT_LENGTH_AUTHORITY_REQUIRED")
+    significant_digits = item.get("significantDigits")
+    if str(datatype).lower() == "float" and ((length is None) != (significant_digits is None)):
+        raise ValueError("OSB_CAPTURE_FLOAT_LENGTH_PRECISION_PAIR_REQUIRED")
     return {
         "name": item["name"][:200],
         "oid": item["refKey"],
         "datatype": datatype,
         "prompt": item.get("prompt") or item["name"],
         "length": length,
-        "significant_digits": None,
+        "significant_digits": significant_digits,
         "sas_field_name": None,
         "sds_var_name": item.get("sdsVarName"),
         "origin": None,
@@ -990,7 +886,11 @@ def vendor_ext_value(entity):
     as the single `x360i:ext` attribute (attribute-per-key would need one OSB
     vendor-attribute concept per distinct key, which is churn without gain;
     the blob is machine-readable either way and the census names its keys)."""
-    ext = entity.get("vendorExtensions", {})
+    ext = dict(entity.get("vendorExtensions", {}))
+    if "lengthBasis" in entity:
+        if "lengthBasis" in ext and ext["lengthBasis"] != entity["lengthBasis"]:
+            raise ValueError("OSB_CAPTURE_LENGTH_BASIS_CONFLICT")
+        ext["lengthBasis"] = entity["lengthBasis"]
     return json.dumps(ext, sort_keys=True) if ext else None
 
 
@@ -1025,6 +925,8 @@ def bundle_meta_value(payload):
     """Source StudyBundle except form rows, which ride their own FormDefs."""
     source = payload.get("sourceBundle", {})
     meta = {key: value for key, value in source.items() if key != "forms"}
+    if payload.get("sourceCustody") is not None:
+        meta["semanticSourceCustody"] = payload["sourceCustody"]
     forms_envelope = source.get("forms")
     if isinstance(forms_envelope, dict):
         forms_meta = {
@@ -1136,6 +1038,7 @@ def _selection_diff(desired_plans, current_by_ref, key_field, compare_fields):
     result = {"create": [], "patch": [], "unchanged": [], "delete": [], "stop": []}
     desired_refs = set()
     for plan in desired_plans:
+        desired_refs.add(plan[key_field])
         if plan.get("stop"):
             result["stop"].append(plan)
             continue

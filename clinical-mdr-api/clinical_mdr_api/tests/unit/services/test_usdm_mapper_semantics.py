@@ -3,6 +3,40 @@
 from types import SimpleNamespace
 
 from clinical_mdr_api.services.ddf.usdm_mapper import USDMMapper
+from clinical_mdr_api.domain_repositories.syntax_instances.timeframe_repository import TimeframeRepository
+from clinical_mdr_api.services.ddf.usdm_mapper import USDMMappingAuthorityRequired
+import pytest
+
+
+@pytest.mark.parametrize('observational', [True, False])
+def test_opposite_native_typed_design_attributes_require_reconciliation(observational):
+    from clinical_mdr_api.services.ddf.usdm_mapper import USDMMappingAuthorityRequired
+    mapper = _mapper()
+    term = SimpleNamespace(term_uid='synthetic-term', sponsor_preferred_name='Observational' if observational else 'Interventional')
+    opposite = SimpleNamespace(term_uid='opposite-model')
+    high = SimpleNamespace(study_type_code=term, observational_model_code=None if observational else opposite, observational_time_perspective_code=None)
+    study = SimpleNamespace(current_metadata=SimpleNamespace(high_level_study_design=high, study_intervention=SimpleNamespace(intervention_model_code=opposite if observational else None)))
+    with pytest.raises(USDMMappingAuthorityRequired, match='USDM_STUDY_DESIGN_AUTHORITY_CONFLICT'):
+        mapper._get_study_designs(study)
+
+@pytest.mark.parametrize('label,code',[(None,'USDM_STUDY_DESIGN_TYPE_AUTHORITY_REQUIRED'),('Observational','USDM_OBSERVATIONAL_MODEL_AUTHORITY_REQUIRED'),('Interventional','USDM_INTERVENTIONAL_MODEL_AUTHORITY_REQUIRED')])
+def test_concrete_usdm_design_requires_native_type_and_kind_specific_properties(label,code):
+    mapper=_mapper()
+    term=SimpleNamespace(sponsor_preferred_name=label) if label else None
+    study=SimpleNamespace(current_metadata=SimpleNamespace(high_level_study_design=SimpleNamespace(study_type_code=term)))
+    with pytest.raises(USDMMappingAuthorityRequired,match=code):mapper._get_study_designs(study)
+
+def test_native_criteria_callback_gets_required_no_brackets_argument():
+    calls=[]
+    def actual_signature(study_uid, no_brackets, study_value_version=None):
+        calls.append((study_uid,no_brackets,study_value_version));return []
+    mapper=_mapper()
+    mapper._get_osb_study_criteria=actual_signature
+    mapper._load_study_criteria_selections('Study_native')
+    assert calls == [('Study_native',False,None)]
+
+def test_unselected_global_timeframe_is_discoverable_before_first_study_selection():
+    assert TimeframeRepository._only_instances_with_studies(None) == ''
 
 
 def _mapper(
@@ -281,6 +315,8 @@ def test_endpoint_source_semantics_are_typed_extensions():
 
 def test_document_uses_native_identity_and_version_reference(monkeypatch):
     mapper = _mapper(standards=lambda *_args, **_kwargs: [])
+    # This test isolates document identity; clinical type authority is covered separately.
+    monkeypatch.setattr(mapper, "_get_study_designs", lambda _study: [])
     monkeypatch.setattr(mapper, "_load_registid_labels", lambda: {})
     study = SimpleNamespace(
         uid="Study_1",

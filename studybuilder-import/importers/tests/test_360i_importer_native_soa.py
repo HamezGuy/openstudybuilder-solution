@@ -154,8 +154,9 @@ def test_native_soa_plan_blocks_unjoined_cells_and_rejects_duplicate_cells():
     duplicated["scheduleOfActivities"]["reconciliation"].update(
         sourceScheduleCells=2, joinedScheduleCells=2
     )
-    with pytest.raises(ValueError, match="OSB_NATIVE_SOA_SCHEDULE_DUPLICATE"):
-        mapping.native_soa_plan(duplicated, [_library_activity()])
+    duplicate_plan = mapping.native_soa_plan(duplicated, [_library_activity()])
+    assert duplicate_plan['schedules'] == []
+    assert duplicate_plan['blocked'][0]['reason'] == 'OSB_NATIVE_SOA_SCHEDULE_OCCURRENCE_CONFLICT'
 
 
 class _SoaApi:

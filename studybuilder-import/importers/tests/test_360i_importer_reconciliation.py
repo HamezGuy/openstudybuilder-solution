@@ -90,9 +90,9 @@ def test_carrier_epoch_uses_ledger_identity_and_retires_old_duplicates():
 
     by_visit, scaffolded, stale = importer.ensure_epochs(payload, "Study_1")
 
-    assert scaffolded is True
-    assert by_visit == {"V1": "Epoch_keep", "V2": "Epoch_keep"}
-    assert {entry["uid"] for entry in stale} == {"Epoch_old_1", "Epoch_old_2"}
+    assert scaffolded is False
+    assert by_visit == {}
+    assert stale == []
     assert api.posts == []
     assert api.patches == []
 
@@ -129,10 +129,8 @@ def test_carrier_epoch_prefers_the_identity_already_used_by_most_visits():
 
     by_visit, _, stale = importer.ensure_epochs(payload, "Study_1")
 
-    assert set(by_visit.values()) == {"Epoch_original"}
-    assert stale == [
-        {"ref": mapping.CARRIER_EPOCH_NAME, "uid": "Epoch_latest"}
-    ]
+    assert by_visit == {}
+    assert stale == []
 
 
 class _DeferredVisitApi:

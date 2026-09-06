@@ -209,9 +209,9 @@ class CriteriaTemplatePreValidateInput(PostInputModel):
     name: Annotated[
         str,
         Field(
-            description="The actual value/content. It may include parameters referenced by simple strings in square brackets [].",
+            description="The actual value/content. It may include parameters referenced by simple strings in square brackets []. Use numeric entities &#91; and &#93; for literal square brackets.",
             min_length=1,
-            json_schema_extra={"format": "html"},
+            json_schema_extra={"format": "html", "preserve_literal_brackets": True},
         ),
     ]
     guidance_text: Annotated[
@@ -228,9 +228,9 @@ class CriteriaTemplateCreateInput(PostInputModel):
     name: Annotated[
         str,
         Field(
-            description="The actual value/content. It may include parameters referenced by simple strings in square brackets [].",
+            description="The actual value/content. It may include parameters referenced by simple strings in square brackets []. Use numeric entities &#91; and &#93; for literal square brackets.",
             min_length=1,
-            json_schema_extra={"format": "html"},
+            json_schema_extra={"format": "html", "preserve_literal_brackets": True},
         ),
     ]
     guidance_text: Annotated[
@@ -283,9 +283,9 @@ class CriteriaTemplateEditInput(PatchInputModel):
     name: Annotated[
         str,
         Field(
-            description="The actual value/content. It may include parameters referenced by simple strings in square brackets [].",
+            description="The actual value/content. It may include parameters referenced by simple strings in square brackets []. Use numeric entities &#91; and &#93; for literal square brackets.",
             min_length=1,
-            json_schema_extra={"format": "html"},
+            json_schema_extra={"format": "html", "preserve_literal_brackets": True},
         ),
     ]
     guidance_text: Annotated[

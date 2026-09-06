@@ -157,4 +157,36 @@ class FieldConfiguration:
             len(cls.field_config) == 0,
             msg="CTConfig nodes are not present, load them by running sponsor migration",
         )
-        return cls.field_config
+        # Additive native carriers use existing approved CDISC codelists. No
+        # clinical term or persisted CTConfig is created by this fallback.
+        config = list(cls.field_config)
+        for name, codelist_uid in OBSERVATIONAL_STUDY_CODELISTS.items():
+            expected = StudyFieldConfigurationEntry(
+                study_field_data_type=StudyFieldType.TEXT,
+                study_field_name=name,
+                study_field_null_value_code=None,
+                configured_codelist_uid=codelist_uid,
+                configured_term_uid=None,
+                study_field_grouping="high_level_study_design",
+                study_value_object_class=HighLevelStudyDesignVO,
+                study_field_name_api=name,
+                is_dictionary_term=False,
+            )
+            existing = [
+                item
+                for item in config
+                if item.study_field_name == name or item.study_field_name_api == name
+            ]
+            exceptions.BusinessLogicException.raise_if(
+                len(existing) > 1 or (bool(existing) and existing[0] != expected),
+                msg=f"Conflicting native observational field configuration: {name}",
+            )
+            if not existing:
+                config.append(expected)
+        return config
+
+
+OBSERVATIONAL_STUDY_CODELISTS = {
+    "observational_model_code": "C127259",
+    "observational_time_perspective_code": "C127261",
+}

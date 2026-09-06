@@ -87,6 +87,8 @@ class StudyDefinitionSnapshot:
         version_number: Decimal | None = None
         version_status: StudyStatus | None = None
         study_type_code: str | None = None
+        observational_model_code: str | None = None
+        observational_time_perspective_code: str | None = None
         study_type_null_value_code: str | None = None
         trial_intent_types_codes: tuple[str, ...] = ()
         trial_intent_type_null_value_code: str | None = None
@@ -191,6 +193,8 @@ class StudyDefinitionSnapshot:
 # a global helper variables used as a default for some methods arguments in the StudyDefinitionAR class
 _DEF_INITIAL_HIGH_LEVEL_STUDY_DESIGN = HighLevelStudyDesignVO(
     study_type_code=None,
+    observational_model_code=None,
+    observational_time_perspective_code=None,
     study_stop_rules=None,
     is_adaptive_design=None,
     trial_type_codes=[],
@@ -363,6 +367,10 @@ class StudyDefinitionAR:
         ),
         project_exists_callback: Callable[[str], bool] = lambda _: True,
         study_type_exists_callback: Callable[[str], bool] = lambda _: True,
+        observational_model_exists_callback: Callable[[str], bool] = lambda _: True,
+        observational_time_perspective_exists_callback: Callable[
+            [str], bool
+        ] = lambda _: True,
         trial_intent_type_exists_callback: Callable[[str], bool] = lambda _: True,
         trial_type_exists_callback: Callable[[str], bool] = lambda _: True,
         trial_phase_exists_callback: Callable[[str], bool] = lambda _: True,
@@ -544,6 +552,8 @@ class StudyDefinitionAR:
         ):
             new_high_level_study_design.validate(
                 study_type_exists_callback=study_type_exists_callback,
+                observational_model_exists_callback=observational_model_exists_callback,
+                observational_time_perspective_exists_callback=observational_time_perspective_exists_callback,
                 trial_phase_exists_callback=trial_phase_exists_callback,
                 trial_type_exists_callback=trial_type_exists_callback,
                 trial_intent_type_exists_callback=trial_intent_type_exists_callback,
@@ -1065,6 +1075,10 @@ class StudyDefinitionAR:
         diagnosis_group_exists_callback: Callable[[str], bool] = lambda _: True,
         sex_of_participants_exists_callback: Callable[[str], bool] = lambda _: True,
         study_type_exists_callback: Callable[[str], bool] = lambda _: True,
+        observational_model_exists_callback: Callable[[str], bool] = lambda _: True,
+        observational_time_perspective_exists_callback: Callable[
+            [str], bool
+        ] = lambda _: True,
         trial_intent_type_exists_callback: Callable[[str], bool] = lambda _: True,
         trial_type_exists_callback: Callable[[str], bool] = lambda _: True,
         trial_phase_exists_callback: Callable[[str], bool] = lambda _: True,
@@ -1217,6 +1231,8 @@ class StudyDefinitionAR:
 
         initial_study_metadata.validate(
             study_type_exists_callback=study_type_exists_callback,
+            observational_model_exists_callback=observational_model_exists_callback,
+            observational_time_perspective_exists_callback=observational_time_perspective_exists_callback,
             trial_phase_exists_callback=trial_phase_exists_callback,
             development_stage_exists_callback=development_stage_exists_callback,
             trial_type_exists_callback=trial_type_exists_callback,

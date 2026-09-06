@@ -46,6 +46,7 @@ Env:
 
 import base64
 import gzip
+import hashlib
 import html
 import json
 import re
@@ -62,6 +63,10 @@ OSB_CLINICAL_PROGRAMME = load_env("OSB_CLINICAL_PROGRAMME", default="360i")
 CARRIER_COMPRESSION_PREFIX = "gzip+base64:"
 CARRIER_CHUNK_PREFIX = "chunk:"
 CARRIER_COMPRESSION_THRESHOLD = 128 * 1024
+SOURCE_SNAPSHOT_OID_PREFIX = "F.SEMANTIC.SNAPSHOT."
+SOURCE_SNAPSHOT_REF_PREFIX = "__SEMANTIC_SOURCE_SNAPSHOT__"
+SOURCE_SNAPSHOT_CHUNK_CHARACTERS = 128 * 1024
+SOURCE_SNAPSHOT_MAX_BYTES = 1024 * 1024 * 1024
 CARRIER_EPOCH_DESCRIPTION = (
     "Carrier epoch created by the 360i importer: OSB requires an epoch per visit "
     "and the protocol stated none. NOT protocol content."
@@ -77,6 +82,8 @@ CODELIST_STUDY_TYPE = "Study Type"
 CODELIST_TRIAL_PHASE = "Trial Phase"
 CODELIST_CONTROL_TYPE = "Control Type"
 CODELIST_INTERVENTION_MODEL = "Intervention Model"
+CODELIST_OBSERVATIONAL_MODEL = "Observational Study Model"
+CODELIST_OBSERVATIONAL_TIME_PERSPECTIVE = "Observational Study Time Perspective"
 CODELIST_TRIAL_BLINDING_SCHEMA = "Trial Blinding Schema"
 CODELIST_SEX_OF_PARTICIPANTS = "Sex of Participants"
 CODELIST_FLOWCHART_GROUP = "Flowchart Group"
@@ -97,6 +104,8 @@ NATIVE_CODELIST_UIDS = {
     CODELIST_TRIAL_PHASE: "C66737",
     CODELIST_CONTROL_TYPE: "C66785",
     CODELIST_INTERVENTION_MODEL: "C99076",
+    CODELIST_OBSERVATIONAL_MODEL: "C127259",
+    CODELIST_OBSERVATIONAL_TIME_PERSPECTIVE: "C127261",
     CODELIST_TRIAL_BLINDING_SCHEMA: "C66735",
     CODELIST_SEX_OF_PARTICIPANTS: "C66732",
 }
@@ -104,7 +113,7 @@ NATIVE_CODELIST_UIDS = {
 NATIVE_TERM_ALIASES = {
     "study_type_code": {
         "interventional": "Interventional",
-        "observational": "Observational Study",
+        "observational": "Observational",
     },
     "trial_phase_code": {
         "i": "Phase 1",
@@ -119,11 +128,13 @@ NATIVE_TERM_ALIASES = {
     "control_type_code": {
         "placebo": "Placebo",
         "active": "Active",
+        "active comparator": "Active",
         "historical": "Historical",
         "uncontrolled": "Uncontrolled",
     },
     "intervention_model_code": {
         "parallel": "Parallel",
+        "parallel group": "Parallel",
         "crossover": "Crossover",
         "cross over": "Crossover",
         "factorial": "Factorial",
@@ -227,7 +238,7 @@ class ImportCensus:
         # (recorded in full in the census); only stopped entities mean the
         # import did not fully apply. This restores the documented contract
         # ("status='partial' REQUIRES stopped rows").
-        return "partial" if self.stopped else "succeeded"
+        return "partial" if self.stopped or self.release_blockers else "succeeded"
 
 
 
@@ -730,6 +741,8 @@ class Import360i(BaseImporter):
         high = native.get("highLevelStudyDesign") or {}
         population = native.get("studyPopulation") or {}
         intervention = native.get("studyIntervention") or {}
+        add_term("high_level_study_design", "observational_model_code", high.get("observationalModel"), CODELIST_OBSERVATIONAL_MODEL)
+        add_term("high_level_study_design", "observational_time_perspective_code", high.get("observationalTimePerspective"), CODELIST_OBSERVATIONAL_TIME_PERSPECTIVE)
         add_term(
             "high_level_study_design",
             "study_type_code",
@@ -1143,6 +1156,10 @@ class Import360i(BaseImporter):
         moved off them, because OSB will not delete a referenced epoch.
         """
         plans, is_scaffolding = mapping.epochs_plan(payload)
+        if not plans:
+            self.census.block_release("epoch", "*", "OSB_STUDY_EPOCH_AUTHORITY_REQUIRED")
+            # A held source fact never authorizes deletion of existing structure.
+            return {}, False, []
         epoch_uid_by_ref = {}
         existing = self.api.get_all_from_api(f"/studies/{study_uid}/study-epochs") or []
         existing_by_name = {e.get("epoch_name", "").lower(): e for e in existing}
@@ -1276,11 +1293,19 @@ class Import360i(BaseImporter):
 
         # Map each epoch plan's visits to its uid, for the visit pass.
         ref_to_epoch_uid = {}
+        visit_epoch_candidates = {}
         for plan in plans:
             uid = epoch_uid_by_ref.get(plan["name"])
             if uid:
                 for visit_ref in plan["visit_refs"]:
-                    ref_to_epoch_uid[visit_ref] = uid
+                    visit_epoch_candidates.setdefault(visit_ref, set()).add(uid)
+        for visit_ref, candidates in visit_epoch_candidates.items():
+            if len(candidates) == 1:
+                ref_to_epoch_uid[visit_ref] = next(iter(candidates))
+            else:
+                reason = "OSB_VISIT_EPOCH_BINDING_AMBIGUOUS:" + json.dumps(sorted(candidates))
+                self.census.stop("visit", visit_ref, reason)
+                self.census.block_release("visit", visit_ref, reason)
         desired_uids = set(epoch_uid_by_ref.values())
         if is_scaffolding:
             # OSB derives the displayed epoch_name from CT ("Treatment 1",
@@ -1366,9 +1391,7 @@ class Import360i(BaseImporter):
     def _visit_body(self, plan, study_uid, epoch_uid_by_visit_ref, ctx):
         """Build the create/edit body for one visit plan, resolving the visit
         type and epoch. Returns (body, None) or (None, stop_reason)."""
-        # Try each candidate VisitType term name against the seeded CT (the
-        # payload's 'scheduled' has no literal "Visit" term in CDISC CT, so it
-        # falls back to "Treatment"); STOP only if none of the candidates exist.
+        # Only an explicitly stated native visit type is eligible for CT lookup.
         candidates = plan.get("visit_type_names") or [plan.get("visit_type_name")]
         visit_type_uid = None
         for cand in candidates:
@@ -1379,16 +1402,7 @@ class Import360i(BaseImporter):
             return None, f"no VisitType term among {candidates}"
         epoch_uid = epoch_uid_by_visit_ref.get(plan["refKey"])
         if epoch_uid is None:
-            epoch_uid = next(iter(epoch_uid_by_visit_ref.values()), None)
-            if epoch_uid is None:
-                return None, "no epoch available"
-            self.census.scaffolding.append(
-                {
-                    "kind": "visit_epoch_assignment",
-                    "ref": plan["refKey"],
-                    "reason": "epoch join unverified; filed under the first epoch",
-                }
-            )
+            return None, "OSB_VISIT_EPOCH_BINDING_REQUIRED"
         body = {
             "study_epoch_uid": epoch_uid,
             "visit_type": {"term_uid": visit_type_uid},
@@ -1402,8 +1416,12 @@ class Import360i(BaseImporter):
             "max_visit_window_value": plan["max_window"],
             "visit_window_unit_uid": ctx["day_unit_uid"],
             "description": plan.get("description"),
-            "visit_contact_mode": {"term_uid": ctx["contact_uid"]},
         }
+        if plan.get("visit_contact_mode_name"):
+            contact_uid = self._lookup_ct_term(CODELIST_VISIT_CONTACT_MODE, plan["visit_contact_mode_name"])
+            if contact_uid is None:
+                return None, "OSB_VISIT_CONTACT_MODE_AUTHORITY_UNRESOLVED"
+            body["visit_contact_mode"] = {"term_uid": contact_uid}
         if plan["visit_class"] == "MANUALLY_DEFINED_VISIT":
             # Protocol-stated names, never OSB's derived "Visit N" (the
             # visit-naming doctrine rides the payload; honor it here).
@@ -1424,7 +1442,6 @@ class Import360i(BaseImporter):
         anchor_ref_uid = self._lookup_ct_term(
             CODELIST_TIMEPOINT_REFERENCE, "Global anchor visit"
         )
-        contact_uid = self._lookup_ct_term(CODELIST_VISIT_CONTACT_MODE, "On Site Visit")
         day_unit_uid = self._lookup_unit("day")
         if anchor_ref_uid is None or day_unit_uid is None:
             self.census.stop(
@@ -1436,7 +1453,6 @@ class Import360i(BaseImporter):
             return []
         ctx = {
             "anchor_ref_uid": anchor_ref_uid,
-            "contact_uid": contact_uid,
             "day_unit_uid": day_unit_uid,
         }
 
@@ -1992,12 +2008,13 @@ class Import360i(BaseImporter):
     @staticmethod
     def _purpose_plain(value):
         """Normalize OSB HTML/plain syntax content for exact reconciliation."""
-        without_tags = re.sub(r"<[^>]+>", " ", str(value or ""))
+        without_tags = re.sub(r"</?(?:p|div|span|strong|em|b|i|u|br|ul|ol|li)(?:\s[^<>]*)?/?>", " ", str(value or ""), flags=re.IGNORECASE)
         return re.sub(r"\s+", " ", html.unescape(without_tags)).strip()
 
     @staticmethod
     def _purpose_html(value):
-        return f"<p>{html.escape(str(value), quote=False)}</p>"
+        escaped = html.escape(str(value), quote=False).replace("[", "&#91;").replace("]", "&#93;")
+        return f"<p>{escaped}</p>"
 
     def _ensure_purpose_template(
         self, kind, study_uid, ref, text, criteria_type_uid=None
@@ -2009,15 +2026,15 @@ class Import360i(BaseImporter):
             "timeframe": ("/timeframe-templates", "TimeframeTemplate"),
         }[kind]
         path, label = config
-        cache_key = (kind, self._semantic_key(text), criteria_type_uid)
+        cache_key = (kind, self._purpose_plain(text), criteria_type_uid)
         if cache_key in self._purpose_template_cache:
             return self._purpose_template_cache[cache_key]
         current = self.api.get_all_from_api(path, params={"page_size": 0}) or []
         matches = [
             item
             for item in current
-            if self._semantic_key(item.get("name_plain") or self._purpose_plain(item.get("name")))
-            == self._semantic_key(text)
+            if self._purpose_plain(item.get("name_plain") or self._purpose_plain(item.get("name")))
+            == self._purpose_plain(text)
             and (
                 kind != "criterion"
                 or (item.get("type") or {}).get("term_uid") == criteria_type_uid
@@ -2066,14 +2083,14 @@ class Import360i(BaseImporter):
     def _ensure_purpose_timeframe(self, study_uid, ref, text):
         if not text:
             return None
-        key = self._semantic_key(text)
+        key = self._purpose_plain(text)
         if key in self._purpose_timeframe_cache:
             return self._purpose_timeframe_cache[key]
         current = self.api.get_all_from_api("/timeframes", params={"page_size": 0}) or []
         matches = [
             item
             for item in current
-            if self._semantic_key(item.get("name_plain") or self._purpose_plain(item.get("name")))
+            if self._purpose_plain(item.get("name_plain") or self._purpose_plain(item.get("name")))
             == key
             and str(item.get("status") or "").lower() == "final"
             and item.get("uid")
@@ -2128,7 +2145,7 @@ class Import360i(BaseImporter):
         by_text = {}
         for row in rows:
             data = row.get(data_key) or {}
-            key = self._semantic_key(
+            key = self._purpose_plain(
                 data.get("name_plain") or self._purpose_plain(data.get("name"))
             )
             if key:
@@ -2150,6 +2167,10 @@ class Import360i(BaseImporter):
             )
             self.census.block_release("study_purpose", study_uid, reason)
             return
+        for obligation in plan.get("review_queue") or []:
+            self.census.block_release("study_purpose_property", obligation.get("recordRef"),
+                {"property": obligation.get("property"), "code": obligation.get("code"),
+                 "detail": obligation.get("detail"), "sourceAssertionIds": obligation.get("sourceAssertionIds")})
         for blocker in plan["blockers"]:
             reason = f"{blocker.get('code')}: {blocker.get('detail')}"
             self.census.carried.append(
@@ -2180,7 +2201,7 @@ class Import360i(BaseImporter):
             if error:
                 self.census.stop("study_objective", ref, error)
                 continue
-            matches = objectives_by_text.get(self._semantic_key(item["text"]), [])
+            matches = objectives_by_text.get(self._purpose_plain(item["text"]), [])
             compatible = [
                 row
                 for row in matches
@@ -2224,6 +2245,7 @@ class Import360i(BaseImporter):
                     )
                     continue
                 uid = res["study_objective_uid"]
+                objectives_by_text.setdefault(self._purpose_plain(item["text"]), []).append(res)
                 self.census.created.append(
                     {"kind": "study_objective", "ref": ref, "uid": uid}
                 )
@@ -2271,7 +2293,7 @@ class Import360i(BaseImporter):
             )
             if item.get("timeframe") and timeframe_uid is None:
                 continue
-            matches = endpoints_by_text.get(self._semantic_key(item["text"]), [])
+            matches = endpoints_by_text.get(self._purpose_plain(item["text"]), [])
             compatible = [
                 row
                 for row in matches
@@ -2325,6 +2347,7 @@ class Import360i(BaseImporter):
                     )
                     continue
                 uid = res["study_endpoint_uid"]
+                endpoints_by_text.setdefault(self._purpose_plain(item["text"]), []).append(res)
                 self.census.created.append(
                     {"kind": "study_endpoint", "ref": ref, "uid": uid}
                 )
@@ -2341,7 +2364,7 @@ class Import360i(BaseImporter):
             if error:
                 self.census.stop("study_criterion", ref, error)
                 continue
-            matches = criteria_by_text.get(self._semantic_key(item["text"]), [])
+            matches = criteria_by_text.get(self._purpose_plain(item["text"]), [])
             compatible = [
                 row
                 for row in matches
@@ -2388,6 +2411,7 @@ class Import360i(BaseImporter):
                     )
                     continue
                 uid = res["study_criteria_uid"]
+                criteria_by_text.setdefault(self._purpose_plain(item["text"]), []).append(res)
                 self.census.created.append(
                     {"kind": "study_criterion", "ref": ref, "uid": uid}
                 )
@@ -2408,12 +2432,16 @@ class Import360i(BaseImporter):
         for kind in ("endpoints", "criteria", "objectives"):
             section, census_kind = delete_config[kind]
             for ref, uid in prior_owned[kind].items():
-                if ref in desired[kind] or not uid:
+                # A replaced source-owned UID is stale even when its source ref
+                # remains. Keep any UID still used by another active source ref.
+                active_uids = {value for key, value in self.uid_map[kind].items() if key in desired[kind]}
+                if not uid or uid in active_uids:
                     continue
                 if self.api.simple_delete(
                     f"/studies/{study_uid}/{section}/{uid}", f"/{section}"
                 ):
-                    self.uid_map[kind].pop(ref, None)
+                    if self.uid_map[kind].get(ref) == uid:
+                        self.uid_map[kind].pop(ref, None)
                     self.census.updated.append(
                         {"kind": census_kind, "ref": ref, "uid": uid}
                     )
@@ -2440,6 +2468,25 @@ class Import360i(BaseImporter):
             "endpoints": {row.get("study_endpoint_uid") for row in actual["endpoints"]},
             "criteria": {row.get("study_criteria_uid") for row in actual["criteria"]},
         }
+        # Identity existence alone cannot acknowledge semantic projection.
+        self.purpose_readback = []
+        for kind, model, uid_key in (("objectives", "objective", "study_objective_uid"), ("endpoints", "endpoint", "study_endpoint_uid"), ("criteria", "criteria", "study_criteria_uid")):
+            by_uid = {row.get(uid_key): row for row in actual[kind]}
+            for source in plan[kind]:
+                row = by_uid.get(self.uid_map[kind].get(source["ref"]))
+                if row is None:
+                    continue
+                text = (row.get(model) or {}).get("name_plain") or (row.get(model) or {}).get("name")
+                fields = {"text": self._purpose_plain(text) == self._purpose_plain(source["text"])}
+                if kind == "endpoints":
+                    expected_parent = objective_uid_by_ref.get(source.get("objective_ref"))
+                    fields["objective"] = (row.get("study_objective") or {}).get("study_objective_uid") == expected_parent
+                    if source.get("timeframe"):
+                        native_time = (row.get("timeframe") or {}).get("name_plain") or (row.get("timeframe") or {}).get("name")
+                        fields["timeframe"] = self._purpose_plain(native_time) == self._purpose_plain(source["timeframe"])
+                self.purpose_readback.append({"kind": kind, "ref": source["ref"], "uid": row.get(uid_key), "properties": fields})
+                if not all(fields.values()):
+                    self.census.stop("study_purpose_property_reconciliation", source["ref"], "NATIVE_PURPOSE_PROPERTY_MISMATCH:" + json.dumps(fields, sort_keys=True))
         for kind in ("objectives", "endpoints", "criteria"):
             missing = sorted(
                 ref
@@ -2548,10 +2595,23 @@ class Import360i(BaseImporter):
             self._finish(study_id, record, None, project_number)
             return None
 
+        # Retain the entire semantic source before native item validation. A
+        # held clinical form must never take its source metadata shard with it.
+        if not self.ensure_source_snapshot(payload, study_uid):
+            return self._finish(study_id, record, study_uid, project_number)
+
         # Unsupported EDC-oriented study properties remain recoverable but do not
         # count as native mappings. Record them on every import attempt (including
         # updates), not only on first study creation.
         for key in sorted(payload.get("study", {}).get("attributes", {})):
+            if key == "semanticPropertySources":
+                self.census.carried.append({"kind":"study_attribute", "ref":key,
+                    "reason":"source lineage retained in semantic custody; no clinical native property is asserted"})
+                continue
+            if key == "nctNumber" and payload["study"]["attributes"][key] == payload.get("study",{}).get("registryIdentifiers",{}).get("ct_gov_id"):
+                self.census.carried.append({"kind":"study_attribute", "ref":key,
+                    "reason":"duplicate source value consumed by native registry identifier reconciliation"})
+                continue
             if key == "eligibility" and payload.get("studyPurpose") is not None:
                 self.census.carried.append(
                     {
@@ -2715,6 +2775,191 @@ class Import360i(BaseImporter):
         if build_hash and attr_uids.get("buildHash"):
             attrs.append({"uid": attr_uids["buildHash"], "value": build_hash})
         return attrs
+
+    def ensure_source_snapshot(self, payload, study_uid):
+        """Commit a complete source snapshot on explicit nonclinical FormDefs.
+
+        Chunk records are immutable and remain Draft. The stable Draft head is
+        updated only after every chunk has been read back exactly. These forms
+        never enter uid_map['forms'], a study event or the clinical form census.
+        No semantic approval, native clinical mapping, or release is asserted.
+        """
+        source_study_id = payload.get("source", {}).get("studyId")
+        source_build_hash = payload.get("source", {}).get("buildHash")
+        source_bundle = payload.get("sourceBundle")
+        if (not isinstance(source_study_id, str) or not source_study_id
+                or not isinstance(source_build_hash, str) or not source_build_hash
+                or not isinstance(source_bundle, dict) or not source_bundle):
+            reason = "SEMANTIC_SOURCE_SNAPSHOT_REQUIRED"
+            self.census.stop("source_snapshot", study_uid, reason)
+            self.census.block_release("source_snapshot", study_uid, reason)
+            return False
+        snapshot = dict(source_bundle)
+        if payload.get("sourceCustody") is not None:
+            if "semanticSourceCustody" in snapshot and snapshot["semanticSourceCustody"] != payload["sourceCustody"]:
+                reason = "SEMANTIC_SOURCE_CUSTODY_CONFLICT"
+                self.census.stop("source_snapshot", study_uid, reason)
+                self.census.block_release("source_snapshot", study_uid, reason)
+                return False
+            snapshot["semanticSourceCustody"] = payload["sourceCustody"]
+        try:
+            raw = json.dumps(snapshot, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+            raw_bytes = raw.encode("utf-8")
+        except (TypeError, ValueError, UnicodeError):
+            reason = "SEMANTIC_SOURCE_SNAPSHOT_INVALID_JSON"
+            self.census.stop("source_snapshot", study_uid, reason)
+            self.census.block_release("source_snapshot", study_uid, reason)
+            return False
+        if len(raw_bytes) > SOURCE_SNAPSHOT_MAX_BYTES:
+            reason = "SEMANTIC_SOURCE_SNAPSHOT_SIZE_EXCEEDED"
+            self.census.stop("source_snapshot", study_uid, reason)
+            self.census.block_release("source_snapshot", study_uid, reason)
+            return False
+        snapshot_hash = hashlib.sha256(raw_bytes).hexdigest()
+        # Identical source data can legitimately be carried by a new payload
+        # build. Its immutable chunk stamps must not collide with the old build.
+        generation_hash = hashlib.sha256((snapshot_hash + "\n" + source_build_hash).encode("utf-8")).hexdigest()
+        encoded = _encode_carrier(raw)
+        encoded_hash = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+        chunks = [encoded[index:index + SOURCE_SNAPSHOT_CHUNK_CHARACTERS]
+                  for index in range(0, len(encoded), SOURCE_SNAPSHOT_CHUNK_CHARACTERS)]
+        attr_uids = self.ensure_vendor_namespace()
+        required_attrs = {"refKey", "studyId", "buildHash", "ext", "bundleMeta"}
+        if not required_attrs.issubset(attr_uids):
+            reason = "SEMANTIC_SOURCE_SNAPSHOT_ATTRIBUTES_UNAVAILABLE"
+            self.census.stop("source_snapshot", study_uid, reason)
+            self.census.block_release("source_snapshot", study_uid, reason)
+            return False
+        manifest = {"formatVersion": "1.0", "osbStudyUid": study_uid,
+                    "sourceStudyId": source_study_id, "sourceBuildHash": source_build_hash,
+                    "snapshotHash": snapshot_hash, "encodedHash": encoded_hash,
+                    "generationHash": generation_hash, "byteLength": len(raw_bytes),
+                    "chunkCount": len(chunks)}
+
+        def find(oid):
+            found = self.api.get_all_from_api("/odms/forms", params={
+                "filters": json.dumps({"oid": {"v": [oid], "op": "eq"}}),
+                "page_number": 1, "page_size": 0,
+            }) or []
+            if len(found) > 1:
+                raise ValueError("SEMANTIC_SOURCE_SNAPSHOT_IDENTITY_AMBIGUOUS:" + oid)
+            return found[0] if found else None
+
+        def values(record):
+            result = {}
+            for attribute in record.get("vendor_attributes", []) or []:
+                name = attribute.get("name") or next((name for name, uid in attr_uids.items() if uid == attribute.get("uid")), None)
+                if name not in required_attrs:
+                    continue
+                if name in result:
+                    raise ValueError("SEMANTIC_SOURCE_SNAPSHOT_ATTRIBUTE_AMBIGUOUS:" + str(name))
+                result[name] = attribute.get("value")
+            return result
+
+        def body_for(oid, role, index=None, chunk=None):
+            descriptor = {**manifest, "role": role}
+            if index is not None:
+                descriptor.update({"index": index, "chunkHash": hashlib.sha256(chunk.encode("utf-8")).hexdigest()})
+            # bundleMeta is already a bounded encoded substring: passing it
+            # through _entity_vendor_attributes would recompress some shards.
+            attrs = self._entity_vendor_attributes(
+                attr_uids, SOURCE_SNAPSHOT_REF_PREFIX + (str(index) if index is not None else "HEAD"),
+                ext_json=json.dumps({"semanticSourceSnapshot": descriptor}, sort_keys=True, separators=(",", ":")),
+                study_id=source_study_id, build_hash=source_build_hash,
+            )
+            if chunk is not None:
+                attrs.append({"uid": attr_uids["bundleMeta"], "value": chunk})
+            return {"name": f"Semantic source snapshot {study_uid} {role} {index or ''}".strip(),
+                    "oid": oid, "sdtm_version": None, "repeating": "no",
+                    "translated_texts": [{"text_type": "Description", "language": "en",
+                        "text": "Nonclinical semantic source retention. Not a patient form, approval, or released study definition."}],
+                    "vendor_attributes": attrs}
+
+        def verify(record, body):
+            if not record or record.get("oid") != body["oid"]:
+                raise ValueError("SEMANTIC_SOURCE_SNAPSHOT_READBACK_MISSING:" + body["oid"])
+            actual, expected = values(record), values(body)
+            if any(actual.get(key) != value for key, value in expected.items()):
+                raise ValueError("SEMANTIC_SOURCE_SNAPSHOT_READBACK_MISMATCH:" + body["oid"])
+            if record.get("item_groups"):
+                raise ValueError("SEMANTIC_SOURCE_SNAPSHOT_HAS_CLINICAL_CHILDREN:" + body["oid"])
+            for relation in ("vendor_attributes", "vendor_elements", "vendor_element_attributes"):
+                actual_relations = {row.get("uid"): row.get("value") for row in record.get(relation, []) or []}
+                if len(actual_relations) != len(record.get(relation, []) or []):
+                    raise ValueError("SEMANTIC_SOURCE_SNAPSHOT_RELATION_AMBIGUOUS:" + body["oid"])
+                if any(row.get("uid") not in actual_relations or actual_relations[row["uid"]] != row.get("value")
+                       for row in body.get(relation, []) or []):
+                    raise ValueError("SEMANTIC_SOURCE_SNAPSHOT_READBACK_MISMATCH:" + body["oid"])
+
+        try:
+            head_oid = f"{SOURCE_SNAPSHOT_OID_PREFIX}HEAD.{study_uid}"
+            head = find(head_oid)
+            if head is not None:
+                head_values = values(head)
+                def unique_manifest(pairs):
+                    result = {}
+                    for key, value in pairs:
+                        if key in result:
+                            raise ValueError("SEMANTIC_SOURCE_SNAPSHOT_MANIFEST_AMBIGUOUS")
+                        result[key] = value
+                    return result
+                previous_ext = json.loads(head_values.get("ext") or "{}", object_pairs_hook=unique_manifest)
+                previous = previous_ext.get("semanticSourceSnapshot", {}) if isinstance(previous_ext, dict) else None
+                if (not isinstance(previous, dict)
+                        or previous.get("formatVersion") != "1.0" or previous.get("role") != "head"
+                        or previous.get("osbStudyUid") != study_uid
+                        or previous.get("sourceStudyId") != source_study_id
+                        or head_values.get("studyId") != source_study_id
+                        or head_values.get("buildHash") != previous.get("sourceBuildHash")):
+                    raise ValueError("SEMANTIC_SOURCE_SNAPSHOT_HEAD_SCOPE_MISMATCH")
+                if head.get("item_groups"):
+                    raise ValueError("SEMANTIC_SOURCE_SNAPSHOT_HAS_CLINICAL_CHILDREN:" + head_oid)
+            for index, chunk in enumerate(chunks, start=1):
+                oid = f"{SOURCE_SNAPSHOT_OID_PREFIX}{study_uid}.{generation_hash}.{index:04d}"
+                body = body_for(oid, "chunk", index, chunk)
+                existing = find(oid)
+                if existing is None:
+                    if self.api.simple_post_to_api("/odms/forms", body) is None:
+                        raise ValueError("SEMANTIC_SOURCE_SNAPSHOT_CHUNK_CREATE_FAILED:" + oid)
+                    verify(find(oid), body)
+                    self.census.created.append({"kind": "source_snapshot_chunk", "ref": oid})
+                else:
+                    verify(existing, body)
+                    self.census.unchanged.append({"kind": "source_snapshot_chunk", "ref": oid})
+            head_body = body_for(head_oid, "head")
+            if head is None:
+                if self.api.simple_post_to_api("/odms/forms", head_body) is None:
+                    raise ValueError("SEMANTIC_SOURCE_SNAPSHOT_HEAD_CREATE_FAILED")
+                self.census.created.append({"kind": "source_snapshot_head", "ref": head_oid})
+            elif all(values(head).get(key) == value for key, value in values(head_body).items()):
+                self.census.unchanged.append({"kind": "source_snapshot_head", "ref": head_oid})
+            else:
+                if str(head.get("status", "")).lower() != "draft":
+                    raise ValueError("SEMANTIC_SOURCE_SNAPSHOT_HEAD_NOT_DRAFT")
+                # Only the committed-generation attributes belong to this
+                # writer. Preserve independent native annotations/relations.
+                managed_uids = {row["uid"] for row in head_body["vendor_attributes"]}
+                head_body["vendor_attributes"].extend(
+                    {"uid": row["uid"], "value": row.get("value")}
+                    for row in head.get("vendor_attributes", []) or [] if row["uid"] not in managed_uids)
+                for relation in ("vendor_elements", "vendor_element_attributes"):
+                    head_body[relation] = [{"uid": row["uid"], "value": row.get("value")}
+                                           for row in head.get(relation, []) or []]
+                patch = {**head_body, "uid": head["uid"], "change_description": "Commit verified semantic source snapshot"}
+                for key in PATCH_ONLY_REQUIRED_FIELDS:
+                    if key not in patch and key in head:
+                        patch[key] = head[key]
+                if self.api.patch_to_api(patch, "/odms/forms") is None:
+                    raise ValueError("SEMANTIC_SOURCE_SNAPSHOT_HEAD_COMMIT_FAILED")
+                self.census.updated.append({"kind": "source_snapshot_head", "ref": head_oid})
+            verify(find(head_oid), head_body)
+            self.census.carried.append({"kind": "semantic_source_snapshot", "ref": head_oid,
+                "reason": f"Complete semantic source snapshot {snapshot_hash}; {len(chunks)} verified nonclinical chunks; no native mapping or release credit"})
+            return True
+        except (ValueError, TypeError) as error:
+            self.census.stop("source_snapshot", study_uid, str(error))
+            self.census.block_release("source_snapshot", study_uid, str(error))
+            return False
 
     def ensure_odm(self, payload, study_uid, codelist_by_ref, unit_uid_by_name):
         """Items -> item-groups -> forms -> ONE study-event per visit, whose
@@ -3042,7 +3287,12 @@ class Import360i(BaseImporter):
                             item_ref, group_ref, item_owner[item_ref]
                         ),
                     )
-                    body = mapping.odm_item_body(item, codelist_by_ref, unit_uid_by_name)
+                    try:
+                        body = mapping.odm_item_body(item, codelist_by_ref, unit_uid_by_name)
+                    except ValueError as exc:
+                        self.census.stop("item", placement_key, str(exc))
+                        self.census.block_release("item", placement_key, str(exc))
+                        continue
                     body["oid"] = item_oid
                     body["vendor_attributes"] = self._entity_vendor_attributes(
                         attr_uids,
@@ -3085,13 +3335,22 @@ class Import360i(BaseImporter):
                             self.uid_map["items"][item_ref] = uid
 
         # Item groups + their item refs.
+        held_group_refs = set()
         for form in odm.get("forms", []):
             for group in form.get("itemGroups", []):
+                missing_children = [item["refKey"] for item in group.get("items", [])
+                    if (group["refKey"], item["refKey"]) not in placement_item_uids]
+                if missing_children:
+                    held_group_refs.add(group["refKey"])
+                    reason = "OSB_ITEM_GROUP_REPLACEMENT_CHILDREN_UNRESOLVED:" + json.dumps(missing_children)
+                    self.census.stop("item_group", group["refKey"], reason)
+                    self.census.block_release("item_group", group["refKey"], reason)
+                    continue
                 group_oid = mapping.odm_oid("item_group", odm_study_id, group["refKey"])
                 body = {
                     "name": group["name"][:200],
                     "oid": group_oid,
-                    "repeating": "no",
+                    "repeating": "yes" if group.get("repeating") is True else "no",
                     "translated_texts": [
                         {"text_type": "Description", "language": "en", "text": group.get("description") or group["name"]}
                     ],
@@ -3107,6 +3366,7 @@ class Import360i(BaseImporter):
                     defer_approve=True,
                 )
                 if uid is None:
+                    held_group_refs.add(group["refKey"])
                     continue
                 self.uid_map["item_groups"][group["refKey"]] = uid
                 group_ref = group["refKey"]
@@ -3132,7 +3392,7 @@ class Import360i(BaseImporter):
                             "vendor": {"attributes": []},
                         }
                     )
-                _sync_refs(
+                if not _sync_refs(
                     "item_group_items",
                     "/odms/item-groups",
                     uid,
@@ -3141,19 +3401,24 @@ class Import360i(BaseImporter):
                     prior,
                     state,
                     "items",
-                )
+                ):
+                    held_group_refs.add(group_ref)
 
         # Forms + their item-group refs.
-        bundle_meta = mapping.bundle_meta_value(payload)
         forms = odm.get("forms", [])
-        bundle_meta_carriers = _chunk_carrier(bundle_meta, max(len(forms), 1))
-        for form_index, form in enumerate(forms):
+        held_form_refs = set()
+        for form in forms:
+            if any(group["refKey"] in held_group_refs or group["refKey"] not in self.uid_map["item_groups"] for group in form.get("itemGroups", [])):
+                held_form_refs.add(form["refKey"])
+                self.census.stop("form", form["refKey"], "OSB_FORM_REPLACEMENT_CHILDREN_UNRESOLVED")
+                self.census.block_release("form", form["refKey"], "OSB_FORM_REPLACEMENT_CHILDREN_UNRESOLVED")
+                continue
             form_oid = mapping.odm_oid("form", odm_study_id, form["refKey"])
             body = {
                 "name": form["name"][:200],
                 "oid": form_oid,
                 "sdtm_version": None,
-                "repeating": "no",
+                "repeating": "yes" if form.get("repeating") is True else "no",
                 "translated_texts": [
                     {"text_type": "Description", "language": "en", "text": form.get("description") or form["name"]}
                 ],
@@ -3162,11 +3427,6 @@ class Import360i(BaseImporter):
                     form["refKey"],
                     ext_json=mapping.vendor_ext_value(form),
                     source_json=mapping.source_form_value(payload, form["refKey"]),
-                    bundle_meta_json=(
-                        bundle_meta_carriers[form_index]
-                        if form_index < len(bundle_meta_carriers)
-                        else None
-                    ),
                     study_id=payload["source"]["studyId"],
                     build_hash=payload["source"]["buildHash"],
                 ),
@@ -3177,6 +3437,7 @@ class Import360i(BaseImporter):
                 "form", "/odms/forms", form_oid, body, defer_approve=True
             )
             if uid is None:
+                held_form_refs.add(form["refKey"])
                 continue
             self.uid_map["forms"][form["refKey"]] = uid
             group_refs = [
@@ -3190,7 +3451,7 @@ class Import360i(BaseImporter):
                 for group in form.get("itemGroups", [])
                 if group["refKey"] in self.uid_map["item_groups"]
             ]
-            _sync_refs(
+            if not _sync_refs(
                 "form_item_groups",
                 "/odms/forms",
                 uid,
@@ -3199,7 +3460,8 @@ class Import360i(BaseImporter):
                 prior,
                 state,
                 "item_groups",
-            )
+            ):
+                held_form_refs.add(form["refKey"])
 
         # ONE study-event PER VISIT — ODM's own semantics (a StudyEventDef IS
         # a visit; crosswalk §8: the form x visit anchor is StudyEvent
@@ -3216,6 +3478,13 @@ class Import360i(BaseImporter):
             visit_ref = visit["refKey"]
             assignments = matrix_by_visit.get(visit_ref, [])
             event_oid = f"SE.360I.{study_id}.{visit_ref}"
+            unresolved_forms = [assignment["formRef"] for assignment in assignments
+                if assignment["formRef"] in held_form_refs or assignment["formRef"] not in self.uid_map["forms"]]
+            if unresolved_forms:
+                reason = "OSB_STUDY_EVENT_REPLACEMENT_CHILDREN_UNRESOLVED:" + json.dumps(unresolved_forms)
+                self.census.stop("study_event", event_oid, reason)
+                self.census.block_release("study_event", event_oid, reason)
+                continue
             existing = _find_by_oid("/odms/study-events", event_oid)
             if not assignments:
                 if existing:

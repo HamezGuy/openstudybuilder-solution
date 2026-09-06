@@ -19,6 +19,14 @@ class TimeframeRepository(GenericSyntaxInstanceRepository[TimeframeAR]):
     value_class = TimeframeValue
     template_class = TimeframeTemplateRoot
 
+    def _only_instances_with_studies(self):
+        """Timeframes are reusable library entries before their first selection.
+
+        Hiding an unselected Final instance from the collection made exact
+        lookup miss it, while creation still enforced its unique name.
+        """
+        return ""
+
     def _create_ar(
         self,
         root: TimeframeRoot,
