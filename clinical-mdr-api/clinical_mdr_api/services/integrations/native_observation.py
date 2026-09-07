@@ -1,7 +1,7 @@
 """Read native study state and edit history without granting mapping authority.
 
-Raw records are retained intact. Comparison excludes only OSB's documented
-read-time study_version label, never nested clinical metadata or audit authors.
+Raw records are retained intact. Comparison excludes only explicitly declared
+read-time study_version model labels, never arbitrary nested clinical metadata.
 """
 from copy import deepcopy
 from dataclasses import asdict, dataclass, is_dataclass
@@ -11,6 +11,7 @@ from importlib import import_module
 import re
 from typing import Any, Callable
 from clinical_mdr_api.services.integrations.canonical_json import canonical_json
+from common.exceptions import NotFoundException
 
 
 class NativeObservationError(ValueError):
@@ -21,12 +22,18 @@ def canonical_hash(value: Any) -> str:
     return "sha256:" + hashlib.sha256(canonical_json(value).encode()).hexdigest()
 
 
-def comparison_record(record: dict) -> tuple[dict, list[str]]:
+def comparison_record(record: dict, collection: str | None = None) -> tuple[dict, list[str]]:
     compared = deepcopy(record)
     ignored = []
     if isinstance(compared.get("study_version"), str) and re.fullmatch(r"LATEST on \d{4}-\d{2}-\d{2}T.+", compared["study_version"]):
         del compared["study_version"]
         ignored.append("/study_version")
+    # Profile 1.1 declares one additional generated model label: the objective
+    # model embedded by the endpoint service. Other nested metadata is source.
+    objective = compared.get("study_objective")
+    if collection == "study_endpoints" and isinstance(objective, dict) and isinstance(objective.get("study_version"), str) and re.fullmatch(r"LATEST on \d{4}-\d{2}-\d{2}T.+", objective["study_version"]):
+        del objective["study_version"]
+        ignored.append("/study_objective/study_version")
     return compared, ignored
 
 
@@ -143,7 +150,7 @@ def collect_study_actions(study_uid: str) -> list[dict]:
     return result
 
 
-def collect_native_observation(study_uid: str, *, readers: dict[str, tuple[Callable, Callable | None]] | None = None, native_study: dict | None = None, study_audit: list | None = None, raw_actions: list | None = None) -> dict:
+def collect_native_observation(study_uid: str, *, readers: dict[str, tuple[Callable, Callable | None]] | None = None, native_study: dict | None = None, study_audit: list | None = None, raw_actions: list | None = None, raw_history_readers: dict[str, Callable] | None = None) -> dict:
     if not isinstance(study_uid, str) or not study_uid.strip():
         raise NativeObservationError("NATIVE_OBSERVATION_STUDY_REQUIRED")
     if readers is not None and set(readers) - {row.collection for row in COLLECTIONS}:
@@ -159,7 +166,7 @@ def collect_native_observation(study_uid: str, *, readers: dict[str, tuple[Calla
     records, history, coverage = [], [], []
 
     def add_record(collection, resource_type, uid, record):
-        compared, ignored = comparison_record(record)
+        compared, ignored = comparison_record(record, collection)
         records.append({"collection": collection, "resourceType": resource_type, "nativeUid": uid,
                         "record": _json(record), "comparisonHash": canonical_hash(compared), "comparisonExcludedPaths": ignored})
 
@@ -172,6 +179,7 @@ def collect_native_observation(study_uid: str, *, readers: dict[str, tuple[Calla
     for spec in COLLECTIONS:
         if readers is not None and spec.collection not in readers:
             continue
+        raw_history_reader = (raw_history_readers or {}).get(spec.collection)
         if readers is None:
             factory = getattr(import_module("clinical_mdr_api.services.studies." + spec.module), spec.service)
             service = factory(study_uid=study_uid) if spec.collection in ("study_visits", "study_epochs") else factory()
@@ -179,6 +187,8 @@ def collect_native_observation(study_uid: str, *, readers: dict[str, tuple[Calla
             # Group/subgroup service history renderers are unimplemented. The
             # study-scoped repository history is complete and retains author_id.
             audit_reader = service.repository.find_selection_history if spec.collection in ("study_activity_groups", "study_activity_subgroups") else getattr(service, spec.audit) if spec.audit else None
+            if spec.collection == "study_endpoints":
+                raw_history_reader = service._repos.study_endpoint_repository.find_selection_history
         else:
             current_reader, audit_reader = readers[spec.collection]
         options = {"study_uid": study_uid}
@@ -199,20 +209,36 @@ def collect_native_observation(study_uid: str, *, readers: dict[str, tuple[Calla
         audit_options = {"study_uid": study_uid}
         if spec.collection == "study_criteria":
             audit_options["criteria_type_uid"] = None
-        audits = [_json(row) for row in _rows(audit_reader(**audit_options), spec.collection + ".audit")] if audit_reader else []
+        audit_projection_error = None
+        try:
+            audits = [_json(row) for row in _rows(audit_reader(**audit_options), spec.collection + ".audit")] if audit_reader else []
+        except NotFoundException as error:
+            # A genuinely absent historical lookup must not erase owned audit
+            # rows. Only this known lookup failure has a scoped raw-history
+            # alternative; transport, database and scope failures still abort.
+            if raw_history_reader is None:
+                raise
+            audits = [_json(row) for row in _rows(raw_history_reader(study_uid=study_uid), spec.collection + ".raw-audit")]
+            if not audits:
+                raise NativeObservationError("NATIVE_OBSERVATION_RAW_AUDIT_MISSING:" + spec.collection) from error
+            audit_projection_error = {"status": "unresolved", "reason": str(error),
+                                      "rawBasis": "exact study-scoped repository selection history",
+                                      "rawRecordCount": len(audits)}
         for row in audits:
             if row.get("study_uid") not in (None, study_uid):
                 raise NativeObservationError("NATIVE_OBSERVATION_AUDIT_SCOPE_MISMATCH:" + spec.collection)
             uid = row.get(spec.uid_field)
             if uid is None and spec.collection == "study_design_cells":
                 uid = row.get("study_design_cell_uid")
-            if uid is None and spec.collection in ("study_activity_groups", "study_activity_subgroups"):
+            if uid is None and (audit_projection_error or spec.collection in ("study_activity_groups", "study_activity_subgroups")):
                 uid = row.get("study_selection_uid")
             if not isinstance(uid, str) or not uid:
                 raise NativeObservationError("NATIVE_OBSERVATION_AUDIT_IDENTITY_MISSING:" + spec.collection)
-            history.append({"collection": spec.collection, "nativeUid": uid, "record": row})
+            history.append({"collection": spec.collection, "nativeUid": uid, "record": row,
+                            **({"projectionStatus": "unresolved", "recordBasis": "raw-native-history"} if audit_projection_error else {})})
         coverage.append({"collection": spec.collection, "complete": True, "recordCount": len(current),
-                         "auditStatus": "available" if audit_reader else "unavailable", "auditCount": len(audits),
+                         "auditStatus": "raw-retained" if audit_projection_error else "available" if audit_reader else "unavailable", "auditCount": len(audits),
+                         **({"auditProjection": audit_projection_error} if audit_projection_error else {}),
                          **({"auditReason": "No native audit reader is exposed for this collection"} if not audit_reader else {})})
     if readers is None and raw_actions is None:
         raw_actions = collect_study_actions(study_uid)
@@ -230,9 +256,11 @@ def collect_native_observation(study_uid: str, *, readers: dict[str, tuple[Calla
                          "auditStatus": "available", "auditCount": len(raw_actions),
                          "scope": "StudyRoot AUDIT_TRAIL actions and directly linked BEFORE/AFTER values"})
     records.sort(key=lambda row: (row["collection"], row["nativeUid"]))
-    history.sort(key=lambda row: (row["collection"], row["nativeUid"], canonical_hash(row["record"])))
+    # Generated read labels must not reshuffle otherwise identical audit rows
+    # between observations. The original label remains in each retained row.
+    history.sort(key=lambda row: (row["collection"], row["nativeUid"], canonical_hash(comparison_record(row["record"], row["collection"])[0])))
     content = {"schemaVersion": "osb-native-observation/1.0", "nativeStudyId": study_uid, "capturedAt": datetime.now(timezone.utc).isoformat(),
-               "comparisonProfile": "osb-native-read/1.0", "records": records, "auditRecords": history,
+               "comparisonProfile": "osb-native-read/1.1", "records": records, "auditRecords": history,
                "coverage": {"collections": coverage, "releaseAuthority": False,
                             "excludedSurfaces": ["USDM projection", "unlinked global library records", "clinical participant data",
                                 "ODM and library definition edit histories outside StudyRoot AUDIT_TRAIL; retained source export remains a separate surface"]}}
