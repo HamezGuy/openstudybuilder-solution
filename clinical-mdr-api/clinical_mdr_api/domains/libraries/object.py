@@ -158,7 +158,15 @@ class ParametrizedTemplateVO:
             name = ParametrizedTemplateVO.clean_instantiation_name(name)
 
         return capitalize_first_letter_if_template_parameter(
-            name, strip_html(template_name), parameter_terms
+            name,
+            # A leading encoded literal bracket is not a leading parameter.
+            # Preserve that distinction while stripping presentation markup.
+            strip_html(
+                template_name.replace("&#91;", "&amp;#91;").replace(
+                    "&#93;", "&amp;#93;"
+                )
+            ),
+            parameter_terms,
         )
 
     @staticmethod

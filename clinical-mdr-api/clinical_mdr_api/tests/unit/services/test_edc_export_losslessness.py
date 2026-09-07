@@ -101,7 +101,7 @@ def test_same_visit_ref_from_another_study_is_excluded_from_forms_and_matrix():
     ]
 
 
-def test_native_form_fallback_does_not_absorb_other_studies_x360i_forms():
+def test_unbound_native_study_does_not_absorb_the_shared_form_library():
     service = _service()
     service.form_service = type(
         "Forms",
@@ -129,7 +129,7 @@ def test_native_form_fallback_does_not_absorb_other_studies_x360i_forms():
         },
     )()
     forms, _, _ = service._forms(set(), set())
-    assert [form["name"] for form in forms] == ["Native"]
+    assert forms == []
 
 
 def test_exact_source_field_restores_codes_extensions_and_original_refkey():

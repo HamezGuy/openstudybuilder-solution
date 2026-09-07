@@ -505,8 +505,9 @@ def test_every_object_requires_an_osb_decision_before_native_execution():
     assert (
         f"OSB_RELEASE_CREATE_REQUEST_EXECUTOR_UNAVAILABLE:"
         f"{_item_object(proposal)['proposalObjectId']}:OdmItem"
-        in complete.release_blockers
+        not in complete.release_blockers
     )
+    assert complete.release_blockers == complete.execution_blockers
     assert {item.capability_kind for item in complete.objects} == {
         "native_study_mutation",
         "governed_library_reference",
@@ -555,9 +556,14 @@ def test_verified_reviewer_can_authorize_exact_owned_draft_and_receipt_goes_stal
         ),
         principal=_principal("reviewer-1", "decision-token-2"),
     )
+    capture_decision_blocker = (
+        f"OSB_NATIVE_V2_SELECTION_OR_CREATE_REQUEST_REQUIRED:"
+        f"{item['proposalObjectId']}"
+    )
     assert reviewed.execution_blockers == [
         "OSB_EXECUTION_AUTHORIZATION_REQUIRED",
         "OSB_STUDY_OWNERSHIP_UNVERIFIED",
+        capture_decision_blocker,
     ]
     repository.targets["Study_1"] = {
         "study_uid": "Study_1",
@@ -569,6 +575,27 @@ def test_verified_reviewer_can_authorize_exact_owned_draft_and_receipt_goes_stal
         "version_start_date": datetime(2026, 8, 10, tzinfo=timezone.utc),
     }
 
+    with pytest.raises(ValueError, match="SELECTION_OR_CREATE_REQUEST_REQUIRED"):
+        service.authorize_execution(
+            proposal["proposalHash"],
+            ProposalExecutionAuthorizationInput(
+                target_study_uid="Study_1",
+                target_study_version="DRAFT",
+                expected_decision_set_hash=reviewed.decision_set_hash,
+                signature_id="authorization-token",
+            ),
+            principal=_principal("reviewer-1", "authorization-token"),
+        )
+    reviewed = service.decide(
+        proposal["proposalHash"],
+        item["proposalObjectId"],
+        ProposalObjectDecisionInput(
+            action="create_request",
+            note="Explicitly authorize native draft capture creation",
+            signature_id="capture-create-token",
+        ),
+        principal=_principal("reviewer-1", "capture-create-token"),
+    )
     ready = service.authorize_execution(
         proposal["proposalHash"],
         ProposalExecutionAuthorizationInput(
@@ -582,11 +609,8 @@ def test_verified_reviewer_can_authorize_exact_owned_draft_and_receipt_goes_stal
 
     assert ready.native_execution_ready is True
     assert ready.execution_blockers == []
-    assert ready.release_ready is False
-    assert any(
-        blocker.startswith("OSB_RELEASE_GOVERNED_REFERENCE_NOT_CONSUMED:")
-        for blocker in ready.release_blockers
-    )
+    assert ready.release_ready is True
+    assert ready.release_blockers == []
     assert ready.target_study_uid == "Study_1"
     assert ready.target_study_version == "DRAFT"
     assert ready.target_study_value_node_id == "study-value-1"
@@ -651,8 +675,8 @@ def test_signature_and_target_ownership_checks_fail_closed():
         proposal["proposalHash"],
         item["proposalObjectId"],
         ProposalObjectDecisionInput(
-            action="not_applicable",
-            note="No ODM mutation",
+            action="create_request",
+            note="Explicit native draft capture creation",
             signature_id="decision-token-2",
         ),
         principal=_principal("reviewer-1", "decision-token-2"),

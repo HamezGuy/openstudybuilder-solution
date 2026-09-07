@@ -369,6 +369,8 @@ class StudyVersionMetadataVO:
 @dataclass(frozen=True)
 class HighLevelStudyDesignVO:
     study_type_code: str | None = None
+    observational_model_code: str | None = None
+    observational_time_perspective_code: str | None = None
     study_type_null_value_code: str | None = None
 
     trial_type_codes: list[str] = field(default_factory=list)
@@ -404,6 +406,10 @@ class HighLevelStudyDesignVO:
     def validate(
         self,
         study_type_exists_callback: Callable[[str], bool] = lambda _: True,
+        observational_model_exists_callback: Callable[[str], bool] = lambda _: True,
+        observational_time_perspective_exists_callback: Callable[
+            [str], bool
+        ] = lambda _: True,
         trial_intent_type_exists_callback: Callable[[str], bool] = lambda _: True,
         trial_type_exists_callback: Callable[[str], bool] = lambda _: True,
         trial_phase_exists_callback: Callable[[str], bool] = lambda _: True,
@@ -504,6 +510,20 @@ class HighLevelStudyDesignVO:
             msg=f"Non-existent development stage code provided '{self.development_stage_code}'.",
         )
 
+        exceptions.ValidationException.raise_if(
+            self.observational_model_code is not None
+            and not observational_model_exists_callback(self.observational_model_code),
+            msg=f"Invalid or unapproved observational_model_code '{self.observational_model_code}'.",
+        )
+
+        exceptions.ValidationException.raise_if(
+            self.observational_time_perspective_code is not None
+            and not observational_time_perspective_exists_callback(
+                self.observational_time_perspective_code
+            ),
+            msg=f"Invalid or unapproved observational_time_perspective_code '{self.observational_time_perspective_code}'.",
+        )
+
         for trial_type_code in self.trial_type_codes:
             exceptions.ValidationException.raise_if_not(
                 trial_type_exists_callback(trial_type_code),
@@ -513,6 +533,10 @@ class HighLevelStudyDesignVO:
     def is_valid(
         self,
         study_type_exists_callback: Callable[[str], bool] = lambda _: True,
+        observational_model_exists_callback: Callable[[str], bool] = lambda _: True,
+        observational_time_perspective_exists_callback: Callable[
+            [str], bool
+        ] = lambda _: True,
         trial_intent_type_exists_callback: Callable[[str], bool] = lambda _: True,
         trial_type_exists_callback: Callable[[str], bool] = lambda _: True,
         trial_phase_exists_callback: Callable[[str], bool] = lambda _: True,
@@ -525,6 +549,8 @@ class HighLevelStudyDesignVO:
         try:
             self.validate(
                 study_type_exists_callback=study_type_exists_callback,
+                observational_model_exists_callback=observational_model_exists_callback,
+                observational_time_perspective_exists_callback=observational_time_perspective_exists_callback,
                 trial_intent_type_exists_callback=trial_intent_type_exists_callback,
                 trial_type_exists_callback=trial_type_exists_callback,
                 trial_phase_exists_callback=trial_phase_exists_callback,
@@ -537,6 +563,8 @@ class HighLevelStudyDesignVO:
     def fix_some_values(
         self,
         study_type_code: str | None = FIX_SOME_VALUE_DEFAULT,
+        observational_model_code: str | None = FIX_SOME_VALUE_DEFAULT,
+        observational_time_perspective_code: str | None = FIX_SOME_VALUE_DEFAULT,
         study_type_null_value_code: str | None = FIX_SOME_VALUE_DEFAULT,
         trial_type_codes: Iterable[str] = FIX_SOME_VALUE_DEFAULT,
         trial_type_null_value_code: str | None = FIX_SOME_VALUE_DEFAULT,
@@ -585,6 +613,13 @@ class HighLevelStudyDesignVO:
 
         return HighLevelStudyDesignVO(
             study_type_code=helper(study_type_code, self.study_type_code),
+            observational_model_code=helper(
+                observational_model_code, self.observational_model_code
+            ),
+            observational_time_perspective_code=helper(
+                observational_time_perspective_code,
+                self.observational_time_perspective_code,
+            ),
             study_type_null_value_code=helper(
                 study_type_null_value_code, self.study_type_null_value_code
             ),
@@ -633,6 +668,8 @@ class HighLevelStudyDesignVO:
         cls,
         *,
         study_type_code: str | None,
+        observational_model_code: str | None = None,
+        observational_time_perspective_code: str | None = None,
         study_type_null_value_code: str | None,
         trial_type_codes: list[str] | None,
         trial_type_null_value_code: str | None,
@@ -652,6 +689,8 @@ class HighLevelStudyDesignVO:
     ) -> Self:
         return HighLevelStudyDesignVO(
             study_type_code=study_type_code,
+            observational_model_code=observational_model_code,
+            observational_time_perspective_code=observational_time_perspective_code,
             study_type_null_value_code=study_type_null_value_code,
             trial_type_codes=trial_type_codes if trial_type_codes is not None else [],
             trial_type_null_value_code=trial_type_null_value_code,
@@ -1594,6 +1633,10 @@ class StudyMetadataVO:
             lambda x, y: False
         ),
         study_type_exists_callback: Callable[[str], bool] = lambda _: True,
+        observational_model_exists_callback: Callable[[str], bool] = lambda _: True,
+        observational_time_perspective_exists_callback: Callable[
+            [str], bool
+        ] = lambda _: True,
         trial_intent_type_exists_callback: Callable[[str], bool] = lambda _: True,
         trial_type_exists_callback: Callable[[str], bool] = lambda _: True,
         trial_phase_exists_callback: Callable[[str], bool] = lambda _: True,
@@ -1636,6 +1679,8 @@ class StudyMetadataVO:
         )
         self.high_level_study_design.validate(
             study_type_exists_callback=study_type_exists_callback,
+            observational_model_exists_callback=observational_model_exists_callback,
+            observational_time_perspective_exists_callback=observational_time_perspective_exists_callback,
             trial_phase_exists_callback=trial_phase_exists_callback,
             development_stage_exists_callback=development_stage_exists_callback,
             trial_type_exists_callback=trial_type_exists_callback,

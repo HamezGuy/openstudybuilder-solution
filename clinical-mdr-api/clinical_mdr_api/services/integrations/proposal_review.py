@@ -1427,6 +1427,8 @@ class ProposalReviewService:
                         for item in review_objects
                         if item.capability_kind == "governed_library_reference"
                         and item.proposal_object_id not in dependency_object_ids
+                        and not (item.proposed_resource_type in NATIVE_CREATE_REQUEST_RESOURCE_TYPES
+                                 and item.latest_decision and item.latest_decision.action == "create_request")
                     ],
                     *[
                         f"OSB_RELEASE_NON_NATIVE_TARGET:"

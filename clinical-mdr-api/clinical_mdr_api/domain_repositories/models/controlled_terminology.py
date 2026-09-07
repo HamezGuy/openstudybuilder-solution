@@ -8,6 +8,7 @@ from clinical_mdr_api.domain_repositories.models.generic import (
     ClinicalMdrRel,
     Library,
     VersionRelationship,
+    VersionRoot,
     ZonedDateTimeProperty,
 )
 from clinical_mdr_api.domains.controlled_terminologies.ct_codelist_attributes import (
@@ -51,6 +52,18 @@ class ControlledTerminologyWithUID(ClinicalMdrNodeWithUID):
     __abstract_node__ = True
 
 
+class ControlledTerminologyVersionRoot(ControlledTerminology):
+    """CT names/attributes use the same HAS_VERSION lookup contract as libraries.
+
+    These roots deliberately have no separate UID, but the generic repository
+    still requests their exact version and matching relationship metadata.
+    """
+
+    __abstract_node__ = True
+    get_value_for_version = VersionRoot.get_value_for_version
+    get_relation_for_version = VersionRoot.get_relation_for_version
+
+
 class CTCodelistAttributesValue(ControlledTerminology):
     name = StringProperty()
     submission_value = StringProperty()
@@ -62,7 +75,7 @@ class CTCodelistAttributesValue(ControlledTerminology):
     codelist_type = StringProperty(default=DEFAULT_CODELIST_TYPE)  # type: ignore[call-arg]
 
 
-class CTCodelistAttributesRoot(ControlledTerminology):
+class CTCodelistAttributesRoot(ControlledTerminologyVersionRoot):
     has_version = RelationshipTo(
         CTCodelistAttributesValue, "HAS_VERSION", model=VersionRelationship
     )
@@ -88,7 +101,7 @@ class CTCodelistNameValue(ControlledTerminology):
     name = StringProperty()
 
 
-class CTCodelistNameRoot(ControlledTerminology):
+class CTCodelistNameRoot(ControlledTerminologyVersionRoot):
     has_version = RelationshipTo(
         CTCodelistNameValue, "HAS_VERSION", model=VersionRelationship
     )
@@ -114,7 +127,7 @@ class CTTermAttributesValue(ControlledTerminology):
     synonyms = ArrayProperty()
 
 
-class CTTermAttributesRoot(ControlledTerminology):
+class CTTermAttributesRoot(ControlledTerminologyVersionRoot):
     has_version = RelationshipTo(
         CTTermAttributesValue, "HAS_VERSION", model=VersionRelationship
     )
@@ -141,7 +154,7 @@ class CTTermNameValue(ControlledTerminology):
     name_sentence_case = StringProperty()
 
 
-class CTTermNameRoot(ControlledTerminology):
+class CTTermNameRoot(ControlledTerminologyVersionRoot):
     __optional_labels__ = ["TemplateParameterTermRoot"]
     has_version = RelationshipTo(
         CTTermNameValue, "HAS_VERSION", model=VersionRelationship

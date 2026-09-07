@@ -1345,7 +1345,7 @@ def test_activity_instruction_from_a_template_batches_under_its_activity():
     )
     template = candidate(
         "template-candidate", "ActivityInstructionTemplate",
-        "ActivityInstructionTemplate_1", name="Collect if phone visit",
+        "ActivityInstructionTemplate_1", name="If phone call only", parameterCount=0,
     )
     activity_object = proposal_object(
         "activity-object", "activity", "StudySelectionActivity", activity,
@@ -1402,7 +1402,7 @@ def test_activity_instruction_from_a_template_batches_under_its_activity():
         }
     ]
     assert instruction_operation["read_after_write"]["match"] == {
-        "activity_instruction_name": "Collect if phone visit"
+        "activity_instruction_name": "If phone call only"
     }
 
 

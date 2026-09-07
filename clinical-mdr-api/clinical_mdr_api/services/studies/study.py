@@ -35,6 +35,9 @@ from clinical_mdr_api.domains.study_definition_aggregates.root import (
     _DEF_INITIAL_STUDY_DESCRIPTION,
     StudyDefinitionAR,
 )
+from clinical_mdr_api.domains.study_definition_aggregates.study_configuration import (
+    OBSERVATIONAL_STUDY_CODELISTS,
+)
 from clinical_mdr_api.domains.study_definition_aggregates.study_metadata import (
     _STUDY_SUBPART_ACRONYM_PATTERN,
     HighLevelStudyDesignVO,
@@ -1170,9 +1173,7 @@ class StudyService:
                     return self._repos.study_definition_repository.find_by_uid(uid=uid)
 
             else:
-                find_scoped_parent = (
-                    self._repos.study_definition_repository.find_by_uid
-                )
+                find_scoped_parent = self._repos.study_definition_repository.find_by_uid
 
             # then prepare and return response of our service
             parsed_items = [
@@ -1922,6 +1923,28 @@ class StudyService:
         return new_study_population
 
     @staticmethod
+    def _observational_term_is_approved(term_uid: str, codelist_uid: str) -> bool:
+        """Require active membership and approved native term/codelist versions."""
+        # LATEST_FINAL survives retirement; only an open Final HAS_VERSION
+        # relation establishes current authority for a new study selection.
+        rows, _ = db.cypher_query(
+            """
+            MATCH (cl:CTCodelistRoot {uid: $codelist_uid})-[membership:HAS_TERM]->
+                  (:CTCodelistTerm)-[:HAS_TERM_ROOT]->(term:CTTermRoot {uid: $term_uid})
+            MATCH (cl)-[:HAS_NAME_ROOT]->(:CTCodelistNameRoot)-[cl_name:HAS_VERSION {status: 'Final'}]->(:CTCodelistNameValue)
+            MATCH (cl)-[:HAS_ATTRIBUTES_ROOT]->(:CTCodelistAttributesRoot)-[cl_attributes:HAS_VERSION {status: 'Final'}]->(:CTCodelistAttributesValue)
+            MATCH (term)-[:HAS_NAME_ROOT]->(:CTTermNameRoot)-[term_name:HAS_VERSION {status: 'Final'}]->(:CTTermNameValue)
+            MATCH (term)-[:HAS_ATTRIBUTES_ROOT]->(:CTTermAttributesRoot)-[term_attributes:HAS_VERSION {status: 'Final'}]->(:CTTermAttributesValue)
+            WHERE membership.end_date IS NULL
+              AND cl_name.end_date IS NULL AND cl_attributes.end_date IS NULL
+              AND term_name.end_date IS NULL AND term_attributes.end_date IS NULL
+            RETURN count(term) > 0 AS approved
+            """,
+            {"term_uid": term_uid, "codelist_uid": codelist_uid},
+        )
+        return bool(rows and rows[0][0])
+
+    @staticmethod
     def _patch_prepare_new_high_level_study_design(
         current_high_level_study_design: HighLevelStudyDesignVO,
         request_high_level_study_design: HighLevelStudyDesignJsonModel,
@@ -1949,6 +1972,12 @@ class StudyService:
         new_high_level_study_design = HighLevelStudyDesignVO.from_input_values(
             study_type_code=get_term_uid_or_none(
                 request_high_level_study_design.study_type_code
+            ),
+            observational_model_code=get_term_uid_or_none(
+                request_high_level_study_design.observational_model_code
+            ),
+            observational_time_perspective_code=get_term_uid_or_none(
+                request_high_level_study_design.observational_time_perspective_code
             ),
             study_stop_rules=request_high_level_study_design.study_stop_rules,
             study_stop_rules_null_value_code=get_term_uid_or_none(
@@ -2346,6 +2375,15 @@ class StudyService:
                 study_acronym_exists_callback=self._repos.study_definition_repository.study_acronym_exists,
                 new_high_level_study_design=new_high_level_study_design,
                 study_type_exists_callback=self._repos.ct_term_name_repository.term_exists,
+                observational_model_exists_callback=lambda uid: self._observational_term_is_approved(
+                    uid, OBSERVATIONAL_STUDY_CODELISTS["observational_model_code"]
+                ),
+                observational_time_perspective_exists_callback=lambda uid: self._observational_term_is_approved(
+                    uid,
+                    OBSERVATIONAL_STUDY_CODELISTS[
+                        "observational_time_perspective_code"
+                    ],
+                ),
                 trial_type_exists_callback=self._repos.ct_term_name_repository.term_exists,
                 trial_intent_type_exists_callback=self._repos.ct_term_name_repository.term_exists,
                 trial_phase_exists_callback=self._repos.ct_term_name_repository.term_exists,
@@ -2428,6 +2466,15 @@ class StudyService:
                 project_exists_callback=self._repos.project_repository.project_number_exists,
                 new_high_level_study_design=subpart_ar.current_metadata.high_level_study_design,
                 study_type_exists_callback=self._repos.ct_term_name_repository.term_exists,
+                observational_model_exists_callback=lambda uid: self._observational_term_is_approved(
+                    uid, OBSERVATIONAL_STUDY_CODELISTS["observational_model_code"]
+                ),
+                observational_time_perspective_exists_callback=lambda uid: self._observational_term_is_approved(
+                    uid,
+                    OBSERVATIONAL_STUDY_CODELISTS[
+                        "observational_time_perspective_code"
+                    ],
+                ),
                 trial_type_exists_callback=self._repos.ct_term_name_repository.term_exists,
                 trial_intent_type_exists_callback=self._repos.ct_term_name_repository.term_exists,
                 trial_phase_exists_callback=self._repos.ct_term_name_repository.term_exists,

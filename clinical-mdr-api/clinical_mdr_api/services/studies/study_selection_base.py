@@ -854,6 +854,10 @@ class StudySelectionMixin:
         ]
 
         effective_dates: Sequence[datetime | None] = []
+        # One history read can contain thousands of rows using the same CT
+        # package. Cache only this call's derived value; the next read must
+        # still observe the repository's current package data.
+        package_effective_dates: dict[str, datetime] = {}
 
         for start_date in list_of_start_dates:
             matching_version = next(
@@ -868,21 +872,23 @@ class StudySelectionMixin:
             )
 
             if matching_version:
-                ct_package: CTPackage = repos.ct_package_repository.find_by_uid(
-                    matching_version.ct_package_uid
-                )
-                effective_date = ct_package.effective_date
-                # Combine the date with the end of the day time
-                effective_datetime = datetime(
-                    effective_date.year,
-                    effective_date.month,
-                    effective_date.day,
-                    23,
-                    59,
-                    59,
-                    999999,
-                )
-                effective_dates.append(effective_datetime)
+                package_uid = matching_version.ct_package_uid
+                if package_uid not in package_effective_dates:
+                    ct_package: CTPackage = repos.ct_package_repository.find_by_uid(
+                        package_uid
+                    )
+                    effective_date = ct_package.effective_date
+                    # Combine the date with the end of the day time
+                    package_effective_dates[package_uid] = datetime(
+                        effective_date.year,
+                        effective_date.month,
+                        effective_date.day,
+                        23,
+                        59,
+                        59,
+                        999999,
+                    )
+                effective_dates.append(package_effective_dates[package_uid])
             else:
                 effective_dates.append(None)
 

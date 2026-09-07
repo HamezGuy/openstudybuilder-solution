@@ -20,6 +20,18 @@ router = APIRouter(dependencies=[Depends(enforce_visible_study)])
 
 
 @router.get(
+    "/studies/{study_uid}/native-observation",
+    dependencies=[security, rbac.STUDY_READ],
+    summary="Read complete native study records and edit history without release approval",
+    response_model_exclude_none=False,
+)
+def get_native_observation(study_uid: Annotated[str, Path(description="The unique OSB study uid")]) -> dict:
+    from clinical_mdr_api.services.integrations.native_observation import collect_native_observation
+
+    return collect_native_observation(study_uid)
+
+
+@router.get(
     "/studies/{study_uid}/snapshot",
     dependencies=[security, rbac.STUDY_READ],
     response_model=StudyAuthoritySnapshot,

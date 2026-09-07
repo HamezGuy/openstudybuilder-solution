@@ -10,6 +10,7 @@ import re
 from datetime import date, datetime, timezone
 from itertools import chain
 from typing import Any, Callable
+from common.exceptions import ValidationException
 
 from neomodel import db
 from usdm_info import __model_version__ as usdm_package_version
@@ -36,7 +37,11 @@ from usdm_model import StudyDefinitionDocument as USDMStudyDefinitionDocument
 from usdm_model import (
     StudyDefinitionDocumentVersion as USDMStudyDefinitionDocumentVersion,
 )
-from usdm_model import StudyDesign as USDMStudyDesign
+from usdm_model import InterventionalStudyDesign as USDMStudyDesign
+from usdm_model import ObservationalStudyDesign as USDMObservationalStudyDesign
+
+class USDMMappingAuthorityRequired(ValidationException):
+    status_code = 422
 from usdm_model import StudyDesignPopulation as USDMStudyDesignPopulation
 from usdm_model import StudyElement as USDMStudyElement
 from usdm_model import StudyEpoch as USDMStudyEpoch
@@ -62,7 +67,6 @@ from common.telemetry import trace_calls
 
 DDF_ORGANIZATION_TYPE_STUDY_REGISTRY = "C93453"
 DDF_ORGANIZATION_TYPE_REGULATORY_AGENCY = "C188863"
-DDF_STUDY_ARM_DATA_ORIGIN_TYPE_GENERATED_WITHIN_STUDY = "C188866"
 DDF_STUDY_POPULATION_DURATION_UNIT_DAYS = "C25301"
 DDF_STUDY_POPULATION_DURATION_UNIT_WEEKS = "C29844"
 DDF_STUDY_POPULATION_DURATION_UNIT_MONTHS = "C29846"
@@ -90,6 +94,14 @@ def get_ddf_timing_iso_duration_value(time_value: int, time_unit_name: str) -> s
         return f"P{magnitude}D"
     if unit in {"hour", "hours"}:
         return f"PT{magnitude}H"
+    if unit in {"minute", "minutes"}:
+        return f"PT{magnitude}M"
+    if unit in {"second", "seconds"}:
+        return f"PT{magnitude}S"
+    if unit in {"month", "months"}:
+        return f"P{magnitude}M"
+    if unit in {"year", "years"}:
+        return f"P{magnitude}Y"
     raise ValueError(f"Unsupported time unit {time_unit_name}")
 
 
@@ -209,9 +221,10 @@ class USDMMapper:
         )
 
     def _load_study_criteria_selections(self, study_uid: str) -> None:
+        criteria_kwargs = {"no_brackets": False} if self._get_osb_study_criteria is not None and _accepts_keyword(self._get_osb_study_criteria, "no_brackets") else {}
         self._study_criteria = (
             _stable_selection_order(
-                _items(self._call(self._get_osb_study_criteria, study_uid)),
+                _items(self._call(self._get_osb_study_criteria, study_uid, **criteria_kwargs)),
                 "study_criteria_uid",
             )
             if self._get_osb_study_criteria is not None
@@ -644,15 +657,41 @@ class USDMMapper:
 
     def _get_study_arms(self, study: OSBStudy) -> list[StudyArm]:
         rows = _stable_selection_order(_items(self._call(self._get_osb_study_arms, study.uid)), "arm_uid")
-        return [StudyArm(
-            id=self._id_manager.get_id(StudyArm.__name__, row.arm_uid),
-            name=row.name, label=row.name, description=row.description,
-            type=(self.get_ct_package_term_as_usdm_code(row.arm_type.term_uid)
-                  if row.arm_type else self.get_void_usdm_code()),
-            dataOriginDescription="",
-            dataOriginType=self.get_ct_package_term_as_usdm_code(
-                DDF_STUDY_ARM_DATA_ORIGIN_TYPE_GENERATED_WITHIN_STUDY),
-        ) for row in rows]
+        result = []
+        for row in rows:
+            # The current persisted StudySelectionArm DTO has no origin slot.
+            # An arm name, type or description is not authority to fabricate
+            # Data Generated Within Study. Only a declared DTO field backed by
+            # native persistence may provide a future explicit origin term.
+            declared_fields = getattr(type(row), "model_fields", {})
+            origin_field = next((name for name in ("data_origin_type_code", "data_origin_type")
+                                 if name in declared_fields), None)
+            if origin_field is None:
+                raise USDMMappingAuthorityRequired(
+                    f"USDM_ARM_DATA_ORIGIN_CAPABILITY_REQUIRED: study-arms/{row.arm_uid}; "
+                    "StudySelectionArm persistence/create/patch/response contract does not expose data origin. "
+                    "Retain native arm data and add a governed origin field before USDM arm export."
+                )
+            origin = getattr(row, origin_field, None)
+            origin_uid = getattr(origin, "term_uid", None)
+            if not origin_uid:
+                raise USDMMappingAuthorityRequired(
+                    f"USDM_ARM_DATA_ORIGIN_AUTHORITY_REQUIRED: study-arms/{row.arm_uid}/{origin_field}"
+                )
+            origin_code = self.get_ct_package_term_as_usdm_code(origin_uid)
+            if not origin_code.code or not origin_code.codeSystemVersion:
+                raise USDMMappingAuthorityRequired(
+                    f"USDM_ARM_DATA_ORIGIN_CT_PIN_REQUIRED: study-arms/{row.arm_uid}/{origin_field}"
+                )
+            result.append(StudyArm(
+                id=self._id_manager.get_id(StudyArm.__name__, row.arm_uid),
+                name=row.name, label=row.name, description=row.description,
+                type=(self.get_ct_package_term_as_usdm_code(row.arm_type.term_uid)
+                      if row.arm_type else self.get_void_usdm_code()),
+                dataOriginDescription=getattr(row, "data_origin_description", None) or "",
+                dataOriginType=origin_code,
+            ))
+        return result
 
     def _get_study_cells(self, study: OSBStudy) -> list[USDMStudyCell]:
         rows = _stable_selection_order(
@@ -665,10 +704,41 @@ class USDMMapper:
         ) for row in rows if row.study_arm_uid is not None
           and row.study_epoch_uid is not None and row.study_element_uid is not None]
 
-    def _get_study_designs(self, study: OSBStudy) -> list[USDMStudyDesign]:
+    def _get_study_designs(self, study: OSBStudy) -> list[USDMStudyDesign | USDMObservationalStudyDesign]:
+        high_level = getattr(study.current_metadata, "high_level_study_design", None)
+        study_type = getattr(high_level, "study_type_code", None)
+        type_name = self._term_label(study_type).strip().casefold()
+        if type_name not in {"interventional", "interventional study", "observational", "observational study"}:
+            raise USDMMappingAuthorityRequired("USDM_STUDY_DESIGN_TYPE_AUTHORITY_REQUIRED: current_metadata.high_level_study_design.study_type_code")
+        observational = type_name.startswith("observational")
+        intervention = getattr(study.current_metadata, "study_intervention", None)
+        opposite_model = getattr(intervention, "intervention_model_code", None) if observational else (
+            getattr(high_level, "observational_model_code", None) or getattr(high_level, "observational_time_perspective_code", None)
+        )
+        if getattr(opposite_model, "term_uid", None):
+            raise USDMMappingAuthorityRequired("USDM_STUDY_DESIGN_AUTHORITY_CONFLICT: explicit native attributes of the opposite study design type require reconciliation")
+        model = getattr(high_level, "observational_model_code", None) if observational else getattr(intervention, "intervention_model_code", None)
+        model_uid = getattr(model, "term_uid", None)
+        if not model_uid:
+            code = "USDM_OBSERVATIONAL_MODEL_AUTHORITY_REQUIRED" if observational else "USDM_INTERVENTIONAL_MODEL_AUTHORITY_REQUIRED"
+            raise USDMMappingAuthorityRequired(code + ": explicit native model code is required")
+        model_code = self.get_ct_package_term_as_usdm_code(extract_c_code_from_simple_term(model_uid))
+        if not model_code.code or model_code.code == "VOID":
+            raise USDMMappingAuthorityRequired("USDM_DESIGN_MODEL_CT_PIN_REQUIRED: model must resolve in the study-selected controlled terminology package")
+        kind_fields = {}
+        if observational:
+            perspective = getattr(high_level, "observational_time_perspective_code", None)
+            perspective_uid = getattr(perspective, "term_uid", None)
+            if not perspective_uid:
+                raise USDMMappingAuthorityRequired("USDM_OBSERVATIONAL_TIME_PERSPECTIVE_AUTHORITY_REQUIRED")
+            perspective_code = self.get_ct_package_term_as_usdm_code(extract_c_code_from_simple_term(perspective_uid))
+            if not perspective_code.code or perspective_code.code == "VOID":
+                raise USDMMappingAuthorityRequired("USDM_OBSERVATIONAL_TIME_PERSPECTIVE_CT_PIN_REQUIRED")
+            kind_fields["timePerspective"] = perspective_code
+        design_class = USDMObservationalStudyDesign if observational else USDMStudyDesign
         design_name = self._get_study_name(study)
-        design = USDMStudyDesign(
-            id=self._id_manager.get_id(USDMStudyDesign.__name__),
+        design = design_class(
+            id=self._id_manager.get_id(design_class.__name__),
             name=f"{design_name} Study Design" if design_name else "Study Design",
             description=self._get_study_description(study) or "",
             rationale="",
@@ -677,7 +747,9 @@ class USDMMapper:
             epochs=self._get_study_epochs(study),
             elements=self._get_study_elements(study),
             population=self._get_study_population(study),
-            instanceType="StudyDesign",
+            model=model_code,
+            instanceType=design_class.__name__,
+            **kind_fields,
         )
         design.studyType = self._get_study_type(study)
         design.studyPhase = self._get_study_phase(study)
@@ -1004,7 +1076,7 @@ class USDMMapper:
                     visit.min_visit_window_value, visit.visit_window_unit_name) if has_window else None),
                 windowUpper=(get_ddf_timing_iso_duration_value(
                     visit.max_visit_window_value, visit.visit_window_unit_name) if has_window else None),
-                window=(f"{visit.min_visit_window_value}..{visit.max_visit_window_value} "
+                windowLabel=(f"{visit.min_visit_window_value}..{visit.max_visit_window_value} "
                         f"{visit.visit_window_unit_name}" if has_window else None),
             )
             instances.append(instance)
@@ -1690,7 +1762,7 @@ class USDMMapper:
             description=self._get_study_description(study),
             language=self.get_void_usdm_code(),
             type=self.get_void_usdm_code(),
-            templateName="",
+            templateName="Unspecified source template",
             instanceType="StudyDefinitionDocument",
         )
         metadata = getattr(study.current_metadata, "version_metadata", None)
@@ -1720,7 +1792,11 @@ class USDMMapper:
         return getattr(getattr(study.current_metadata, "study_description", None), "study_short_title", None)
 
     def _get_study_name(self, study: OSBStudy):
-        return getattr(getattr(study.current_metadata, "identification_metadata", None), "study_id", "")
+        identification = getattr(study.current_metadata, "identification_metadata", None)
+        name = getattr(identification, "study_id", None) or getattr(identification, "study_acronym", None)
+        if not isinstance(name, str) or not name.strip():
+            raise USDMMappingAuthorityRequired("USDM_STUDY_NAME_AUTHORITY_REQUIRED: native study_id or explicitly supplied study_acronym")
+        return name
 
     def _get_study_title(self, study: OSBStudy):
         return self._get_study_description(study) or ""

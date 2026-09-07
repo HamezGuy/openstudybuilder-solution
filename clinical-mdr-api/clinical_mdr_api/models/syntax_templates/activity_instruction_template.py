@@ -219,9 +219,9 @@ class ActivityInstructionTemplatePreValidateInput(InputModel):
     name: Annotated[
         str,
         Field(
-            description="The actual value/content. It may include parameters referenced by simple strings in square brackets [].",
+            description="The actual value/content. It may include parameters referenced by simple strings in square brackets []. Use numeric entities &#91; and &#93; for literal square brackets.",
             min_length=1,
-            json_schema_extra={"format": "html"},
+            json_schema_extra={"format": "html", "preserve_literal_brackets": True},
         ),
     ]
     guidance_text: Annotated[
@@ -238,9 +238,9 @@ class ActivityInstructionTemplateCreateInput(PostInputModel):
     name: Annotated[
         str,
         Field(
-            description="The actual value/content. It may include parameters referenced by simple strings in square brackets [].",
+            description="The actual value/content. It may include parameters referenced by simple strings in square brackets []. Use numeric entities &#91; and &#93; for literal square brackets.",
             min_length=1,
-            json_schema_extra={"format": "html"},
+            json_schema_extra={"format": "html", "preserve_literal_brackets": True},
         ),
     ]
     guidance_text: Annotated[
@@ -278,9 +278,9 @@ class ActivityInstructionTemplateEditInput(PatchInputModel):
     name: Annotated[
         str,
         Field(
-            description="The actual value/content. It may include parameters referenced by simple strings in square brackets [].",
+            description="The actual value/content. It may include parameters referenced by simple strings in square brackets []. Use numeric entities &#91; and &#93; for literal square brackets.",
             min_length=1,
-            json_schema_extra={"format": "html"},
+            json_schema_extra={"format": "html", "preserve_literal_brackets": True},
         ),
     ]
     guidance_text: Annotated[

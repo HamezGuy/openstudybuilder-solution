@@ -435,6 +435,23 @@ class OdmGenericService(Generic[_AggregateRootType], ABC):
     def approve(
         self, uid: str, cascade_edit_and_approve: bool = False, ignore_exc: bool = False
     ) -> BaseModel:
+        item = self._approve_aggregate(uid, cascade_edit_and_approve, ignore_exc)
+        return self._transform_aggregate_root_to_pydantic_model(item)
+
+    @ensure_transaction(db)
+    def _approve_cascade_child(self, uid: str) -> None:
+        """Approve the complete child subtree without an unused response DTO.
+
+        Keep the same locked lookup, lifecycle validation, save and recursive
+        approval as the public method. Only the discarded projection is omitted;
+        repeated identities still undergo the original validation sequence.
+        """
+        self._approve_aggregate(uid, cascade_edit_and_approve=True, ignore_exc=True)
+
+    def _approve_aggregate(
+        self, uid: str, cascade_edit_and_approve: bool, ignore_exc: bool
+    ) -> _AggregateRootType:
+        """Internal lifecycle operation; both callers establish a transaction."""
         item = self._find_by_uid_or_raise_not_found(uid, for_update=True)
         try:
             item.approve(author_id=self.author_id)
@@ -445,7 +462,7 @@ class OdmGenericService(Generic[_AggregateRootType], ABC):
 
         if cascade_edit_and_approve:
             self.cascade_edit_and_approve(item)
-        return self._transform_aggregate_root_to_pydantic_model(item)
+        return item
 
     @ensure_transaction(db)
     def inactivate_final(
@@ -818,9 +835,7 @@ class OdmGenericService(Generic[_AggregateRootType], ABC):
             form_service = OdmFormService()
 
             for form_uid in item.odm_vo.form_uids:
-                form_service.approve(
-                    form_uid, cascade_edit_and_approve=True, ignore_exc=True
-                )
+                form_service._approve_cascade_child(form_uid)
 
         if getattr(item.odm_vo, "item_group_uids", None):
             from clinical_mdr_api.services.odms.item_groups import OdmItemGroupService
@@ -828,9 +843,7 @@ class OdmGenericService(Generic[_AggregateRootType], ABC):
             item_group_service = OdmItemGroupService()
 
             for item_group_uid in item.odm_vo.item_group_uids:
-                item_group_service.approve(
-                    item_group_uid, cascade_edit_and_approve=True, ignore_exc=True
-                )
+                item_group_service._approve_cascade_child(item_group_uid)
 
         if getattr(item.odm_vo, "item_uids", None):
             from clinical_mdr_api.services.odms.items import OdmItemService
@@ -838,9 +851,7 @@ class OdmGenericService(Generic[_AggregateRootType], ABC):
             item_service = OdmItemService()
 
             for item_uid in item.odm_vo.item_uids:
-                item_service.approve(
-                    item_uid, cascade_edit_and_approve=True, ignore_exc=True
-                )
+                item_service._approve_cascade_child(item_uid)
 
         if getattr(item.odm_vo, "vendor_attribute_uids", None):
             from clinical_mdr_api.services.odms.vendor_attributes import (
@@ -850,9 +861,7 @@ class OdmGenericService(Generic[_AggregateRootType], ABC):
             vendor_attribute_service = OdmVendorAttributeService()
 
             for vendor_attribute_uid in item.odm_vo.vendor_attribute_uids:
-                vendor_attribute_service.approve(
-                    vendor_attribute_uid, cascade_edit_and_approve=True, ignore_exc=True
-                )
+                vendor_attribute_service._approve_cascade_child(vendor_attribute_uid)
 
         if getattr(item.odm_vo, "vendor_element_uids", None):
             from clinical_mdr_api.services.odms.vendor_elements import (
@@ -862,9 +871,7 @@ class OdmGenericService(Generic[_AggregateRootType], ABC):
             vendor_element_service = OdmVendorElementService()
 
             for vendor_element_uid in item.odm_vo.vendor_element_uids:
-                vendor_element_service.approve(
-                    vendor_element_uid, cascade_edit_and_approve=True, ignore_exc=True
-                )
+                vendor_element_service._approve_cascade_child(vendor_element_uid)
 
         if getattr(item.odm_vo, "vendor_namespace_uids", None):
             from clinical_mdr_api.services.odms.vendor_namespaces import (
@@ -874,9 +881,7 @@ class OdmGenericService(Generic[_AggregateRootType], ABC):
             vendor_namespace_service = OdmVendorNamespaceService()
 
             for vendor_namespace_uid in item.odm_vo.vendor_namespace_uids:
-                vendor_namespace_service.approve(
-                    vendor_namespace_uid, cascade_edit_and_approve=True, ignore_exc=True
-                )
+                vendor_namespace_service._approve_cascade_child(vendor_namespace_uid)
 
     @ensure_transaction(db)
     def cascade_new_version(self, item):

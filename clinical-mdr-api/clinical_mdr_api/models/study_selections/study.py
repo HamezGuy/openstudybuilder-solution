@@ -611,6 +611,15 @@ class HighLevelStudyDesignJsonModel(BaseModel):
         SimpleCTTermNameWithConflictFlag | None,
         Field(json_schema_extra={"nullable": True}),
     ] = None
+    observational_model_code: Annotated[
+        SimpleCTTermNameWithConflictFlag | None,
+        Field(json_schema_extra={"nullable": True}),
+    ] = None
+    observational_time_perspective_code: Annotated[
+        SimpleCTTermNameWithConflictFlag | None,
+        Field(json_schema_extra={"nullable": True}),
+    ] = None
+
     study_type_null_value_code: Annotated[
         SimpleCTTermNameWithConflictFlag | None,
         Field(json_schema_extra={"nullable": True}),
@@ -711,6 +720,8 @@ class HighLevelStudyDesignJsonModel(BaseModel):
         _c_codes = list(
             {
                 high_level_study_design_vo.study_type_code,
+                high_level_study_design_vo.observational_model_code,
+                high_level_study_design_vo.observational_time_perspective_code,
                 high_level_study_design_vo.study_type_null_value_code,
                 high_level_study_design_vo.trial_type_null_value_code,
                 high_level_study_design_vo.trial_phase_code,
@@ -752,6 +763,17 @@ class HighLevelStudyDesignJsonModel(BaseModel):
             study_type_code=(
                 terms[high_level_study_design_vo.study_type_code]
                 if high_level_study_design_vo.study_type_code
+                else None
+            ),
+            observational_model_code=(
+                terms[high_level_study_design_vo.observational_model_code]
+                if high_level_study_design_vo.observational_model_code is not None
+                else None
+            ),
+            observational_time_perspective_code=(
+                terms[high_level_study_design_vo.observational_time_perspective_code]
+                if high_level_study_design_vo.observational_time_perspective_code
+                is not None
                 else None
             ),
             study_type_null_value_code=(

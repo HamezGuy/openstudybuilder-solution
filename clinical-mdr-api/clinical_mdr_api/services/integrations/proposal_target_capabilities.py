@@ -28,6 +28,13 @@ TARGET_CAPABILITIES = {
     "OdmForm": "governed_library_reference",
     "OdmItemGroup": "governed_library_reference",
     "OdmItem": "governed_library_reference",
+    "OdmMethod": "governed_library_reference",
+    "OdmCondition": "governed_library_reference",
+    "OdmItemActivityBinding": "governed_library_reference",
+    "OdmFormItemGroupLink": "governed_library_reference",
+    "OdmItemGroupItemLink": "governed_library_reference",
+    "ActivityItemClass": "governed_library_reference",
+    "StudySelectionActivityInstance": "native_study_mutation",
     "IntegrationExtension": "governed_extension",
     "RetainedNarrative": "retained_narrative",
     "Unresolved": "unresolved",
@@ -54,6 +61,8 @@ NATIVE_EXECUTOR_RESOURCE_TYPES = frozenset(
         "StudySelectionCompound",
         "StudyCompoundDosing",
         "StudyActivityInstruction",
+        "StudySelectionActivityInstance", "OdmForm", "OdmItemGroup", "OdmItem", "OdmMethod", "OdmCondition", "OdmItemActivityBinding",
+        "OdmFormItemGroupLink", "OdmItemGroupItemLink",
     }
 )
 
@@ -65,10 +74,11 @@ NATIVE_SELECTION_RESOURCE_TYPES = frozenset(
         "StudySelectionActivity",
         "StudySelectionCompound",
         "StudyActivityInstruction",
+        "StudySelectionActivityInstance",
     }
 )
 
-NATIVE_DUAL_MODE_RESOURCE_TYPES = frozenset()
+NATIVE_DUAL_MODE_RESOURCE_TYPES = frozenset({"OdmForm", "OdmItemGroup", "OdmItem", "OdmMethod", "OdmCondition"})
 
 NATIVE_CREATE_REQUEST_RESOURCE_TYPES = frozenset(
     {
@@ -81,6 +91,8 @@ NATIVE_CREATE_REQUEST_RESOURCE_TYPES = frozenset(
         "StudyActivitySchedule",
         "StudyStandardVersion",
         "StudyCompoundDosing",
+        "OdmForm", "OdmItemGroup", "OdmItem", "OdmMethod", "OdmCondition", "OdmItemActivityBinding",
+        "OdmFormItemGroupLink", "OdmItemGroupItemLink",
     }
 )
 

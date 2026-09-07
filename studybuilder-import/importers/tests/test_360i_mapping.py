@@ -1,7 +1,7 @@
 """Pure-mapper tests for the 360i payload -> OSB API-plan mapping.
 
 No network, no database: these pin the doctrine the importer must not drift
-from — deterministic identity minting, the carrier-epoch honesty rule, STOP
+from â€” deterministic identity minting, the carrier-epoch honesty rule, STOP
 on unknown vocabulary, and window offsets relative to the scheduled day.
 """
 
@@ -44,11 +44,11 @@ def _payload(**over):
             {"name": "Treatment Period", "ordinal": 2, "visitRefs": ["V_BASE", "V_W4"]},
         ],
         "visits": [
-            {"refKey": "V_SCREEN", "name": "Screening", "ordinal": 1, "type": "scheduled",
+            {"refKey": "V_SCREEN", "name": "Screening", "ordinal": 1, "type": "scheduled", "visitTypeName": "Treatment",
              "epochRef": 0, "scheduleDay": -14, "minDay": -16, "maxDay": -12},
-            {"refKey": "V_BASE", "name": "Baseline", "ordinal": 2, "type": "scheduled",
+            {"refKey": "V_BASE", "name": "Baseline", "ordinal": 2, "type": "scheduled", "visitTypeName": "Treatment",
              "epochRef": 1, "scheduleDay": 0},
-            {"refKey": "V_W4", "name": "Week 4", "ordinal": 3, "type": "scheduled",
+            {"refKey": "V_W4", "name": "Week 4", "ordinal": 3, "type": "scheduled", "visitTypeName": "Treatment",
              "epochRef": 1, "scheduleDay": 28, "minDay": 25, "maxDay": 31},
         ],
         "arms": [{"name": "Widgetinib 10 mg", "description": "Active"}],
@@ -157,15 +157,10 @@ def test_stated_epochs_pass_through_without_scaffolding():
     assert all(not p["scaffolding"] for p in plans)
 
 
-def test_no_epochs_yields_one_declared_carrier():
-    # The honesty rule: OSB structurally requires an epoch per visit; when the
-    # protocol stated none the importer creates ONE carrier and DECLARES it —
-    # never derived from visit categories, never passed off as protocol content.
+def test_no_epochs_preserves_missing_structure_without_inventing_carrier():
     plans, scaffolded = mapping.epochs_plan(_payload(epochs=[]))
-    assert scaffolded
-    assert len(plans) == 1
-    assert plans[0]["scaffolding"]
-    assert plans[0]["visit_refs"] == ["V_SCREEN", "V_BASE", "V_W4"]
+    assert not scaffolded
+    assert plans == []
 
 
 def test_visit_plan_windows_are_offsets_and_anchor_is_day_zero():
@@ -188,11 +183,11 @@ def test_anchor_is_earliest_visit_and_times_rebase_to_it_when_no_day_zero():
     # becomes the origin: it rebases to 0 and every other visit gets a positive
     # offset (never a negative time before the anchor, which OSB rejects).
     p = _payload(epochs=[], visits=[
-        {"refKey": "V_D1", "name": "Day 1", "ordinal": 1, "type": "scheduled",
+        {"refKey": "V_D1", "name": "Day 1", "ordinal": 1, "type": "scheduled", "visitTypeName": "Treatment",
          "scheduleDay": 1},
-        {"refKey": "V_DN10", "name": "Day -10", "ordinal": 2, "type": "scheduled",
+        {"refKey": "V_DN10", "name": "Day -10", "ordinal": 2, "type": "scheduled", "visitTypeName": "Treatment",
          "scheduleDay": -10},
-        {"refKey": "V_D20", "name": "Day 20", "ordinal": 3, "type": "scheduled",
+        {"refKey": "V_D20", "name": "Day 20", "ordinal": 3, "type": "scheduled", "visitTypeName": "Treatment",
          "scheduleDay": 20},
     ])
     plans = {pl["refKey"]: pl for pl in mapping.visit_plan(p, {})}
@@ -241,7 +236,7 @@ def test_vendor_ext_is_one_sorted_json_blob():
 
 
 # ----------------------------------------------------------------------------
-# Upsert diff — the pure classification the importer executes on re-import.
+# Upsert diff â€” the pure classification the importer executes on re-import.
 # ----------------------------------------------------------------------------
 
 
@@ -264,7 +259,7 @@ def _visit_current_from_plan(payload, uid_by_ref, epoch_uid_by_ref=None):
 
 def test_visit_diff_all_unchanged_when_state_matches_payload():
     # Idempotence at the diff level: re-import of the same payload against the
-    # state it produced yields zero create/patch/delete — the no-op the
+    # state it produced yields zero create/patch/delete â€” the no-op the
     # runbook's idempotence gate requires, now true for CHANGED-structure
     # re-imports too (not just the byte-identical hash-gate short-circuit).
     p = _payload()
@@ -395,13 +390,10 @@ def test_odm_concept_diff_missing_stored_sha_forces_patch():
     assert diff["unchanged"] == []
 
 
-def test_odm_item_text_gets_default_length_when_unstated():
-    # OSB rejects a text/string item with null length; the mapper must supply
-    # a default so the item validates instead of being censused as failed.
-    body = mapping.odm_item_body(
-        {"name": "Comment", "refKey": "IT.CMT", "datatype": "text"}, {}, {}
-    )
-    assert body["length"] == 200
+def test_odm_item_text_requires_authority_for_native_length_when_unstated():
+    import pytest
+    with pytest.raises(ValueError, match="OSB_CAPTURE_TEXT_LENGTH_AUTHORITY_REQUIRED"):
+        mapping.odm_item_body({"name": "Comment", "refKey": "IT.CMT", "datatype": "text"}, {}, {})
     # A stated length is honored, not overridden.
     body2 = mapping.odm_item_body(
         {"name": "Comment", "refKey": "IT.CMT", "datatype": "string", "length": 40}, {}, {}
@@ -421,7 +413,7 @@ def test_content_sha_is_stable_and_order_independent():
     assert a != mapping.content_sha({"x": 2, "y": [1, 2], "z": "q"})
 
 
-# Item-group ownership — OSB enforces one-item-one-group and rejects an item-ref
+# Item-group ownership â€” OSB enforces one-item-one-group and rejects an item-ref
 # batch atomically. A catch-all group that re-lists domain fields must NOT steal
 # them, and the items unique to it must still wire (regression: a payload's
 # Medical History "MH_OTHER" catch-all silently dropped all 140 of its items).
@@ -516,7 +508,7 @@ def test_ownership_tie_breaks_to_smaller_group():
 
 def test_ownership_unique_catch_all_item_still_wires():
     plan = mapping.item_group_ownership(_odm_two_groups())
-    # The item unique to the catch-all must still be wired into it — the whole
+    # The item unique to the catch-all must still be wired into it â€” the whole
     # point of the fix (previously the atomic-batch rejection dropped it too).
     assert "MH_ONLY" in plan["wired"]["G_AAA_CATCH"]
     # AE keeps both of its items.
