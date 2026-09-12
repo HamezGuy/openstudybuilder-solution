@@ -1,26 +1,8 @@
-"""Project an OSB study into an AccuraTrial EDC StudyBundleV1 and (optionally)
-push it to the EDC's import endpoint.
+"""Export a V2 .ecrfstudy draft from canonical source or the actual USDM service.
 
-THE CONTRACT (EDC side, `validateStudyBundle` in study-bundle.service.ts):
-    formatVersion === '1.0', study.name present, visits[] array,
-    visitFormAssignments[] array, forms.forms[] array (each form: name +
-    fields array). Everything else is optional; unknown keys are ignored but
-    REPORTED by the EDC's import census — so this exporter carries an
-    `_exportCensus` of its own and never relies on silence.
-
-WHAT IT READS:
-  * StudyService/StudyVisitService/StudyArmSelectionService — the study
-    definition (title, registry ids, visit calendar, arms).
-  * OdmStudyEventService/OdmFormService/OdmItemGroupService/OdmItemService —
-    the CRF metadata. For studies imported by the 360i importer, study-events
-    are per-visit containers whose OID carries the visit refKey
-    (SE.360I.<studyId>.<visitRef>) and items carry `x360i:fieldType` — the
-    lossless type restoration path. Native OSB studies fall back to
-    name-joins, with every ambiguity censused.
-
-FIELD TYPES: two-tier, never silent — see edc_field_types.py. The EDC maps
-unknown types to 'text' without a word; this exporter refuses to participate
-in that: every downgrade is a census row.
+The complete source definition and execution survive OSB preview round trips.
+Native records and reconciliation results remain exact review evidence. This
+exporter grants no OSB release or deployment authority.
 """
 
 import base64
@@ -29,13 +11,17 @@ import json
 import logging
 import re
 from copy import deepcopy
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
+from fastapi.encoders import jsonable_encoder
+from pydantic import TypeAdapter
 
 from clinical_mdr_api.domains.study_definition_aggregates.study_metadata import (
     StudyComponentEnum,
 )
+from clinical_mdr_api.services.ddf.usdm_service import USDMService
 from clinical_mdr_api.services.integrations.edc_field_types import (
     resolve_edc_field_type,
 )
@@ -44,11 +30,17 @@ from clinical_mdr_api.services.integrations.edc_source_snapshot import (
     is_source_snapshot,
     read_source_snapshot,
 )
+from clinical_mdr_api.services.integrations.edc_study_exchange import (
+    StudyExchangeError,
+    build_study_exchange,
+    source_execution,
+)
 from common import config
 
 log = logging.getLogger(__name__)
 
-EDC_BUNDLE_FORMAT_VERSION = "1.0"
+EDC_BUNDLE_FORMAT_VERSION = "2.0"
+EDC_TEMPLATE_FORMAT_VERSION = "1.0"
 X360I_EVENT_OID = re.compile(r"^SE\.360I\.(?P<study_id>.+)\.(?P<visit_ref>[^.]+)$")
 X360I_STUDY_DESCRIPTION = re.compile(
     r"^Imported from 360i study (?P<study_id>.+?) \(build [^)]+\)$"
@@ -58,7 +50,7 @@ CARRIER_CHUNK_PREFIX = "chunk:"
 
 
 def authority_disclosure(mode: str, source_overlay_active: bool) -> dict[str, Any]:
-    """Describe who actually controls this V1 projection.
+    """Describe the preview projection without granting native release authority.
 
     Until the released-version package replaces the source restoration helpers,
     this exporter is not allowed to claim OSB mapping authority. Keeping the
@@ -151,12 +143,10 @@ def _phase_for_edc(value: Any) -> str | None:
 
 
 def _native_study_projection(study: dict[str, Any]) -> dict[str, Any]:
-    """Project OSB-owned StudyMetadata to the portable EDC study contract.
+    """Summarize native StudyMetadata for archived review observations.
 
-    Only fields with an actual native OSB representation are emitted. Missing is
-    omitted, ``False`` is preserved, and CT objects become their canonical OSB
-    display values rather than opaque UIDs. Source-carrier fields are merged later
-    and may fill only properties this projection does not own.
+    The complete native record is retained separately. This display summary
+    never constructs or replaces the canonical USDM definition.
     """
     metadata = study.get("current_metadata") or {}
     ident = metadata.get("identification_metadata") or {}
@@ -263,7 +253,11 @@ class EdcExportService:
         if not hasattr(self, "_native_records"):
             self._native_records: list[dict[str, Any]] = []
             self._native_record_keys: set[str] = set()
-        key = kind + ":" + json.dumps(record, sort_keys=True, default=str)
+        # Use the native API JSON representation before hashing/retention.
+        # Pydantic preserves Decimal text and serializes datetime explicitly;
+        # default=str could conflate different unsupported Python values.
+        record = TypeAdapter(dict[str, Any]).dump_python(record, mode="json")
+        key = kind + ":" + json.dumps(record, sort_keys=True, allow_nan=False)
         if key not in self._native_record_keys:
             self._native_record_keys.add(key)
             self._native_records.append(
@@ -281,6 +275,8 @@ class EdcExportService:
         This selects projection precedence, not release authorization. Preview
         exports remain non-authoritative for deployment and require review.
         """
+        if self.source_bundle_meta.get("formatVersion") == "2.0":
+            return True
         provenance = self.source_bundle_meta.get("_provenance") or {}
         custody = self.source_bundle_meta.get("semanticSourceCustody") or {}
         return (
@@ -293,6 +289,16 @@ class EdcExportService:
             )
             == "SemanticSourceCustodyV1@1.0.0"
         )
+
+    def _set_source_snapshot(self, snapshot: dict[str, Any]) -> None:
+        if snapshot.get("formatVersion") == "osb-edc-source-snapshot/2":
+            exchange = snapshot.get("studyExchange")
+            if not isinstance(exchange, dict) or exchange.get("formatVersion") != "2.0":
+                raise EdcExportError("EDC_SOURCE_SNAPSHOT_EXCHANGE_REQUIRED")
+            self.source_bundle_meta = deepcopy(exchange)
+            self._source_snapshot_metadata = deepcopy({key: value for key, value in snapshot.items() if key != "studyExchange"})
+        else:
+            self.source_bundle_meta = snapshot
 
     def _semantic_difference(self, ref: str, source: Any, native: Any) -> None:
         if source != native:
@@ -360,7 +366,9 @@ class EdcExportService:
         )
 
         try:
-            records, census = collect_study_native_records(study_uid)
+            records, census = collect_study_native_records(
+                study_uid, **self._selected_version_kwargs()
+            )
         except NativeStudyRecordError as error:
             raise EdcExportError(str(error)) from error
         for entry in records:
@@ -383,9 +391,17 @@ class EdcExportService:
     # Projection
     # ------------------------------------------------------------------
 
-    def build_bundle(self, study_uid: str) -> dict[str, Any]:
+    def _selected_version_kwargs(self) -> dict[str, str]:
+        version = getattr(self, "_study_value_version", None)
+        return {"study_value_version": version} if version is not None else {}
+
+    def build_bundle(
+        self, study_uid: str, study_value_version: str | None = None
+    ) -> dict[str, Any]:
+        self._study_value_version = study_value_version
         self.census = []
         self.source_bundle_meta = {}
+        self._source_snapshot_metadata = {}
         self._native_records = []
         self._native_record_keys = set()
         self._native_associations = []
@@ -393,7 +409,7 @@ class EdcExportService:
         authority_mode = config.settings.mapping_authority_mode
         if authority_mode == "enforced":
             raise EdcExportError(
-                "MAPPING_AUTHORITY_ENFORCED: the carrier-compatible V1 exporter is disabled because it can restore Intelligence Layer source values over native OSB state. Use the released OSB authority package once its V2 EDC importer is enabled."
+                "MAPPING_AUTHORITY_ENFORCED: the V2 preview exporter does not establish native OSB release authority. Use the separately verified native release package and its deployment receipts."
             )
         study = self.study_service.get_by_uid(
             study_uid,
@@ -402,31 +418,22 @@ class EdcExportService:
                 StudyComponentEnum.STUDY_POPULATION,
                 StudyComponentEnum.STUDY_INTERVENTION,
             ],
+            **self._selected_version_kwargs(),
         )
 
-        study_dict = study.model_dump() if hasattr(study, "model_dump") else dict(study)
+        study_dict = jsonable_encoder(study, by_alias=True) if hasattr(study, "model_dump") else dict(study)
+        self._native_study_as_of = getattr(
+            getattr(getattr(study, "current_metadata", None), "version_metadata", None),
+            "version_timestamp", None,
+        )
         self._retain_native("study", study_dict)
 
-        ident = (study_dict.get("current_metadata") or {}).get(
-            "identification_metadata"
-        ) or {}
-        desc = (study_dict.get("current_metadata") or {}).get("study_description") or {}
-
-        name = (
-            ident.get("study_acronym")
-            or ident.get("study_id")
-            or desc.get("study_title")
-            or study_uid
-        )
-
         visits, visit_ref_by_uid, visit_ref_by_name = self._visits(study_uid)
-        # Scope the form projection to THIS study's own forms (those reachable
-        # from its study-events' FORM_REFs), not every form in the shared ODM
-        # library — otherwise a multi-study instance leaks OSB's baked DDF seed
-        # forms and other studies' forms into the bundle.
+        # Native selected-activity links supply exact draft form candidates.
+        # Imported studies retain their explicit source-owned form scope.
         source_study_id = _source_study_id(study_dict)
         event_form_uids, source_study_ids = self._study_event_form_uids(
-            visit_ref_by_name, visits, source_study_id
+            visit_ref_by_name, visits, source_study_id, study_uid
         )
         forms, form_ref_by_uid, form_ref_by_oid = self._forms(
             event_form_uids, source_study_ids, study_uid
@@ -444,137 +451,69 @@ class EdcExportService:
         self._retain_native_associated_records(study_uid)
         self._retain_linked_definitions()
 
-        source_meta = dict(self.source_bundle_meta)
-        semantic_source_custody = source_meta.pop("semanticSourceCustody", None)
-        source_study = dict(source_meta.get("study") or {})
-        source_forms = dict(source_meta.get("forms") or {})
-        source_overlay_active = bool(source_meta)
-        native_study = _native_study_projection(study_dict)
-        merged_study = dict(source_study)
-        native_keys = set(native_study)
-        for key, value in native_study.items():
-            if key == "studyParameters" and isinstance(value, dict):
-                # An empty native parameter projection says nothing about the
-                # source's design parameters; it must not erase that dictionary.
-                value = {**(source_study.get(key) or {}), **value}
-            if self._uses_semantic_source() and key in source_study:
-                self._semantic_difference(f"study.{key}", source_study[key], value)
-                continue
-            if key in source_study and source_study[key] != value:
-                self.census.append(
-                    {
-                        "kind": "study_value_conflict",
-                        "ref": key,
-                        "detail": (
-                            "OpenStudyBuilder native value won over the historical "
-                            f"source carrier (source={source_study[key]!r}, osb={value!r})"
-                        ),
-                    }
-                )
-            merged_study[key] = value
-        for key in sorted(set(source_study) - native_keys):
-            self.census.append(
-                {
-                    "kind": "carrier_preserved",
-                    "ref": f"study.{key}",
-                    "detail": (
-                        "No native OSB StudyMetadata landing exists for this EDC property; "
-                        "the historical source value is retained without native authority credit."
-                    ),
-                }
-            )
-        disclosure = authority_disclosure(authority_mode, source_overlay_active)
-        if "_mappingAuthority" in source_meta:
-            disclosure["sourceAuthority"] = deepcopy(source_meta["_mappingAuthority"])
-        if self._uses_semantic_source():
-            disclosure["sourceTruthSystem"] = "ClinicalSemanticLayer"
-            disclosure["nativeDifferencesRequireSemanticReconciliation"] = True
-        authority_warning = (
-            "NON-AUTHORITATIVE SHADOW EXPORT: this StudyBundleV1 may restore legacy Intelligence Layer source-carrier values for properties the native OSB V1 projection cannot yet represent. It is for parity review only; OpenStudyBuilder release authority has not been established."
-            if authority_mode == "shadow"
-            else "LEGACY EXPORT: mapping authority is not established by this StudyBundleV1."
-        )
-        if self._uses_semantic_source():
-            authority_warning = (
-                "PREVIEW EXPORT: ClinicalSemanticLayer supplies the source values. "
-                "Native OpenStudyBuilder differences are retained for semantic reconciliation; "
-                "this export does not authorize deployment."
-            )
-        self.census.append(
-            {
-                "kind": "mapping_authority",
-                "ref": study_uid,
-                "detail": authority_warning,
-            }
-        )
-        bundle: dict[str, Any] = {
-            **source_meta,
-            "formatVersion": source_meta.get(
-                "formatVersion", EDC_BUNDLE_FORMAT_VERSION
-            ),
-            "exportedAt": source_meta.get("exportedAt", "1970-01-01T00:00:00.000Z"),
-            "exportedBy": source_meta.get("exportedBy", "openstudybuilder-edc-export"),
-            "sourceStudyName": source_meta.get("sourceStudyName", str(name)),
-            "study": merged_study or native_study,
+        source_meta = deepcopy(self.source_bundle_meta)
+        portable_source = source_execution(source_meta)
+        source_forms = deepcopy(portable_source.get("forms") or {})
+        exported_at = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        execution = {
+            "extensions": deepcopy(portable_source.get("extensions", {})) if source_meta.get("formatVersion") == "2.0" else {},
             "visits": self._restore_source_visits(visits),
             "visitFormAssignments": self._restore_source_assignments(assignments),
-            "forms": {
-                **source_forms,
-                "formatVersion": source_forms.get(
-                    "formatVersion", EDC_BUNDLE_FORMAT_VERSION
-                ),
-                "exportedAt": source_forms.get(
-                    "exportedAt", "1970-01-01T00:00:00.000Z"
-                ),
-                "exportedBy": source_forms.get(
-                    "exportedBy", "openstudybuilder-edc-export"
-                ),
-                "exportWarnings": [
-                    *(source_forms.get("exportWarnings") or []),
-                    authority_warning,
-                ],
-                "forms": forms,
-            },
+            "forms": {**source_forms, "formatVersion": EDC_TEMPLATE_FORMAT_VERSION,
+                      "exportedAt": source_forms.get("exportedAt", exported_at),
+                      "exportedBy": source_forms.get("exportedBy", "openstudybuilder-edc-export"), "forms": forms},
             **self._restore_source_group_classes(arms),
-            "_mappingAuthority": disclosure,
-            "_osbNative": {
-                "formatVersion": "1.0",
-                "studyUid": study_uid,
-                "scope": "exported-study-records",
-                "records": self._native_records,
-                "associations": self._native_associations,
-                "unresolved": [
-                    deepcopy(row)
-                    for row in self.census
-                    if row["kind"] == "unresolved_native_reference"
-                ],
-            },
-            "_exportCensus": {
-                "rows": self.census,
-                "counts": self._export_census_counts(),
-                **(
-                    {"sourceCensus": deepcopy(source_meta["_exportCensus"])}
-                    if "_exportCensus" in source_meta
-                    else {}
-                ),
-                **(
-                    {"semanticSourceCustody": semantic_source_custody}
-                    if semantic_source_custody is not None
-                    else {}
-                ),
-            },
         }
-
-        # The EDC's own hard validation, applied HERE so a bad bundle fails on
-        # this side of the wire with a nameable reason.
-        if not bundle["study"]["name"].strip():
-            raise EdcExportError("study.name resolved empty — the EDC refuses this")
-        if not forms:
-            raise EdcExportError(
-                "study has no ODM forms reachable from its study events — "
-                "nothing for an EDC to import"
+        for key in ("externalForms", "studyTasks", "sites", "deviationSpec"):
+            if key in portable_source:
+                execution[key] = deepcopy(portable_source[key])
+        if source_meta.get("formatVersion") != "2.0" and "_deviationSpec" in source_meta:
+            execution["deviationSpec"] = deepcopy(source_meta["_deviationSpec"])
+        disclosure = authority_disclosure(authority_mode, bool(source_meta))
+        source_extensions = source_meta.get("extensions", {}) if source_meta.get("formatVersion") == "2.0" else source_meta
+        if "_mappingAuthority" in source_extensions:
+            disclosure["sourceAuthority"] = deepcopy(source_extensions["_mappingAuthority"])
+        if self._uses_semantic_source():
+            disclosure["sourceTruthSystem"] = "canonical-study-exchange" if source_meta.get("formatVersion") == "2.0" else "ClinicalSemanticLayer"
+            source_summary = source_meta.get("study", {})
+            if source_meta.get("formatVersion") == "2.0":
+                source_summary = {"name": source_meta["definition"]["document"].get("study", {}).get("name"),
+                                  "uniqueIdentifier": source_meta["definition"]["execution"]["identification"]["nativeIdentifier"]}
+            for key, value in _native_study_projection(study_dict).items():
+                if key in source_summary:
+                    self._semantic_difference(f"study.{key}", source_summary[key], value)
+        disclosure["nativeDifferencesRequireSemanticReconciliation"] = bool(source_meta)
+        self.census.append({"kind": "mapping_authority", "ref": study_uid,
+                            "detail": "V2 draft preview: native observations and source custody grant no release or deployment authority."})
+        native = {"formatVersion": "1.0", "studyUid": study_uid, "scope": "exported-study-records",
+                  "records": self._native_records, "associations": self._native_associations,
+                  "sourceSnapshotMetadata": self._source_snapshot_metadata,
+                  "studyProjection": _native_study_projection(study_dict),
+                  "unresolved": [deepcopy(row) for row in self.census if row["kind"] == "unresolved_native_reference"]}
+        document = None
+        mapping_report = None
+        if source_meta.get("formatVersion") != "2.0":
+            usdm_service = getattr(self, "usdm_service", None) or USDMService()
+            mapped = usdm_service.get_by_uid_with_report(
+                study_uid, **self._selected_version_kwargs()
             )
-        return bundle
+            document = jsonable_encoder(mapped["document"], by_alias=True)
+            mapping_report = deepcopy(mapped["mappingReport"])
+            if (
+                mapping_report.get("studyUid") != study_uid
+                or mapping_report.get("studyValueVersion") != study_value_version
+            ):
+                raise EdcExportError("OSB_USDM_MAPPING_SOURCE_SCOPE_MISMATCH")
+            # Full typed mapping evidence is useful to reviewers; retaining it
+            # does not replace or approve the canonical definition.
+            native["usdmMappingRecords"] = deepcopy(mapped["nativeRecords"])
+        try:
+            return build_study_exchange(study_uid=study_uid, document=document, execution=execution, native=native,
+                                        source_bundle=source_meta, exported_at=exported_at, disclosure=disclosure,
+                                        census={"rows": self.census, "counts": self._export_census_counts()},
+                                        mapping_report=mapping_report)
+        except (StudyExchangeError, KeyError, TypeError, ValueError) as error:
+            raise EdcExportError(str(error)) from error
 
     def _export_census_counts(self) -> dict[str, int]:
         """Census counts with the lossy total kept apart from informational
@@ -623,8 +562,8 @@ class EdcExportService:
         return index
 
     def _restore_source_visits(self, current: list[dict[str, Any]]):
-        source = self.source_bundle_meta.get("visits") or []
-        if self._uses_semantic_source() and "visits" in self.source_bundle_meta:
+        source = source_execution(self.source_bundle_meta).get("visits") or []
+        if self._uses_semantic_source() and "visits" in source_execution(self.source_bundle_meta):
             native_by_ref = {self._ref(row.get("refKey")): row for row in current}
             for row in source:
                 native = native_by_ref.get(self._ref(row.get("refKey")))
@@ -682,10 +621,10 @@ class EdcExportService:
         return restored
 
     def _restore_source_assignments(self, current: list[dict[str, Any]]):
-        source = self.source_bundle_meta.get("visitFormAssignments") or []
+        source = source_execution(self.source_bundle_meta).get("visitFormAssignments") or []
         if (
             self._uses_semantic_source()
-            and "visitFormAssignments" in self.source_bundle_meta
+            and "visitFormAssignments" in source_execution(self.source_bundle_meta)
         ):
             native_by_ref: dict[tuple, list[dict]] = {}
             for native in current:
@@ -744,10 +683,10 @@ class EdcExportService:
         return restored
 
     def _restore_source_group_classes(self, arms: list[dict[str, Any]]):
-        source = self.source_bundle_meta.get("studyGroupClasses") or []
+        source = source_execution(self.source_bundle_meta).get("studyGroupClasses") or []
         if (
             self._uses_semantic_source()
-            and "studyGroupClasses" in self.source_bundle_meta
+            and "studyGroupClasses" in source_execution(self.source_bundle_meta)
         ):
             return {"studyGroupClasses": deepcopy(source)}
         if not source:
@@ -837,7 +776,9 @@ class EdcExportService:
         return restored
 
     def _visits(self, study_uid: str):
-        result = self.visit_service_cls.get_all_visits(study_uid, page_size=0)
+        result = self.visit_service_cls.get_all_visits(
+            study_uid, page_size=0, **self._selected_version_kwargs()
+        )
         items = result.items if hasattr(result, "items") else result
         visits = []
         ref_by_uid: dict[str, str] = {}
@@ -867,33 +808,80 @@ class EdcExportService:
                 "name": v.get("visit_name") or ref,
                 "ordinal": i,
                 "type": "unscheduled" if "UNSCHEDULED" in visit_class else "scheduled",
-                "repeating": False,
             }
             epoch = v.get("study_epoch") or {}
             epoch_name = epoch.get("sponsor_preferred_name")
             if epoch_name:
                 visit["category"] = epoch_name
-            day = v.get("study_day_number")
-            if day is not None:
-                visit["scheduleDay"] = int(day)
-                min_w = v.get("min_visit_window_value")
-                max_w = v.get("max_visit_window_value")
-                # OSB defaults ±9999 mean "no window stated" — never export those.
-                if min_w is not None and abs(min_w) < 9999:
-                    visit["minDay"] = int(day) + int(min_w)
-                if max_w is not None and abs(max_w) < 9999:
-                    visit["maxDay"] = int(day) + int(max_w)
+            from clinical_mdr_api.services.integrations.edc_native_visit_projection import (
+                project_visit_timing, read_visit_units,
+            )
+
+            def issue(code, field, message):
+                self.census.append({
+                    "kind": "unresolved_native_reference", "ref": f"visit/{v['uid']}/{field}",
+                    "code": code, "detail": message,
+                })
+
+            reader = getattr(self, "native_visit_unit_reader", read_visit_units)
+            timing, evidence = project_visit_timing(
+                v, issue=issue,
+                read_units=lambda: reader(
+                    v, study_uid=study_uid,
+                    study_value_version=getattr(self, "_study_value_version", None),
+                    as_of=getattr(self, "_native_study_as_of", None),
+                ),
+            )
+            if evidence is not None:
+                if (
+                    evidence.get("studyUid") != study_uid
+                    or evidence.get("studyValueVersion") != getattr(self, "_study_value_version", None)
+                    or evidence.get("visitUid") != v["uid"]
+                    or (getattr(self, "_native_study_as_of", None) is not None
+                        and evidence.get("asOf") != self._native_study_as_of.isoformat())
+                ):
+                    raise EdcExportError("OSB_VISIT_UNIT_SOURCE_SCOPE_MISMATCH")
+                self._retain_native("visitUnitDefinition", evidence, uid=v["uid"])
+            visit.update(timing)
             visits.append(visit)
         return visits, ref_by_uid, ref_by_name
 
     def _study_event_form_uids(
-        self, visit_ref_by_name, visits, expected_source_study_id=None
+        self, visit_ref_by_name, visits, expected_source_study_id=None, study_uid=None
     ):
         """OdmForm UIDs reached from THIS study's study-events' FORM_REFs. A
         stamped event belongs to its explicit source study even if its native
-        calendar projection is held. Unstamped native events require a visit
-        name match. Retaining an event definition does not establish a native
-        visit or assignment; those are projected separately."""
+        calendar projection is held. Native selected-activity reachability
+        supplies exact versioned candidates; event names establish no binding."""
+        self._native_form_candidates = []
+        if study_uid is not None and expected_source_study_id is None:
+            from clinical_mdr_api.services.integrations.edc_native_odm_candidates import (
+                NativeOdmCandidateError, read_study_odm_candidates,
+            )
+            try:
+                candidates = read_study_odm_candidates(
+                    study_uid, getattr(self, "_study_value_version", None),
+                    form_reader=self.form_service.get_by_uid,
+                    group_reader=self.item_group_service.get_by_uid,
+                    item_reader=self.item_service.get_by_uid,
+                )
+            except NativeOdmCandidateError as error:
+                raise EdcExportError(str(error)) from error
+            self._native_form_candidates = candidates["candidates"]
+            self._retain_native(
+                "nativeOdmCandidateClosure", candidates, uid=study_uid,
+                scope={"studyUid": study_uid,
+                       "studyValueVersion": getattr(self, "_study_value_version", None),
+                       "usage": "draft-candidates-only"},
+            )
+            for candidate in self._native_form_candidates:
+                self.census.append({
+                    "kind": "unresolved_native_reference", "ref": candidate["refKey"],
+                    "detail": "Exact native form version is a draft candidate. Review its version and assign visits explicitly in the clinical build specification.",
+                    "nativeUid": candidate["nativeUid"], "nativeVersion": candidate["nativeVersion"],
+                    "nativeOid": candidate["nativeOid"], "sourceSha256": candidate["sourceSha256"],
+                    "requiredReview": ["form-version", "visit-assignment"],
+                })
         events_result = self.study_event_service.get_all_odms(page_size=0)
         events = (
             events_result.items if hasattr(events_result, "items") else events_result
@@ -935,12 +923,6 @@ class EdcExportService:
                 and expected_source_study_id
                 and match.group("study_id") == expected_source_study_id
             )
-            if not claims_visit:
-                if match:
-                    continue
-                claims_visit = (
-                    event.get("name") or ""
-                ).strip().lower() in visit_ref_by_name
             if not claims_visit:
                 continue
             self._retain_native("studyEvent", event)
@@ -994,16 +976,12 @@ class EdcExportService:
                     )
 
     def _forms(self, event_form_uids=None, source_study_ids=None, study_uid=None):
-        """The study's ODM forms, projected with sections (item groups) and
-        fields (items). refKey = the form's OID when it has one (the 360i
-        importer sets OID = refKey), else a sanitized name.
+        """Project complete exact native candidates and explicit source forms.
 
-        Scoping: a form is projected when it is reached from this study's
-        study-events (event_form_uids) OR it carries an x360i vendor stamp (a
-        360i-created form, including ones the study defines but never schedules).
-        This excludes OSB's baked DDF seed forms and other unrelated library
-        forms. A study with no scoped event links or source identity cannot
-        claim ownership of the shared ODM library."""
+        Native candidates use a UID/version identity and exact child versions.
+        Their reachability is evidence for review, never a visit assignment.
+        Imported source forms retain their established portable identities.
+        """
         forms_result = self.form_service.get_all_odms(page_size=0)
         forms_items = (
             forms_result.items if hasattr(forms_result, "items") else forms_result
@@ -1026,7 +1004,8 @@ class EdcExportService:
                 f"SEMANTIC_SOURCE_SNAPSHOT_INVALID: {error}"
             ) from error
         if snapshot:
-            self.source_bundle_meta, carriers = snapshot
+            snapshot_value, carriers = snapshot
+            self._set_source_snapshot(snapshot_value)
             for carrier in carriers:
                 self._retain_native("sourceSnapshotCarrier", carrier)
             self.census.append(
@@ -1084,7 +1063,7 @@ class EdcExportService:
             try:
                 parsed_meta = _carrier_json(raw_meta)
                 if isinstance(parsed_meta, dict):
-                    self.source_bundle_meta = parsed_meta
+                    self._set_source_snapshot(parsed_meta)
                     break
             except (TypeError, ValueError, OSError):
                 self.census.append(
@@ -1114,7 +1093,7 @@ class EdcExportService:
                         )
                     )
                     if isinstance(parsed_meta, dict):
-                        self.source_bundle_meta = parsed_meta
+                        self._set_source_snapshot(parsed_meta)
                 except (TypeError, ValueError, OSError):
                     self.census.append(
                         {
@@ -1124,7 +1103,19 @@ class EdcExportService:
                         }
                     )
 
+        native_candidates = {
+            (candidate["nativeUid"], candidate["nativeVersion"]): candidate
+            for candidate in getattr(self, "_native_form_candidates", [])
+        }
+        candidate_uids = {uid for uid, _ in native_candidates}
+        # The complete exact reads replace any current-library row with this
+        # UID. Keep every reachable version as its own review candidate.
+        all_forms = [form for form in all_forms if form.get("uid") not in candidate_uids]
+        all_forms.extend(deepcopy(candidate["form"]) for candidate in native_candidates.values())
+
         def _in_scope(form):
+            if (form.get("uid"), form.get("version")) in native_candidates:
+                return True
             stamped_study = _vendor_attr(form, "studyId")
             if stamped_study and stamped_study not in source_study_ids:
                 return False
@@ -1144,13 +1135,14 @@ class EdcExportService:
             if not _in_scope(form):
                 continue
             self._retain_native("form", form)
+            candidate = native_candidates.get((form.get("uid"), form.get("version")))
             source_form = {}
-            raw_source = _vendor_attr(form, "source")
+            raw_source = None if candidate is not None else _vendor_attr(form, "source")
             if raw_source:
                 try:
-                    candidate = _carrier_json(raw_source)
-                    if isinstance(candidate, dict):
-                        source_form = candidate
+                    parsed_source = _carrier_json(raw_source)
+                    if isinstance(parsed_source, dict):
+                        source_form = parsed_source
                 except (TypeError, ValueError, OSError):
                     self.census.append(
                         {
@@ -1160,6 +1152,7 @@ class EdcExportService:
                         }
                     )
             base = _sanitize_ref(
+                candidate["refKey"] if candidate is not None else
                 source_form.get("refKey") or form.get("oid") or form.get("name")
             )
             ref = base
@@ -1175,15 +1168,20 @@ class EdcExportService:
                     "share this portable identity; reconcile their native records before export"
                 )
             exported_refs.add(exported_ref)
-            ref_by_uid[form["uid"]] = exported_ref
-            if form.get("oid"):
+            if candidate is None:
+                ref_by_uid[form["uid"]] = exported_ref
+            if candidate is None and form.get("oid"):
                 ref_by_oid[form["oid"]] = exported_ref
 
             sections = []
             fields = []
             for gi, group_ref in enumerate(form.get("item_groups", []) or [], start=1):
                 group_uid = group_ref.get("uid")
-                group = self.item_group_service.get_by_uid(group_uid)
+                candidate_group = candidate["groups"][gi - 1] if candidate is not None else None
+                group = (candidate_group["record"] if candidate_group is not None else
+                         self.item_group_service.get_by_uid(
+                             group_uid, **({"version": group_ref["version"]} if group_ref.get("version") else {})
+                         ))
                 group = (
                     group.model_dump() if hasattr(group, "model_dump") else dict(group)
                 )
@@ -1197,7 +1195,10 @@ class EdcExportService:
                     }
                 )
                 for ii, item_ref in enumerate(group.get("items", []) or [], start=1):
-                    item = self.item_service.get_by_uid(item_ref.get("uid"))
+                    item = (candidate_group["items"][ii - 1]["record"] if candidate_group is not None else
+                            self.item_service.get_by_uid(
+                                item_ref.get("uid"), **({"version": item_ref["version"]} if item_ref.get("version") else {})
+                            ))
                     item = (
                         item.model_dump() if hasattr(item, "model_dump") else dict(item)
                     )
@@ -1208,6 +1209,7 @@ class EdcExportService:
                             item=item,
                             item_ref=item_ref,
                             order=ii,
+                            native_candidate=candidate is not None,
                         )
                     )
             fields = self._restore_source_fields(fields, source_form)
@@ -1240,7 +1242,14 @@ class EdcExportService:
                         "formLinks": [],
                     }
                 )
-        source_forms = (self.source_bundle_meta.get("forms") or {}).get("forms")
+            if candidate is not None:
+                forms[-1]["_nativeCandidate"] = {
+                    key: deepcopy(candidate[key]) for key in (
+                        "nativeUid", "nativeVersion", "nativeOid", "studyUid", "studyValueVersion",
+                        "status", "sourceSha256", "requiresFormVersionReview", "requiresVisitAssignmentReview",
+                    )
+                }
+        source_forms = (source_execution(self.source_bundle_meta).get("forms") or {}).get("forms")
         if self._uses_semantic_source() and isinstance(source_forms, list):
             # A native form can be blocked by an unmapped child. Its entire
             # semantic definition must remain visible in the preview bundle.
@@ -1259,11 +1268,14 @@ class EdcExportService:
             forms = deepcopy(source_forms)
         return forms, ref_by_uid, ref_by_oid
 
-    def _field(self, form_ref, section_name, item, item_ref, order):
+    def _field(self, form_ref, section_name, item, item_ref, order, *, native_candidate=False):
         self._retain_native("item", item)
-        stamped_type = _vendor_attr(item, "fieldType")
+        # Historical vendor carriers remain in the retained item. Only the
+        # inherited-canonical path can restore them as field authority.
+        stamped_type = None if native_candidate else _vendor_attr(item, "fieldType")
         field_ref = _sanitize_ref(
-            _vendor_attr(item, "refKey") or item.get("oid") or item.get("name")
+            (None if native_candidate else _vendor_attr(item, "refKey"))
+            or item.get("oid") or item.get("name")
         )
         # The source UI historically stamped scalar SYSBP/DIABP questions with
         # its composite `blood_pressure` widget type. OSB now owns each as a
@@ -1302,7 +1314,7 @@ class EdcExportService:
             )
 
         source_field: dict[str, Any] = {}
-        source_json = _vendor_attr(item, "source")
+        source_json = None if native_candidate else _vendor_attr(item, "source")
         if source_json:
             try:
                 candidate = _carrier_json(source_json)
@@ -1323,7 +1335,9 @@ class EdcExportService:
             "name": item.get("name"),
             "type": edc_type,
         }
-        current_order = item_ref.get("order_number") or order
+        current_order = item_ref.get("order_number")
+        if current_order is None or (not native_candidate and not current_order):
+            current_order = order
         if "ordinal" in source_field:
             field["ordinal"] = current_order
             field.pop("order", None)
@@ -1335,10 +1349,10 @@ class EdcExportService:
         mandatory = item_ref.get("mandatory")
         if mandatory is not None:
             field["required"] = str(mandatory).lower() in ("yes", "true", "1")
-        # Text items with no stated length are defaulted to 200 solely because
-        # OSB requires one. Do not manufacture that default into the EDC bundle.
+        # The imported-source path omits its synthetic native length default.
+        # A native candidate preserves the length of the exact stored item.
         if item.get("length") is not None and (
-            "length" in source_field or item.get("length") != 200
+            native_candidate or "length" in source_field or item.get("length") != 200
         ):
             field["length"] = item["length"]
         elif "length" not in source_field:
@@ -1351,8 +1365,19 @@ class EdcExportService:
             field["section"] = section_name
             field["group"] = section_name
         units = item.get("unit_definitions") or []
-        if units:
-            field["unit"] = units[0].get("name")
+        unit_names = list(dict.fromkeys(unit.get("name") for unit in units))
+        if "unit" in source_field:
+            # A source's explicit spelling remains exact, including whitespace.
+            # Native unit alternatives remain in the complete retained item.
+            field["unit"] = deepcopy(source_field["unit"])
+        elif len(unit_names) == 1:
+            field["unit"] = unit_names[0]
+        elif len(unit_names) > 1:
+            if not native_candidate and not self._uses_semantic_source():
+                raise EdcExportError(f"EDC_NATIVE_UNIT_CHOICE_UNREPRESENTABLE:{form_ref}/{field_ref}")
+            self.census.append({"kind": "unresolved_native_reference", "ref": f"{form_ref}/{field_ref}/unit",
+                                "detail": "Multiple native units require an explicit reviewed choice; every native alternative is retained.",
+                                "nativeValues": deepcopy(units)})
         terms = item.get("terms") or []
         if terms and "options" not in source_field:
             field["options"] = [
@@ -1373,7 +1398,7 @@ class EdcExportService:
             ]
         # Restore carried 360i extensions (helpText, showWhen, validation
         # rules, SDTM annotation parts) from the ext blob, when stamped.
-        ext_json = _vendor_attr(item, "ext")
+        ext_json = None if native_candidate else _vendor_attr(item, "ext")
         if ext_json:
             try:
                 ext = json.loads(ext_json)
@@ -1426,9 +1451,8 @@ class EdcExportService:
         """visitFormAssignments from OdmStudyEvent FORM_REFs.
 
         360i-imported studies: the study-event OID carries the visit refKey
-        (SE.360I.<studyId>.<visitRef>) — an exact join. Native OSB studies:
-        join by study-event name == visit name; ambiguity is censused and the
-        assignment still ships (better a nameable guess than a dropped cell).
+        (SE.360I.<studyId>.<visitRef>). Native draft candidates need an explicit
+        reviewed visit binding; shared library event names supply no authority.
         """
         events_result = self.study_event_service.get_all_odms(page_size=0)
         events = (
@@ -1454,23 +1478,6 @@ class EdcExportService:
                 candidate = match.group("visit_ref")
                 if candidate in visit_refs:
                     visit_ref = candidate
-            if visit_ref is None:
-                if match:
-                    continue
-                by_name = visit_ref_by_name.get(
-                    (event.get("name") or "").strip().lower()
-                )
-                if by_name:
-                    visit_ref = by_name
-                    if not match:
-                        self.census.append(
-                            {
-                                "kind": "ambiguous_join",
-                                "ref": oid or event.get("name", "?"),
-                                "detail": "study-event joined to visit by NAME equality "
-                                "(no x360i OID stamp); verify the calendar",
-                            }
-                        )
             if visit_ref is None:
                 # An event no visit claims — not this study's calendar.
                 continue
@@ -1503,7 +1510,9 @@ class EdcExportService:
         )
 
         service = StudyArmSelectionService()
-        result = service.get_all_selection(study_uid=study_uid)
+        result = service.get_all_selection(
+            study_uid=study_uid, page_size=0, **self._selected_version_kwargs()
+        )
         arms = result.items if hasattr(result, "items") else result
         groups = []
         for arm_model in arms or []:
@@ -1537,27 +1546,30 @@ class EdcExportService:
     # Push
     # ------------------------------------------------------------------
 
-    def send_to_edc(self, study_uid: str, dry_run: bool = True) -> dict[str, Any]:
+    def send_to_edc(
+        self, study_uid: str, dry_run: bool = True,
+        study_value_version: str | None = None,
+    ) -> dict[str, Any]:
         """Push the bundle to the EDC's import-study-bundle with the M2M
-        x-api-key. V1 transfer is an explicitly opted-in, non-production legacy
+        x-api-key. Draft transfer is an explicitly opted-in, non-production legacy
         recovery action only. Shadow mode may generate comparison bytes locally,
         but must not transmit them across the EDC boundary.
         """
         authority_mode = config.settings.mapping_authority_mode
         if authority_mode != "legacy":
             raise EdcExportError(
-                f"MAPPING_AUTHORITY_{authority_mode.upper()}: StudyBundleV1 cannot be sent "
+                f"MAPPING_AUTHORITY_{authority_mode.upper()}: V2 preview exchange cannot be sent "
                 "to EDC; shadow is local comparison-only and enforced requires a verified "
                 "Package V2 release."
             )
         if not dry_run:
             raise EdcExportError(
-                "LEGACY_EDC_ACTIVATION_PROHIBITED: StudyBundleV1 may be sent only as a comparison dry-run. Native execution, reconciliation, Package V2, and EDC V2 deployment receipts are not implemented."
+                "LEGACY_EDC_ACTIVATION_PROHIBITED: V2 preview exchange may be sent only as a comparison dry-run. This preview does not establish native release authority or verified deployment receipts."
             )
         deployment_environment = config.settings.deployment_environment.strip().lower()
         if deployment_environment in {"prod", "production"}:
             raise EdcExportError(
-                "LEGACY_EDC_SEND_PRODUCTION_PROHIBITED: StudyBundleV1 cannot cross the "
+                "LEGACY_EDC_SEND_PRODUCTION_PROHIBITED: V2 preview exchange cannot cross the "
                 "EDC boundary in production, including dry-run."
             )
         if not config.settings.allow_unsafe_legacy_edc_send:
@@ -1579,12 +1591,15 @@ class EdcExportService:
                 "EDC push is not configured: set EDC_BASE_URL and EDC_API_KEY"
             )
 
-        bundle = self.build_bundle(study_uid)
-        # The export census STAYS on the bundle: the EDC's import treats
-        # underscore-prefixed blocks as stored, so stripping it here silently
-        # discarded the audit trail on the receiving side.
-        export_census = bundle.get("_exportCensus")
-        mapping_authority = bundle.get("_mappingAuthority")
+        bundle = self.build_bundle(
+            study_uid,
+            **({"study_value_version": study_value_version}
+               if study_value_version is not None else {}),
+        )
+        # Reconciliation and authority remain scoped inside the V2 extensions.
+        report = bundle.get("extensions", {}).get("_osbExport", {})
+        export_census = report.get("census")
+        mapping_authority = report.get("mappingAuthority")
 
         try:
             response = httpx.post(

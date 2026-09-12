@@ -43,6 +43,7 @@ class StudyEpochVO:
 
     accepted_version: bool = False
     number_of_assigned_visits: int = 0
+    terminology_source: dict | None = None
 
     uid: str | None = None
     _is_deleted: bool = False
@@ -187,12 +188,12 @@ class StudyEpochVO:
         self._is_previous_visit_in_previous_epoch = is_previous_visit_in_previous_epoch
 
     @property
-    def possible_actions(self):
+    def possible_actions(self) -> list[str]:
         if self.status == StudyStatus.DRAFT:
             if len(self._visits) == 0:
                 return ["edit", "delete", "lock", "reorder"]
             return ["edit", "delete", "lock"]
-        return None
+        return []
 
     def visits(self) -> list[StudyVisitVO]:
         return self._visits

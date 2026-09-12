@@ -2,12 +2,14 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Any, Generic, cast
 
-from cachetools import cached
 from cachetools.keys import hashkey
 from neomodel import db
 
 from clinical_mdr_api.domain_repositories._generic_repository_interface import (
     _AggregateRootType,
+)
+from clinical_mdr_api.domain_repositories._utils.native_read_cache import (
+    native_read_cached,
 )
 from clinical_mdr_api.domain_repositories.controlled_terminologies.ct_get_all_query_utils import (
     create_term_filter_statement,
@@ -453,7 +455,7 @@ class CTTermGenericRepository(
             include_retired_versions,
         )
 
-    @cached(
+    @native_read_cached(
         cache=LibraryItemRepositoryImplBase.cache_store_item_by_uid,
         key=hashkey_ct_term,
         lock=LibraryItemRepositoryImplBase.lock_store_item_by_uid,

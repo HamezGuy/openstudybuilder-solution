@@ -1,3 +1,30 @@
+# Resolve service addresses again after containers are recreated. The official
+# nginx entrypoint exports the container's configured DNS servers into this
+# template; upstream zones retain ordinary prefix/URI proxy behaviour.
+resolver $NGINX_LOCAL_RESOLVERS valid=5s;
+resolver_timeout 5s;
+
+upstream studybuilder_api {
+    zone studybuilder_api 64k;
+    server $API_HOST:$API_PORT resolve;
+}
+upstream studybuilder_consumer_api {
+    zone studybuilder_consumer_api 64k;
+    server $CONSUMER_API_HOST:$CONSUMER_API_PORT resolve;
+}
+upstream studybuilder_extensions_api {
+    zone studybuilder_extensions_api 64k;
+    server $EXTENSIONS_API_HOST:$EXTENSIONS_API_PORT resolve;
+}
+upstream studybuilder_docs {
+    zone studybuilder_docs 64k;
+    server $DOC_HOST:$DOC_PORT resolve;
+}
+upstream studybuilder_neodash {
+    zone studybuilder_neodash 64k;
+    server $NEODASH_HOST:$NEODASH_PORT resolve;
+}
+
 map $sent_http_content_type $expires {
     image/x-icon                   1y;
     application/pdf                1y;
@@ -39,7 +66,7 @@ server {
     }
 
     location ^~ $API_PATH {
-        proxy_pass http://$API_HOST:$API_PORT/;
+        proxy_pass http://studybuilder_api/;
         # The EDC export (/integrations/edc/.../study-bundle) walks every ODM
         # item and takes >60s on a full study; nginx's default 60s
         # proxy_read_timeout returned 504 while the API was still working.
@@ -48,19 +75,19 @@ server {
     }
 
     location ^~ $CONSUMER_API_PATH {
-        proxy_pass http://$CONSUMER_API_HOST:$CONSUMER_API_PORT/;
+        proxy_pass http://studybuilder_consumer_api/;
     }
 
     location ^~ $EXTENSIONS_API_PATH {
-        proxy_pass http://$EXTENSIONS_API_HOST:$EXTENSIONS_API_PORT/;
+        proxy_pass http://studybuilder_extensions_api/;
     }
 
     location ^~ $DOC_PATH {
-        proxy_pass http://$DOC_HOST:$DOC_PORT/;
+        proxy_pass http://studybuilder_docs/;
     }
 
     location ^~ $NEODASH_PATH {
-        proxy_pass http://$NEODASH_HOST:$NEODASH_PORT/;
+        proxy_pass http://studybuilder_neodash/;
     }
 
     # redirect server error pages to the static page /50x.html

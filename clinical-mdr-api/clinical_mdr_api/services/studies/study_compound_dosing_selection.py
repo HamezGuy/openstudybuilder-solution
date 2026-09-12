@@ -25,6 +25,7 @@ from clinical_mdr_api.services._utils import (
     service_level_generic_header_filtering,
 )
 from clinical_mdr_api.services.studies.study_selection_base import StudySelectionMixin
+from clinical_mdr_api.services.studies.study_compound_snapshot import StudyCompoundSnapshotReader
 from common import exceptions
 from common.auth.user import user
 
@@ -66,9 +67,11 @@ class StudyCompoundDosingSelectionService(StudySelectionMixin):
         study_compound_dosing_uid: str,
         terms_at_specific_datetime: datetime.datetime | None,
         study_value_version: str | None = None,
+        *,
+        history_date: datetime.datetime | None = None,
     ) -> StudySelectionCompound:
 
-        try:
+        if history_date is None:
             (
                 study_compound,
                 order,
@@ -77,8 +80,11 @@ class StudyCompoundDosingSelectionService(StudySelectionMixin):
                 study_compound_uid=study_compound_uid,
                 study_value_version=study_value_version,
             )
-        except exceptions.NotFoundException:
-            # Deleted study compound is not connected to a study value, try to find it by dosing uid
+        else:
+            exceptions.BusinessLogicException.raise_if(
+                study_value_version is not None,
+                msg="A selected study version cannot fall back to a dosing audit reading.",
+            )
             (
                 study_compound,
                 order,
@@ -86,12 +92,18 @@ class StudyCompoundDosingSelectionService(StudySelectionMixin):
                 study_uid=study_uid,
                 study_compound_uid=study_compound_uid,
                 study_compound_dosing_uid=study_compound_dosing_uid,
+                history_date=history_date,
             )
 
-        compound = self._transform_compound_model(compound_uid)
-        compound_alias = self._transform_compound_alias_model(compound_alias_uid)
-        medicinal_product = self._transform_medicinal_product_model(
-            medicinal_product_uid
+        snapshot = StudyCompoundSnapshotReader(
+            self._repos, study_uid, study_value_version,
+            as_of=history_date,
+            terms_at_specific_datetime=terms_at_specific_datetime,
+        )
+        compound, compound_alias, medicinal_product, products = snapshot.selection_models(
+            study_compound,
+            history_dosing_uid=study_compound_dosing_uid if history_date is not None else None,
+            history_date=history_date,
         )
 
         return StudySelectionCompound.from_study_compound_ar(
@@ -101,10 +113,12 @@ class StudyCompoundDosingSelectionService(StudySelectionMixin):
             compound_model=compound,
             compound_alias_model=compound_alias,
             medicinal_product_model=medicinal_product,
-            find_codelist_term_by_uid_and_submval=self._repos.ct_codelist_name_repository.get_codelist_term_by_uid_and_submval,
+            find_codelist_term_by_uid_and_submval=snapshot.codelist_term,
             find_project_by_study_uid=self._repos.project_repository.find_by_study_uid,
             study_value_version=study_value_version,
             terms_at_specific_datetime=terms_at_specific_datetime,
+            pharmaceutical_products=products,
+            native_library_bindings=snapshot.bindings,
         )
 
     def _transform_study_element_model(
@@ -151,7 +165,13 @@ class StudyCompoundDosingSelectionService(StudySelectionMixin):
             raise exceptions.BusinessLogicException(
                 msg="Missing required fields in StudyCompoundDosingVO: study_compound_uid, compound_uid, compound_alias_uid, medicinal_product_uid or study_element_uid."
             )
-        return StudyCompoundDosing.from_vo(
+        dose_snapshot = (
+            StudyCompoundSnapshotReader(
+                self._repos, study_uid, study_value_version,
+                terms_at_specific_datetime=terms_at_specific_datetime,
+            ) if compound_dosing_vo.dose_value_uid is not None else None
+        )
+        result = StudyCompoundDosing.from_vo(
             compound_dosing_vo,
             order,
             self._transform_study_compound_model(
@@ -170,9 +190,19 @@ class StudyCompoundDosingSelectionService(StudySelectionMixin):
                 study_value_version=study_value_version,
                 terms_at_specific_datetime=terms_at_specific_datetime,
             ),
-            find_numeric_value_by_uid=self._repos.numeric_value_with_unit_repository.find_by_uid_2,
-            find_unit_by_uid=self._repos.unit_definition_repository.find_by_uid_2,
+            find_numeric_value_by_uid=(
+                dose_snapshot.callback("numericValueWithUnit") if dose_snapshot is not None
+                else self._repos.numeric_value_with_unit_repository.find_by_uid_2
+            ),
+            find_unit_by_uid=(
+                dose_snapshot.callback("unitDefinition") if dose_snapshot is not None
+                else self._repos.unit_definition_repository.find_by_uid_2
+            ),
+            study_value_version=study_value_version,
         )
+        if dose_snapshot is not None:
+            result.native_library_bindings = dose_snapshot.bindings
+        return result
 
     def _transform_all_to_response_model(
         self,
@@ -289,29 +319,33 @@ class StudyCompoundDosingSelectionService(StudySelectionMixin):
     ) -> list[StudyCompoundDosing]:
         result = []
         for history in study_selection_history:
-            result.append(
-                StudyCompoundDosing.from_study_selection_history(
-                    history,
-                    study_uid,
-                    history.order,
-                    self._transform_study_compound_model(
-                        study_uid,
-                        history.study_compound_uid,
-                        history.compound_uid,
-                        history.compound_alias_uid,
-                        history.medicinal_product_uid,
-                        study_compound_dosing_uid=history.study_selection_uid,
-                        terms_at_specific_datetime=None,
-                    ),
-                    self._transform_study_element_model(
-                        study_uid,
-                        history.study_element_uid,
-                        terms_at_specific_datetime=None,
-                    ),
-                    find_numeric_value_by_uid=self._repos.numeric_value_with_unit_repository.find_by_uid_2,
-                    find_unit_by_uid=self._repos.unit_definition_repository.find_by_uid_2,
-                )
+            snapshot = StudyCompoundSnapshotReader(
+                self._repos, study_uid, None, as_of=history.start_date,
             )
+            reading = StudyCompoundDosing.from_study_selection_history(
+                history,
+                study_uid,
+                history.order,
+                self._transform_study_compound_model(
+                    study_uid,
+                    history.study_compound_uid,
+                    history.compound_uid,
+                    history.compound_alias_uid,
+                    history.medicinal_product_uid,
+                    study_compound_dosing_uid=history.study_selection_uid,
+                    terms_at_specific_datetime=None,
+                    history_date=history.start_date,
+                ),
+                self._transform_study_element_model(
+                    study_uid,
+                    history.study_element_uid,
+                    terms_at_specific_datetime=None,
+                ),
+                find_numeric_value_by_uid=snapshot.callback("numericValueWithUnit"),
+                find_unit_by_uid=snapshot.callback("unitDefinition"),
+            )
+            reading.native_library_bindings = snapshot.bindings
+            result.append(reading)
         return result
 
     @db.transaction

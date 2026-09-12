@@ -1,7 +1,0 @@
-MIT License according package.json
-
-```
-  ...
-  "license": "MIT",
-  ...
-```

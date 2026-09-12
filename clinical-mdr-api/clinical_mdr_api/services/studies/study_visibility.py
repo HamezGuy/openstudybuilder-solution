@@ -173,6 +173,7 @@ def assert_collection_scope(
 ) -> None:
     """Authorize only collection routes with a proven non-wildcard implementation.
 
+    The root and list queries restrict reads to validated assigned study UIDs.
     Legacy cross-study reports, headers, templates, and the generic study-create
     endpoint do not have a tenant/study-native query contract. They therefore
     remain unavailable when delegated claims are required instead of querying
@@ -183,7 +184,9 @@ def assert_collection_scope(
         return
 
     normalized = f"/{str(route_path or '').strip('/')}"
-    read_only_root = not require_write and normalized.endswith("/studies")
+    read_only_root = not require_write and (
+        normalized.endswith("/studies") or normalized.endswith("/studies/list")
+    )
     read_only_static_config = not require_write and normalized.endswith(
         "/study-elements/allowed-element-configs"
     )

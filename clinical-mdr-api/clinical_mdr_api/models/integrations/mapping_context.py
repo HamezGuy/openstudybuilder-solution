@@ -20,6 +20,7 @@ MappingResourceFamily = Literal[
     "timeframes",
     "compound_product_relationships",
     "study_compound_dosing_relationships",
+    "study_metadata",
     "activities",
     "odm_forms",
     "odm_item_groups",

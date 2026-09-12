@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "contractVersion": {
+      "const": "OsbNativeItemObservationRequestV1@1.0.0",
+      "title": "Contractversion",
+      "type": "string"
+    },
+    "scope": {
+      "enum": [
+        "library-item",
+        "study-selection"
+      ],
+      "title": "Scope",
+      "type": "string"
+    },
+    "platformStudyId": {
+      "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+      "title": "Platformstudyid",
+      "type": "string"
+    },
+    "nativeStudyId": {
+      "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+      "title": "Nativestudyid",
+      "type": "string"
+    },
+    "nativeStudyVersion": {
+      "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+      "title": "Nativestudyversion",
+      "type": "string"
+    },
+    "bindingId": {
+      "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+      "title": "Bindingid",
+      "type": "string"
+    },
+    "decisionId": {
+      "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+      "title": "Decisionid",
+      "type": "string"
+    },
+    "decisionHash": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Decisionhash",
+      "type": "string"
+    },
+    "candidateSetVersionId": {
+      "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+      "title": "Candidatesetversionid",
+      "type": "string"
+    },
+    "candidateSetHash": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Candidatesethash",
+      "type": "string"
+    },
+    "mappingContextHash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Mappingcontexthash",
+      "type": "string"
+    },
+    "evidenceSetVersionId": {
+      "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+      "title": "Evidencesetversionid",
+      "type": "string"
+    },
+    "evidenceSetHash": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Evidencesethash",
+      "type": "string"
+    },
+    "evidenceId": {
+      "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+      "title": "Evidenceid",
+      "type": "string"
+    },
+    "factId": {
+      "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+      "title": "Factid",
+      "type": "string"
+    },
+    "revision": {
+      "maximum": 2147483647,
+      "minimum": 1,
+      "title": "Revision",
+      "type": "integer"
+    },
+    "targetKey": {
+      "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+      "title": "Targetkey",
+      "type": "string"
+    },
+    "itemUid": {
+      "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+      "title": "Itemuid",
+      "type": "string"
+    },
+    "itemVersion": {
+      "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+      "title": "Itemversion",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contractVersion",
+    "scope",
+    "platformStudyId",
+    "nativeStudyId",
+    "nativeStudyVersion",
+    "bindingId",
+    "decisionId",
+    "decisionHash",
+    "candidateSetVersionId",
+    "candidateSetHash",
+    "mappingContextHash",
+    "evidenceSetVersionId",
+    "evidenceSetHash",
+    "evidenceId",
+    "factId",
+    "revision",
+    "targetKey",
+    "itemUid",
+    "itemVersion"
+  ],
+  "title": "NativeItemObservationRequest",
+  "type": "object"
+}

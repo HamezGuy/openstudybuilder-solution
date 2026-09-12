@@ -100,7 +100,7 @@ class OdmItemGroupService(OdmGenericService[OdmItemGroupAR]):
         )
         return item
 
-    @db.transaction
+    @ensure_transaction(db)
     def create(self, odm_input: OdmItemGroupPostInput) -> OdmItemGroup:
         item = super().create(odm_input)
 
@@ -144,6 +144,7 @@ class OdmItemGroupService(OdmGenericService[OdmItemGroupAR]):
         uid: str,
         odm_item_group_item_post_input: list[OdmItemGroupItemPostInput],
         override: bool = False,
+        preserve_order: bool = False,
     ) -> OdmItemGroup:
         odm_item_group_ar = self._find_by_uid_or_raise_not_found(normalize_string(uid))
 
@@ -180,9 +181,17 @@ class OdmItemGroupService(OdmGenericService[OdmItemGroupAR]):
             VendorAttributeCompatibleType.ITEM_REF,
         )
 
-        post_input = self.renumber_items_sequentially(
-            odm_item_group_item_post_input, "order_number", renumbering_start
-        )
+        if preserve_order:
+            orders = [item.order_number for item in odm_item_group_item_post_input]
+            BusinessLogicException.raise_if(
+                any(order < 1 for order in orders) or len(set(orders)) != len(orders),
+                msg="Source item orders must be unique positive integers.",
+            )
+            post_input = sorted(odm_item_group_item_post_input, key=lambda item: item.order_number)
+        else:
+            post_input = self.renumber_items_sequentially(
+                odm_item_group_item_post_input, "order_number", renumbering_start
+            )
 
         for item in post_input:
             if item.vendor:

@@ -1377,9 +1377,9 @@ class StudyVisitService(StudySelectionMixin):
         study_visit_uid: str,
         study_visit_input: StudyVisitEditInput,
     ):
+        acquire_write_lock_study_value(uid=study_uid)
         study_visits = self.repo.find_all_visits_by_study_uid(study_uid)
         timeline = TimelineAR(study_uid=study_uid, _visits=study_visits)
-        acquire_write_lock_study_value(uid=study_uid)
         study_visit: StudyVisitVO | None = next(
             (sv for sv in timeline.ordered_study_visits if sv.uid == study_visit_uid),
             None,

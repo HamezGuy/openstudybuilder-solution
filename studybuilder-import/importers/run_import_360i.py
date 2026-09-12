@@ -2794,14 +2794,13 @@ class Import360i(BaseImporter):
             self.census.stop("source_snapshot", study_uid, reason)
             self.census.block_release("source_snapshot", study_uid, reason)
             return False
-        snapshot = dict(source_bundle)
-        if payload.get("sourceCustody") is not None:
-            if "semanticSourceCustody" in snapshot and snapshot["semanticSourceCustody"] != payload["sourceCustody"]:
-                reason = "SEMANTIC_SOURCE_CUSTODY_CONFLICT"
-                self.census.stop("source_snapshot", study_uid, reason)
-                self.census.block_release("source_snapshot", study_uid, reason)
-                return False
-            snapshot["semanticSourceCustody"] = payload["sourceCustody"]
+        try:
+            snapshot = mapping.source_bundle_snapshot(payload)
+        except ValueError as error:
+            reason = str(error)
+            self.census.stop("source_snapshot", study_uid, reason)
+            self.census.block_release("source_snapshot", study_uid, reason)
+            return False
         try:
             raw = json.dumps(snapshot, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
             raw_bytes = raw.encode("utf-8")

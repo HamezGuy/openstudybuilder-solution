@@ -170,6 +170,19 @@ def collect_native_library_definitions(
                 walk_ct(source, child, f"{path}/{index}")
         elif isinstance(value, dict):
             if isinstance(value.get("term_uid"), str):
+                # These native StudyPopulation fields are
+                # DictionaryTermStripped, not SimpleCTTermName. Their shared
+                # term_uid spelling does not change the referenced model.
+                population_dictionary_fields = (
+                    "therapeutic_area_codes", "disease_condition_or_indication_codes",
+                    "diagnosis_group_codes",
+                )
+                if source["kind"] == "study" and any(
+                    path.startswith("/current_metadata/study_population/" + field + "/")
+                    for field in population_dictionary_fields
+                ):
+                    add(source, path, value, "dictionaryTerm", value["term_uid"])
+                    return
                 # Only ODM item's terms[].version is known to pin CT attributes.
                 version = value.get("version") if source["kind"] == "item" and path.startswith("/terms/") else None
                 ct(source, path, value, term=True, version=version)

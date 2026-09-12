@@ -41,7 +41,8 @@ ENV BUILD_NUMBER="$BUILD_NUMBER" \
     BUILD_COMMIT="$BUILD_COMMIT"
 
 ## Environment variable defaults (for interpolating config.json)
-ENV SB_UPDATE_CONFIG_AWK=/opt/update-config.awk \
+ENV NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1 \
+    SB_UPDATE_CONFIG_AWK=/opt/update-config.awk \
     SB_CONFIG_TEMPLATE=/opt/config.json \
     SB_CONFIG_JSON=/usr/share/nginx/html/config.json \
     PORT=$PORT \

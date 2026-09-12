@@ -1,0 +1,310 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "CslPlanAssociationPins": {
+      "additionalProperties": false,
+      "properties": {
+        "nativeTenantId": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Nativetenantid",
+          "type": "string"
+        },
+        "nativeStudyId": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Nativestudyid",
+          "type": "string"
+        },
+        "canonicalRevisionId": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Canonicalrevisionid",
+          "type": "string"
+        },
+        "canonicalRevisionHash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Canonicalrevisionhash",
+          "type": "string"
+        },
+        "planHash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Planhash",
+          "type": "string"
+        },
+        "reviewCommitmentHash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Reviewcommitmenthash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "nativeTenantId",
+        "nativeStudyId",
+        "canonicalRevisionId",
+        "canonicalRevisionHash",
+        "planHash",
+        "reviewCommitmentHash"
+      ],
+      "title": "CslPlanAssociationPins",
+      "type": "object"
+    },
+    "GovernedItemAssociationSelector": {
+      "additionalProperties": false,
+      "properties": {
+        "contractVersion": {
+          "const": "OsbGovernedItemAssociationSelectorV1@1.0.0",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "proposalHash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Proposalhash",
+          "type": "string"
+        },
+        "proposalObjectId": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Proposalobjectid",
+          "type": "string"
+        },
+        "reviewDecisionId": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "title": "Reviewdecisionid",
+          "type": "string"
+        },
+        "reviewDecisionHash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Reviewdecisionhash",
+          "type": "string"
+        },
+        "candidateKey": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Candidatekey",
+          "type": "string"
+        },
+        "selected": {
+          "$ref": "#/$defs/SelectedActivityItemRequest"
+        },
+        "selectedPathHash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Selectedpathhash",
+          "type": "string"
+        },
+        "libraryItemHash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Libraryitemhash",
+          "type": "string"
+        },
+        "operationHash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Operationhash",
+          "type": "string"
+        },
+        "csl": {
+          "$ref": "#/$defs/CslPlanAssociationPins"
+        }
+      },
+      "required": [
+        "contractVersion",
+        "proposalHash",
+        "proposalObjectId",
+        "reviewDecisionId",
+        "reviewDecisionHash",
+        "candidateKey",
+        "selected",
+        "selectedPathHash",
+        "libraryItemHash",
+        "operationHash",
+        "csl"
+      ],
+      "title": "GovernedItemAssociationSelector",
+      "type": "object"
+    },
+    "SelectedActivityItemRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "contractVersion": {
+          "const": "OsbSelectedActivityItemRequestV1@1.0.0",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "scope": {
+          "const": "selected-activity-item",
+          "title": "Scope",
+          "type": "string"
+        },
+        "platformStudyId": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Platformstudyid",
+          "type": "string"
+        },
+        "nativeStudyId": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Nativestudyid",
+          "type": "string"
+        },
+        "nativeStudyVersion": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Nativestudyversion",
+          "type": "string"
+        },
+        "bindingId": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Bindingid",
+          "type": "string"
+        },
+        "decisionId": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Decisionid",
+          "type": "string"
+        },
+        "decisionHash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Decisionhash",
+          "type": "string"
+        },
+        "candidateSetVersionId": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Candidatesetversionid",
+          "type": "string"
+        },
+        "candidateSetHash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Candidatesethash",
+          "type": "string"
+        },
+        "mappingContextHash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Mappingcontexthash",
+          "type": "string"
+        },
+        "evidenceSetVersionId": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Evidencesetversionid",
+          "type": "string"
+        },
+        "evidenceSetHash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Evidencesethash",
+          "type": "string"
+        },
+        "evidenceId": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Evidenceid",
+          "type": "string"
+        },
+        "factId": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Factid",
+          "type": "string"
+        },
+        "revision": {
+          "maximum": 2147483647,
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "targetKey": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Targetkey",
+          "type": "string"
+        },
+        "itemUid": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Itemuid",
+          "type": "string"
+        },
+        "itemVersion": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Itemversion",
+          "type": "string"
+        },
+        "studyValueVersion": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Studyvalueversion",
+          "type": "string"
+        },
+        "studyActivityInstanceUid": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Studyactivityinstanceuid",
+          "type": "string"
+        },
+        "activityInstanceUid": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Activityinstanceuid",
+          "type": "string"
+        },
+        "activityInstanceVersion": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Activityinstanceversion",
+          "type": "string"
+        },
+        "activityItemClassUid": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Activityitemclassuid",
+          "type": "string"
+        },
+        "activityItemClassVersion": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Activityitemclassversion",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contractVersion",
+        "scope",
+        "platformStudyId",
+        "nativeStudyId",
+        "nativeStudyVersion",
+        "bindingId",
+        "decisionId",
+        "decisionHash",
+        "candidateSetVersionId",
+        "candidateSetHash",
+        "mappingContextHash",
+        "evidenceSetVersionId",
+        "evidenceSetHash",
+        "evidenceId",
+        "factId",
+        "revision",
+        "targetKey",
+        "itemUid",
+        "itemVersion",
+        "studyValueVersion",
+        "studyActivityInstanceUid",
+        "activityInstanceUid",
+        "activityInstanceVersion",
+        "activityItemClassUid",
+        "activityItemClassVersion"
+      ],
+      "title": "SelectedActivityItemRequest",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "contractVersion": {
+      "const": "OsbGovernedItemAssociationReadV1@1.0.0",
+      "title": "Contractversion",
+      "type": "string"
+    },
+    "associationId": {
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "title": "Associationid",
+      "type": "string"
+    },
+    "associationHash": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Associationhash",
+      "type": "string"
+    },
+    "selector": {
+      "$ref": "#/$defs/GovernedItemAssociationSelector"
+    }
+  },
+  "required": [
+    "contractVersion",
+    "associationId",
+    "associationHash",
+    "selector"
+  ],
+  "title": "GovernedItemAssociationRead",
+  "type": "object"
+}

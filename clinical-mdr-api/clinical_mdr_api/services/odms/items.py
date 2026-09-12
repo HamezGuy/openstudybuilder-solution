@@ -129,7 +129,7 @@ class OdmItemService(OdmGenericService[OdmItemAR]):
         )
         return item
 
-    @db.transaction
+    @ensure_transaction(db)
     def create(self, odm_input: OdmItemPostInput) -> OdmItem:
         item = super().create(odm_input)
 

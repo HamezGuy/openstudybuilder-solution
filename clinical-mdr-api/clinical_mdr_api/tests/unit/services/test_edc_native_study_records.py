@@ -64,6 +64,82 @@ class NativeStudyRecordsTests(unittest.TestCase):
         self.assertEqual(records, [])
         self.assertEqual(census[0]["readCount"], 0)
 
+    def test_selected_version_is_required_at_reader_and_record_boundaries(self):
+        record = {"study_uid": "Study_1", "uid": "Epoch_1", "study_version": "2.0"}
+        calls = []
+
+        def read(**kwargs):
+            calls.append(kwargs)
+            return [record]
+
+        records, _ = collect_study_native_records(
+            "Study_1", study_value_version="2.0", readers={"studyEpoch": read}
+        )
+        self.assertEqual(calls, [{
+            "study_uid": "Study_1", "study_value_version": "2.0", "page_size": 0,
+        }])
+        self.assertEqual(records[0]["scope"]["studyValueVersion"], "2.0")
+        with self.assertRaisesRegex(NativeStudyRecordError, "version mismatch"):
+            collect_study_native_records(
+                "Study_1", study_value_version="1.0", readers={"studyEpoch": read}
+            )
+        with self.assertRaisesRegex(NativeStudyRecordError, "cannot honor"):
+            collect_study_native_records(
+                "Study_1", study_value_version="2.0",
+                readers={"studyEpoch": lambda study_uid, page_size: [record]},
+            )
+
+    def test_reported_partial_page_is_rejected_even_when_page_size_zero_was_requested(self):
+        def read(**kwargs):
+            self.assertEqual(kwargs["page_size"], 0)
+            return {"items": [{"study_uid": "Study_1", "uid": "Epoch_1"}], "total": 2}
+
+        with self.assertRaisesRegex(NativeStudyRecordError, "truncated"):
+            collect_study_native_records("Study_1", readers={"studyEpoch": read})
+
+    def test_optional_singleton_domains_keep_exact_scope_without_creating_defaults(self):
+        design = {"study_uid": "Study_1", "study_design_class": "Cohort", "study_version": "2.0"}
+        calls = []
+
+        def read_design(**kwargs):
+            calls.append(("design", kwargs))
+            return design
+
+        def read_absent_source(**kwargs):
+            calls.append(("source", kwargs))
+            return None
+
+        records, census = collect_study_native_records(
+            "Study_1", study_value_version="2.0",
+            readers={"studyDesignClass": read_design, "studySourceVariable": read_absent_source},
+        )
+        self.assertEqual(calls, [
+            ("design", {"study_uid": "Study_1", "study_value_version": "2.0"}),
+            ("source", {"study_uid": "Study_1", "study_value_version": "2.0"}),
+        ])
+        self.assertEqual(records[0]["record"], design)
+        self.assertEqual(records[0]["scope"]["studyValueVersion"], "2.0")
+        self.assertEqual(len(records), 1)
+        self.assertEqual([row["readCount"] for row in census], [1, 0])
+
+    def test_data_suppliers_request_the_whole_exact_selected_collection(self):
+        supplier = {
+            "study_uid": "Study_1", "study_version": "2.0",
+            "study_data_supplier_uid": "SupplierSelection_1",
+            "order": 0, "data_supplier": {"name": "", "api_base_url": None},
+        }
+        calls = []
+
+        def read(**kwargs):
+            calls.append(kwargs)
+            return {"items": [supplier], "total": 1}
+
+        records, _ = collect_study_native_records(
+            "Study_1", study_value_version="2.0", readers={"studyDataSupplier": read},
+        )
+        self.assertEqual(calls, [{"study_uid": "Study_1", "study_value_version": "2.0", "page_size": 0}])
+        self.assertEqual(records[0]["record"], supplier)
+
 
 if __name__ == "__main__":
     unittest.main()

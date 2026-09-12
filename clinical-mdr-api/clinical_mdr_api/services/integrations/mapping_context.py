@@ -173,7 +173,10 @@ class MappingContextService:
         else:
             package_uids = [package.package_uid for package in packages]
             for family in families:
-                if family in _BLOCKER_ONLY_FAMILY_CODES:
+                if family == "study_metadata":
+                    rows = []
+                    release_blockers.append("MAPPING_CONTEXT_STUDY_METADATA_REQUIRES_GOVERNED_REQUEST")
+                elif family in _BLOCKER_ONLY_FAMILY_CODES:
                     rows = []
                     release_blockers.append(_BLOCKER_ONLY_FAMILY_CODES[family])
                 elif family == "controlled_terminology":
@@ -324,7 +327,11 @@ class MappingContextService:
             candidates: list[MappingContextCandidate] = []
             truncated = False
             incomplete_count = 0
-            if requested.resource_family in _BLOCKER_ONLY_FAMILY_CODES:
+            if requested.resource_family == "study_metadata":
+                # candidate_set resolves the property plan and binds the
+                # resulting native offer; no library name search is needed.
+                pass
+            elif requested.resource_family in _BLOCKER_ONLY_FAMILY_CODES:
                 group_blockers.append(
                     _BLOCKER_ONLY_FAMILY_CODES[requested.resource_family]
                 )

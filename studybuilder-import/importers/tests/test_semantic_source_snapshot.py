@@ -92,6 +92,32 @@ def read_snapshot(api):
 
 
 class SemanticSourceSnapshotTests(unittest.TestCase):
+    def test_v2_snapshot_and_form_carriers_keep_definition_execution_and_custody_scope(self):
+        source = payload()
+        historical = source["sourceBundle"]
+        current = {"formatVersion": "2.0", "profile": {"id": "edc-study-exchange/2", "mode": "draft", "modelVersion": "4.0.0"},
+                   "definition": {"document": {"study": {"versions": [{"id": "one"}, {"id": "two"}], "future": {"empty": [], "missing": None}}},
+                                  "selection": {"versionId": "two", "designId": None}},
+                   "execution": {"forms": historical["forms"], "visits": historical["visits"], "studyTasks": [], "deviationSpec": None, "extensions": {}},
+                   "source": {"artifacts": [], "valueLedger": [], "normalizations": []},
+                   "extensions": {"_sourceEvidence": historical["_sourceEvidence"]}}
+        source["sourceBundle"] = current
+        before = deepcopy(source)
+        api = SnapshotApi()
+        self.assertTrue(worker(api).ensure_source_snapshot(source, "Study_1"))
+        snapshot = read_snapshot(api)
+        retained = snapshot["studyExchange"]
+        self.assertEqual(retained, current)
+        self.assertEqual(retained["definition"], current["definition"])
+        self.assertEqual(retained["execution"], current["execution"])
+        self.assertEqual(retained["source"], current["source"])
+        self.assertEqual(snapshot["semanticSourceCustody"], source["sourceCustody"])
+        self.assertNotIn("semanticSourceCustody", retained)
+        self.assertEqual(json.loads(mapping.bundle_meta_value(source)), snapshot)
+        self.assertEqual(json.loads(mapping.source_form_value(source, "F_0")), current["execution"]["forms"]["forms"][0])
+        self.assertEqual(json.loads(mapping.source_field_value(source, "F_0", "FIELD")), current["execution"]["forms"]["forms"][0]["fields"][0])
+        self.assertEqual(source, before)
+
     def test_complete_large_source_survives_all_clinical_form_holds(self):
         api, source = SnapshotApi(), payload(large=True)
         importer = worker(api)

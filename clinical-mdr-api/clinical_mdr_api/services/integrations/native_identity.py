@@ -20,6 +20,8 @@ from clinical_mdr_api.services.integrations.canonical_json import canonical_hash
 from clinical_mdr_api.services.integrations.nested_transaction import (
     call_in_ambient_transaction,
 )
+from clinical_mdr_api.services.integrations.native_study_head import read_current_study_head
+from clinical_mdr_api.services.integrations.review_workspace_migration import assert_review_workspace_claim
 from clinical_mdr_api.services.studies.study import StudyService
 from clinical_mdr_api.services.studies.study_standard_version_selection import (
     StudyStandardVersionService,
@@ -125,51 +127,19 @@ class Neo4jOsbNativeIdentityTransactionV1:
 
     @staticmethod
     def _native_checkpoint(native_identity: str) -> tuple[str, str]:
-        rows, _ = db.cypher_query(
-            """MATCH (study:StudyRoot {uid: $uid})
-               OPTIONAL MATCH (study)-[version_rel:LATEST_DRAFT|LATEST|LATEST_LOCKED|LATEST_RELEASED]->(:StudyValue)
-               WITH study, version_rel,
-                    CASE type(version_rel)
-                      WHEN 'LATEST_DRAFT' THEN 0
-                      WHEN 'LATEST' THEN 1
-                      WHEN 'LATEST_LOCKED' THEN 2
-                      WHEN 'LATEST_RELEASED' THEN 3
-                      ELSE 4
-                    END AS preference
-               ORDER BY preference
-               RETURN study.uid, version_rel.version, version_rel.status LIMIT 1""",
-            {"uid": native_identity},
-        )
-        if not rows:
-            raise NativeIdentityCommandError(
-                "IDENTITY_NATIVE_ROOT_NOT_FOUND", "Exact OSB root does not exist.", 404
-            )
-        native_version = _text(rows[0][1], "nativeVersion", required=False)
-        native_status = _text(rows[0][2], "nativeStatus", required=False)
-        if not native_status:
+        try:
+            head = read_current_study_head(native_identity, query=db.cypher_query)
+        except ValueError as error:
             raise NativeIdentityCommandError(
                 "IDENTITY_NATIVE_VERSION_UNAVAILABLE",
                 "OSB root has no verifiable current native version checkpoint.",
                 409,
+            ) from error
+        if head is None:
+            raise NativeIdentityCommandError(
+                "IDENTITY_NATIVE_ROOT_NOT_FOUND", "Exact OSB root does not exist.", 404
             )
-        # A DRAFT STUDY HAS NO VERSION NUMBER, AND THAT IS NOT A FAULT.
-        #
-        # This required both a version and a status, which no real OpenStudyBuilder
-        # study can satisfy: `StudyService().create()` writes LATEST_DRAFT with a
-        # status and NO `version` property - every draft in this database has
-        # `version = NULL`. So `create-or-bind` refused
-        # IDENTITY_NATIVE_VERSION_UNAVAILABLE for every genuine root, and the only
-        # thing that ever got past it was the verification bridge, which fabricates
-        # `version = 0.1` when it MERGEs its own graph. The check had been written
-        # against the stand-in rather than against the system.
-        #
-        # What this value is FOR is change detection: the binding stores it, and a
-        # candidate set is invalidated when the root's checkpoint no longer matches.
-        # A draft's honest checkpoint is its status - and it still detects the
-        # change that matters, because a study that becomes locked or released
-        # moves to a different version relationship and gains a real version, so
-        # the checkpoint changes exactly when the native root does.
-        return native_version or native_status.lower(), native_status.lower()
+        return head["nativeVersion"], head["nativeStatus"].lower()
 
     def _assert_native_available(self, native_identity: str) -> None:
         rows, _ = db.cypher_query(
@@ -324,6 +294,9 @@ class Neo4jOsbNativeIdentityTransactionV1:
     def apply_intent(self, intent: ExternalIdentityCreateIntentV1) -> dict[str, Any]:
         self.actor_subject = intent["actorSubject"]
         initial = _state(intent)
+        review_migration = initial.get("reviewOnly") is True or "reviewWorkspaceMigrationId" in initial
+        if review_migration:
+            assert_review_workspace_claim(intent, self.tenant_id, self.platform_study_id, db.cypher_query)
         operation = str(initial.get("operation") or ("create" if intent["expectedAbsence"] else "claim_existing"))
         active = self._active_binding()
         if operation == "version_rollover":
@@ -358,6 +331,10 @@ class Neo4jOsbNativeIdentityTransactionV1:
         self._assert_tenant_scope(native_identity)
         self._assert_native_available(native_identity)
         native_version, native_status = self._native_checkpoint(native_identity)
+        if review_migration and native_status != "draft":
+            raise NativeIdentityCommandError(
+                "REVIEW_WORKSPACE_MIGRATION_ROOT_NOT_DRAFT", "A migrated review root must remain draft.", 403,
+            )
         requested_version = _text(initial.get("nativeVersion"), "nativeVersion", required=False)
         if requested_version and requested_version != native_version:
             raise NativeIdentityCommandError(

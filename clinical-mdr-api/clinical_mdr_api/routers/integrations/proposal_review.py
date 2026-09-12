@@ -11,6 +11,7 @@ from clinical_mdr_api.models.integrations.proposal_review import (
     ProposalReviewStatus,
 )
 from clinical_mdr_api.routers.integrations.mapping_context import canonical_openapi_hash
+from clinical_mdr_api.routers.integrations.governed_item_association import router as governed_item_association_router
 from clinical_mdr_api.services.integrations.proposal_review import (
     ProposalReviewPrincipal,
     ProposalReviewService,
@@ -24,6 +25,7 @@ from common.auth.user import auth
 from common.config import settings
 
 router = APIRouter()
+router.include_router(governed_item_association_router)
 
 
 def _review_principal() -> ProposalReviewPrincipal:

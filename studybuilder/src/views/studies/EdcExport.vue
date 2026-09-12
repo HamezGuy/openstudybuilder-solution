@@ -11,6 +11,7 @@
         <v-btn
           color="primary"
           :loading="loadingBundle"
+          :disabled="!studyUid"
           data-cy="edc-preview-bundle"
           @click="loadBundle"
         >
@@ -25,32 +26,103 @@
         >
           {{ $t('EdcExport.download_action') }}
         </v-btn>
+        <v-alert
+          v-if="bundleError"
+          type="error"
+          class="mt-4"
+          :text="bundleError"
+          role="alert"
+        />
 
-        <template v-if="bundle">
+        <template v-if="bundle && review">
+          <v-alert type="info" class="mt-4">
+            USDM 4.0.0 draft for the selected study version. Mapping completeness,
+            clinical approval and EDC activation have separate review steps.
+          </v-alert>
           <v-table class="mt-6" density="compact">
             <tbody>
               <tr>
                 <td>{{ $t('EdcExport.study_name') }}</td>
-                <td>{{ bundle.study.name }}</td>
+                <td>{{ review.name }}</td>
+              </tr>
+              <tr>
+                <td>Selected study version</td>
+                <td>{{ review.version ?? 'Selection required' }}</td>
+              </tr>
+              <tr>
+                <td>Selected design</td>
+                <td>{{ review.design ?? 'Selection required' }}</td>
               </tr>
               <tr>
                 <td>{{ $t('EdcExport.visits') }}</td>
-                <td>{{ bundle.visits.length }}</td>
+                <td>{{ review.counts.visits }}</td>
               </tr>
               <tr>
                 <td>{{ $t('EdcExport.forms') }}</td>
-                <td>{{ bundle.forms.forms.length }}</td>
+                <td>{{ review.counts.forms }}</td>
+              </tr>
+              <tr>
+                <td>Acquisition fields</td>
+                <td>{{ review.counts.fields }}</td>
               </tr>
               <tr>
                 <td>{{ $t('EdcExport.assignments') }}</td>
-                <td>{{ bundle.visitFormAssignments.length }}</td>
+                <td>{{ review.counts.assignments }}</td>
               </tr>
             </tbody>
           </v-table>
+          <v-alert
+            v-if="!review.selectionComplete"
+            type="warning"
+            class="mt-4"
+          >
+            This document retains {{ review.counts.versions }} versions and
+            {{ review.counts.designs }} designs. Select the intended version and
+            design during EDC build review; the export has not selected the first.
+          </v-alert>
+          <v-alert
+            v-if="review.mappingReport?.issues?.length"
+            type="warning"
+            class="mt-4"
+            data-cy="edc-mapping-issues"
+          >
+            <p>Resolve these source facts before releasing the study:</p>
+            <ul>
+              <li
+                v-for="(issue, index) in review.mappingReport.issues"
+                :key="index"
+              >
+                <strong>{{ issue.code }}</strong>: {{ issue.message }}
+                <div v-if="issue.sourcePath">Source: {{ issue.sourcePath }}</div>
+                <div v-if="issue.targetPath">Study field: {{ issue.targetPath }}</div>
+                <div v-if="issue.resolution">{{ issue.resolution }}</div>
+              </li>
+            </ul>
+          </v-alert>
+          <v-expansion-panels class="mt-4">
+            <v-expansion-panel title="Complete canonical study content">
+              <v-expansion-panel-text>
+                <p>
+                  All versions and designs are retained in the download. These
+                  counts describe canonical content, not installed EDC behavior.
+                </p>
+                <v-table density="compact">
+                  <thead>
+                    <tr><th scope="col">Study element</th><th scope="col">Count</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="entity in review.entities" :key="entity.name">
+                      <td>{{ entity.name }}</td><td>{{ entity.count }}</td>
+                    </tr>
+                  </tbody>
+                </v-table>
+              </v-expansion-panel-text>
+            </v-expansion-panel>
+          </v-expansion-panels>
 
           <v-alert
             v-if="censusRows.length === 0"
-            type="success"
+            type="info"
             class="mt-4"
             :text="$t('EdcExport.census_clean')"
           />
@@ -75,21 +147,17 @@
         <v-btn
           color="secondary"
           :loading="sendingDryRun"
+          :disabled="!review || review.authority?.mode !== 'legacy'"
           data-cy="edc-dry-run"
           @click="send(true)"
         >
           {{ $t('EdcExport.dry_run_action') }}
         </v-btn>
-        <v-btn
-          color="primary"
-          class="ml-4"
-          :loading="sendingReal"
-          :disabled="!dryRunSucceeded"
-          data-cy="edc-send"
-          @click="send(false)"
-        >
-          {{ $t('EdcExport.send_action') }}
-        </v-btn>
+        <p class="mt-4">
+          This endpoint supports a comparison dry run in an explicitly configured
+          migration environment. Release and deployment use the native study
+          approval workflow.
+        </p>
 
         <v-alert v-if="sendError" type="error" class="mt-4" :text="sendError" />
         <template v-if="sendResult">
@@ -126,23 +194,26 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import edcExport from '@/api/edcExport'
 import { useStudiesGeneralStore } from '@/stores/studies-general'
+import { edcStudyReview } from '@/utils/edcStudyReview'
 
 const studiesGeneralStore = useStudiesGeneralStore()
 const studyId = computed(() => studiesGeneralStore.studyId)
-const studyUid = computed(() => studiesGeneralStore.selectedStudy.uid)
+const studyUid = computed(() => studiesGeneralStore.selectedStudy?.uid)
+const studyVersion = computed(() => studiesGeneralStore.selectedStudyVersion)
 
 const bundle = ref(null)
+const review = ref(null)
+const bundleError = ref(null)
 const loadingBundle = ref(false)
 const sendingDryRun = ref(false)
-const sendingReal = ref(false)
 const sendResult = ref(null)
 const sendError = ref(null)
-const dryRunSucceeded = ref(false)
+let requestGeneration = 0
 
-const censusRows = computed(() => bundle.value?._exportCensus?.rows ?? [])
+const censusRows = computed(() => review.value?.censusRows ?? [])
 const quarantineStudyId = computed(() => {
   const response = sendResult.value?.edcResponse
   return (
@@ -154,13 +225,38 @@ const quarantineStudyId = computed(() => {
   )
 })
 
+watch([studyUid, studyVersion], () => {
+  requestGeneration++
+  bundle.value = null
+  review.value = null
+  bundleError.value = null
+  sendResult.value = null
+  sendError.value = null
+  loadingBundle.value = false
+  sendingDryRun.value = false
+})
+
 async function loadBundle() {
+  const generation = ++requestGeneration
   loadingBundle.value = true
+  bundle.value = null
+  review.value = null
+  bundleError.value = null
+  sendResult.value = null
+  sendError.value = null
   try {
-    const resp = await edcExport.getStudyBundle(studyUid.value)
+    const resp = await edcExport.getStudyBundle(studyUid.value, studyVersion.value)
+    const projection = edcStudyReview(resp.data)
+    if (generation !== requestGeneration) return
     bundle.value = resp.data
+    review.value = projection
+  } catch (error) {
+    if (generation === requestGeneration) {
+      bundleError.value =
+        error.response?.data?.message ?? error.message ?? String(error)
+    }
   } finally {
-    loadingBundle.value = false
+    if (generation === requestGeneration) loadingBundle.value = false
   }
 }
 
@@ -177,20 +273,25 @@ function downloadBundle() {
 }
 
 async function send(dryRun) {
-  const loading = dryRun ? sendingDryRun : sendingReal
-  loading.value = true
+  if (!dryRun || !review.value) return
+  const generation = requestGeneration
+  sendingDryRun.value = true
   sendError.value = null
   try {
-    const resp = await edcExport.send(studyUid.value, dryRun)
+    const resp = await edcExport.send(
+      studyUid.value,
+      true,
+      studyVersion.value
+    )
+    if (generation !== requestGeneration) return
     sendResult.value = resp.data
-    if (dryRun && resp.data.statusCode < 300) {
-      dryRunSucceeded.value = true
-    }
   } catch (error) {
-    sendError.value =
-      error.response?.data?.message ?? error.message ?? String(error)
+    if (generation === requestGeneration) {
+      sendError.value =
+        error.response?.data?.message ?? error.message ?? String(error)
+    }
   } finally {
-    loading.value = false
+    if (generation === requestGeneration) sendingDryRun.value = false
   }
 }
 </script>

@@ -1,0 +1,564 @@
+{
+  "fixtureKind": "Authored producer-consumer compatibility data; not clinical source data",
+  "cliSourceSha256": "55d976b809abd6969d2a75f99b55500d27db58e3a9fda8518742d0469c11db41",
+  "cases": [
+    {
+      "name": "explicit-null-boolean",
+      "target": "is_extension_trial",
+      "initialMetadata": {
+        "high_level_study_design": {
+          "is_extension_trial": null,
+          "is_extension_trial_null_value_code": null
+        }
+      },
+      "request": {
+        "adjudications": [
+          {
+            "companion_path": "high_level_study_design.is_extension_trial_null_value_code",
+            "expected_null_companion": {
+              "present": true,
+              "value": null
+            },
+            "expected_value": {
+              "present": true,
+              "value": null
+            },
+            "null_term_uid": "CT_UNK",
+            "value_path": "high_level_study_design.is_extension_trial"
+          }
+        ],
+        "contract_version": "StudyNullAdjudicationV1@1.0.0"
+      },
+      "requestHash": "sha256:383c6f34e85670fc2bac88874af485c51d1ffc2156b86126397f5ba448f42bff",
+      "nativeReceipt": {
+        "contract_version": "StudyNullAdjudicationV1@1.0.0",
+        "study_uid": "OFFLINE_NULL_STUDY",
+        "request_hash": "sha256:383c6f34e85670fc2bac88874af485c51d1ffc2156b86126397f5ba448f42bff",
+        "preconditions_verified": true,
+        "checked_paths": [
+          "high_level_study_design.is_extension_trial",
+          "high_level_study_design.is_extension_trial_null_value_code"
+        ],
+        "applied": [
+          {
+            "value_path": "high_level_study_design.is_extension_trial",
+            "companion_path": "high_level_study_design.is_extension_trial_null_value_code",
+            "null_term_uid": "CT_UNK"
+          }
+        ]
+      },
+      "nativeReadback": {
+        "uid": "OFFLINE_NULL_STUDY",
+        "study_parent_part": null,
+        "study_subpart_uids": [],
+        "possible_actions": [
+          "delete",
+          "lock",
+          "release"
+        ],
+        "current_metadata": {
+          "identification_metadata": {
+            "study_number": "17",
+            "subpart_id": null,
+            "study_acronym": "AUTHORED",
+            "study_subpart_acronym": null,
+            "project_number": "123",
+            "project_name": "Authored project",
+            "description": "retained identification",
+            "clinical_programme_name": "Authored programme",
+            "study_id": "123-17",
+            "registry_identifiers": {
+              "ct_gov_id": null,
+              "ct_gov_id_null_value_code": null,
+              "eudract_id": null,
+              "eudract_id_null_value_code": null,
+              "universal_trial_number_utn": null,
+              "universal_trial_number_utn_null_value_code": null,
+              "japanese_trial_registry_id_japic": null,
+              "japanese_trial_registry_id_japic_null_value_code": null,
+              "investigational_new_drug_application_number_ind": null,
+              "investigational_new_drug_application_number_ind_null_value_code": null,
+              "eu_trial_number": null,
+              "eu_trial_number_null_value_code": null,
+              "civ_id_sin_number": null,
+              "civ_id_sin_number_null_value_code": null,
+              "national_clinical_trial_number": null,
+              "national_clinical_trial_number_null_value_code": null,
+              "japanese_trial_registry_number_jrct": null,
+              "japanese_trial_registry_number_jrct_null_value_code": null,
+              "national_medical_products_administration_nmpa_number": null,
+              "national_medical_products_administration_nmpa_number_null_value_code": null,
+              "eudamed_srn_number": null,
+              "eudamed_srn_number_null_value_code": null,
+              "investigational_device_exemption_ide_number": null,
+              "investigational_device_exemption_ide_number_null_value_code": null,
+              "eu_pas_number": null,
+              "eu_pas_number_null_value_code": null
+            }
+          },
+          "version_metadata": {
+            "study_status": "DRAFT",
+            "version_number": null,
+            "version_timestamp": "2026-09-09T13:22:07.346935Z",
+            "version_author": "offline-author",
+            "version_description": null
+          },
+          "high_level_study_design": {
+            "study_type_code": null,
+            "observational_model_code": null,
+            "observational_time_perspective_code": null,
+            "study_type_null_value_code": null,
+            "trial_type_codes": [],
+            "trial_type_null_value_code": null,
+            "trial_phase_code": null,
+            "trial_phase_null_value_code": null,
+            "development_stage_code": null,
+            "is_extension_trial": null,
+            "is_extension_trial_null_value_code": {
+              "term_uid": "CT_UNK"
+            },
+            "is_adaptive_design": null,
+            "is_adaptive_design_null_value_code": null,
+            "study_stop_rules": null,
+            "study_stop_rules_null_value_code": null,
+            "confirmed_response_minimum_duration": null,
+            "confirmed_response_minimum_duration_null_value_code": null,
+            "post_auth_indicator": null,
+            "post_auth_indicator_null_value_code": null
+          },
+          "study_population": {
+            "therapeutic_area_codes": [],
+            "therapeutic_area_null_value_code": null,
+            "disease_condition_or_indication_codes": [],
+            "disease_condition_or_indication_null_value_code": null,
+            "diagnosis_group_codes": [],
+            "diagnosis_group_null_value_code": null,
+            "sex_of_participants_code": null,
+            "sex_of_participants_null_value_code": null,
+            "rare_disease_indicator": null,
+            "rare_disease_indicator_null_value_code": null,
+            "healthy_subject_indicator": null,
+            "healthy_subject_indicator_null_value_code": null,
+            "planned_minimum_age_of_subjects": null,
+            "planned_minimum_age_of_subjects_null_value_code": null,
+            "planned_maximum_age_of_subjects": null,
+            "planned_maximum_age_of_subjects_null_value_code": null,
+            "stable_disease_minimum_duration": null,
+            "stable_disease_minimum_duration_null_value_code": null,
+            "pediatric_study_indicator": null,
+            "pediatric_study_indicator_null_value_code": null,
+            "pediatric_postmarket_study_indicator": null,
+            "pediatric_postmarket_study_indicator_null_value_code": null,
+            "pediatric_investigation_plan_indicator": null,
+            "pediatric_investigation_plan_indicator_null_value_code": null,
+            "relapse_criteria": null,
+            "relapse_criteria_null_value_code": null,
+            "number_of_expected_subjects": null,
+            "number_of_expected_subjects_null_value_code": null
+          },
+          "study_intervention": {
+            "intervention_type_code": null,
+            "intervention_type_null_value_code": null,
+            "add_on_to_existing_treatments": null,
+            "add_on_to_existing_treatments_null_value_code": null,
+            "control_type_code": null,
+            "control_type_null_value_code": null,
+            "intervention_model_code": null,
+            "intervention_model_null_value_code": null,
+            "is_trial_randomised": null,
+            "is_trial_randomised_null_value_code": null,
+            "stratification_factor": null,
+            "stratification_factor_null_value_code": null,
+            "trial_blinding_schema_code": null,
+            "trial_blinding_schema_null_value_code": null,
+            "planned_study_length": null,
+            "planned_study_length_null_value_code": null,
+            "trial_intent_types_codes": [],
+            "trial_intent_types_null_value_code": null
+          },
+          "study_description": {
+            "study_title": null,
+            "study_short_title": null
+          }
+        }
+      }
+    },
+    {
+      "name": "empty-list-plural-intent-companion",
+      "target": "trial_intent_types_codes",
+      "initialMetadata": {
+        "study_intervention": {
+          "trial_intent_types_codes": [],
+          "trial_intent_types_null_value_code": null
+        }
+      },
+      "request": {
+        "adjudications": [
+          {
+            "companion_path": "study_intervention.trial_intent_types_null_value_code",
+            "expected_null_companion": {
+              "present": true,
+              "value": null
+            },
+            "expected_value": {
+              "present": true,
+              "value": []
+            },
+            "null_term_uid": "CT_UNK",
+            "value_path": "study_intervention.trial_intent_types_codes"
+          }
+        ],
+        "contract_version": "StudyNullAdjudicationV1@1.0.0"
+      },
+      "requestHash": "sha256:eb2d726dd84a296b2dae9952dd1b41b58d000b7e6e1d15268507d3694f3ea949",
+      "nativeReceipt": {
+        "contract_version": "StudyNullAdjudicationV1@1.0.0",
+        "study_uid": "OFFLINE_NULL_STUDY",
+        "request_hash": "sha256:eb2d726dd84a296b2dae9952dd1b41b58d000b7e6e1d15268507d3694f3ea949",
+        "preconditions_verified": true,
+        "checked_paths": [
+          "study_intervention.trial_intent_types_codes",
+          "study_intervention.trial_intent_types_null_value_code"
+        ],
+        "applied": [
+          {
+            "value_path": "study_intervention.trial_intent_types_codes",
+            "companion_path": "study_intervention.trial_intent_types_null_value_code",
+            "null_term_uid": "CT_UNK"
+          }
+        ]
+      },
+      "nativeReadback": {
+        "uid": "OFFLINE_NULL_STUDY",
+        "study_parent_part": null,
+        "study_subpart_uids": [],
+        "possible_actions": [
+          "delete",
+          "lock",
+          "release"
+        ],
+        "current_metadata": {
+          "identification_metadata": {
+            "study_number": "17",
+            "subpart_id": null,
+            "study_acronym": "AUTHORED",
+            "study_subpart_acronym": null,
+            "project_number": "123",
+            "project_name": "Authored project",
+            "description": "retained identification",
+            "clinical_programme_name": "Authored programme",
+            "study_id": "123-17",
+            "registry_identifiers": {
+              "ct_gov_id": null,
+              "ct_gov_id_null_value_code": null,
+              "eudract_id": null,
+              "eudract_id_null_value_code": null,
+              "universal_trial_number_utn": null,
+              "universal_trial_number_utn_null_value_code": null,
+              "japanese_trial_registry_id_japic": null,
+              "japanese_trial_registry_id_japic_null_value_code": null,
+              "investigational_new_drug_application_number_ind": null,
+              "investigational_new_drug_application_number_ind_null_value_code": null,
+              "eu_trial_number": null,
+              "eu_trial_number_null_value_code": null,
+              "civ_id_sin_number": null,
+              "civ_id_sin_number_null_value_code": null,
+              "national_clinical_trial_number": null,
+              "national_clinical_trial_number_null_value_code": null,
+              "japanese_trial_registry_number_jrct": null,
+              "japanese_trial_registry_number_jrct_null_value_code": null,
+              "national_medical_products_administration_nmpa_number": null,
+              "national_medical_products_administration_nmpa_number_null_value_code": null,
+              "eudamed_srn_number": null,
+              "eudamed_srn_number_null_value_code": null,
+              "investigational_device_exemption_ide_number": null,
+              "investigational_device_exemption_ide_number_null_value_code": null,
+              "eu_pas_number": null,
+              "eu_pas_number_null_value_code": null
+            }
+          },
+          "version_metadata": {
+            "study_status": "DRAFT",
+            "version_number": null,
+            "version_timestamp": "2026-09-09T13:22:07.363338Z",
+            "version_author": "offline-author",
+            "version_description": null
+          },
+          "high_level_study_design": {
+            "study_type_code": null,
+            "observational_model_code": null,
+            "observational_time_perspective_code": null,
+            "study_type_null_value_code": null,
+            "trial_type_codes": [],
+            "trial_type_null_value_code": null,
+            "trial_phase_code": null,
+            "trial_phase_null_value_code": null,
+            "development_stage_code": null,
+            "is_extension_trial": null,
+            "is_extension_trial_null_value_code": null,
+            "is_adaptive_design": null,
+            "is_adaptive_design_null_value_code": null,
+            "study_stop_rules": null,
+            "study_stop_rules_null_value_code": null,
+            "confirmed_response_minimum_duration": null,
+            "confirmed_response_minimum_duration_null_value_code": null,
+            "post_auth_indicator": null,
+            "post_auth_indicator_null_value_code": null
+          },
+          "study_population": {
+            "therapeutic_area_codes": [],
+            "therapeutic_area_null_value_code": null,
+            "disease_condition_or_indication_codes": [],
+            "disease_condition_or_indication_null_value_code": null,
+            "diagnosis_group_codes": [],
+            "diagnosis_group_null_value_code": null,
+            "sex_of_participants_code": null,
+            "sex_of_participants_null_value_code": null,
+            "rare_disease_indicator": null,
+            "rare_disease_indicator_null_value_code": null,
+            "healthy_subject_indicator": null,
+            "healthy_subject_indicator_null_value_code": null,
+            "planned_minimum_age_of_subjects": null,
+            "planned_minimum_age_of_subjects_null_value_code": null,
+            "planned_maximum_age_of_subjects": null,
+            "planned_maximum_age_of_subjects_null_value_code": null,
+            "stable_disease_minimum_duration": null,
+            "stable_disease_minimum_duration_null_value_code": null,
+            "pediatric_study_indicator": null,
+            "pediatric_study_indicator_null_value_code": null,
+            "pediatric_postmarket_study_indicator": null,
+            "pediatric_postmarket_study_indicator_null_value_code": null,
+            "pediatric_investigation_plan_indicator": null,
+            "pediatric_investigation_plan_indicator_null_value_code": null,
+            "relapse_criteria": null,
+            "relapse_criteria_null_value_code": null,
+            "number_of_expected_subjects": null,
+            "number_of_expected_subjects_null_value_code": null
+          },
+          "study_intervention": {
+            "intervention_type_code": null,
+            "intervention_type_null_value_code": null,
+            "add_on_to_existing_treatments": null,
+            "add_on_to_existing_treatments_null_value_code": null,
+            "control_type_code": null,
+            "control_type_null_value_code": null,
+            "intervention_model_code": null,
+            "intervention_model_null_value_code": null,
+            "is_trial_randomised": null,
+            "is_trial_randomised_null_value_code": null,
+            "stratification_factor": null,
+            "stratification_factor_null_value_code": null,
+            "trial_blinding_schema_code": null,
+            "trial_blinding_schema_null_value_code": null,
+            "planned_study_length": null,
+            "planned_study_length_null_value_code": null,
+            "trial_intent_types_codes": [],
+            "trial_intent_types_null_value_code": {
+              "term_uid": "CT_UNK"
+            }
+          },
+          "study_description": {
+            "study_title": null,
+            "study_short_title": null
+          }
+        }
+      }
+    }
+  ],
+  "nativeCapability": {
+    "contract_version": "StudyNullAdjudicationV1@1.0.0",
+    "comparison": "native-json-identity-v1",
+    "study_uid": "OFFLINE_NULL_STUDY",
+    "atomic_preconditions": true,
+    "fields": [
+      {
+        "value_path": "high_level_study_design.confirmed_response_minimum_duration",
+        "companion_path": "high_level_study_design.confirmed_response_minimum_duration_null_value_code"
+      },
+      {
+        "value_path": "high_level_study_design.is_adaptive_design",
+        "companion_path": "high_level_study_design.is_adaptive_design_null_value_code"
+      },
+      {
+        "value_path": "high_level_study_design.is_extension_trial",
+        "companion_path": "high_level_study_design.is_extension_trial_null_value_code"
+      },
+      {
+        "value_path": "high_level_study_design.post_auth_indicator",
+        "companion_path": "high_level_study_design.post_auth_indicator_null_value_code"
+      },
+      {
+        "value_path": "high_level_study_design.study_stop_rules",
+        "companion_path": "high_level_study_design.study_stop_rules_null_value_code"
+      },
+      {
+        "value_path": "high_level_study_design.study_type_code",
+        "companion_path": "high_level_study_design.study_type_null_value_code"
+      },
+      {
+        "value_path": "high_level_study_design.trial_phase_code",
+        "companion_path": "high_level_study_design.trial_phase_null_value_code"
+      },
+      {
+        "value_path": "high_level_study_design.trial_type_codes",
+        "companion_path": "high_level_study_design.trial_type_null_value_code"
+      },
+      {
+        "value_path": "identification_metadata.registry_identifiers.civ_id_sin_number",
+        "companion_path": "identification_metadata.registry_identifiers.civ_id_sin_number_null_value_code"
+      },
+      {
+        "value_path": "identification_metadata.registry_identifiers.ct_gov_id",
+        "companion_path": "identification_metadata.registry_identifiers.ct_gov_id_null_value_code"
+      },
+      {
+        "value_path": "identification_metadata.registry_identifiers.eu_pas_number",
+        "companion_path": "identification_metadata.registry_identifiers.eu_pas_number_null_value_code"
+      },
+      {
+        "value_path": "identification_metadata.registry_identifiers.eu_trial_number",
+        "companion_path": "identification_metadata.registry_identifiers.eu_trial_number_null_value_code"
+      },
+      {
+        "value_path": "identification_metadata.registry_identifiers.eudamed_srn_number",
+        "companion_path": "identification_metadata.registry_identifiers.eudamed_srn_number_null_value_code"
+      },
+      {
+        "value_path": "identification_metadata.registry_identifiers.eudract_id",
+        "companion_path": "identification_metadata.registry_identifiers.eudract_id_null_value_code"
+      },
+      {
+        "value_path": "identification_metadata.registry_identifiers.investigational_device_exemption_ide_number",
+        "companion_path": "identification_metadata.registry_identifiers.investigational_device_exemption_ide_number_null_value_code"
+      },
+      {
+        "value_path": "identification_metadata.registry_identifiers.investigational_new_drug_application_number_ind",
+        "companion_path": "identification_metadata.registry_identifiers.investigational_new_drug_application_number_ind_null_value_code"
+      },
+      {
+        "value_path": "identification_metadata.registry_identifiers.japanese_trial_registry_id_japic",
+        "companion_path": "identification_metadata.registry_identifiers.japanese_trial_registry_id_japic_null_value_code"
+      },
+      {
+        "value_path": "identification_metadata.registry_identifiers.japanese_trial_registry_number_jrct",
+        "companion_path": "identification_metadata.registry_identifiers.japanese_trial_registry_number_jrct_null_value_code"
+      },
+      {
+        "value_path": "identification_metadata.registry_identifiers.national_clinical_trial_number",
+        "companion_path": "identification_metadata.registry_identifiers.national_clinical_trial_number_null_value_code"
+      },
+      {
+        "value_path": "identification_metadata.registry_identifiers.national_medical_products_administration_nmpa_number",
+        "companion_path": "identification_metadata.registry_identifiers.national_medical_products_administration_nmpa_number_null_value_code"
+      },
+      {
+        "value_path": "identification_metadata.registry_identifiers.universal_trial_number_utn",
+        "companion_path": "identification_metadata.registry_identifiers.universal_trial_number_utn_null_value_code"
+      },
+      {
+        "value_path": "study_intervention.add_on_to_existing_treatments",
+        "companion_path": "study_intervention.add_on_to_existing_treatments_null_value_code"
+      },
+      {
+        "value_path": "study_intervention.control_type_code",
+        "companion_path": "study_intervention.control_type_null_value_code"
+      },
+      {
+        "value_path": "study_intervention.intervention_model_code",
+        "companion_path": "study_intervention.intervention_model_null_value_code"
+      },
+      {
+        "value_path": "study_intervention.intervention_type_code",
+        "companion_path": "study_intervention.intervention_type_null_value_code"
+      },
+      {
+        "value_path": "study_intervention.is_trial_randomised",
+        "companion_path": "study_intervention.is_trial_randomised_null_value_code"
+      },
+      {
+        "value_path": "study_intervention.planned_study_length",
+        "companion_path": "study_intervention.planned_study_length_null_value_code"
+      },
+      {
+        "value_path": "study_intervention.stratification_factor",
+        "companion_path": "study_intervention.stratification_factor_null_value_code"
+      },
+      {
+        "value_path": "study_intervention.trial_blinding_schema_code",
+        "companion_path": "study_intervention.trial_blinding_schema_null_value_code"
+      },
+      {
+        "value_path": "study_intervention.trial_intent_types_codes",
+        "companion_path": "study_intervention.trial_intent_types_null_value_code"
+      },
+      {
+        "value_path": "study_population.diagnosis_group_codes",
+        "companion_path": "study_population.diagnosis_group_null_value_code"
+      },
+      {
+        "value_path": "study_population.disease_condition_or_indication_codes",
+        "companion_path": "study_population.disease_condition_or_indication_null_value_code"
+      },
+      {
+        "value_path": "study_population.healthy_subject_indicator",
+        "companion_path": "study_population.healthy_subject_indicator_null_value_code"
+      },
+      {
+        "value_path": "study_population.number_of_expected_subjects",
+        "companion_path": "study_population.number_of_expected_subjects_null_value_code"
+      },
+      {
+        "value_path": "study_population.pediatric_investigation_plan_indicator",
+        "companion_path": "study_population.pediatric_investigation_plan_indicator_null_value_code"
+      },
+      {
+        "value_path": "study_population.pediatric_postmarket_study_indicator",
+        "companion_path": "study_population.pediatric_postmarket_study_indicator_null_value_code"
+      },
+      {
+        "value_path": "study_population.pediatric_study_indicator",
+        "companion_path": "study_population.pediatric_study_indicator_null_value_code"
+      },
+      {
+        "value_path": "study_population.planned_maximum_age_of_subjects",
+        "companion_path": "study_population.planned_maximum_age_of_subjects_null_value_code"
+      },
+      {
+        "value_path": "study_population.planned_minimum_age_of_subjects",
+        "companion_path": "study_population.planned_minimum_age_of_subjects_null_value_code"
+      },
+      {
+        "value_path": "study_population.rare_disease_indicator",
+        "companion_path": "study_population.rare_disease_indicator_null_value_code"
+      },
+      {
+        "value_path": "study_population.relapse_criteria",
+        "companion_path": "study_population.relapse_criteria_null_value_code"
+      },
+      {
+        "value_path": "study_population.sex_of_participants_code",
+        "companion_path": "study_population.sex_of_participants_null_value_code"
+      },
+      {
+        "value_path": "study_population.stable_disease_minimum_duration",
+        "companion_path": "study_population.stable_disease_minimum_duration_null_value_code"
+      },
+      {
+        "value_path": "study_population.therapeutic_area_codes",
+        "companion_path": "study_population.therapeutic_area_null_value_code"
+      }
+    ]
+  },
+  "nativeSourcePins": {
+    "clinical_mdr_api/models/study_selections/null_adjudication.py": "c6dd4e8f304407d8d6cab2d16bbab6d37bd26df519c7c102207290945a8cf0b8",
+    "clinical_mdr_api/services/studies/null_adjudication.py": "18978d5a99cfa6b9748953e344dc1cb75265714c8f8b21e6d9eb9c6b2dd5fd34",
+    "clinical_mdr_api/services/studies/study.py": "2e964629fee2ff06ffb2ae48eb74baf4fbb8feeb8417d498902b0d9a82cc94a2",
+    "clinical_mdr_api/routers/studies/studies.py": "9067cf1b1bb286af39b4184b3d54db6298da000e1fde8613d76d9d1f795a2a0b",
+    "clinical_mdr_api/tests/fixtures/null_adjudication.py": "ed40afe0bcf141c816c6182f7ef72cf55dd877495989a1a3d3fda3d0210731ed",
+    "clinical_mdr_api/tests/fixtures/null_adjudication_http.py": "5a5fc61caa505e0e155a5bced62f6a58493f062ccc98444e117fe0a89901379e",
+    "clinical_mdr_api/main.py": "cf126f080196c99a3b47e3259045087a91b8834fece45dbec9fdcd6fa958c675",
+    "clinical_mdr_api/tests/unit/services/test_null_adjudication.py": "70590cb50df934d82476dbface69814b5edd45838da18059d5e27f7f3c4441f7",
+    "clinical_mdr_api/tests/unit/services/test_null_adjudication_http.py": "de7a7d496882e532bfd95f94fe2bbfcacd297d8bbc31cad506b3b566289b2104"
+  },
+  "nativeDatabaseMode": "authored repository; real registered HTTP, strict DTO, StudyService, domain and readback"
+}

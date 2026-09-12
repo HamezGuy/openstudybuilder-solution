@@ -647,6 +647,7 @@ class StudyActivityInstanceSelectionService(
 
     def get_crfs(self, study_uid: str):
         query = """
+        CALL () {
         MATCH (sr:StudyRoot {uid: $study_uid})-[:LATEST]->(:StudyValue)
             -[:HAS_STUDY_ACTIVITY_INSTANCE]->(:StudyActivityInstance)
             -[:HAS_SELECTED_ACTIVITY_INSTANCE]->(:ActivityInstanceValue)
@@ -659,11 +660,23 @@ class StudyActivityInstanceSelectionService(
         WITH ofr, ofv, hv ORDER BY hv.end_date DESC
         
         WITH ofr, COLLECT({ofv: ofv, hv: hv})[0] AS latest
-        
-        RETURN DISTINCT
+
+        RETURN
             ofr.uid AS uid,
             latest.ofv.name AS name,
             latest.hv.version AS version
+
+        UNION
+
+        MATCH (:StudyRoot {uid: $study_uid})-[:HAS_PLATFORM_NATIVE_CAPTURE]->
+            (binding:PlatformNativeCaptureBinding {family: 'odm_forms'})
+        MATCH (ofr:OdmFormRoot {uid: binding.native_uid})-[:LATEST]->(ofv:OdmFormValue)
+        MATCH (ofr)-[hv:HAS_VERSION]->(ofv)
+        WHERE hv.end_date IS NULL
+        RETURN ofr.uid AS uid, ofv.name AS name, hv.version AS version
+        }
+        RETURN DISTINCT uid, name, version
+        ORDER BY name, uid, version
         """
 
         results = db.cypher_query(query, params={"study_uid": study_uid})

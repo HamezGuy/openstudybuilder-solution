@@ -131,7 +131,7 @@ class CTTermGenericService(Generic[_AggregateRootType], abc.ABC):
 
         return [dict(zip(prop_names, item)) for item in items]
 
-    @db.transaction
+    @ensure_transaction(db)
     def get_by_uid(
         self,
         term_uid: str,

@@ -1,2 +1,0 @@
-class VersionExists(Exception):
-    pass

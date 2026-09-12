@@ -33,6 +33,10 @@ from clinical_mdr_api.services._utils import (
     calculate_diffs,
     calculate_diffs_history,
     fill_missing_values_in_base_model_from_reference_base_model,
+    service_level_generic_filtering,
+)
+from clinical_mdr_api.services.studies.study_disease_milestone_snapshot import (
+    read_disease_milestone_snapshot,
 )
 from clinical_mdr_api.services.user_info import UserInfoService
 from common.auth.user import user
@@ -126,6 +130,18 @@ class StudyDiseaseMilestoneService:
         study_value_version: str | None = None,
         **kwargs,
     ) -> GenericFilteringReturn[StudyDiseaseMilestone]:
+        if study_value_version is not None:
+            # Filter and page after resolving the selected snapshot's term
+            # text; current CT labels must not decide historical membership.
+            return service_level_generic_filtering(
+                items=read_disease_milestone_snapshot(
+                    self._repos, study_uid, study_value_version
+                ),
+                sort_by=sort_by or {"uid": True},
+                page_number=page_number, page_size=page_size,
+                filter_by=filter_by, filter_operator=filter_operator,
+                total_count=total_count,
+            )
         items, total = self.repo.find_all_disease_milestone(
             study_uid=study_uid,
             sort_by=sort_by,

@@ -15,7 +15,7 @@ from clinical_mdr_api.domains.controlled_terminologies.ct_codelist_name import (
     CTCodelistNameAR,
     CTCodelistNameVO,
 )
-from clinical_mdr_api.domains.versioned_object_aggregate import LibraryVO
+from clinical_mdr_api.domains.versioned_object_aggregate import LibraryItemStatus, LibraryVO
 from clinical_mdr_api.models.controlled_terminologies.ct_codelist import (
     CTCodelist,
     CTCodelistCompact,
@@ -613,6 +613,59 @@ class CTCodelistService:
             ct_codelist_attributes_ar,
             paired_codes_codelist_uid=paired_codes_codelist_uid,
             paired_names_codelist_uid=paired_names_codelist_uid,
+        )
+
+    @ensure_transaction(db)
+    def add_initial_draft_term(
+        self, codelist_uid: str, term_uid: str, order: int, submission_value: str,
+    ) -> None:
+        """Assemble a new editable draft without approving either CT object.
+
+        This is an internal authoring operation for source-draft creation. The
+        ordinary add_term API continues to require Final codelist attributes.
+        Only initial 0.1 name/attribute drafts from the same editable library
+        qualify; sublists, paired lists and template parameters require their
+        existing reviewed workflows.
+        """
+        attributes = self._repos.ct_codelist_attribute_repository.find_by_uid(
+            codelist_uid=codelist_uid, for_update=True)
+        name = self._repos.ct_codelist_name_repository.find_by_uid(
+            codelist_uid=codelist_uid, for_update=True)
+        term_attributes = self._repos.ct_term_attributes_repository.find_by_uid(
+            term_uid=term_uid, for_update=True)
+        term_name = self._repos.ct_term_name_repository.find_by_uid(
+            term_uid=term_uid, for_update=True)
+        values = (attributes, name, term_attributes, term_name)
+        BusinessLogicException.raise_if(
+            any(value is None for value in values),
+            msg="Initial draft codelist and term must exist.",
+        )
+        BusinessLogicException.raise_if(
+            any(value.item_metadata.status != LibraryItemStatus.DRAFT
+                or value.item_metadata.version != "0.1"
+                or value.item_metadata.end_date is not None
+                or not value.library.is_editable
+                or value.library.name != attributes.library.name for value in values),
+            msg="Initial CT membership requires current 0.1 drafts in the same editable library.",
+        )
+        BusinessLogicException.raise_if(
+            type(order) is not int or order < 1
+            or not isinstance(submission_value, str) or not submission_value.strip(),
+            msg="Initial draft term requires a positive order and source submission value.",
+        )
+        paired = self._repos.ct_codelist_aggregated_repository.get_paired_codelist_uids(
+            codelist_uid=codelist_uid)
+        BusinessLogicException.raise_if(
+            bool(attributes.ct_codelist_vo.parent_codelist_uid)
+            or bool(attributes.ct_codelist_vo.is_ordinal)
+            or bool(name.ct_codelist_vo.is_template_parameter)
+            or any(paired)
+            or bool(self._repos.ct_term_name_repository.get_submission_values_for_term(term_uid)),
+            msg="Initial draft membership requires an unpaired list and a new, unassigned term.",
+        )
+        self._repos.ct_codelist_attribute_repository.add_term(
+            codelist_uid=codelist_uid, term_uid=term_uid, author_id=self.author_id,
+            order=order, submission_value=submission_value, initial_draft=True,
         )
 
     @db.transaction

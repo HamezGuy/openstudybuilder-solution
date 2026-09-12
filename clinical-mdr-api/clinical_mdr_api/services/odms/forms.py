@@ -84,7 +84,7 @@ class OdmFormService(OdmGenericService[OdmFormAR]):
         )
         return item
 
-    @db.transaction
+    @ensure_transaction(db)
     def create(self, odm_input: OdmFormPostInput) -> OdmForm:
         item = super().create(odm_input)
 
@@ -126,6 +126,7 @@ class OdmFormService(OdmGenericService[OdmFormAR]):
         uid: str,
         odm_form_item_group_post_input: list[OdmFormItemGroupPostInput],
         override: bool = False,
+        preserve_order: bool = False,
     ) -> OdmForm:
         odm_form_ar = self._find_by_uid_or_raise_not_found(normalize_string(uid))
 
@@ -162,9 +163,17 @@ class OdmFormService(OdmGenericService[OdmFormAR]):
             VendorAttributeCompatibleType.ITEM_GROUP_REF,
         )
 
-        post_input = self.renumber_items_sequentially(
-            odm_form_item_group_post_input, "order_number", renumbering_start
-        )
+        if preserve_order:
+            orders = [item.order_number for item in odm_form_item_group_post_input]
+            BusinessLogicException.raise_if(
+                any(order < 1 for order in orders) or len(set(orders)) != len(orders),
+                msg="Source item-group orders must be unique positive integers.",
+            )
+            post_input = sorted(odm_form_item_group_post_input, key=lambda item: item.order_number)
+        else:
+            post_input = self.renumber_items_sequentially(
+                odm_form_item_group_post_input, "order_number", renumbering_start
+            )
 
         for item_group in post_input:
             if item_group.vendor:

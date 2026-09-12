@@ -22,13 +22,16 @@ from clinical_mdr_api.generated.platform_contracts.native_identity_command_proce
     NativeIdentityPrincipalV1,
 )
 from clinical_mdr_api.services.integrations.native_identity import Neo4jOsbNativeIdentityStoreV1
+from clinical_mdr_api.services.integrations.signing_authorization import platform_signing_authorization
+from clinical_mdr_api.services.integrations.review_workspace_migration import is_review_workspace_claim
 from clinical_mdr_api.generated.platform_contracts.platform_command_v1 import (
     PlatformCommandError,
     PlatformCommandPrincipalV1,
     RemotePlatformCommandReceiptPublisherV1,
     execute_signed_platform_command,
-    execute_platform_command,
+    validate_platform_command,
 )
+from clinical_mdr_api.services.integrations.atomic_signed_command import execute_osb_atomic_signed_command
 from clinical_mdr_api.services.integrations.platform_command import Neo4jOsbPlatformCommandStore
 from clinical_mdr_api.services.integrations.candidate_set import (
     CANDIDATE_SET_MEDIA_TYPE,
@@ -36,6 +39,7 @@ from clinical_mdr_api.services.integrations.candidate_set import (
     decode_signed_artifact_envelope_header,
     generate_candidate_set,
     load_candidate_request,
+    read_candidate_set_for_publication,
     store_candidate_request_bytes,
 )
 from clinical_mdr_api.services.integrations.mapping_decision_v1 import (
@@ -59,8 +63,16 @@ from clinical_mdr_api.generated.platform_contracts.hash_signing_v1 import (
 from common.auth.dependencies import platform_security
 from common.auth.user import user
 from common.config import settings
+from clinical_mdr_api.routers.integrations.native_item_observation import router as native_item_observation_router
+from clinical_mdr_api.routers.integrations.selected_activity_item_observation import router as selected_activity_item_observation_router
+from clinical_mdr_api.routers.integrations.source_draft_stage import router as source_draft_stage_router
 
 router = APIRouter()
+
+# Additive companion; existing mapping evidence bytes and contracts are unchanged.
+router.include_router(native_item_observation_router)
+router.include_router(selected_activity_item_observation_router)
+router.include_router(source_draft_stage_router)
 
 
 class _UnavailablePublisher:
@@ -120,6 +132,7 @@ class _RemoteNativeIdentityReceiptPublisher:
                 503,
             )
         self.endpoint = endpoint
+        self.opener = urllib.request.build_opener(_RejectSigningRedirects())
 
     def publish(self, receipt: NativeIdentityBindingReceiptV1) -> dict[str, Any]:
         body = json.dumps(
@@ -130,19 +143,21 @@ class _RemoteNativeIdentityReceiptPublisher:
             },
             separators=(",", ":"),
         ).encode("utf-8")
-        request = urllib.request.Request(
-            self.endpoint,
-            data=body,
-            method="POST",
-            headers={
+        try:
+            authorization = platform_signing_authorization(settings.deployment_environment)
+            headers = {
                 "content-type": "application/json",
                 "accept": "application/json",
                 "x-platform-producer-service": "osb.package",
-            },
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=15) as response:
-                payload = json.loads(response.read(2_000_001).decode("utf-8"))
+            }
+            if authorization:
+                headers["authorization"] = authorization
+            request = urllib.request.Request(self.endpoint, data=body, method="POST", headers=headers)
+            with self.opener.open(request, timeout=15) as response:
+                data = response.read(2_000_001)
+                if len(data) > 2_000_000:
+                    raise ValueError("Signing response is too large")
+                payload = json.loads(data.decode("utf-8"))
         except (urllib.error.URLError, TimeoutError, ValueError) as error:
             raise NativeIdentityCommandError(
                 "OSB_SIGNED_PUBLICATION_UNAVAILABLE",
@@ -164,6 +179,11 @@ class _RemoteNativeIdentityReceiptPublisher:
                 503,
             )
         return envelope
+
+
+class _RejectSigningRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, file_pointer, code, message, headers, new_url):
+        return None
 
 
 def _native_identity_publisher() -> Any:
@@ -196,6 +216,19 @@ class _SignedConformanceHandler:
 
     def commit(self, _transaction: Any, prepared_effect: dict[str, Any]) -> dict[str, Any]:
         return prepared_effect
+
+
+class _SignedCandidatePublicationHandler:
+    """Revalidate exact retained bytes on both sides of external signing."""
+
+    def __init__(self, read_effect):
+        self.read_effect = read_effect
+
+    def prepare(self) -> dict[str, Any]:
+        return self.read_effect()
+
+    def commit(self, _transaction: Any, _prepared_effect: dict[str, Any]) -> dict[str, Any]:
+        return self.read_effect()
 
 
 def _platform_principal(capability: str, platform_study_id: str):
@@ -388,7 +421,8 @@ def inventory_native_study_roots() -> dict[str, Any]:
     summary="Create or bind one exact OSB draft root (disabled until P2)",
 )
 def create_or_bind_native_study_root(body: dict[str, Any]) -> dict[str, Any]:
-    if (
+    review_migration = settings.review_workspace_identity_enabled and is_review_workspace_claim(body)
+    if not review_migration and (
         not settings.native_identity_endpoint_enabled
         or settings.deployment_environment.strip().lower() in {"prod", "production"}
     ):
@@ -458,6 +492,7 @@ def execute_conformance_command(body: dict[str, Any]) -> dict[str, Any]:
             _SignedConformanceHandler(effect),
             RemotePlatformCommandReceiptPublisherV1(
                 signing_endpoint, "osb.package", settings.deployment_environment,
+                authorization=lambda: platform_signing_authorization(settings.deployment_environment),
                 allow_insecure_prototype=True,
             ),
         )
@@ -525,11 +560,13 @@ def execute_candidate_set_command(body: dict[str, Any], request: Request) -> dic
         or settings.deployment_environment.strip().lower() in {"prod", "production"}
     ):
         raise HTTPException(status_code=503, detail="OSB_PLATFORM_COMMANDS_DISABLED")
-    if body.get("action") != "osb.candidate-set.generate" or body.get("targetCapability") != "candidate:generate":
+    publish_candidate = body.get("action") == "osb.candidate-set.publish"
+    if body.get("action") not in {"osb.candidate-set.generate", "osb.candidate-set.publish"} \
+            or body.get("targetCapability") != "candidate:generate":
         raise HTTPException(status_code=422, detail="OSB_CANDIDATE_SET_COMMAND_UNSUPPORTED")
     principal = _platform_principal("candidate:generate", str(body.get("platformStudyId") or ""))
 
-    def handler(_tx) -> dict[str, Any]:
+    def handler(_tx, candidate_artifact_override=None) -> dict[str, Any]:
         input_payload = body.get("inputPayload")
         if not isinstance(input_payload, dict) or not isinstance(input_payload.get("candidateRequestArtifact"), dict):
             raise OsbCandidateSetError("OSB_CANDIDATE_REQUEST_ARTIFACT_REQUIRED", "Candidate request artifact is required.", 422)
@@ -550,19 +587,34 @@ def execute_candidate_set_command(body: dict[str, Any], request: Request) -> dic
         signature_verification = _verify_candidate_request_signature(
             request_payload, signed_envelope
         )
-        generated = generate_candidate_set(
-            request_payload=request_payload,
-            artifact=artifact,
-            tenant_id=principal.tenant_id,
-            platform_study_id=body["platformStudyId"],
-            osb_openapi_hash=canonical_hash(request.app.openapi()),
-            actor=body["requestingActor"]["issuerQualifiedSubject"],
-            signed_envelope=signed_envelope,
-            signature_verification=signature_verification,
-        )
+        if publish_candidate or candidate_artifact_override is not None:
+            candidate_artifact = candidate_artifact_override or input_payload.get("candidateSetArtifact")
+            if not isinstance(candidate_artifact, dict):
+                raise OsbCandidateSetError(
+                    "OSB_CANDIDATE_PUBLICATION_ARTIFACT_REQUIRED", "An exact candidate artifact is required.", 422,
+                )
+            generated = read_candidate_set_for_publication(
+                request_payload=request_payload, request_artifact=artifact, candidate_artifact=candidate_artifact,
+                tenant_id=principal.tenant_id, platform_study_id=body["platformStudyId"],
+                osb_openapi_hash=canonical_hash(request.app.openapi()),
+                signed_envelope=signed_envelope, signature_verification=signature_verification,
+            )
+        else:
+            generated = generate_candidate_set(
+                request_payload=request_payload,
+                artifact=artifact,
+                tenant_id=principal.tenant_id,
+                platform_study_id=body["platformStudyId"],
+                osb_openapi_hash=canonical_hash(request.app.openapi()),
+                actor=body["requestingActor"]["issuerQualifiedSubject"],
+                signed_envelope=signed_envelope,
+                signature_verification=signature_verification,
+                supersedes_candidate_set_version_id=input_payload.get("supersedesCandidateSetVersionId"),
+            )
         candidate_records = generated["payload"]["candidateRecords"]
         deferred_members = generated["payload"].get("deferredMembers") or []
-        blocker_count = len(generated["payload"].get("blockers") or [])
+        candidate_blockers = generated["payload"].get("blockers") or []
+        blocker_count = len(candidate_blockers)
         return {
             "status": "no_op" if generated.get("replay") else "succeeded",
             "targetIdentity": generated["nativeIdentity"],
@@ -580,7 +632,15 @@ def execute_candidate_set_command(body: dict[str, Any], request: Request) -> dic
                 "deferredMembers": len(deferred_members),
                 "dropped": 0,
             },
-            "blockers": generated["payload"].get("blockers") or [],
+            # Candidate-set codes are strings; ReceiptEnvelopeV1 requires
+            # object records and allows at most 256. One grouped record keeps
+            # every code even when a study has more than 256 blocked searches.
+            "blockers": [{
+                "code": "OSB_CANDIDATE_SET_REQUIRES_REVIEW",
+                "candidateSetVersionId": generated["candidateSetVersionId"],
+                "count": blocker_count,
+                "blockerCodes": candidate_blockers,
+            }] if candidate_blockers else [],
             "effectPayload": {
                 "candidateSetId": generated["candidateSetId"],
                 "candidateSetVersionId": generated["candidateSetVersionId"],
@@ -592,9 +652,7 @@ def execute_candidate_set_command(body: dict[str, Any], request: Request) -> dic
         }
 
     try:
-        result = execute_platform_command(
-            body,
-            PlatformCommandPrincipalV1(
+        command_principal = PlatformCommandPrincipalV1(
                 tenant_id=principal.tenant_id,
                 study_ids=tuple(sorted(principal.study_ids)),
                 subject=principal.sub,
@@ -602,10 +660,54 @@ def execute_candidate_set_command(body: dict[str, Any], request: Request) -> dic
                 roles=tuple(sorted(principal.roles)),
                 purpose=principal.purpose,
                 capabilities=tuple(sorted(principal.capabilities)),
-            ),
-            "osb",
-            platform_command_store,
-            handler,
+            )
+        signing_endpoint = os.getenv("OSB_PLATFORM_COMMAND_SIGNING_URL", "").strip()
+        if not signing_endpoint:
+            raise PlatformCommandError(
+                "OSB_SIGNED_PUBLICATION_UNAVAILABLE", "Candidate publication requires the configured signer.", 503,
+            )
+        publisher = RemotePlatformCommandReceiptPublisherV1(
+            signing_endpoint, "osb.package", settings.deployment_environment,
+            authorization=lambda: platform_signing_authorization(settings.deployment_environment),
+            allow_insecure_prototype=True, timeout_seconds=60,
+        )
+        staged_artifact = None
+        if not publish_candidate:
+            # The ordinary conductor still issues candidate-set.generate.
+            # Validate its command/custody BEFORE staging immutable artifacts.
+            # Staging does not publish a command effect or change StudyRoot.
+            validate_platform_command(body, command_principal, "osb", datetime.now(UTC))
+
+            def stage(tx):
+                published = tx.find_by_command_id(body["commandId"]) or tx.find_by_idempotency_key(
+                    body["targetCapability"], body["action"], body["idempotencyKey"],
+                )
+                if published:
+                    if published["commandIntentHashValue"] != body["commandIntentHash"]["value"] \
+                            or published.get("publicationMode") != "signed" \
+                            or not published.get("signedReceiptEnvelope"):
+                        raise PlatformCommandError("COMMAND_IDEMPOTENCY_CONFLICT", "Command identity is already owned.")
+                    return None  # The signed processor returns the immutable receipt.
+                prepared = tx.find_preparation_by_command_id(body["commandId"]) or tx.find_preparation_by_idempotency_key(
+                    body["targetCapability"], body["action"], body["idempotencyKey"],
+                )
+                if prepared:
+                    if prepared["commandIntentHashValue"] != body["commandIntentHash"]["value"]:
+                        raise PlatformCommandError("COMMAND_IDEMPOTENCY_CONFLICT", "Preparation owns different intent.")
+                    artifact = prepared.get("effect", {}).get("effectPayload", {}).get("candidateSetArtifact")
+                    if not isinstance(artifact, dict):
+                        raise PlatformCommandError("SIGNED_PREPARATION_INVALID", "Prepared candidate reference is missing.", 409)
+                    return artifact
+                return handler(tx)["effectPayload"]["candidateSetArtifact"]
+
+            staged_artifact = platform_command_store.serializable(body, stage)
+        # Both fresh generation and explicit recovery use read-only preparation
+        # and a final, transactional re-read after signing. An unsigned staging
+        # result is never offered to Command Center as completion.
+        result = execute_signed_platform_command(
+            body, command_principal, "osb", "osb.package", platform_command_store,
+            _SignedCandidatePublicationHandler(lambda: handler(None, staged_artifact)),
+            publisher,
         )
         return {"ok": True, "data": result}
     except (PlatformCommandError, OsbCandidateSetError) as error:
@@ -729,7 +831,7 @@ def execute_mapping_decision_command(body: dict[str, Any], request: Request) -> 
         }
 
     try:
-        result = execute_platform_command(
+        result = execute_osb_atomic_signed_command(
             body,
             PlatformCommandPrincipalV1(
                 tenant_id=principal.tenant_id, study_ids=tuple(sorted(principal.study_ids)),
@@ -846,7 +948,7 @@ def execute_specialist_review_command(body: dict[str, Any]) -> dict[str, Any]:
         }
 
     try:
-        result = execute_platform_command(
+        result = execute_osb_atomic_signed_command(
             body,
             PlatformCommandPrincipalV1(
                 tenant_id=principal.tenant_id, study_ids=tuple(sorted(principal.study_ids)),
@@ -930,7 +1032,7 @@ def execute_native_package_v2_command(body: dict[str, Any]) -> dict[str, Any]:
         }
 
     try:
-        result = execute_platform_command(
+        result = execute_osb_atomic_signed_command(
             body,
             PlatformCommandPrincipalV1(
                 tenant_id=principal.tenant_id, study_ids=tuple(sorted(principal.study_ids)),

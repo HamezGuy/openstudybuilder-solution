@@ -11,12 +11,14 @@ from common.telemetry import trace_calls
 def acquire_write_lock_study_value(uid: str) -> None:
     """
     Acquires exclusive lock on (Study) root object of given uid.
+    Set before removing: removing an absent property alone need not take a lock.
     :param uid:
     :return:
     """
     db.cypher_query(
         """
         MATCH (sr:StudyRoot {uid: $uid})
+        SET sr.__WRITE_LOCK__ = true
         REMOVE sr.__WRITE_LOCK__
         RETURN true
         """,

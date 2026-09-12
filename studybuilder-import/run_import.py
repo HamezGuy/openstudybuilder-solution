@@ -1,3 +1,5 @@
+from os import environ
+
 from importers.run_import_activities import Activities
 from importers.run_import_complexity_burdens import ComplexityBurdens
 from importers.run_import_compounds import Compounds
@@ -18,6 +20,9 @@ from importers.utils.metrics import Metrics
 
 
 def main():
+    include_dummy_studies = environ.get("INCLUDE_DUMMY_STUDIES", "true").strip().lower()
+    if include_dummy_studies not in {"true", "false"}:
+        raise ValueError("INCLUDE_DUMMY_STUDIES must be true or false")
     metr = Metrics()
 
     # Migrate the libraries (SNOMED etc)
@@ -66,17 +71,17 @@ def main():
     crfs = Crfs(metrics_inst=metr)
     crfs.run()
 
-    # Import mock data
-    mockdata = Mockdata(metrics_inst=metr)
-    mockdata.run()
+    # Reference-only database builds must not recreate studies through any of
+    # the mock import paths. Standalone imports retain their previous default.
+    if include_dummy_studies == "true":
+        mockdata = Mockdata(metrics_inst=metr)
+        mockdata.run()
 
-    # Import mock data from json
-    mockdatajson = MockdataJson(metrics_inst=metr)
-    mockdatajson.run()
+        mockdatajson = MockdataJson(metrics_inst=metr)
+        mockdatajson.run()
 
-    # Import E2E specific data from json
-    mockdatae2e = MockdataJsonE2E(metrics_inst=metr)
-    mockdatae2e.run()
+        mockdatae2e = MockdataJsonE2E(metrics_inst=metr)
+        mockdatae2e.run()
 
     # Import response codelists
     response_codelists = ResponseCodelists(metrics_inst=metr)

@@ -8,6 +8,12 @@ from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
 from neomodel import db
+from clinical_mdr_api.services.integrations.study_metadata_mapping import apply_metadata_selections
+from clinical_mdr_api.services.integrations.native_capture_mapping import apply_native_capture_selections
+from clinical_mdr_api.services.integrations.native_capture_projection import CAPTURE_READBACK_SCHEMA
+from clinical_mdr_api.services.integrations.osb_candidate_request_versions import (
+    SELECTED_CAPTURE_REQUEST_CONTRACT_VERSIONS,
+)
 
 from clinical_mdr_api.generated.platform_contracts.hash_signing_v1 import (
     canonical_json,
@@ -19,6 +25,7 @@ from clinical_mdr_api.generated.platform_contracts.hash_signing_v1 import (
 from clinical_mdr_api.services.integrations.candidate_set import (
     CANDIDATE_SET_MEDIA_TYPE,
     OsbCandidateSetError,
+    active_osb_binding,
     assert_candidate_set_current,
 )
 from clinical_mdr_api.services.integrations.osb_family_map import (
@@ -112,6 +119,28 @@ def store_mapping_decision_bytes(
             "contentHash": expected_hash, "byteSize": len(bytes_value)}
 
 
+def native_readback_envelope_v1(observed: dict[str, Any]) -> dict[str, Any]:
+    """Hash an unchanged native observation under its explicit read-back profile."""
+    metadata = observed.get("resourceFamily") == "study_metadata"
+    identity_fields = ("resourceFamily", "resourceType", "uid", "version")
+    fields = {*identity_fields, "label"}
+    if metadata:
+        fields.update(("metadataPath", "metadataValue"))
+        identity_fields += ("metadataPath",)
+    if set(observed) != fields or any(not isinstance(observed.get(field), str) or not observed[field]
+                                      for field in identity_fields) \
+            or not isinstance(observed.get("label"), str) \
+            or (metadata and (observed["resourceType"] != "StudyMetadata" or observed["label"] != observed["metadataPath"])):
+        raise OsbCandidateSetError("OSB_NATIVE_READBACK_PROFILE_INVALID", "Native read-back profile or identity differs.", 422)
+    schema = "OsbStudyMetadataReadBackV1@1.0.0" if metadata else "OsbNativeTargetReadBackV1@1.0.0"
+    return {
+        "normalizedReadBack": observed,
+        "normalizedReadBackHash": canonical_json_hash_ref(observed, schema_version=schema),
+        "postTargetVersion": observed["version"],
+        "nativeTargetIdentity": {field: observed[field] for field in identity_fields},
+    }
+
+
 def _read_native_target(family: str, selected: dict[str, Any]) -> dict[str, Any]:
     offered = _record(selected, "OSB_NATIVE_TARGET_UNREADABLE")
     uid = offered.get("uid")
@@ -157,76 +186,6 @@ def _read_native_target(family: str, selected: dict[str, Any]) -> dict[str, Any]
         "version": str(rows[0][1]),
         "label": str(rows[0][2] or uid),
         "resourceType": resource_type,
-        "resourceFamily": canonical,
-    }
-
-
-def _create_native_library_target(
-    family: str, *, uid: str, version: str, name: str,
-) -> dict[str, Any]:
-    canonical = canonicalize_family(family)
-    model = NATIVE_READ_MODELS.get(canonical)
-    if not model or model[1] is None:
-        raise OsbCandidateSetError(
-            "OSB_NATIVE_CREATE_UNSUPPORTED",
-            f"Resource family {family} cannot be created as a native library object.",
-            422,
-        )
-    root_label, value_label = model
-    rows, _ = db.cypher_query(
-        f"""MERGE (root:{root_label} {{uid: $uid}})
-            ON CREATE SET root.platform_created = true
-            MERGE (root)-[version:HAS_VERSION {{version: $version}}]->(value:{value_label})
-            ON CREATE SET value.name = $name, version.status = 'Final',
-              value.platform_created = true
-            RETURN root.uid, version.version, value.name""",
-        {"uid": uid, "version": version, "name": name},
-    )
-    if not rows or str(rows[0][0]) != uid:
-        raise OsbCandidateSetError(
-            "OSB_NATIVE_CREATE_UNREADABLE",
-            f"Native create of {family} {uid} did not persist a readable identity.",
-            422,
-        )
-    return {
-        "uid": str(rows[0][0]),
-        "version": str(rows[0][1]),
-        "label": str(rows[0][2] or name),
-        "resourceType": str(value_label).removesuffix("Value") or canonical,
-        "resourceFamily": canonical,
-    }
-
-
-def _create_unversioned_native_target(
-    family: str, *, uid: str, name: str,
-) -> dict[str, Any]:
-    canonical = canonicalize_family(family)
-    model = NATIVE_READ_MODELS.get(canonical)
-    if not model or model[1] is not None:
-        raise OsbCandidateSetError(
-            "OSB_NATIVE_CREATE_UNSUPPORTED",
-            f"Resource family {family} is not an unversioned native create.",
-            422,
-        )
-    root_label, _ = model
-    rows, _ = db.cypher_query(
-        f"""MERGE (root:{root_label} {{name: $name}})
-            ON CREATE SET root.platform_created = true, root.uid = $uid,
-              root.context = 'platform-mapping'
-            RETURN coalesce(root.uid, root.name), '0.1', coalesce(root.name, root.uid)""",
-        {"uid": uid, "name": name},
-    )
-    if not rows:
-        raise OsbCandidateSetError(
-            "OSB_NATIVE_CREATE_UNREADABLE",
-            f"Native create of {family} {name} did not persist.",
-            422,
-        )
-    return {
-        "uid": str(rows[0][0]),
-        "version": str(rows[0][1]),
-        "label": str(rows[0][2] or name),
-        "resourceType": root_label,
         "resourceFamily": canonical,
     }
 
@@ -306,11 +265,7 @@ def apply_mapping_decision(
         raise OsbCandidateSetError("OSB_MAPPING_DECISION_CONTEXT_MISMATCH", "Decision mapping context differs.", 422)
     assert_candidate_set_current(
         candidate_set,
-        binding={
-            "bindingId": str(_record(candidate_set.get("osbStudyIdentity"), "OSB_CANDIDATE_SET_IDENTITY_REQUIRED").get("bindingId") or ""),
-            "nativeIdentity": native_study_id,
-            "nativeVersion": native_version,
-        },
+        binding=active_osb_binding(tenant_id, platform_study_id),
         osb_openapi_hash=osb_openapi_hash,
     )
     db.cypher_query(
@@ -343,6 +298,7 @@ def apply_mapping_decision(
     intents = {_key(value): value for value in intent_values}
     selections = [_record(item, "OSB_MAPPING_SELECTION_INVALID") for item in _list(statement.get("selections"), "OSB_MAPPING_SELECTIONS_REQUIRED")]
     if len(records) != len(record_values) or len(intents) != len(intent_values) \
+            or set(records) != set(intents) \
             or len(selections) != len(records) or {_key(value) for value in selections} != set(records):
         raise OsbCandidateSetError("OSB_MAPPING_DECISION_COVERAGE_MISMATCH", "Decision must cover every candidate record exactly once.", 422)
     expected_decision_set_hash = canonical_json_hash_ref(
@@ -352,6 +308,12 @@ def apply_mapping_decision(
         raise OsbCandidateSetError("OSB_MAPPING_DECISION_SET_HASH_MISMATCH", "Decision-set hash differs.", 422)
     for selection in selections:
         offered = records[_key(selection)]
+        if canonicalize_family(str(offered["resourceFamily"])) != canonicalize_family(
+            str(intents[_key(selection)].get("resourceFamily"))
+        ):
+            raise OsbCandidateSetError(
+                "OSB_MAPPING_DECISION_SOURCE_FAMILY_MISMATCH", "Candidate and source families differ.", 422,
+            )
         action = str(selection.get("action") or "")
         selected = selection.get("candidateIdentity")
         if action == "select" and not any(
@@ -363,6 +325,16 @@ def apply_mapping_decision(
             raise OsbCandidateSetError("OSB_MAPPING_DECISION_CREATE_NOT_OFFERED", "Create was not offered.", 422)
         if action not in {"select", "create", "reject", "defer"}:
             raise OsbCandidateSetError("OSB_MAPPING_DECISION_ACTION_INVALID", "Unsupported decision action.", 422)
+    capture_observations = apply_native_capture_selections([
+        {"intent": intents[_key(selection)], "candidate": records[_key(selection)], "selection": selection}
+        for selection in selections
+    ], tenant_id=tenant_id, platform_study_id=platform_study_id, native_study_id=native_study_id,
+        observe_selected=candidate_request.get("contractVersion") in SELECTED_CAPTURE_REQUEST_CONTRACT_VERSIONS)
+    metadata_observations = apply_metadata_selections([
+        {"intent": intents[_key(selection)], "candidate": records[_key(selection)]}
+        for selection in selections
+        if records[_key(selection)]["resourceFamily"] == "study_metadata" and selection["action"] == "create"
+    ], native_study_id, context=candidate_set.get("mappingContext"))
     evidence_records: list[dict[str, Any]] = []
     managed_keys: list[str] = []
     operation_time = datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
@@ -387,41 +359,34 @@ def apply_mapping_decision(
             "rationale": selection["rationale"], "decisionId": statement["decisionId"],
         }
         target_hash = canonical_json_hash_ref(target_payload, schema_version="OsbManagedStudyConceptV1@1.0.0")
-        if action == "select":
+        if key in capture_observations:
+            observed_payload = capture_observations[key]
+            observed_hash = canonical_json_hash_ref(observed_payload, schema_version=CAPTURE_READBACK_SCHEMA)
+            post_version = observed_payload["version"]
+            native_target_identity = {field: observed_payload[field]
+                                      for field in ("resourceFamily", "resourceType", "uid", "version")}
+            disposition = "native"
+        elif action == "create" and candidate["resourceFamily"] == "study_metadata":
+            observed_payload = metadata_observations[key]
+            readback_envelope = native_readback_envelope_v1(observed_payload)
+            observed_hash = readback_envelope["normalizedReadBackHash"]
+            post_version = readback_envelope["postTargetVersion"]
+            native_target_identity = readback_envelope["nativeTargetIdentity"]
+            disposition = "native"
+        elif action == "select":
             observed_payload = _read_native_target(str(candidate["resourceFamily"]), _record(selected, "OSB_NATIVE_TARGET_UNREADABLE"))
             observed_hash = canonical_json_hash_ref(observed_payload, schema_version="OsbNativeTargetReadBackV1@1.0.0")
             post_version = observed_payload["version"]
-            native_target_identity = observed_payload["uid"]
+            native_target_identity = {key: observed_payload[key] for key in ("resourceFamily", "resourceType", "uid", "version")}
             disposition = "native"
         elif action == "create":
             family = canonicalize_family(str(candidate["resourceFamily"]))
-            create_name = str(
-                _record(source_intent.get("source") or {}, "OSB_SOURCE_INTENT_REQUIRED").get("label")
-                or managed_key
-            )[:512]
-            create_uid = str(uuid5(NAMESPACE_URL, f"accuratrials:osb-native-create:v1:{managed_key}"))
-            if family in NATIVE_CREATE_FAMILIES:
-                created_identity = _create_native_library_target(
-                    family, uid=create_uid, version="0.1", name=create_name,
+            if family in NATIVE_CREATE_FAMILIES or family == "odm_aliases":
+                raise OsbCandidateSetError(
+                    "OSB_NATIVE_SOURCE_CREATE_UNSUPPORTED",
+                    f"Native {family} creation requires a source-backed domain-service executor.",
+                    422,
                 )
-                observed_payload = _read_native_target(family, created_identity)
-                observed_hash = canonical_json_hash_ref(
-                    observed_payload, schema_version="OsbNativeTargetReadBackV1@1.0.0",
-                )
-                post_version = observed_payload["version"]
-                native_target_identity = observed_payload["uid"]
-                disposition = "native"
-            elif family == "odm_aliases":
-                created_identity = _create_unversioned_native_target(
-                    family, uid=create_uid, name=create_name,
-                )
-                observed_payload = _read_native_target(family, created_identity)
-                observed_hash = canonical_json_hash_ref(
-                    observed_payload, schema_version="OsbNativeTargetReadBackV1@1.0.0",
-                )
-                post_version = observed_payload["version"]
-                native_target_identity = observed_payload["uid"]
-                disposition = "native"
             else:
                 created, _ = db.cypher_query(
                     """MATCH (study:StudyRoot {uid: $study_uid})
@@ -443,7 +408,9 @@ def apply_mapping_decision(
                 if not created or str(created[0][0]) != canonical_json(target_payload) or str(created[0][1]) != target_hash["value"]:
                     raise OsbCandidateSetError("OSB_NATIVE_OPERATION_CONFLICT", f"Managed concept {key} differs.")
                 observed_payload, observed_hash, post_version = target_payload, target_hash, str(created[0][2])
-                native_target_identity = managed_key
+                native_target_identity = {"resourceType": "PlatformManagedStudyConcept",
+                    "resourceFamily": target_payload["resourceFamily"], "managedKey": target_payload["managedKey"],
+                    "nativeStudyId": target_payload["nativeStudyId"], "version": post_version}
                 managed_keys.append(managed_key)
                 disposition = "governed_extension"
                 if family in BLOCKER_ONLY_FAMILIES:
@@ -459,7 +426,8 @@ def apply_mapping_decision(
             "operationId": operation_id, "idempotencyKey": managed_key,
             "effectId": operation_id,
             "adapterVersion": (
-                f"native-{executor_kind}/1.0.0" if disposition == "native"
+                "native-capture/1.1.0" if key in capture_observations
+                else f"native-{executor_kind}/1.0.0" if disposition == "native"
                 else f"platform-managed-{executor_kind}/1.0.0"
             ),
             "executorVersion": "osb-prototype/1.0.0", "executorKind": executor_kind,

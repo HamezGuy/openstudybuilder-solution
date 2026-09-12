@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any, Literal
 
 from pydantic import ConfigDict, Field, field_validator
 
@@ -138,9 +138,53 @@ class StudyDiseaseMilestoneOGMVer(StudyDiseaseMilestoneOGM):
     ] = None
 
 
-class StudyDiseaseMilestone(StudyDiseaseMilestoneCreateInput):
+class StudyDiseaseMilestoneTermValue(BaseModel):
+    """An observed native value and its actual approved history relationship."""
+
+    value_identity: str
+    version: str
+    status: Literal["Final", "Retired"]
+    start_date: datetime
+    end_date: datetime | None = None
+    author_id: str | None = None
+    change_description: str | None = None
+    value: dict[str, Any]
+
+
+class StudyDiseaseMilestoneTermSource(BaseModel):
+    """Dated native history, not an assertion of a selected CT package/version."""
+
+    state: Literal["resolved", "unresolved"]
+    mode: Literal["study-snapshot-as-of"]
+    study_uid: str
+    study_value_version: str
+    study_value_identity: str
+    as_of: datetime
+    selection_identity: str
+    context_identity: str
+    term_uid: str
+    codelist_uid: str
+    name: StudyDiseaseMilestoneTermValue | None = None
+    attributes: StudyDiseaseMilestoneTermValue | None = None
+    issues: list[str] = Field(default_factory=list)
+    native_selection: dict[str, Any]
+
+
+class StudyDiseaseMilestone(BaseModel):
+    """A native readback, not an authored input to normalize again."""
+
     uid: Annotated[str, Field()]
     study_uid: Annotated[str, Field()]
+    repetition_indicator: Annotated[bool, Field()]
+    order: Annotated[
+        int | None,
+        Field(
+            json_schema_extra={"nullable": True},
+            gt=0,
+            lt=settings.max_int_neo4j,
+            description="The ordering of the selection",
+        ),
+    ] = None
     study_version: Annotated[
         str | None,
         Field(
@@ -149,8 +193,21 @@ class StudyDiseaseMilestone(StudyDiseaseMilestoneCreateInput):
         ),
     ] = None
     disease_milestone_type: Annotated[str, Field()]
-    disease_milestone_type_name: Annotated[str, Field()]
-    disease_milestone_type_definition: Annotated[str, Field()]
+    disease_milestone_type_name: Annotated[
+        str | None, Field(json_schema_extra={"nullable": True})
+    ]
+    disease_milestone_type_definition: Annotated[
+        str | None, Field(json_schema_extra={"nullable": True})
+    ]
+    terminology_source: Annotated[
+        StudyDiseaseMilestoneTermSource | None,
+        Field(
+            description="Exact native term history for a requested study snapshot. "
+            "The study stores term/codelist roots, not a CT version selection. "
+            "Unresolved history leaves the affected text absent.",
+            json_schema_extra={"nullable": True},
+        ),
+    ] = None
     start_date: Annotated[
         datetime, Field(description="Study DiseaseMilestone last modification date")
     ]

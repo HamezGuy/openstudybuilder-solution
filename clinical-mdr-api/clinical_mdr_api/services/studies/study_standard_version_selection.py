@@ -22,6 +22,7 @@ from clinical_mdr_api.services._meta_repository import MetaRepository
 from clinical_mdr_api.services._utils import (
     calculate_diffs,
     calculate_diffs_history,
+    ensure_transaction,
     fill_missing_values_in_base_model_from_reference_base_model,
 )
 from clinical_mdr_api.services.studies.study_activity_selection_base import (
@@ -69,7 +70,7 @@ class StudyStandardVersionService:
         study_standard_version.end_date = standard_version.end_date
         return study_standard_version
 
-    @db.transaction
+    @ensure_transaction(db)
     def get_standard_versions_in_study(
         self,
         study_uid: str,

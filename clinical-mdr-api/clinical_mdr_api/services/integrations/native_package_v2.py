@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
@@ -19,6 +20,12 @@ from clinical_mdr_api.generated.platform_contracts.hash_signing_v1 import (
     sha256_bytes,
 )
 from clinical_mdr_api.services.integrations.candidate_set import OsbCandidateSetError
+from clinical_mdr_api.services.integrations.native_package_state_v2 import (
+    STATE_SCHEMA,
+    load_checkpoint_native_state,
+    require_native_lock,
+    require_source_projection,
+)
 
 CHECKPOINT_MEDIA_TYPE = "application/json"
 PLATFORM_MANIFEST_MEDIA_TYPE = "application/vnd.accuratrials.platform-manifest-v1+json"
@@ -47,6 +54,45 @@ def _list(value: Any, code: str) -> list[Any]:
     if not isinstance(value, list):
         raise OsbCandidateSetError(code, "Expected an array.", 422)
     return value
+
+
+def _approval_schema_version(artifact: dict[str, Any]) -> str:
+    version = artifact.get("payloadContractVersion")
+    payload_hash = _record(artifact.get("payloadHash"), "OSB_PRE_RELEASE_APPROVAL_CONTRACT_VERSION_INVALID")
+    if version not in ("1.0.0", "1.1.0") \
+            or artifact.get("payloadContract") != "accuratrials.cc.PreReleaseApprovalV1" \
+            or payload_hash.get("schemaVersion") != f"PreReleaseApprovalV1@{version}":
+        raise OsbCandidateSetError("OSB_PRE_RELEASE_APPROVAL_CONTRACT_VERSION_INVALID",
+                                   "Approval descriptor and payload hash must name the same supported version.", 422)
+    return f"PreReleaseApprovalV1@{version}"
+
+
+def _assert_approval_readiness(approval: dict[str, Any], schema_version: str) -> None:
+    if approval.get("approval_version") != "PreReleaseApprovalV1":
+        raise OsbCandidateSetError("OSB_PRE_RELEASE_APPROVAL_CONTRACT_VERSION_INVALID",
+                                   "Approval contract differs.", 422)
+    if schema_version == "PreReleaseApprovalV1@1.0.0" and "readiness_basis" not in approval:
+        return
+    code = "OSB_PRE_RELEASE_APPROVAL_READINESS_INVALID"
+    basis = _record(approval.get("readiness_basis"), code)
+    counts = _record(basis.get("counts"), code)
+    gates = {"unaccountedClaims", "evidenceLessClaims", "unresolvedCritical", "unverifiedMappingDecisions"}
+    basis_fields = {"cslStudyId", "ready", "lossless", "counts", "expectedMappingSetHash", "fetchedAt"}
+    try:
+        fetched_at = datetime.fromisoformat(basis["fetchedAt"].replace("Z", "+00:00").replace("z", "+00:00"))
+        valid_time = fetched_at.tzinfo is not None and re.fullmatch(
+            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})",
+            basis["fetchedAt"], re.IGNORECASE) is not None
+    except (KeyError, AttributeError, TypeError, ValueError):
+        valid_time = False
+    if basis.get("ready") is not True or basis.get("lossless") is not True \
+            or not isinstance(basis.get("cslStudyId"), str) or not basis["cslStudyId"].strip() \
+            or not isinstance(basis.get("expectedMappingSetHash"), str) \
+            or not re.fullmatch(r"sha256:[0-9a-f]{64}", basis["expectedMappingSetHash"]) \
+            or not valid_time or type(counts.get("claims")) is not int or not 0 <= counts["claims"] <= 2**53 - 1 \
+            or any(type(counts.get(field)) is not int or counts[field] != 0 for field in gates) \
+            or set(counts) - (gates | {"claims"}) or set(basis) - basis_fields:
+        raise OsbCandidateSetError(code, "Approval must retain its ready, lossless source basis.", 422)
 
 
 def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -134,19 +180,42 @@ def _load_inbound(tenant_id: str, platform_study_id: str, kind: str, payload_has
         {"tenant_id": tenant_id, "platform_study_id": platform_study_id,
          "kind": kind, "payload_hash": payload_hash},
     )
-    if not rows:
+    if len(rows) != 1:
         raise OsbCandidateSetError("OSB_RELEASE_ARTIFACT_NOT_TRANSFERRED", f"Exact {kind} bytes are unavailable.", 404)
-    return _record(json.loads(str(rows[0][0])), "OSB_RELEASE_ARTIFACT_STORED_INVALID")
+    return _parse_canonical(str(rows[0][0]).encode("utf-8"), "OSB_RELEASE_ARTIFACT_STORED_INVALID")
 
 
 def _verify_artifact_ref(
     payload: dict[str, Any], artifact: dict[str, Any], *, kind: str,
-    tenant_id: str, schema_version: str, media_type: str,
+    tenant_id: str, platform_study_id: str, schema_version: str, media_type: str,
 ) -> None:
+    if kind == "pre-release-approval-v1":
+        if schema_version != _approval_schema_version(artifact):
+            raise OsbCandidateSetError("OSB_PRE_RELEASE_APPROVAL_CONTRACT_VERSION_INVALID",
+                                       "Approval verification uses a different contract version.", 422)
+        _assert_approval_readiness(payload, schema_version)
+    identity_fields = {
+        "transformation-checkpoint": ("checkpointId", "checkpointVersionId"),
+        "platform-manifest-v1": ("manifestId", "manifestVersionId"),
+        # CommandCenter's artifact version is derived from the payload hash; the
+        # approval payload contains its record ID, not an artifact version ID.
+        "pre-release-approval-v1": ("approval_id", None),
+        "osb-specialist-review-evidence": ("reviewId", "reviewVersionId"),
+        "osb-native-package-v2": ("packageId", "packageVersionId"),
+    }
+    id_field, version_field = identity_fields[kind]
+    expected_version = payload.get(version_field) if version_field else artifact.get("artifactVersionId")
     if artifact.get("contractVersion") != "ArtifactRefV1@1.0.0" \
-            or artifact.get("kind") != kind or artifact.get("tenantId") != tenant_id:
+            or artifact.get("kind") != kind or artifact.get("tenantId") != tenant_id \
+            or _artifact_scope(payload, kind) != (tenant_id, platform_study_id) \
+            or not payload.get(id_field) or not isinstance(expected_version, str) or not expected_version \
+            or artifact.get("artifactId") != payload[id_field] \
+            or artifact.get("artifactVersionId") != expected_version \
+            or artifact.get("byteSize") != len(canonical_json(payload).encode("utf-8")):
         raise OsbCandidateSetError("OSB_RELEASE_ARTIFACT_REF_INVALID", f"{kind} artifact reference differs.", 422)
-    expected = canonical_json_hash_ref(payload, schema_version=schema_version, media_type=media_type)
+    expected = (raw_bytes_hash_ref(canonical_json(payload).encode("utf-8"), schema_version=schema_version, media_type=media_type)
+                if kind == "osb-native-package-v2" else
+                canonical_json_hash_ref(payload, schema_version=schema_version, media_type=media_type))
     if not hash_refs_equal(expected, artifact.get("payloadHash")):
         raise OsbCandidateSetError("OSB_RELEASE_ARTIFACT_HASH_MISMATCH", f"{kind} payload hash differs.", 422)
     fields = {key: value for key, value in artifact.items() if key not in {"contractVersion", "descriptorHash"}}
@@ -155,38 +224,29 @@ def _verify_artifact_ref(
         raise OsbCandidateSetError("OSB_RELEASE_ARTIFACT_DESCRIPTOR_MISMATCH", f"{kind} descriptor differs.", 422)
 
 
-def _study_state(tenant_id: str, platform_study_id: str, native_study_id: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    roots, _ = db.cypher_query(
-        """MATCH (scope:DomainStudyScope {tenant_id:$tenant_id,status:'active',study_uid:$study_uid})
-           MATCH (study:StudyRoot {uid:$study_uid})
-           OPTIONAL MATCH (study)-[version_rel:LATEST_DRAFT|LATEST|LATEST_LOCKED|LATEST_RELEASED]->(value:StudyValue)
-           RETURN study.uid,type(version_rel),version_rel.version,version_rel.status,
-                  value.study_title,value.study_number,value.study_acronym,value.project_number
-           ORDER BY CASE type(version_rel) WHEN 'LATEST_RELEASED' THEN 0 WHEN 'LATEST_LOCKED' THEN 1
-                    WHEN 'LATEST' THEN 2 WHEN 'LATEST_DRAFT' THEN 3 ELSE 4 END LIMIT 1""",
-        {"tenant_id": tenant_id, "study_uid": native_study_id},
-    )
-    if not roots:
-        raise OsbCandidateSetError("OSB_PACKAGE_NATIVE_STUDY_NOT_FOUND", "Bound OSB study root is unavailable.", 404)
-    row = roots[0]
-    root = {"nativeStudyId": str(row[0]), "relationship": str(row[1] or ""),
-            "nativeVersion": str(row[2] or "unknown"), "nativeStatus": str(row[3] or "draft"),
-            "title": str(row[4] or row[6] or row[5] or row[0]),
-            "studyNumber": str(row[5] or ""), "acronym": str(row[6] or ""),
-            "projectNumber": str(row[7] or "")}
-    rows, _ = db.cypher_query(
-        """MATCH (:StudyRoot {uid:$study_uid})-[:HAS_PLATFORM_MANAGED_CONCEPT]->(concept:PlatformManagedStudyConcept
-             {tenant_id:$tenant_id,platform_study_id:$platform_study_id})
-           RETURN concept.managed_key,concept.resource_family,concept.payload_json,
-                  concept.content_hash,concept.version,concept.fact_id,concept.revision,concept.target_key
-           ORDER BY concept.managed_key""",
-        {"tenant_id": tenant_id, "platform_study_id": platform_study_id, "study_uid": native_study_id},
-    )
-    concepts = [{"managedKey": str(item[0]), "resourceFamily": str(item[1]),
-                 "payload": json.loads(str(item[2])), "contentHash": str(item[3]),
-                 "nativeVersion": str(item[4]), "factId": str(item[5]),
-                 "revision": int(item[6]), "targetKey": str(item[7])} for item in rows]
-    return root, concepts
+def _assert_state_unchanged(state: dict[str, Any], *, tenant_id: str, platform_study_id: str,
+                            checkpoint: dict[str, Any]) -> None:
+    current = load_checkpoint_native_state(tenant_id=tenant_id, platform_study_id=platform_study_id, checkpoint=checkpoint)
+    if not hash_refs_equal(state["stateHash"], current["stateHash"]):
+        raise OsbCandidateSetError("OSB_POST_REVIEW_NATIVE_EDIT", "Native content changed during review/package preparation.", 409)
+
+
+def _package_content(state: dict[str, Any]) -> dict[str, Any]:
+    """Pure assembly; callers must separately enforce review/release gates."""
+    records = state["records"]
+    families = sorted({item["resourceFamily"] for item in records})
+    return {
+        "studyDesign": {"root": state["root"],
+                        "managedConcepts": [item for item in records if item["kind"] == "managed" and item["resourceFamily"] not in CAPTURE_FAMILIES],
+                        "nativeRecords": [item for item in records if item["kind"] == "native" and item["resourceFamily"] not in CAPTURE_FAMILIES]},
+        "captureDesign": {"managedConcepts": [item for item in records if item["kind"] == "managed" and item["resourceFamily"] in CAPTURE_FAMILIES],
+                          "nativeRecords": [item for item in records if item["kind"] == "native" and item["resourceFamily"] in CAPTURE_FAMILIES]},
+        "contentIndex": state["contentIndex"], "contentIndexHash": state["contentIndexHash"],
+        "terminologyPins": families,
+        "capabilityManifest": {"executionMode": "checkpoint-native-evidence/1.0.0",
+                               "resourceFamilies": families,
+                               "requestedObjectFamilies": state["request"].get("requestedObjectFamilies") or []},
+    }
 
 
 def _checkpoint_ref(input_payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
@@ -203,7 +263,7 @@ def record_specialist_review(
     checkpoint_artifact, checkpoint_hash = _checkpoint_ref(input_payload)
     checkpoint = _load_inbound(tenant_id, platform_study_id, "transformation-checkpoint", checkpoint_hash)
     _verify_artifact_ref(checkpoint, checkpoint_artifact, kind="transformation-checkpoint",
-                         tenant_id=tenant_id, schema_version="TransformationCheckpointV1@1.0.0",
+                         tenant_id=tenant_id, platform_study_id=platform_study_id, schema_version="TransformationCheckpointV1@1.0.0",
                          media_type=CHECKPOINT_MEDIA_TYPE)
     blockers = _list(checkpoint.get("blockers"), "OSB_TRANSFORMATION_CHECKPOINT_BLOCKERS_REQUIRED")
     conservation = _record(checkpoint.get("conservation"), "OSB_TRANSFORMATION_CHECKPOINT_CENSUS_REQUIRED")
@@ -216,21 +276,26 @@ def record_specialist_review(
         raise OsbCandidateSetError("OSB_TRANSFORMATION_CHECKPOINT_RELEASE_BLOCKED", "Checkpoint is not zero-loss.", 409)
     authority = _record(checkpoint.get("osbAuthority"), "OSB_TRANSFORMATION_AUTHORITY_REQUIRED")
     managed = _record(authority.get("managedTargetCheckpoint"), "OSB_MANAGED_TARGET_CHECKPOINT_REQUIRED")
-    native = _record(checkpoint.get("osbStudyIdentity"), "OSB_CHECKPOINT_NATIVE_IDENTITY_REQUIRED")
-    native_study_id = str(native.get("nativeIdentity") or "")
-    root, concepts = _study_state(tenant_id, platform_study_id, native_study_id)
-    if sorted(item["managedKey"] for item in concepts) != sorted(_list(managed.get("managedKeys"), "OSB_MANAGED_KEYS_REQUIRED")):
-        raise OsbCandidateSetError("OSB_POST_CHECKPOINT_NATIVE_EDIT", "Managed OSB target membership changed after checkpoint.", 409)
+    state = load_checkpoint_native_state(tenant_id=tenant_id, platform_study_id=platform_study_id, checkpoint=checkpoint)
+    require_source_projection(state)
+    lock = require_native_lock(state)
+    root, records = state["root"], state["records"]
+    native_study_id = root["nativeStudyId"]
     expected_authority = canonical_json_hash_ref(managed, schema_version="OsbManagedTargetCheckpointV1@1.0.0")
     if not hash_refs_equal(expected_authority, authority.get("managedTargetCheckpointHash")):
         raise OsbCandidateSetError("OSB_CHECKPOINT_AUTHORITY_HASH_MISMATCH", "Managed checkpoint hash differs.", 422)
+    reviewed_fields = {
+        "specialistSubject": actor,
+        "displayedStatement": str(input_payload.get("displayedStatement") or "I reviewed the exact OSB study and capture configuration."),
+        "meaning": str(input_payload.get("meaning") or "approved for prototype package generation"),
+        "reason": str(input_payload.get("reason") or "prototype specialist review completed"),
+    }
     review_seed = canonical_json_hash_ref({"checkpointHash": checkpoint_artifact["payloadHash"],
-                                           "authorityHash": expected_authority, "actor": actor,
-                                           "meaning": input_payload.get("meaning"),
-                                           "reason": input_payload.get("reason")},
+                                           "authorityHash": expected_authority, "nativeStateHash": state["stateHash"],
+                                           **reviewed_fields},
                                           schema_version="OsbSpecialistReviewSeedV1@1.0.0")
     review_id = str(uuid5(NAMESPACE_URL, f"accuratrials:osb-specialist-review:v1:{review_seed['value']}"))
-    review_version_id = str(uuid5(NAMESPACE_URL, f"{review_id}:{expected_authority['value']}"))
+    review_version_id = str(uuid5(NAMESPACE_URL, f"{review_id}:{state['stateHash']['value']}"))
     reviewed_at = datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
     review = {"contractVersion": "OsbSpecialistReviewEvidenceV1@1.0.0",
               "reviewId": review_id, "reviewVersionId": review_version_id,
@@ -239,10 +304,9 @@ def record_specialist_review(
                                    "nativeVersion": root["nativeVersion"]},
               "transformationCheckpointHash": checkpoint_artifact["payloadHash"],
               "osbAuthorityHash": expected_authority,
-              "managedConceptCount": len(concepts), "specialistSubject": actor,
-              "displayedStatement": str(input_payload.get("displayedStatement") or "I reviewed the exact OSB study and capture configuration."),
-              "meaning": str(input_payload.get("meaning") or "approved for prototype package generation"),
-              "reason": str(input_payload.get("reason") or "prototype specialist review completed"),
+              "managedConceptCount": sum(item["kind"] == "managed" for item in records),
+              "nativeObjectCount": sum(item["kind"] == "native" for item in records),
+              "nativeStateHash": state["stateHash"], "nativeLockEvidence": lock, **reviewed_fields,
               "lockState": "checkpoint-locked", "productionEligible": False,
               "reviewedAt": reviewed_at}
     review_hash = canonical_json_hash_ref(review, schema_version="OsbSpecialistReviewEvidenceV1@1.0.0",
@@ -259,13 +323,24 @@ def record_specialist_review(
                               "payloadContractVersion": "1.0.0", "purpose": "osb-specialist-review-lock",
                               "createdAt": reviewed_at})
     prior, _ = db.cypher_query(
-        "MATCH (review:OsbSpecialistReviewEvidenceV1 {tenant_id:$tenant_id,payload_hash:$payload_hash}) "
+        "MATCH (review:OsbSpecialistReviewEvidenceV1 {tenant_id:$tenant_id,platform_study_id:$platform_study_id,review_version_id:$version_id}) "
         "RETURN review.payload_json,review.artifact_ref_json",
-        {"tenant_id": tenant_id, "payload_hash": review_hash["value"]},
+        {"tenant_id": tenant_id, "platform_study_id": platform_study_id, "version_id": review_version_id},
     )
+    _assert_state_unchanged(state, tenant_id=tenant_id, platform_study_id=platform_study_id, checkpoint=checkpoint)
     if prior:
-        return {"payload": json.loads(str(prior[0][0])), "payloadHash": review_hash,
-                "artifactRef": json.loads(str(prior[0][1])), "replay": True}
+        if len(prior) != 1:
+            raise OsbCandidateSetError("OSB_SPECIALIST_REVIEW_REPLAY_CONFLICT", "Review identity is ambiguous.", 409)
+        retained = _parse_canonical(str(prior[0][0]).encode("utf-8"), "OSB_SPECIALIST_REVIEW_STORED_INVALID")
+        retained_artifact = _parse_canonical(str(prior[0][1]).encode("utf-8"), "OSB_SPECIALIST_REVIEW_STORED_INVALID")
+        _verify_artifact_ref(retained, retained_artifact, kind="osb-specialist-review-evidence",
+                             tenant_id=tenant_id, platform_study_id=platform_study_id,
+                             schema_version="OsbSpecialistReviewEvidenceV1@1.0.0", media_type=SPECIALIST_REVIEW_MEDIA_TYPE)
+        if canonical_json({key: value for key, value in retained.items() if key != "reviewedAt"}) != \
+                canonical_json({key: value for key, value in review.items() if key != "reviewedAt"}):
+            raise OsbCandidateSetError("OSB_SPECIALIST_REVIEW_REPLAY_CONFLICT", "Retained review differs.", 409)
+        return {"payload": retained, "payloadHash": retained_artifact["payloadHash"],
+                "artifactRef": retained_artifact, "replay": True}
     db.cypher_query(
         """CREATE (review:OsbSpecialistReviewEvidenceV1 {review_id:$review_id,
              review_version_id:$review_version_id,tenant_id:$tenant_id,
@@ -285,23 +360,9 @@ def _load_review(tenant_id: str, platform_study_id: str, payload_hash: str) -> d
            RETURN review.payload_json""",
         {"tenant_id": tenant_id, "platform_study_id": platform_study_id, "payload_hash": payload_hash},
     )
-    if not rows:
+    if len(rows) != 1:
         raise OsbCandidateSetError("OSB_SPECIALIST_REVIEW_NOT_FOUND", "Exact specialist review is unavailable.", 404)
-    return _record(json.loads(str(rows[0][0])), "OSB_SPECIALIST_REVIEW_STORED_INVALID")
-
-
-def _candidate_request(tenant_id: str, platform_study_id: str, semantic_snapshot_hash: dict[str, Any]) -> dict[str, Any]:
-    rows, _ = db.cypher_query(
-        """MATCH (request:OsbCandidateRequestV1 {tenant_id:$tenant_id,platform_study_id:$platform_study_id})
-           RETURN request.payload_json ORDER BY request.created_at DESC""",
-        {"tenant_id": tenant_id, "platform_study_id": platform_study_id},
-    )
-    for row in rows:
-        request = _record(json.loads(str(row[0])), "OSB_CANDIDATE_REQUEST_STORED_INVALID")
-        snapshot = _record(request.get("semanticSnapshot"), "OSB_CANDIDATE_REQUEST_SNAPSHOT_REQUIRED")
-        if hash_refs_equal(snapshot.get("payloadHash"), semantic_snapshot_hash):
-            return request
-    raise OsbCandidateSetError("OSB_PACKAGE_CANDIDATE_REQUEST_NOT_FOUND", "Candidate request for checkpoint is unavailable.", 404)
+    return _parse_canonical(str(rows[0][0]).encode("utf-8"), "OSB_SPECIALIST_REVIEW_STORED_INVALID")
 
 
 def generate_native_package_v2(
@@ -319,13 +380,14 @@ def generate_native_package_v2(
     approval = _load_inbound(tenant_id, platform_study_id, "pre-release-approval-v1", approval_hash)
     review = _load_review(tenant_id, platform_study_id, review_hash)
     _verify_artifact_ref(checkpoint, checkpoint_artifact, kind="transformation-checkpoint", tenant_id=tenant_id,
-                         schema_version="TransformationCheckpointV1@1.0.0", media_type=CHECKPOINT_MEDIA_TYPE)
+                         platform_study_id=platform_study_id, schema_version="TransformationCheckpointV1@1.0.0", media_type=CHECKPOINT_MEDIA_TYPE)
     _verify_artifact_ref(manifest, manifest_artifact, kind="platform-manifest-v1", tenant_id=tenant_id,
-                         schema_version="PlatformManifestV1@1.0.0", media_type=PLATFORM_MANIFEST_MEDIA_TYPE)
+                         platform_study_id=platform_study_id, schema_version="PlatformManifestV1@1.0.0", media_type=PLATFORM_MANIFEST_MEDIA_TYPE)
     _verify_artifact_ref(approval, approval_artifact, kind="pre-release-approval-v1", tenant_id=tenant_id,
-                         schema_version="PreReleaseApprovalV1@1.0.0", media_type=PRE_RELEASE_APPROVAL_MEDIA_TYPE)
+                         platform_study_id=platform_study_id, schema_version=_approval_schema_version(approval_artifact),
+                         media_type=PRE_RELEASE_APPROVAL_MEDIA_TYPE)
     _verify_artifact_ref(review, review_artifact, kind="osb-specialist-review-evidence", tenant_id=tenant_id,
-                         schema_version="OsbSpecialistReviewEvidenceV1@1.0.0", media_type=SPECIALIST_REVIEW_MEDIA_TYPE)
+                         platform_study_id=platform_study_id, schema_version="OsbSpecialistReviewEvidenceV1@1.0.0", media_type=SPECIALIST_REVIEW_MEDIA_TYPE)
     authority = _record(checkpoint.get("osbAuthority"), "OSB_TRANSFORMATION_AUTHORITY_REQUIRED")
     authority_hash = _record(authority.get("managedTargetCheckpointHash"), "OSB_TRANSFORMATION_AUTHORITY_HASH_REQUIRED")
     if approval.get("transformation_checkpoint_hash") != checkpoint_hash \
@@ -346,25 +408,24 @@ def generate_native_package_v2(
         not in {"native", "governed_extension"} for row in census_rows
     ):
         raise OsbCandidateSetError("OSB_PACKAGE_ZERO_LOSS_REQUIRED", "Package release requires zero loss.", 409)
-    native = _record(checkpoint.get("osbStudyIdentity"), "OSB_CHECKPOINT_NATIVE_IDENTITY_REQUIRED")
-    native_study_id = str(native.get("nativeIdentity") or "")
-    root, concepts = _study_state(tenant_id, platform_study_id, native_study_id)
-    managed = _record(authority.get("managedTargetCheckpoint"), "OSB_MANAGED_TARGET_CHECKPOINT_REQUIRED")
-    if sorted(item["managedKey"] for item in concepts) != sorted(_list(managed.get("managedKeys"), "OSB_MANAGED_KEYS_REQUIRED")):
-        raise OsbCandidateSetError("OSB_POST_REVIEW_NATIVE_EDIT", "Managed target membership changed after specialist review.", 409)
-    request = _candidate_request(tenant_id, platform_study_id,
-                                 _record(checkpoint.get("semanticSnapshotHash"), "OSB_SEMANTIC_SNAPSHOT_HASH_REQUIRED"))
+    state = load_checkpoint_native_state(tenant_id=tenant_id, platform_study_id=platform_study_id, checkpoint=checkpoint)
+    require_source_projection(state)
+    lock = require_native_lock(state)
+    if not hash_refs_equal(review.get("nativeStateHash"), state["stateHash"]) \
+            or review.get("nativeLockEvidence") != lock \
+            or review.get("osbStudyIdentity") != checkpoint.get("osbStudyIdentity"):
+        raise OsbCandidateSetError("OSB_POST_REVIEW_NATIVE_EDIT", "Specialist review does not bind the current native content/lock.", 409)
+    root, request = state["root"], state["request"]
+    native_study_id = root["nativeStudyId"]
     source_fact = _record(request.get("sourceFactPackage"), "OSB_SOURCE_FACT_PACKAGE_REQUIRED")
-    study_design = [item for item in concepts if item["resourceFamily"] not in CAPTURE_FAMILIES]
-    capture_design = [item for item in concepts if item["resourceFamily"] in CAPTURE_FAMILIES]
-    content_index = [{"managedKey": item["managedKey"], "contentHash": item["contentHash"],
-                      "resourceFamily": item["resourceFamily"]} for item in concepts]
-    content_index_hash = canonical_json_hash_ref(content_index, schema_version="OsbPackageContentIndexV1@1.0.0")
+    content = _package_content(state)
+    content_index_hash = state["contentIndexHash"]
     seed = canonical_json_hash_ref({"checkpoint": checkpoint_artifact["payloadHash"],
                                     "manifest": manifest_artifact["payloadHash"],
                                     "approval": approval_artifact["payloadHash"],
                                     "review": review_artifact["payloadHash"],
-                                    "contentIndex": content_index_hash},
+                                    "contentIndex": content_index_hash, "nativeStateHash": state["stateHash"],
+                                    "actor": actor},
                                    schema_version="OsbNativePackageV2Seed@1.0.0")
     package_id = str(uuid5(NAMESPACE_URL, f"accuratrials:osb-native-package-v2:{seed['value']}"))
     package_version_id = str(uuid5(NAMESPACE_URL, f"{package_id}:{content_index_hash['value']}"))
@@ -383,16 +444,13 @@ def generate_native_package_v2(
                "preReleaseApproval": approval_artifact,
                "platformManifest": manifest_artifact,
                "profiles": {"projectionRuleset": request.get("projectionRuleset"),
-                            "exclusionPolicy": checkpoint.get("exclusionPolicy")},
-               "terminologyPins": sorted({str(item["resourceFamily"]) for item in concepts}),
-               "capabilityManifest": {"executionMode": "platform-managed-concept/1.0.0",
-                                      "resourceFamilies": sorted({str(item["resourceFamily"]) for item in concepts}),
-                                      "requestedObjectFamilies": request.get("requestedObjectFamilies") or []},
-               "studyDesign": {"root": root, "managedConcepts": study_design},
-               "captureDesign": {"managedConcepts": capture_design},
-               "contentIndex": content_index, "contentIndexHash": content_index_hash,
+                            "exclusionPolicy": checkpoint.get("exclusionPolicy"), "nativeState": STATE_SCHEMA},
+               **content,
                "conservation": census,
                "provenancePins": {"candidateRequestId": request.get("requestId"),
+                                  "candidateRequestHash": state["requestHash"],
+                                  "candidateSetHash": state["candidateSetHash"], "decisionHash": state["decisionHash"],
+                                  "nativeStateHash": state["stateHash"],
                                   "sourceFactPackageHash": source_fact.get("payloadHash"),
                                   "nativeEvidenceSetHash": checkpoint.get("nativeEvidenceSetHash")},
                "productionEligible": False, "createdAt": created_at, "createdBy": actor}
@@ -410,14 +468,28 @@ def generate_native_package_v2(
                               "payloadContractVersion": "2.0.0", "purpose": "edc-deployment",
                               "createdAt": created_at})
     prior, _ = db.cypher_query(
-        "MATCH (package:OsbNativePackageV2 {tenant_id:$tenant_id,payload_hash:$payload_hash}) "
-        "RETURN package.payload_json,package.artifact_ref_json,package.package_version_id",
-        {"tenant_id": tenant_id, "payload_hash": package_hash["value"]},
+        "MATCH (package:OsbNativePackageV2 {tenant_id:$tenant_id,platform_study_id:$platform_study_id,package_version_id:$version_id}) "
+        "RETURN package.payload_json,package.artifact_ref_json,package.package_version_id,package.payload_hash,package.byte_size",
+        {"tenant_id": tenant_id, "platform_study_id": platform_study_id, "version_id": package_version_id},
     )
+    _assert_state_unchanged(state, tenant_id=tenant_id, platform_study_id=platform_study_id, checkpoint=checkpoint)
     if prior:
-        return {"payload": json.loads(str(prior[0][0])), "bytes": str(prior[0][0]).encode("utf-8"),
-                "payloadHash": package_hash, "artifactRef": json.loads(str(prior[0][1])),
-                "packageVersionId": str(prior[0][2]), "replay": True}
+        if len(prior) != 1:
+            raise OsbCandidateSetError("OSB_PACKAGE_REPLAY_CONFLICT", "Package identity is ambiguous.", 409)
+        retained_bytes = str(prior[0][0]).encode("utf-8")
+        retained = _parse_canonical(retained_bytes, "OSB_PACKAGE_REPLAY_INVALID")
+        retained_artifact = _parse_canonical(str(prior[0][1]).encode("utf-8"), "OSB_PACKAGE_REPLAY_INVALID")
+        _verify_artifact_ref(retained, retained_artifact, kind="osb-native-package-v2",
+                             tenant_id=tenant_id, platform_study_id=platform_study_id,
+                             schema_version="OsbNativePackageV2@2.0.0", media_type=PACKAGE_V2_MEDIA_TYPE)
+        if prior[0][2] != package_version_id or prior[0][3] != retained_artifact["payloadHash"]["value"] \
+                or prior[0][4] != len(retained_bytes) \
+                or canonical_json({key: value for key, value in retained.items() if key != "createdAt"}) != \
+                   canonical_json({key: value for key, value in package.items() if key != "createdAt"}):
+            raise OsbCandidateSetError("OSB_PACKAGE_REPLAY_CONFLICT", "Retained package content differs.", 409)
+        return {"payload": retained, "bytes": retained_bytes,
+                "payloadHash": retained_artifact["payloadHash"], "artifactRef": retained_artifact,
+                "packageVersionId": package_version_id, "replay": True}
     db.cypher_query(
         """CREATE (package:OsbNativePackageV2 {package_id:$package_id,
              package_version_id:$package_version_id,tenant_id:$tenant_id,

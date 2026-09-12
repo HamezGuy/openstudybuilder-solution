@@ -233,8 +233,7 @@ def _get_study_odm_metadata(
         MATCH (activity_instance)-[:CONTAINS_ACTIVITY_ITEM]
               ->(activity_item:ActivityItem)
         OPTIONAL MATCH (activity_item)<-[:HAS_ACTIVITY_ITEM]
-              -(activity_item_class_root:ActivityItemClassRoot)-[:LATEST]
-              ->(activity_item_class:ActivityItemClassValue)
+              -(activity_item_class_root:ActivityItemClassRoot)
         OPTIONAL MATCH (odm_item:OdmItemValue)
               -[activity_item_link:LINKS_TO_ACTIVITY_ITEM]->(activity_item)
         OPTIONAL MATCH (odm_item_root:OdmItemRoot)
@@ -257,9 +256,9 @@ def _get_study_odm_metadata(
             activityInstanceVersion: activity_instance_version.version,
             activityInstanceVersionMetadata: properties(activity_instance_version),
             activityItemClassUid: activity_item_class_root.uid,
-            activityItemClassName: activity_item_class.display_name,
-            activityItemClassDefinition: activity_item_class.definition,
-            activityItemClassNciConceptId: activity_item_class.nci_concept_id,
+            activityItemClassName: null,
+            activityItemClassDefinition: null,
+            activityItemClassNciConceptId: null,
             textValue: activity_item.text_value,
             sourceProperties: properties(activity_item)
         } AS activity_item,
@@ -361,7 +360,12 @@ def _get_study_odm_metadata(
             "study_value_version": study_value_version,
         },
     )
-    return _assemble_study_odm_metadata([dict(zip(columns, row)) for row in result])
+    from clinical_mdr_api.services.studies.study_activity_instance_snapshot import resolve_candidate_class_history
+
+    rows = resolve_candidate_class_history(
+        [dict(zip(columns, row)) for row in result], study_uid, study_value_version,
+    )
+    return _assemble_study_odm_metadata(rows)
 
 
 def _usdm_designs(usdm: dict[str, Any]) -> list[dict[str, Any]]:

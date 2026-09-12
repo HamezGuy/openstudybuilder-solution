@@ -10,6 +10,7 @@ FAMILY_ALIASES = {
 }
 
 STUDY_SECTION_FAMILIES: dict[str, tuple[str, ...]] = {
+    "metadata": ("study_metadata",),
     "standards": ("controlled_terminology", "controlled_terminology_codelists", "units"),
     "compounds": ("compound_product_relationships",),
     "dosing": ("study_compound_dosing_relationships",),

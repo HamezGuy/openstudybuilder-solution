@@ -2,7 +2,6 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Any, Generic, Iterable, cast
 
-from cachetools import cached
 from cachetools.keys import hashkey
 from neomodel import db
 
@@ -10,6 +9,9 @@ from clinical_mdr_api.domain_repositories._generic_repository_interface import (
     _AggregateRootType,
 )
 from clinical_mdr_api.domain_repositories._utils.helpers import is_codelist_in_final
+from clinical_mdr_api.domain_repositories._utils.native_read_cache import (
+    native_read_cached,
+)
 from clinical_mdr_api.domain_repositories.controlled_terminologies.ct_get_all_query_utils import (
     create_codelist_filter_statement,
     format_codelist_filter_sort_keys,
@@ -441,6 +443,8 @@ class CTCodelistGenericRepository(
         order: int,
         submission_value: str,
         ordinal: float | None = None,
+        *,
+        initial_draft: bool = False,
     ) -> None:
         """
         Method adds term identified by term_uid to the codelist identified by codelist_uid.
@@ -467,6 +471,43 @@ class CTCodelistGenericRepository(
         exceptions.ValidationException.raise_if(
             ct_term_node is None, msg=f"Term with UID '{term_uid}' doesn't exist."
         )
+
+        # Hold the native root lock before current-state and duplicate checks.
+        self._lock_object2(codelist_uid)
+        if initial_draft is True:
+            # The internal source authoring service checks domain rules; repeat
+            # the exact current native state here before the relationship write.
+            rows, _ = db.cypher_query(
+                """MATCH (library:Library {is_editable:true})-[:CONTAINS_CODELIST]->
+                     (codelist:CTCodelistRoot {uid:$codelist_uid})
+                   MATCH (library)-[:CONTAINS_TERM]->(term:CTTermRoot {uid:$term_uid})
+                   MATCH (codelist)-[:HAS_NAME_ROOT]->(cnr)-[:LATEST]->(cnv)
+                   MATCH (cnr)-[cn:HAS_VERSION {version:'0.1',status:'Draft'}]->(cnv)
+                   MATCH (codelist)-[:HAS_ATTRIBUTES_ROOT]->(car)-[:LATEST]->(cav)
+                   MATCH (car)-[ca:HAS_VERSION {version:'0.1',status:'Draft'}]->(cav)
+                   MATCH (term)-[:HAS_NAME_ROOT]->(tnr)-[:LATEST]->(tnv)
+                   MATCH (tnr)-[tn:HAS_VERSION {version:'0.1',status:'Draft'}]->(tnv)
+                   MATCH (term)-[:HAS_ATTRIBUTES_ROOT]->(tar)-[:LATEST]->(tav)
+                   MATCH (tar)-[ta:HAS_VERSION {version:'0.1',status:'Draft'}]->(tav)
+                   WHERE cn.end_date IS NULL AND ca.end_date IS NULL
+                     AND tn.end_date IS NULL AND ta.end_date IS NULL
+                     AND NOT cnv:TemplateParameter
+                     AND NOT EXISTS { MATCH (cnr)-[:LATEST_FINAL]->() }
+                     AND NOT EXISTS { MATCH (car)-[:LATEST_FINAL]->() }
+                     AND NOT EXISTS { MATCH (tnr)-[:LATEST_FINAL]->() }
+                     AND NOT EXISTS { MATCH (tar)-[:LATEST_FINAL]->() }
+                   RETURN codelist.uid,term.uid""",
+                {"codelist_uid": codelist_uid, "term_uid": term_uid},
+            )
+            exceptions.BusinessLogicException.raise_if(
+                rows != [[codelist_uid, term_uid]],
+                msg="Initial CT draft versions, library or approval state changed.",
+            )
+        else:
+            exceptions.BusinessLogicException.raise_if_not(
+                initial_draft is False and is_codelist_in_final(ct_codelist_node),
+                msg=f"Term with UID '{term_uid}' cannot be added to Codelist with UID '{codelist_uid}' as the codelist is in a draft state.",
+            )
 
         # Single Cypher query to check all duplicate conditions at once,
         # replacing the N+1 loop that made 3 DB calls per existing term.
@@ -530,11 +571,8 @@ class CTCodelistGenericRepository(
             },
         )
 
-        # Validate that the term is added to a codelist that isn't in a draft state.
-        exceptions.BusinessLogicException.raise_if_not(
-            is_codelist_in_final(ct_codelist_node),
-            msg=f"Term with UID '{term_uid}' cannot be added to Codelist with UID '{codelist_uid}' as the codelist is in a draft state.",
-        )
+        if initial_draft:
+            return
 
         query = """
             MATCH (codelist_root:CTCodelistRoot {uid: $codelist_uid})-[:HAS_NAME_ROOT]->()-[:LATEST]->
@@ -673,6 +711,8 @@ class CTCodelistGenericRepository(
         codelist_submission_value: str | None,
         at_specific_date_time: datetime | None = None,
         is_date_conflict: bool = False,
+        *,
+        strict_snapshot: bool = False,
     ):
         """
         Returns a hash key that will be used for mapping objects stored in cache,
@@ -687,10 +727,11 @@ class CTCodelistGenericRepository(
             codelist_submission_value,
             at_specific_date_time,
             is_date_conflict,
+            strict_snapshot,
         )
 
     # Get the details of a term - codelist relationship
-    @cached(
+    @native_read_cached(
         cache=LibraryItemRepositoryImplBase.cache_store_term_by_uid_and_submval,
         key=hashkey_codelist_term,
         lock=LibraryItemRepositoryImplBase.lock_store_term_by_uid_and_submval,
@@ -701,9 +742,15 @@ class CTCodelistGenericRepository(
         codelist_submission_value: str | None,
         at_specific_date_time: datetime | None = None,
         is_date_conflict: bool = False,
+        *,
+        strict_snapshot: bool = False,
     ) -> CTSimpleCodelistTermAR | None:
         if term_uid is None or codelist_submission_value is None:
             return None
+        exceptions.ValidationException.raise_if(
+            strict_snapshot and (at_specific_date_time is None or is_date_conflict),
+            msg="STUDY_LIBRARY_CT_SNAPSHOT_DATE_REQUIRED",
+        )
         params: dict[str, Any]
         params = {"cl_submval": codelist_submission_value, "term_uid": term_uid}
         if not is_date_conflict and at_specific_date_time is not None:
@@ -731,6 +778,28 @@ class CTCodelistGenericRepository(
             cl_name_date = ""
             term_name_date = ""
             version_rel_type = "LATEST_FINAL"
+        term_attributes_date = ""
+        if strict_snapshot:
+            def dated_value(relationship):
+                return f"""
+                    WHERE {relationship}.start_date <= datetime($at_specific_date)
+                      AND ({relationship}.end_date IS NULL
+                           OR datetime($at_specific_date) < datetime({relationship}.end_date))
+                      AND {relationship}.status IN ['Final', 'Retired']
+                """
+            cl_attrs_date = dated_value("cl_attrs_hv")
+            cl_name_date = dated_value("cl_name_hv")
+            term_name_date = dated_value("term_name_hv")
+            term_attributes_date = dated_value("term_attributes_hv")
+        snapshot_identities = (
+            """,
+                elementId(ht) AS membership_identity,
+                elementId(cl_attrs_hv) AS codelist_attributes_identity,
+                elementId(cl_name_hv) AS codelist_name_identity,
+                elementId(term_name_hv) AS term_name_identity,
+                elementId(term_attributes_hv) AS term_attributes_identity
+            """ if strict_snapshot else ""
+        )
 
         query = f"""
             MATCH (codelist_root:CTCodelistRoot)-[:HAS_ATTRIBUTES_ROOT]->(codelist_attrs_root:CTCodelistAttributesRoot)-[cl_attrs_hv:{version_rel_type}]->
@@ -744,7 +813,8 @@ class CTCodelistGenericRepository(
             {term_name_date}
             OPTIONAL MATCH (term_root)-[:HAS_ATTRIBUTES_ROOT]->(term_attributes_root:CTTermAttributesRoot)-[term_attributes_hv:{version_rel_type}]->
               (term_attributes_value:CTTermAttributesValue)
-            RETURN
+            {term_attributes_date}
+            RETURN {"DISTINCT" if strict_snapshot else ""}
                 term_root.uid AS term_uid,
                 term_name_value.name AS term_name,
                 term_attributes_value.preferred_term AS preferred_term,
@@ -753,14 +823,31 @@ class CTCodelistGenericRepository(
                 codelist_name_value.name AS codelist_name,
                 codelist_root.uid AS codelist_uid,
                 $cl_submval AS codelist_submission_value
+                {snapshot_identities}
         """
         result_array, attribute_names = db.cypher_query(query, params)
+        exceptions.ValidationException.raise_if(
+            strict_snapshot and len(result_array) != 1,
+            msg="STUDY_LIBRARY_CT_SNAPSHOT_UNRESOLVED: "
+                f"{term_uid}/{codelist_submission_value}; expected one exact dated membership and value set.",
+        )
         if len(result_array) > 0:
             data_dict = {
                 attribute_name: result_array[0][index]
                 for index, attribute_name in enumerate(attribute_names)
             }
             data_dict["date_conflict"] = is_date_conflict
+            exceptions.ValidationException.raise_if(
+                strict_snapshot and any(
+                    data_dict.get(field) is None for field in (
+                        "codelist_name", "term_name", "membership_identity",
+                        "codelist_attributes_identity", "codelist_name_identity",
+                        "term_name_identity", "term_attributes_identity",
+                    )
+                ),
+                msg="STUDY_LIBRARY_CT_SNAPSHOT_INCOMPLETE: "
+                    "No undated or later value may replace a missing selected terminology reading.",
+            )
             if data_dict["codelist_name"] is None:
                 # fallback, query for the first codelist name version
                 cl_name_query = """

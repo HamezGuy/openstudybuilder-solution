@@ -1,0 +1,52 @@
+{
+  "formatVersion": "osb-usdm4-cdisc-projection-authority/1",
+  "publishedExampleSource": {
+    "publication": "CDISC DDF-RA v4.0.0 CDISC_Pilot, locally preserved by the parent review",
+    "path": "C:/Projects/EDCProject/libreclinicaapi/docs/usdm-study-migration/full-study/cdisc-v4-pilot-timing-reference.json",
+    "sha256": "ad34d3cd676240fe297fbb8bacd4bd4000c9a49879683df42803d2a1f2dddd00",
+    "usdmVersion": "4.0.0",
+    "systemName": "CDISC USDM E2J"
+  },
+  "publishedExamples": [
+    {
+      "path": "/study/versions/0/studyDesigns/0/studyType",
+      "code": {
+        "id": "Code_159",
+        "extensionAttributes": [],
+        "code": "C98388",
+        "codeSystem": "http://www.cdisc.org",
+        "codeSystemVersion": "2024-09-27",
+        "decode": "Interventional Study",
+        "instanceType": "Code"
+      }
+    }
+  ],
+  "publishedCtPackage": {
+    "path": "C:/Projects/EDCProject/accuratrial-shared-types/standards/cdisc-usdm/4.0.0/core/terminology/sdtmct-2025-09-26.json",
+    "sha256": "671937e2383b44e6165e0dc9f3eb9dd73388671647c60c9dca0c93e39b98bf42",
+    "package": "sdtmct-2025-09-26",
+    "codelist": "C99077"
+  },
+  "publishedCtTerm": {
+    "conceptId": "C98388",
+    "definition": "Studies in which individuals are assigned by an investigator based on a protocol to receive specific interventions. Subjects may receive diagnostic, therapeutic or other types of interventions. The assignment of the intervention may or may not be random. The individuals are then followed and biomedical and/or health outcomes are assessed.",
+    "preferredTerm": "Interventional Study",
+    "submissionValue": "INTERVENTIONAL",
+    "synonyms": []
+  },
+  "publishedRule": {
+    "statement": "For CDISC codelist references (where the code system is 'http://www.cdisc.org'), the code system version must be a valid CDISC terminology release date in ISO 8601 date format.",
+    "severity": "ERROR",
+    "entities": "Code",
+    "attributes": "codeSystemVersion",
+    "version3": "Y",
+    "version4": "Y",
+    "ruleId": "DDF00155",
+    "checkId": "CHK0176"
+  },
+  "ruleSource": {
+    "path": "C:/Projects/EDCProject/accuratrial-shared-types/standards/cdisc-usdm/4.0.0/reference-data.json",
+    "sha256": "102f44c517b1b3fdd9bd4a881c5beb58818366d4ea50650975388482d4a4cf54"
+  },
+  "scope": "The primary example and rule establish the CDISC URI/release-date representation. The current native selected package supplies its actual release; the example date is never substituted for it. The example is not claimed to be globally schema-valid or CORE-conformant."
+}
