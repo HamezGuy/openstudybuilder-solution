@@ -5,7 +5,7 @@ from threading import Lock
 from typing import Any, Iterable, Literal, Mapping, TypeVar, overload
 
 import neo4j.time
-from cachetools import TTLCache, cached
+from cachetools import TTLCache
 from cachetools.keys import hashkey
 from neomodel import (
     NodeClassNotDefined,
@@ -19,6 +19,9 @@ from neomodel.util import RelationshipDirection
 
 from clinical_mdr_api.domain_repositories._generic_repository_interface import (
     GenericRepository,
+)
+from clinical_mdr_api.domain_repositories._utils.native_read_cache import (
+    native_read_cached,
 )
 from clinical_mdr_api.domain_repositories.generic_repository import RepositoryImpl
 from clinical_mdr_api.domain_repositories.models.controlled_terminology import (
@@ -867,7 +870,7 @@ class LibraryItemRepositoryImplBase(
                         latest_matching_value = matching_value
         return latest_matching_value, latest_matching_relationship
 
-    @cached(
+    @native_read_cached(
         cache=cache_store_item_by_uid,
         key=hashkey_library_item,
         lock=lock_store_item_by_uid,
@@ -1291,7 +1294,7 @@ class LibraryItemRepositoryImplBase(
         at_specific_date: datetime | None = None,
         include_retired_versions: bool = False,
     ) -> list[_AggregateRootType]: ...
-    @cached(
+    @native_read_cached(
         cache=cache_store_item_by_uid,
         key=hashkey_library_item_with_metadata_find_by_uid,
         lock=lock_store_item_by_uid,
@@ -1526,7 +1529,7 @@ class LibraryItemRepositoryImplBase(
             **kwargs,
         )
 
-    @cached(
+    @native_read_cached(
         cache=cache_store_item_by_uid,
         key=hashkey_library_items_with_metadata_get_all,
         lock=lock_store_item_by_uid,

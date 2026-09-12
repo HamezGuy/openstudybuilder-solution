@@ -1,9 +1,0 @@
-.env
-.env.*
-!.env.example
-!.env.production.example
-.cline-live-test/
-.edc-drop/
-*.log
-__pycache__/
-.pytest_cache/

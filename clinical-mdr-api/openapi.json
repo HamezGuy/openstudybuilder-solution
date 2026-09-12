@@ -3,7 +3,7 @@
   "info": {
     "title": "OpenStudyBuilder API",
     "description": "\n## NOTICE\n\nThis license information is applicable to the swagger documentation of the clinical-mdr-api, that is the openapi.json.\n\n## License Terms (MIT)\n\nCopyright (C) 2025 Novo Nordisk A/S, Danish company registration no. 24256790\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\n\n## Licenses and Acknowledgements for Incorporated Software\n\nThis component contains software licensed under different licenses when compiled, please refer to the third-party-licenses.md file for further information and full license texts.\n\n## Authentication\n\nSupports OAuth2 [Authorization Code Flow](https://datatracker.ietf.org/doc/html/rfc6749#section-4.1),\nat paths described in the OpenID Connect Discovery metadata document (whose URL is defined by the `OAUTH_METADATA_URL` environment variable).\n\nMicrosoft Identity Platform documentation can be read \n([here](https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-auth-code-flow)).\n\nAuthentication can be turned off with `OAUTH_ENABLED=false` environment variable. \n\nWhen authentication is turned on, all requests to protected API endpoints must provide a valid bearer (JWT) token inside the `Authorization` http header. \n",
-    "version": "3.0.658"
+    "version": "3.0.659"
   },
   "paths": {
     "/": {
@@ -72093,6 +72093,142 @@
         }
       }
     },
+    "/studies/{study_uid}/null-adjudications": {
+      "get": {
+        "tags": [
+          "Studies"
+        ],
+        "summary": "Returns the supported atomic null-adjudication contract and metadata paths.",
+        "operationId": "get_null_adjudication_capability_studies__study_uid__null_adjudications_get",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "study_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The unique id of the study.",
+              "title": "Study Uid"
+            },
+            "description": "The unique id of the study."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudyNullAdjudicationCapability"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Studies"
+        ],
+        "summary": "Atomically signs empty study metadata slots after checking both observed values.",
+        "operationId": "patch_null_adjudications_studies__study_uid__null_adjudications_patch",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "study_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The unique id of the study.",
+              "title": "Study Uid"
+            },
+            "description": "The unique id of the study."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudyNullAdjudicationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudyNullAdjudicationReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The closed guarded request failed native input validation or contains an unsupported value/companion pair.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "An expected value or null companion changed, or the slot is not empty.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/studies/{study_uid}/snapshot-history": {
       "get": {
         "tags": [
@@ -112370,8 +112506,8 @@
         "tags": [
           "AccuraTrial EDC integration"
         ],
-        "summary": "Project this study into an AccuraTrial EDC StudyBundleV1 (.ecrfstudy)",
-        "description": "The response body IS the importable file \u2014 save it as `study.ecrfstudy`. `_exportCensus` names every field-type downgrade and ambiguous join; an empty census means the projection was exact.",
+        "summary": "Export an AccuraTrial EDC V2 draft (.ecrfstudy)",
+        "description": "The response body IS the importable file \u2014 save it as `study.ecrfstudy`. `extensions._osbExport` retains native observations, reconciliation and authority constraints. The canonical definition is preserved unchanged; this preview does not authorize release or deployment.",
         "operationId": "get_edc_study_bundle_integrations_edc_studies__study_uid__study_bundle_get",
         "security": [
           {
@@ -112611,6 +112747,757 @@
         ]
       }
     },
+    "/integrations/proposal-reviews/{proposal_hash}/objects/{proposal_object_id}/item-associations": {
+      "post": {
+        "tags": [
+          "OpenStudyBuilder proposal review"
+        ],
+        "summary": "Review Item Association",
+        "operationId": "review_item_association_integrations_proposal_reviews__proposal_hash__objects__proposal_object_id__item_associations_post",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "proposal_hash",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Proposal Hash"
+            }
+          },
+          {
+            "name": "proposal_object_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Proposal Object Id"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GovernedItemAssociationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$defs": {
+                  "CslPlanAssociationPins": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "nativeTenantId": {
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                        "title": "Nativetenantid",
+                        "type": "string"
+                      },
+                      "nativeStudyId": {
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                        "title": "Nativestudyid",
+                        "type": "string"
+                      },
+                      "canonicalRevisionId": {
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                        "title": "Canonicalrevisionid",
+                        "type": "string"
+                      },
+                      "canonicalRevisionHash": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "title": "Canonicalrevisionhash",
+                        "type": "string"
+                      },
+                      "planHash": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "title": "Planhash",
+                        "type": "string"
+                      },
+                      "reviewCommitmentHash": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "title": "Reviewcommitmenthash",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "nativeTenantId",
+                      "nativeStudyId",
+                      "canonicalRevisionId",
+                      "canonicalRevisionHash",
+                      "planHash",
+                      "reviewCommitmentHash"
+                    ],
+                    "title": "CslPlanAssociationPins",
+                    "type": "object"
+                  },
+                  "GovernedItemAssociationSelector": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "contractVersion": {
+                        "const": "OsbGovernedItemAssociationSelectorV1@1.0.0",
+                        "title": "Contractversion",
+                        "type": "string"
+                      },
+                      "proposalHash": {
+                        "pattern": "^[0-9a-f]{64}$",
+                        "title": "Proposalhash",
+                        "type": "string"
+                      },
+                      "proposalObjectId": {
+                        "pattern": "^[0-9a-f]{64}$",
+                        "title": "Proposalobjectid",
+                        "type": "string"
+                      },
+                      "reviewDecisionId": {
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                        "title": "Reviewdecisionid",
+                        "type": "string"
+                      },
+                      "reviewDecisionHash": {
+                        "pattern": "^[0-9a-f]{64}$",
+                        "title": "Reviewdecisionhash",
+                        "type": "string"
+                      },
+                      "candidateKey": {
+                        "pattern": "^[0-9a-f]{64}$",
+                        "title": "Candidatekey",
+                        "type": "string"
+                      },
+                      "selected": {
+                        "$ref": "#/components/schemas/SelectedActivityItemRequest"
+                      },
+                      "selectedPathHash": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "title": "Selectedpathhash",
+                        "type": "string"
+                      },
+                      "libraryItemHash": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "title": "Libraryitemhash",
+                        "type": "string"
+                      },
+                      "operationHash": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "title": "Operationhash",
+                        "type": "string"
+                      },
+                      "csl": {
+                        "$ref": "#/components/schemas/CslPlanAssociationPins"
+                      }
+                    },
+                    "required": [
+                      "contractVersion",
+                      "proposalHash",
+                      "proposalObjectId",
+                      "reviewDecisionId",
+                      "reviewDecisionHash",
+                      "candidateKey",
+                      "selected",
+                      "selectedPathHash",
+                      "libraryItemHash",
+                      "operationHash",
+                      "csl"
+                    ],
+                    "title": "GovernedItemAssociationSelector",
+                    "type": "object"
+                  },
+                  "SelectedActivityItemRequest": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "contractVersion": {
+                        "const": "OsbSelectedActivityItemRequestV1@1.0.0",
+                        "title": "Contractversion",
+                        "type": "string"
+                      },
+                      "scope": {
+                        "const": "selected-activity-item",
+                        "title": "Scope",
+                        "type": "string"
+                      },
+                      "platformStudyId": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Platformstudyid",
+                        "type": "string"
+                      },
+                      "nativeStudyId": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Nativestudyid",
+                        "type": "string"
+                      },
+                      "nativeStudyVersion": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Nativestudyversion",
+                        "type": "string"
+                      },
+                      "bindingId": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Bindingid",
+                        "type": "string"
+                      },
+                      "decisionId": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Decisionid",
+                        "type": "string"
+                      },
+                      "decisionHash": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "title": "Decisionhash",
+                        "type": "string"
+                      },
+                      "candidateSetVersionId": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Candidatesetversionid",
+                        "type": "string"
+                      },
+                      "candidateSetHash": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "title": "Candidatesethash",
+                        "type": "string"
+                      },
+                      "mappingContextHash": {
+                        "pattern": "^[0-9a-f]{64}$",
+                        "title": "Mappingcontexthash",
+                        "type": "string"
+                      },
+                      "evidenceSetVersionId": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Evidencesetversionid",
+                        "type": "string"
+                      },
+                      "evidenceSetHash": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "title": "Evidencesethash",
+                        "type": "string"
+                      },
+                      "evidenceId": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Evidenceid",
+                        "type": "string"
+                      },
+                      "factId": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Factid",
+                        "type": "string"
+                      },
+                      "revision": {
+                        "maximum": 2147483647,
+                        "minimum": 1,
+                        "title": "Revision",
+                        "type": "integer"
+                      },
+                      "targetKey": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Targetkey",
+                        "type": "string"
+                      },
+                      "itemUid": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Itemuid",
+                        "type": "string"
+                      },
+                      "itemVersion": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Itemversion",
+                        "type": "string"
+                      },
+                      "studyValueVersion": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Studyvalueversion",
+                        "type": "string"
+                      },
+                      "studyActivityInstanceUid": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Studyactivityinstanceuid",
+                        "type": "string"
+                      },
+                      "activityInstanceUid": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Activityinstanceuid",
+                        "type": "string"
+                      },
+                      "activityInstanceVersion": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Activityinstanceversion",
+                        "type": "string"
+                      },
+                      "activityItemClassUid": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Activityitemclassuid",
+                        "type": "string"
+                      },
+                      "activityItemClassVersion": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Activityitemclassversion",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "contractVersion",
+                      "scope",
+                      "platformStudyId",
+                      "nativeStudyId",
+                      "nativeStudyVersion",
+                      "bindingId",
+                      "decisionId",
+                      "decisionHash",
+                      "candidateSetVersionId",
+                      "candidateSetHash",
+                      "mappingContextHash",
+                      "evidenceSetVersionId",
+                      "evidenceSetHash",
+                      "evidenceId",
+                      "factId",
+                      "revision",
+                      "targetKey",
+                      "itemUid",
+                      "itemVersion",
+                      "studyValueVersion",
+                      "studyActivityInstanceUid",
+                      "activityInstanceUid",
+                      "activityInstanceVersion",
+                      "activityItemClassUid",
+                      "activityItemClassVersion"
+                    ],
+                    "title": "SelectedActivityItemRequest",
+                    "type": "object"
+                  }
+                },
+                "additionalProperties": false,
+                "properties": {
+                  "contractVersion": {
+                    "const": "OsbGovernedItemAssociationReviewV1@1.0.0",
+                    "title": "Contractversion",
+                    "type": "string"
+                  },
+                  "associationId": {
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                    "title": "Associationid",
+                    "type": "string"
+                  },
+                  "selector": {
+                    "$ref": "#/components/schemas/GovernedItemAssociationSelector"
+                  },
+                  "signatureId": {
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "title": "Signatureid",
+                    "type": "string"
+                  },
+                  "displayedStatement": {
+                    "const": "I reviewed this exact proposal decision, CSL plan and native selected Item association.",
+                    "title": "Displayedstatement",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "contractVersion",
+                  "associationId",
+                  "selector",
+                  "signatureId",
+                  "displayedStatement"
+                ],
+                "title": "GovernedItemAssociationReview",
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/proposal-reviews/{proposal_hash}/objects/{proposal_object_id}/item-associations/current-observation": {
+      "post": {
+        "tags": [
+          "OpenStudyBuilder proposal review"
+        ],
+        "summary": "Observe Item Association",
+        "operationId": "observe_item_association_integrations_proposal_reviews__proposal_hash__objects__proposal_object_id__item_associations_current_observation_post",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "proposal_hash",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Proposal Hash"
+            }
+          },
+          {
+            "name": "proposal_object_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Proposal Object Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GovernedItemAssociationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$defs": {
+                  "CslPlanAssociationPins": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "nativeTenantId": {
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                        "title": "Nativetenantid",
+                        "type": "string"
+                      },
+                      "nativeStudyId": {
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                        "title": "Nativestudyid",
+                        "type": "string"
+                      },
+                      "canonicalRevisionId": {
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                        "title": "Canonicalrevisionid",
+                        "type": "string"
+                      },
+                      "canonicalRevisionHash": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "title": "Canonicalrevisionhash",
+                        "type": "string"
+                      },
+                      "planHash": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "title": "Planhash",
+                        "type": "string"
+                      },
+                      "reviewCommitmentHash": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "title": "Reviewcommitmenthash",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "nativeTenantId",
+                      "nativeStudyId",
+                      "canonicalRevisionId",
+                      "canonicalRevisionHash",
+                      "planHash",
+                      "reviewCommitmentHash"
+                    ],
+                    "title": "CslPlanAssociationPins",
+                    "type": "object"
+                  },
+                  "GovernedItemAssociationSelector": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "contractVersion": {
+                        "const": "OsbGovernedItemAssociationSelectorV1@1.0.0",
+                        "title": "Contractversion",
+                        "type": "string"
+                      },
+                      "proposalHash": {
+                        "pattern": "^[0-9a-f]{64}$",
+                        "title": "Proposalhash",
+                        "type": "string"
+                      },
+                      "proposalObjectId": {
+                        "pattern": "^[0-9a-f]{64}$",
+                        "title": "Proposalobjectid",
+                        "type": "string"
+                      },
+                      "reviewDecisionId": {
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                        "title": "Reviewdecisionid",
+                        "type": "string"
+                      },
+                      "reviewDecisionHash": {
+                        "pattern": "^[0-9a-f]{64}$",
+                        "title": "Reviewdecisionhash",
+                        "type": "string"
+                      },
+                      "candidateKey": {
+                        "pattern": "^[0-9a-f]{64}$",
+                        "title": "Candidatekey",
+                        "type": "string"
+                      },
+                      "selected": {
+                        "$ref": "#/components/schemas/SelectedActivityItemRequest"
+                      },
+                      "selectedPathHash": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "title": "Selectedpathhash",
+                        "type": "string"
+                      },
+                      "libraryItemHash": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "title": "Libraryitemhash",
+                        "type": "string"
+                      },
+                      "operationHash": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "title": "Operationhash",
+                        "type": "string"
+                      },
+                      "csl": {
+                        "$ref": "#/components/schemas/CslPlanAssociationPins"
+                      }
+                    },
+                    "required": [
+                      "contractVersion",
+                      "proposalHash",
+                      "proposalObjectId",
+                      "reviewDecisionId",
+                      "reviewDecisionHash",
+                      "candidateKey",
+                      "selected",
+                      "selectedPathHash",
+                      "libraryItemHash",
+                      "operationHash",
+                      "csl"
+                    ],
+                    "title": "GovernedItemAssociationSelector",
+                    "type": "object"
+                  },
+                  "SelectedActivityItemRequest": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "contractVersion": {
+                        "const": "OsbSelectedActivityItemRequestV1@1.0.0",
+                        "title": "Contractversion",
+                        "type": "string"
+                      },
+                      "scope": {
+                        "const": "selected-activity-item",
+                        "title": "Scope",
+                        "type": "string"
+                      },
+                      "platformStudyId": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Platformstudyid",
+                        "type": "string"
+                      },
+                      "nativeStudyId": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Nativestudyid",
+                        "type": "string"
+                      },
+                      "nativeStudyVersion": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Nativestudyversion",
+                        "type": "string"
+                      },
+                      "bindingId": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Bindingid",
+                        "type": "string"
+                      },
+                      "decisionId": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Decisionid",
+                        "type": "string"
+                      },
+                      "decisionHash": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "title": "Decisionhash",
+                        "type": "string"
+                      },
+                      "candidateSetVersionId": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Candidatesetversionid",
+                        "type": "string"
+                      },
+                      "candidateSetHash": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "title": "Candidatesethash",
+                        "type": "string"
+                      },
+                      "mappingContextHash": {
+                        "pattern": "^[0-9a-f]{64}$",
+                        "title": "Mappingcontexthash",
+                        "type": "string"
+                      },
+                      "evidenceSetVersionId": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Evidencesetversionid",
+                        "type": "string"
+                      },
+                      "evidenceSetHash": {
+                        "pattern": "^sha256:[0-9a-f]{64}$",
+                        "title": "Evidencesethash",
+                        "type": "string"
+                      },
+                      "evidenceId": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Evidenceid",
+                        "type": "string"
+                      },
+                      "factId": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Factid",
+                        "type": "string"
+                      },
+                      "revision": {
+                        "maximum": 2147483647,
+                        "minimum": 1,
+                        "title": "Revision",
+                        "type": "integer"
+                      },
+                      "targetKey": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Targetkey",
+                        "type": "string"
+                      },
+                      "itemUid": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Itemuid",
+                        "type": "string"
+                      },
+                      "itemVersion": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Itemversion",
+                        "type": "string"
+                      },
+                      "studyValueVersion": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Studyvalueversion",
+                        "type": "string"
+                      },
+                      "studyActivityInstanceUid": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Studyactivityinstanceuid",
+                        "type": "string"
+                      },
+                      "activityInstanceUid": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Activityinstanceuid",
+                        "type": "string"
+                      },
+                      "activityInstanceVersion": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Activityinstanceversion",
+                        "type": "string"
+                      },
+                      "activityItemClassUid": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Activityitemclassuid",
+                        "type": "string"
+                      },
+                      "activityItemClassVersion": {
+                        "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                        "title": "Activityitemclassversion",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "contractVersion",
+                      "scope",
+                      "platformStudyId",
+                      "nativeStudyId",
+                      "nativeStudyVersion",
+                      "bindingId",
+                      "decisionId",
+                      "decisionHash",
+                      "candidateSetVersionId",
+                      "candidateSetHash",
+                      "mappingContextHash",
+                      "evidenceSetVersionId",
+                      "evidenceSetHash",
+                      "evidenceId",
+                      "factId",
+                      "revision",
+                      "targetKey",
+                      "itemUid",
+                      "itemVersion",
+                      "studyValueVersion",
+                      "studyActivityInstanceUid",
+                      "activityInstanceUid",
+                      "activityInstanceVersion",
+                      "activityItemClassUid",
+                      "activityItemClassVersion"
+                    ],
+                    "title": "SelectedActivityItemRequest",
+                    "type": "object"
+                  }
+                },
+                "additionalProperties": false,
+                "properties": {
+                  "contractVersion": {
+                    "const": "OsbGovernedItemAssociationReadV1@1.0.0",
+                    "title": "Contractversion",
+                    "type": "string"
+                  },
+                  "associationId": {
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                    "title": "Associationid",
+                    "type": "string"
+                  },
+                  "associationHash": {
+                    "pattern": "^sha256:[0-9a-f]{64}$",
+                    "title": "Associationhash",
+                    "type": "string"
+                  },
+                  "selector": {
+                    "$ref": "#/components/schemas/GovernedItemAssociationSelector"
+                  }
+                },
+                "required": [
+                  "contractVersion",
+                  "associationId",
+                  "associationHash",
+                  "selector"
+                ],
+                "title": "GovernedItemAssociationRead",
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
     "/integrations/proposal-reviews": {
       "post": {
         "tags": [
@@ -112834,6 +113721,57 @@
         }
       }
     },
+    "/integrations/study-authority/studies/{study_uid}/native-observation": {
+      "get": {
+        "tags": [
+          "OpenStudyBuilder mapping authority"
+        ],
+        "summary": "Read complete native study records and edit history without release approval",
+        "operationId": "get_native_observation_integrations_study_authority_studies__study_uid__native_observation_get",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "study_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The unique OSB study uid",
+              "title": "Study Uid"
+            },
+            "description": "The unique OSB study uid"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Native Observation Integrations Study Authority Studies  Study Uid  Native Observation Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/integrations/study-authority/studies/{study_uid}/snapshot": {
       "get": {
         "tags": [
@@ -112906,6 +113844,1071 @@
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/platform-control/native-items/current-observation": {
+      "post": {
+        "tags": [
+          "Platform control (disabled)"
+        ],
+        "summary": "Observe exact current scalar library Item; does not verify study selection",
+        "operationId": "current_native_item_integrations_platform_control_native_items_current_observation_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "contractVersion": {
+                    "type": "string",
+                    "const": "OsbNativeItemObservationRequestV1@1.0.0",
+                    "title": "Contractversion"
+                  },
+                  "scope": {
+                    "type": "string",
+                    "enum": [
+                      "library-item",
+                      "study-selection"
+                    ],
+                    "title": "Scope"
+                  },
+                  "platformStudyId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    "title": "Platformstudyid"
+                  },
+                  "nativeStudyId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    "title": "Nativestudyid"
+                  },
+                  "nativeStudyVersion": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    "title": "Nativestudyversion"
+                  },
+                  "bindingId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    "title": "Bindingid"
+                  },
+                  "decisionId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    "title": "Decisionid"
+                  },
+                  "decisionHash": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$",
+                    "title": "Decisionhash"
+                  },
+                  "candidateSetVersionId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    "title": "Candidatesetversionid"
+                  },
+                  "candidateSetHash": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$",
+                    "title": "Candidatesethash"
+                  },
+                  "mappingContextHash": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$",
+                    "title": "Mappingcontexthash"
+                  },
+                  "evidenceSetVersionId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    "title": "Evidencesetversionid"
+                  },
+                  "evidenceSetHash": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$",
+                    "title": "Evidencesethash"
+                  },
+                  "evidenceId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    "title": "Evidenceid"
+                  },
+                  "factId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    "title": "Factid"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "maximum": 2147483647.0,
+                    "minimum": 1.0,
+                    "title": "Revision"
+                  },
+                  "targetKey": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    "title": "Targetkey"
+                  },
+                  "itemUid": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    "title": "Itemuid"
+                  },
+                  "itemVersion": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    "title": "Itemversion"
+                  }
+                },
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "contractVersion",
+                  "scope",
+                  "platformStudyId",
+                  "nativeStudyId",
+                  "nativeStudyVersion",
+                  "bindingId",
+                  "decisionId",
+                  "decisionHash",
+                  "candidateSetVersionId",
+                  "candidateSetHash",
+                  "mappingContextHash",
+                  "evidenceSetVersionId",
+                  "evidenceSetHash",
+                  "evidenceId",
+                  "factId",
+                  "revision",
+                  "targetKey",
+                  "itemUid",
+                  "itemVersion"
+                ],
+                "title": "NativeItemObservationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NativeItemObservationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ]
+      }
+    },
+    "/integrations/platform-control/selected-activity-items/current-observation": {
+      "post": {
+        "tags": [
+          "Platform control (disabled)"
+        ],
+        "summary": "Observe one exact selected native activity path; no semantic or form approval",
+        "operationId": "current_selected_activity_item_integrations_platform_control_selected_activity_items_current_observation_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "contractVersion": {
+                    "type": "string",
+                    "const": "OsbSelectedActivityItemRequestV1@1.0.0",
+                    "title": "Contractversion"
+                  },
+                  "scope": {
+                    "type": "string",
+                    "const": "selected-activity-item",
+                    "title": "Scope"
+                  },
+                  "platformStudyId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    "title": "Platformstudyid"
+                  },
+                  "nativeStudyId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    "title": "Nativestudyid"
+                  },
+                  "nativeStudyVersion": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    "title": "Nativestudyversion"
+                  },
+                  "bindingId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    "title": "Bindingid"
+                  },
+                  "decisionId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    "title": "Decisionid"
+                  },
+                  "decisionHash": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$",
+                    "title": "Decisionhash"
+                  },
+                  "candidateSetVersionId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    "title": "Candidatesetversionid"
+                  },
+                  "candidateSetHash": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$",
+                    "title": "Candidatesethash"
+                  },
+                  "mappingContextHash": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$",
+                    "title": "Mappingcontexthash"
+                  },
+                  "evidenceSetVersionId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    "title": "Evidencesetversionid"
+                  },
+                  "evidenceSetHash": {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$",
+                    "title": "Evidencesethash"
+                  },
+                  "evidenceId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    "title": "Evidenceid"
+                  },
+                  "factId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    "title": "Factid"
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "maximum": 2147483647.0,
+                    "minimum": 1.0,
+                    "title": "Revision"
+                  },
+                  "targetKey": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    "title": "Targetkey"
+                  },
+                  "itemUid": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    "title": "Itemuid"
+                  },
+                  "itemVersion": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    "title": "Itemversion"
+                  },
+                  "studyValueVersion": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    "title": "Studyvalueversion"
+                  },
+                  "studyActivityInstanceUid": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    "title": "Studyactivityinstanceuid"
+                  },
+                  "activityInstanceUid": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    "title": "Activityinstanceuid"
+                  },
+                  "activityInstanceVersion": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    "title": "Activityinstanceversion"
+                  },
+                  "activityItemClassUid": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    "title": "Activityitemclassuid"
+                  },
+                  "activityItemClassVersion": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+                    "title": "Activityitemclassversion"
+                  }
+                },
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "contractVersion",
+                  "scope",
+                  "platformStudyId",
+                  "nativeStudyId",
+                  "nativeStudyVersion",
+                  "bindingId",
+                  "decisionId",
+                  "decisionHash",
+                  "candidateSetVersionId",
+                  "candidateSetHash",
+                  "mappingContextHash",
+                  "evidenceSetVersionId",
+                  "evidenceSetHash",
+                  "evidenceId",
+                  "factId",
+                  "revision",
+                  "targetKey",
+                  "itemUid",
+                  "itemVersion",
+                  "studyValueVersion",
+                  "studyActivityInstanceUid",
+                  "activityInstanceUid",
+                  "activityInstanceVersion",
+                  "activityItemClassUid",
+                  "activityItemClassVersion"
+                ],
+                "title": "SelectedActivityItemRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelectedActivityItemResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ]
+      }
+    },
+    "/integrations/platform-control/commands/{command_id}/receipt": {
+      "get": {
+        "tags": [
+          "Platform control (disabled)"
+        ],
+        "summary": "Read the immutable original platform-command result",
+        "operationId": "get_platform_command_receipt_integrations_platform_control_commands__command_id__receipt_get",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "command_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Command Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Platform Command Receipt Integrations Platform Control Commands  Command Id  Receipt Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/platform-control/native-study-roots": {
+      "get": {
+        "tags": [
+          "Platform control (disabled)"
+        ],
+        "summary": "Inventory tenant-scoped legacy OSB roots for human review",
+        "operationId": "inventory_native_study_roots_integrations_platform_control_native_study_roots_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Inventory Native Study Roots Integrations Platform Control Native Study Roots Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ]
+      }
+    },
+    "/integrations/platform-control/native-study-roots/create-or-bind": {
+      "post": {
+        "tags": [
+          "Platform control (disabled)"
+        ],
+        "summary": "Create or bind one exact OSB draft root (disabled until P2)",
+        "operationId": "create_or_bind_native_study_root_integrations_platform_control_native_study_roots_create_or_bind_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Body"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Create Or Bind Native Study Root Integrations Platform Control Native Study Roots Create Or Bind Post"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ]
+      }
+    },
+    "/integrations/platform-control/commands/conformance": {
+      "post": {
+        "tags": [
+          "Platform control (disabled)"
+        ],
+        "summary": "Execute a durable prototype platform conformance command",
+        "operationId": "execute_conformance_command_integrations_platform_control_commands_conformance_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Body"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Execute Conformance Command Integrations Platform Control Commands Conformance Post"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ]
+      }
+    },
+    "/integrations/platform-control/artifacts/osb-candidate-requests": {
+      "post": {
+        "tags": [
+          "Platform control (disabled)"
+        ],
+        "summary": "Store exact canonical CSL candidate-request bytes",
+        "operationId": "upload_candidate_request_integrations_platform_control_artifacts_osb_candidate_requests_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Upload Candidate Request Integrations Platform Control Artifacts Osb Candidate Requests Post"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ]
+      }
+    },
+    "/integrations/platform-control/commands/candidate-set": {
+      "post": {
+        "tags": [
+          "Platform control (disabled)"
+        ],
+        "summary": "Generate one immutable OSB candidate set from an exact CSL request",
+        "operationId": "execute_candidate_set_command_integrations_platform_control_commands_candidate_set_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Body"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Execute Candidate Set Command Integrations Platform Control Commands Candidate Set Post"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ]
+      }
+    },
+    "/integrations/platform-control/artifacts/osb-candidate-sets/{candidate_set_version_id}": {
+      "get": {
+        "tags": [
+          "Platform control (disabled)"
+        ],
+        "summary": "Read exact canonical OSB candidate-set bytes",
+        "operationId": "get_candidate_set_integrations_platform_control_artifacts_osb_candidate_sets__candidate_set_version_id__get",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "candidate_set_version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Candidate Set Version Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/platform-control/artifacts/study-mapping-decisions": {
+      "post": {
+        "tags": [
+          "Platform control (disabled)"
+        ],
+        "summary": "Store exact canonical CSL mapping-decision bytes",
+        "operationId": "upload_mapping_decision_integrations_platform_control_artifacts_study_mapping_decisions_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Upload Mapping Decision Integrations Platform Control Artifacts Study Mapping Decisions Post"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ]
+      }
+    },
+    "/integrations/platform-control/commands/mapping-decision": {
+      "post": {
+        "tags": [
+          "Platform control (disabled)"
+        ],
+        "summary": "Apply one CSL mapping decision and emit exact native read-back evidence",
+        "operationId": "execute_mapping_decision_command_integrations_platform_control_commands_mapping_decision_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Body"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Execute Mapping Decision Command Integrations Platform Control Commands Mapping Decision Post"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ]
+      }
+    },
+    "/integrations/platform-control/artifacts/native-evidence-sets/{evidence_set_version_id}": {
+      "get": {
+        "tags": [
+          "Platform control (disabled)"
+        ],
+        "summary": "Read exact canonical OSB native-evidence bytes",
+        "operationId": "get_native_evidence_set_integrations_platform_control_artifacts_native_evidence_sets__evidence_set_version_id__get",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "evidence_set_version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Evidence Set Version Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/platform-control/artifacts/release-prerequisites/{artifact_kind}": {
+      "post": {
+        "tags": [
+          "Platform control (disabled)"
+        ],
+        "summary": "Store exact canonical release prerequisite bytes",
+        "operationId": "upload_release_prerequisite_integrations_platform_control_artifacts_release_prerequisites__artifact_kind__post",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "artifact_kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Artifact Kind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Upload Release Prerequisite Integrations Platform Control Artifacts Release Prerequisites  Artifact Kind  Post"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/platform-control/commands/specialist-review": {
+      "post": {
+        "tags": [
+          "Platform control (disabled)"
+        ],
+        "summary": "Record immutable OSB specialist review against a transformation checkpoint",
+        "operationId": "execute_specialist_review_command_integrations_platform_control_commands_specialist_review_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Body"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Execute Specialist Review Command Integrations Platform Control Commands Specialist Review Post"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ]
+      }
+    },
+    "/integrations/platform-control/artifacts/specialist-reviews/{review_version_id}": {
+      "get": {
+        "tags": [
+          "Platform control (disabled)"
+        ],
+        "summary": "Read exact canonical specialist-review bytes",
+        "operationId": "get_specialist_review_integrations_platform_control_artifacts_specialist_reviews__review_version_id__get",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "review_version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Review Version Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/platform-control/commands/native-package-v2": {
+      "post": {
+        "tags": [
+          "Platform control (disabled)"
+        ],
+        "summary": "Generate immutable raw-byte OSB-native Package V2",
+        "operationId": "execute_native_package_v2_command_integrations_platform_control_commands_native_package_v2_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Body"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Execute Native Package V2 Command Integrations Platform Control Commands Native Package V2 Post"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ]
+      }
+    },
+    "/integrations/platform-control/artifacts/native-packages-v2/{package_version_id}": {
+      "get": {
+        "tags": [
+          "Platform control (disabled)"
+        ],
+        "summary": "Read exact canonical raw Package V2 bytes",
+        "operationId": "get_native_package_v2_integrations_platform_control_artifacts_native_packages_v2__package_version_id__get",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "package_version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Package Version Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -113824,6 +115827,21 @@
   },
   "components": {
     "schemas": {
+      "AbsentMetadataValue": {
+        "properties": {
+          "present": {
+            "type": "boolean",
+            "const": false,
+            "title": "Present"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "present"
+        ],
+        "title": "AbsentMetadataValue"
+      },
       "ActiveSubstance": {
         "properties": {
           "start_date": {
@@ -119340,7 +121358,7 @@
             "minLength": 1,
             "format": "html",
             "title": "Name",
-            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []."
+            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []. Use numeric entities &#91; and &#93; for literal square brackets."
           },
           "guidance_text": {
             "anyOf": [
@@ -119498,7 +121516,7 @@
             "minLength": 1,
             "format": "html",
             "title": "Name",
-            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []."
+            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []. Use numeric entities &#91; and &#93; for literal square brackets."
           },
           "guidance_text": {
             "anyOf": [
@@ -119593,7 +121611,7 @@
             "minLength": 1,
             "format": "html",
             "title": "Name",
-            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []."
+            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []. Use numeric entities &#91; and &#93; for literal square brackets."
           },
           "guidance_text": {
             "anyOf": [
@@ -121696,6 +123714,38 @@
           "time_reference_name"
         ],
         "title": "AllowedTimeReferences"
+      },
+      "AppliedNullAdjudication": {
+        "properties": {
+          "value_path": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[a-z_]+(?:\\.[a-z_]+)+$",
+            "title": "Value Path"
+          },
+          "companion_path": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[a-z_]+(?:\\.[a-z_]+)+$",
+            "title": "Companion Path"
+          },
+          "null_term_uid": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Null Term Uid"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value_path",
+          "companion_path",
+          "null_term_uid"
+        ],
+        "title": "AppliedNullAdjudication"
       },
       "BatchErrorResponse": {
         "properties": {
@@ -129597,7 +131647,7 @@
             "minLength": 1,
             "format": "html",
             "title": "Name",
-            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []."
+            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []. Use numeric entities &#91; and &#93; for literal square brackets."
           },
           "guidance_text": {
             "anyOf": [
@@ -129756,7 +131806,7 @@
             "minLength": 1,
             "format": "html",
             "title": "Name",
-            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []."
+            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []. Use numeric entities &#91; and &#93; for literal square brackets."
           },
           "guidance_text": {
             "anyOf": [
@@ -129851,7 +131901,7 @@
             "minLength": 1,
             "format": "html",
             "title": "Name",
-            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []."
+            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []. Use numeric entities &#91; and &#93; for literal square brackets."
           },
           "guidance_text": {
             "anyOf": [
@@ -130765,6 +132815,51 @@
           "template"
         ],
         "title": "CriteriaWithType"
+      },
+      "CslPlanAssociationPins": {
+        "properties": {
+          "nativeTenantId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "title": "Nativetenantid"
+          },
+          "nativeStudyId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "title": "Nativestudyid"
+          },
+          "canonicalRevisionId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "title": "Canonicalrevisionid"
+          },
+          "canonicalRevisionHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Canonicalrevisionhash"
+          },
+          "planHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Planhash"
+          },
+          "reviewCommitmentHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Reviewcommitmenthash"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "nativeTenantId",
+          "nativeStudyId",
+          "canonicalRevisionId",
+          "canonicalRevisionHash",
+          "planHash",
+          "reviewCommitmentHash"
+        ],
+        "title": "CslPlanAssociationPins"
       },
       "CustomPage": {
         "properties": {
@@ -137971,7 +140066,7 @@
             "minLength": 1,
             "format": "html",
             "title": "Name",
-            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []."
+            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []. Use numeric entities &#91; and &#93; for literal square brackets."
           },
           "guidance_text": {
             "anyOf": [
@@ -138124,7 +140219,7 @@
             "minLength": 1,
             "format": "html",
             "title": "Name",
-            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []."
+            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []. Use numeric entities &#91; and &#93; for literal square brackets."
           },
           "guidance_text": {
             "anyOf": [
@@ -138235,7 +140330,7 @@
             "minLength": 1,
             "format": "html",
             "title": "Name",
-            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []."
+            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []. Use numeric entities &#91; and &#93; for literal square brackets."
           },
           "guidance_text": {
             "anyOf": [
@@ -140372,7 +142467,7 @@
             "minLength": 1,
             "format": "html",
             "title": "Name",
-            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []."
+            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []. Use numeric entities &#91; and &#93; for literal square brackets."
           },
           "study_uid": {
             "anyOf": [
@@ -140548,7 +142643,7 @@
             "minLength": 1,
             "format": "html",
             "title": "Name",
-            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []."
+            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []. Use numeric entities &#91; and &#93; for literal square brackets."
           },
           "change_description": {
             "type": "string",
@@ -140571,7 +142666,7 @@
             "minLength": 1,
             "format": "html",
             "title": "Name",
-            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []."
+            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []. Use numeric entities &#91; and &#93; for literal square brackets."
           }
         },
         "type": "object",
@@ -141778,6 +143873,175 @@
         "type": "object",
         "title": "GlobalPreferencesPatchInput"
       },
+      "GovernedItemAssociationResponse": {
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "OsbGovernedItemAssociationObservationV1@1.0.0",
+            "title": "Contractversion"
+          },
+          "associationId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "title": "Associationid"
+          },
+          "associationHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Associationhash"
+          },
+          "nativeTenantId": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Nativetenantid"
+          },
+          "selector": {
+            "$ref": "#/components/schemas/GovernedItemAssociationSelector"
+          },
+          "assurance": {
+            "type": "string",
+            "const": "native-session-review",
+            "title": "Assurance"
+          },
+          "associationReviewAction": {
+            "type": "string",
+            "const": "governed-item-association:review",
+            "title": "Associationreviewaction"
+          },
+          "currentOriginalDecisionVerified": {
+            "type": "boolean",
+            "const": true,
+            "title": "Currentoriginaldecisionverified"
+          },
+          "selectedActivityReachabilityVerified": {
+            "type": "boolean",
+            "const": true,
+            "title": "Selectedactivityreachabilityverified"
+          },
+          "cslPlanCustodyVerified": {
+            "type": "boolean",
+            "const": false,
+            "title": "Cslplancustodyverified"
+          },
+          "clinicalApprovalVerified": {
+            "type": "boolean",
+            "const": false,
+            "title": "Clinicalapprovalverified"
+          },
+          "detachedSignatureVerified": {
+            "type": "boolean",
+            "const": false,
+            "title": "Detachedsignatureverified"
+          },
+          "observedAt": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+            "title": "Observedat"
+          },
+          "authorityCheckedAt": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+            "title": "Authoritycheckedat"
+          },
+          "expiresAt": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+            "title": "Expiresat"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "contractVersion",
+          "associationId",
+          "associationHash",
+          "nativeTenantId",
+          "selector",
+          "assurance",
+          "associationReviewAction",
+          "currentOriginalDecisionVerified",
+          "selectedActivityReachabilityVerified",
+          "cslPlanCustodyVerified",
+          "clinicalApprovalVerified",
+          "detachedSignatureVerified",
+          "observedAt",
+          "authorityCheckedAt",
+          "expiresAt"
+        ],
+        "title": "GovernedItemAssociationResponse"
+      },
+      "GovernedItemAssociationSelector": {
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "OsbGovernedItemAssociationSelectorV1@1.0.0",
+            "title": "Contractversion"
+          },
+          "proposalHash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Proposalhash"
+          },
+          "proposalObjectId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Proposalobjectid"
+          },
+          "reviewDecisionId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "title": "Reviewdecisionid"
+          },
+          "reviewDecisionHash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Reviewdecisionhash"
+          },
+          "candidateKey": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Candidatekey"
+          },
+          "selected": {
+            "$ref": "#/components/schemas/SelectedActivityItemRequest"
+          },
+          "selectedPathHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Selectedpathhash"
+          },
+          "libraryItemHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Libraryitemhash"
+          },
+          "operationHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Operationhash"
+          },
+          "csl": {
+            "$ref": "#/components/schemas/CslPlanAssociationPins"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "contractVersion",
+          "proposalHash",
+          "proposalObjectId",
+          "reviewDecisionId",
+          "reviewDecisionHash",
+          "candidateKey",
+          "selected",
+          "selectedPathHash",
+          "libraryItemHash",
+          "operationHash",
+          "csl"
+        ],
+        "title": "GovernedItemAssociationSelector"
+      },
       "GraphUser": {
         "properties": {
           "id": {
@@ -141860,6 +144124,28 @@
       "HighLevelStudyDesignJsonModel": {
         "properties": {
           "study_type_code": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SimpleCTTermNameWithConflictFlag"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "nullable": true
+          },
+          "observational_model_code": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SimpleCTTermNameWithConflictFlag"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "nullable": true
+          },
+          "observational_time_perspective_code": {
             "anyOf": [
               {
                 "$ref": "#/components/schemas/SimpleCTTermNameWithConflictFlag"
@@ -142463,6 +144749,7 @@
         "title": "ItemCounts",
         "description": "Model used for expressing counts of instantiations of objective, endpoint etc.\ntemplates."
       },
+      "JsonValue": {},
       "LagTime": {
         "properties": {
           "start_date": {
@@ -142817,11 +145104,19 @@
               "objective_templates",
               "endpoint_templates",
               "criteria_templates",
+              "activity_instruction_templates",
               "timeframe_templates",
+              "timeframes",
+              "compound_product_relationships",
+              "study_compound_dosing_relationships",
               "activities",
               "odm_forms",
               "odm_item_groups",
-              "odm_items"
+              "odm_items",
+              "odm_conditions",
+              "odm_methods",
+              "odm_aliases",
+              "activity_schedules"
             ],
             "title": "Resource Family"
           },
@@ -143171,11 +145466,19 @@
               "objective_templates",
               "endpoint_templates",
               "criteria_templates",
+              "activity_instruction_templates",
               "timeframe_templates",
+              "timeframes",
+              "compound_product_relationships",
+              "study_compound_dosing_relationships",
               "activities",
               "odm_forms",
               "odm_item_groups",
-              "odm_items"
+              "odm_items",
+              "odm_conditions",
+              "odm_methods",
+              "odm_aliases",
+              "activity_schedules"
             ],
             "title": "Resource Family"
           },
@@ -143275,11 +145578,19 @@
               "objective_templates",
               "endpoint_templates",
               "criteria_templates",
+              "activity_instruction_templates",
               "timeframe_templates",
+              "timeframes",
+              "compound_product_relationships",
+              "study_compound_dosing_relationships",
               "activities",
               "odm_forms",
               "odm_item_groups",
-              "odm_items"
+              "odm_items",
+              "odm_conditions",
+              "odm_methods",
+              "odm_aliases",
+              "activity_schedules"
             ],
             "title": "Resource Family"
           },
@@ -143464,15 +145775,23 @@
                 "objective_templates",
                 "endpoint_templates",
                 "criteria_templates",
+                "activity_instruction_templates",
                 "timeframe_templates",
+                "timeframes",
+                "compound_product_relationships",
+                "study_compound_dosing_relationships",
                 "activities",
                 "odm_forms",
                 "odm_item_groups",
-                "odm_items"
+                "odm_items",
+                "odm_conditions",
+                "odm_methods",
+                "odm_aliases",
+                "activity_schedules"
               ]
             },
             "type": "array",
-            "maxItems": 12,
+            "maxItems": 24,
             "title": "Resource Families"
           },
           "search_strings": {
@@ -143589,11 +145908,19 @@
                 "objective_templates",
                 "endpoint_templates",
                 "criteria_templates",
+                "activity_instruction_templates",
                 "timeframe_templates",
+                "timeframes",
+                "compound_product_relationships",
+                "study_compound_dosing_relationships",
                 "activities",
                 "odm_forms",
                 "odm_item_groups",
-                "odm_items"
+                "odm_items",
+                "odm_conditions",
+                "odm_methods",
+                "odm_aliases",
+                "activity_schedules"
               ]
             },
             "type": "object",
@@ -143682,7 +146009,7 @@
               "$ref": "#/components/schemas/MappingContextCandidateGroupRequest"
             },
             "type": "array",
-            "maxItems": 10000,
+            "maxItems": 75000,
             "title": "Candidate Groups"
           },
           "maximum_candidates_per_group": {
@@ -144381,6 +146708,396 @@
         "title": "MultiTemplateParameterTerm",
         "description": "A MultiTemplateParameterTerm provides a way to select a list of template parameter terms for a\ngiven position in a template.\n\nGiven the template \"To evaluate [Activity]\", and the value \"To evaluate [Activity X and Activity Y]\",\nan example value for a MultiTemplateParameterTerm is:\n{\n    position: 1,\n    conjunction: 'and',\n    terms: [\n        {index: 1, name: \"Activity_0001\", uid: \"39040243\"},\n        {index: 2, name: \"Activity_0002\", uid: \"32210211\"}\n    ]\n}"
       },
+      "NativeItemObservationRequest": {
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "OsbNativeItemObservationRequestV1@1.0.0",
+            "title": "Contractversion"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "library-item",
+              "study-selection"
+            ],
+            "title": "Scope"
+          },
+          "platformStudyId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Platformstudyid"
+          },
+          "nativeStudyId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Nativestudyid"
+          },
+          "nativeStudyVersion": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Nativestudyversion"
+          },
+          "bindingId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Bindingid"
+          },
+          "decisionId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Decisionid"
+          },
+          "decisionHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Decisionhash"
+          },
+          "candidateSetVersionId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Candidatesetversionid"
+          },
+          "candidateSetHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Candidatesethash"
+          },
+          "mappingContextHash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Mappingcontexthash"
+          },
+          "evidenceSetVersionId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Evidencesetversionid"
+          },
+          "evidenceSetHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Evidencesethash"
+          },
+          "evidenceId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Evidenceid"
+          },
+          "factId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Factid"
+          },
+          "revision": {
+            "type": "integer",
+            "maximum": 2147483647.0,
+            "minimum": 1.0,
+            "title": "Revision"
+          },
+          "targetKey": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Targetkey"
+          },
+          "itemUid": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Itemuid"
+          },
+          "itemVersion": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Itemversion"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "contractVersion",
+          "scope",
+          "platformStudyId",
+          "nativeStudyId",
+          "nativeStudyVersion",
+          "bindingId",
+          "decisionId",
+          "decisionHash",
+          "candidateSetVersionId",
+          "candidateSetHash",
+          "mappingContextHash",
+          "evidenceSetVersionId",
+          "evidenceSetHash",
+          "evidenceId",
+          "factId",
+          "revision",
+          "targetKey",
+          "itemUid",
+          "itemVersion"
+        ],
+        "title": "NativeItemObservationRequest"
+      },
+      "NativeItemObservationResponse": {
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "OsbNativeItemObservationV1@1.1.0",
+            "title": "Contractversion"
+          },
+          "scope": {
+            "type": "string",
+            "const": "library-item",
+            "title": "Scope"
+          },
+          "pins": {
+            "$ref": "#/components/schemas/NativeItemObservationRequest"
+          },
+          "tenantId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Tenantid"
+          },
+          "item": {
+            "$ref": "#/components/schemas/NativeLibraryItem"
+          },
+          "itemHash": {
+            "$ref": "#/components/schemas/ObservationHash"
+          },
+          "decisionHash": {
+            "$ref": "#/components/schemas/ObservationHash"
+          },
+          "candidateSetHash": {
+            "$ref": "#/components/schemas/ObservationHash"
+          },
+          "evidenceSetHash": {
+            "$ref": "#/components/schemas/ObservationHash"
+          },
+          "operationHash": {
+            "$ref": "#/components/schemas/ObservationHash"
+          },
+          "decisionAssurance": {
+            "type": "string",
+            "const": "retained-prototype-attestation",
+            "title": "Decisionassurance"
+          },
+          "contextAssurance": {
+            "type": "string",
+            "const": "retained-exact-context",
+            "title": "Contextassurance"
+          },
+          "studySelectionVerified": {
+            "type": "boolean",
+            "const": false,
+            "title": "Studyselectionverified"
+          },
+          "semanticApprovalVerified": {
+            "type": "boolean",
+            "const": false,
+            "title": "Semanticapprovalverified"
+          },
+          "observedAt": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+            "title": "Observedat"
+          },
+          "authorityCheckedAt": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+            "title": "Authoritycheckedat"
+          },
+          "expiresAt": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+            "title": "Expiresat"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "contractVersion",
+          "scope",
+          "pins",
+          "tenantId",
+          "item",
+          "itemHash",
+          "decisionHash",
+          "candidateSetHash",
+          "evidenceSetHash",
+          "operationHash",
+          "decisionAssurance",
+          "contextAssurance",
+          "studySelectionVerified",
+          "semanticApprovalVerified",
+          "observedAt",
+          "authorityCheckedAt",
+          "expiresAt"
+        ],
+        "title": "NativeItemObservationResponse"
+      },
+      "NativeLibraryItem": {
+        "properties": {
+          "uid": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Uid"
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Version"
+          },
+          "status": {
+            "type": "string",
+            "const": "Final",
+            "title": "Status"
+          },
+          "fields": {
+            "$ref": "#/components/schemas/NativeLibraryItemScalars"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "uid",
+          "version",
+          "status",
+          "fields"
+        ],
+        "title": "NativeLibraryItem"
+      },
+      "NativeLibraryItemScalars": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "oid": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oid"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
+          },
+          "datatype": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Datatype"
+          },
+          "length": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2147483647.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Length"
+          },
+          "significantDigits": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2147483647.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Significantdigits"
+          },
+          "sasFieldName": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sasfieldname"
+          },
+          "sdsVarName": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sdsvarname"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "oid",
+          "prompt",
+          "datatype",
+          "length",
+          "significantDigits",
+          "sasFieldName",
+          "sdsVarName",
+          "origin",
+          "comment"
+        ],
+        "title": "NativeLibraryItemScalars"
+      },
       "Notification": {
         "properties": {
           "sn": {
@@ -144581,6 +147298,87 @@
           "error"
         ],
         "title": "NotificationType"
+      },
+      "NullAdjudication": {
+        "properties": {
+          "value_path": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[a-z_]+(?:\\.[a-z_]+)+$",
+            "title": "Value Path"
+          },
+          "companion_path": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[a-z_]+(?:\\.[a-z_]+)+$",
+            "title": "Companion Path"
+          },
+          "expected_value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AbsentMetadataValue"
+              },
+              {
+                "$ref": "#/components/schemas/PresentMetadataValue"
+              }
+            ],
+            "title": "Expected Value"
+          },
+          "expected_null_companion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AbsentMetadataValue"
+              },
+              {
+                "$ref": "#/components/schemas/PresentMetadataValue"
+              }
+            ],
+            "title": "Expected Null Companion"
+          },
+          "null_term_uid": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Null Term Uid"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value_path",
+          "companion_path",
+          "expected_value",
+          "expected_null_companion",
+          "null_term_uid"
+        ],
+        "title": "NullAdjudication"
+      },
+      "NullAdjudicationField": {
+        "properties": {
+          "value_path": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[a-z_]+(?:\\.[a-z_]+)+$",
+            "title": "Value Path"
+          },
+          "companion_path": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[a-z_]+(?:\\.[a-z_]+)+$",
+            "title": "Companion Path"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value_path",
+          "companion_path"
+        ],
+        "title": "NullAdjudicationField"
       },
       "NumericValue": {
         "properties": {
@@ -145999,7 +148797,7 @@
             "minLength": 1,
             "format": "html",
             "title": "Name",
-            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []."
+            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []. Use numeric entities &#91; and &#93; for literal square brackets."
           },
           "guidance_text": {
             "anyOf": [
@@ -146134,7 +148932,7 @@
             "minLength": 1,
             "format": "html",
             "title": "Name",
-            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []."
+            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []. Use numeric entities &#91; and &#93; for literal square brackets."
           },
           "guidance_text": {
             "anyOf": [
@@ -146245,7 +149043,7 @@
             "minLength": 1,
             "format": "html",
             "title": "Name",
-            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []."
+            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []. Use numeric entities &#91; and &#93; for literal square brackets."
           },
           "guidance_text": {
             "anyOf": [
@@ -146880,6 +149678,54 @@
         ],
         "title": "ObjectiveVersion",
         "description": "Class for storing Objectives and calculation of differences"
+      },
+      "ObservationHash": {
+        "properties": {
+          "algorithm": {
+            "type": "string",
+            "const": "sha-256",
+            "title": "Algorithm"
+          },
+          "canonicalizationVersion": {
+            "type": "string",
+            "const": "canonical-json/1.0",
+            "title": "Canonicalizationversion"
+          },
+          "value": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Value"
+          },
+          "mediaType": {
+            "type": "string",
+            "maxLength": 128,
+            "title": "Mediatype"
+          },
+          "schemaVersion": {
+            "type": "string",
+            "maxLength": 128,
+            "title": "Schemaversion"
+          },
+          "excludedPaths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 0,
+            "title": "Excludedpaths"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "algorithm",
+          "canonicalizationVersion",
+          "value",
+          "mediaType",
+          "schemaVersion",
+          "excludedPaths"
+        ],
+        "title": "ObservationHash"
       },
       "OdmAliasModel": {
         "properties": {
@@ -151288,7 +154134,7 @@
               "minLength": 1
             },
             "type": "array",
-            "maxItems": 5000,
+            "maxItems": 25000,
             "title": "Sourcerunids"
           },
           "sourceDocumentVersionIds": {
@@ -151310,6 +154156,16 @@
             "maxItems": 100,
             "minItems": 1,
             "title": "Sourcedocuments"
+          },
+          "sourceAuthority": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProposalSourceAuthority"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "previousProposalHash": {
             "anyOf": [
@@ -151352,7 +154208,7 @@
               "$ref": "#/components/schemas/ProposalSourceFactRef"
             },
             "type": "array",
-            "maxItems": 5000,
+            "maxItems": 25000,
             "title": "Sourcefactrefs"
           }
         },
@@ -151754,6 +154610,25 @@
           "metadata"
         ],
         "title": "PreferencesResponse"
+      },
+      "PresentMetadataValue": {
+        "properties": {
+          "present": {
+            "type": "boolean",
+            "const": true,
+            "title": "Present"
+          },
+          "value": {
+            "$ref": "#/components/schemas/JsonValue"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "present",
+          "value"
+        ],
+        "title": "PresentMetadataValue"
       },
       "Project": {
         "properties": {
@@ -152500,6 +155375,7 @@
           },
           "target_study_version": {
             "type": "string",
+            "const": "DRAFT",
             "title": "Target Study Version"
           },
           "target_study_status": {
@@ -152507,9 +155383,18 @@
             "const": "DRAFT",
             "title": "Target Study Status"
           },
+          "target_study_value_node_id": {
+            "type": "string",
+            "title": "Target Study Value Node Id"
+          },
           "target_study_owner_id": {
             "type": "string",
             "title": "Target Study Owner Id"
+          },
+          "target_ownership_basis": {
+            "type": "string",
+            "const": "initial_version_author",
+            "title": "Target Ownership Basis"
           },
           "target_version_start_date": {
             "type": "string",
@@ -152549,7 +155434,9 @@
           "target_study_uid",
           "target_study_version",
           "target_study_status",
+          "target_study_value_node_id",
           "target_study_owner_id",
+          "target_ownership_basis",
           "target_version_start_date",
           "decision_set_hash",
           "signature_id",
@@ -152570,8 +155457,7 @@
           },
           "targetStudyVersion": {
             "type": "string",
-            "maxLength": 512,
-            "minLength": 1,
+            "const": "DRAFT",
             "title": "Targetstudyversion"
           },
           "expectedDecisionSetHash": {
@@ -152969,151 +155855,151 @@
         "properties": {
           "sourceFacts": {
             "type": "integer",
-            "maximum": 5000.0,
+            "maximum": 25000.0,
             "minimum": 0.0,
             "title": "Sourcefacts"
           },
           "eligibleApprovedFacts": {
             "type": "integer",
-            "maximum": 5000.0,
+            "maximum": 25000.0,
             "minimum": 0.0,
             "title": "Eligibleapprovedfacts"
           },
           "proposedObjects": {
             "type": "integer",
-            "maximum": 15000.0,
+            "maximum": 75000.0,
             "minimum": 0.0,
             "title": "Proposedobjects"
           },
           "nativeStudyMutationTargets": {
             "type": "integer",
-            "maximum": 15000.0,
+            "maximum": 75000.0,
             "minimum": 0.0,
             "title": "Nativestudymutationtargets"
           },
           "governedLibraryReferenceTargets": {
             "type": "integer",
-            "maximum": 15000.0,
+            "maximum": 75000.0,
             "minimum": 0.0,
             "title": "Governedlibraryreferencetargets"
           },
           "governedExtensionTargets": {
             "type": "integer",
-            "maximum": 15000.0,
+            "maximum": 75000.0,
             "minimum": 0.0,
             "title": "Governedextensiontargets"
           },
           "retainedNarrativeTargets": {
             "type": "integer",
-            "maximum": 15000.0,
+            "maximum": 75000.0,
             "minimum": 0.0,
             "title": "Retainednarrativetargets"
           },
           "unresolvedTargets": {
             "type": "integer",
-            "maximum": 15000.0,
+            "maximum": 75000.0,
             "minimum": 0.0,
             "title": "Unresolvedtargets"
           },
           "nativeTargetSourceFacts": {
             "type": "integer",
-            "maximum": 5000.0,
+            "maximum": 25000.0,
             "minimum": 0.0,
             "title": "Nativetargetsourcefacts"
           },
           "fullyNativeTargetSourceFacts": {
             "type": "integer",
-            "maximum": 5000.0,
+            "maximum": 25000.0,
             "minimum": 0.0,
             "title": "Fullynativetargetsourcefacts"
           },
           "mappedSourceFacts": {
             "type": "integer",
-            "maximum": 5000.0,
+            "maximum": 25000.0,
             "minimum": 0.0,
             "title": "Mappedsourcefacts"
           },
           "exact": {
             "type": "integer",
-            "maximum": 15000.0,
+            "maximum": 75000.0,
             "minimum": 0.0,
             "title": "Exact"
           },
           "review": {
             "type": "integer",
-            "maximum": 15000.0,
+            "maximum": 75000.0,
             "minimum": 0.0,
             "title": "Review"
           },
           "createRequests": {
             "type": "integer",
-            "maximum": 15000.0,
+            "maximum": 75000.0,
             "minimum": 0.0,
             "title": "Createrequests"
           },
           "unresolved": {
             "type": "integer",
-            "maximum": 15000.0,
+            "maximum": 75000.0,
             "minimum": 0.0,
             "title": "Unresolved"
           },
           "notApplicable": {
             "type": "integer",
-            "maximum": 5000.0,
+            "maximum": 25000.0,
             "minimum": 0.0,
             "title": "Notapplicable"
           },
           "excluded": {
             "type": "integer",
-            "maximum": 5000.0,
+            "maximum": 25000.0,
             "minimum": 0.0,
             "title": "Excluded"
           },
           "quarantined": {
             "type": "integer",
-            "maximum": 5000.0,
+            "maximum": 25000.0,
             "minimum": 0.0,
             "title": "Quarantined"
           },
           "rejected": {
             "type": "integer",
-            "maximum": 5000.0,
+            "maximum": 25000.0,
             "minimum": 0.0,
             "title": "Rejected"
           },
           "notBuildFeeding": {
             "type": "integer",
-            "maximum": 5000.0,
+            "maximum": 25000.0,
             "minimum": 0.0,
             "title": "Notbuildfeeding"
           },
           "archived": {
             "type": "integer",
-            "maximum": 5000.0,
+            "maximum": 25000.0,
             "minimum": 0.0,
             "title": "Archived"
           },
           "unreviewed": {
             "type": "integer",
-            "maximum": 5000.0,
+            "maximum": 25000.0,
             "minimum": 0.0,
             "title": "Unreviewed"
           },
           "duplicateLinks": {
             "type": "integer",
-            "maximum": 5000.0,
+            "maximum": 25000.0,
             "minimum": 0.0,
             "title": "Duplicatelinks"
           },
           "supersessionLinks": {
             "type": "integer",
-            "maximum": 5000.0,
+            "maximum": 25000.0,
             "minimum": 0.0,
             "title": "Supersessionlinks"
           },
           "signedExclusions": {
             "type": "integer",
-            "maximum": 5000.0,
+            "maximum": 25000.0,
             "minimum": 0.0,
             "title": "Signedexclusions"
           },
@@ -153129,7 +156015,7 @@
               "minLength": 1
             },
             "type": "array",
-            "maxItems": 5000,
+            "maxItems": 25000,
             "title": "Duplicatefactids"
           },
           "missingSourceFactIds": {
@@ -153139,7 +156025,7 @@
               "minLength": 1
             },
             "type": "array",
-            "maxItems": 5000,
+            "maxItems": 25000,
             "title": "Missingsourcefactids"
           },
           "dispositions": {
@@ -153147,7 +156033,7 @@
               "$ref": "#/components/schemas/ProposalSourceDisposition"
             },
             "type": "array",
-            "maxItems": 5000,
+            "maxItems": 25000,
             "title": "Dispositions"
           }
         },
@@ -153339,9 +156225,9 @@
         "properties": {
           "schema_version": {
             "type": "string",
-            "const": "osb-proposal-review/1.2",
+            "const": "osb-proposal-review/1.3",
             "title": "Schema Version",
-            "default": "osb-proposal-review/1.2"
+            "default": "osb-proposal-review/1.3"
           },
           "mapping_authority": {
             "type": "string",
@@ -153457,6 +156343,17 @@
             ],
             "title": "Target Study Status"
           },
+          "target_study_value_node_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Study Value Node Id"
+          },
           "target_study_owner_id": {
             "anyOf": [
               {
@@ -153468,9 +156365,25 @@
             ],
             "title": "Target Study Owner Id"
           },
+          "target_ownership_basis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Ownership Basis"
+          },
           "target_ownership_verified": {
             "type": "boolean",
             "title": "Target Ownership Verified",
+            "default": false
+          },
+          "target_snapshot_verified": {
+            "type": "boolean",
+            "title": "Target Snapshot Verified",
             "default": false
           },
           "execution_authorization": {
@@ -153493,6 +156406,18 @@
             },
             "type": "array",
             "title": "Execution Blockers"
+          },
+          "release_ready": {
+            "type": "boolean",
+            "title": "Release Ready",
+            "default": false
+          },
+          "release_blockers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Release Blockers"
           },
           "objects": {
             "items": {
@@ -153528,7 +156453,7 @@
               "$ref": "#/components/schemas/ProposalObject"
             },
             "type": "array",
-            "maxItems": 15000,
+            "maxItems": 75000,
             "title": "Studysetup"
           },
           "standards": {
@@ -153536,7 +156461,7 @@
               "$ref": "#/components/schemas/ProposalObject"
             },
             "type": "array",
-            "maxItems": 15000,
+            "maxItems": 75000,
             "title": "Standards"
           },
           "objectives": {
@@ -153544,7 +156469,7 @@
               "$ref": "#/components/schemas/ProposalObject"
             },
             "type": "array",
-            "maxItems": 15000,
+            "maxItems": 75000,
             "title": "Objectives"
           },
           "endpoints": {
@@ -153552,7 +156477,7 @@
               "$ref": "#/components/schemas/ProposalObject"
             },
             "type": "array",
-            "maxItems": 15000,
+            "maxItems": 75000,
             "title": "Endpoints"
           },
           "criteria": {
@@ -153560,7 +156485,7 @@
               "$ref": "#/components/schemas/ProposalObject"
             },
             "type": "array",
-            "maxItems": 15000,
+            "maxItems": 75000,
             "title": "Criteria"
           },
           "productsDosing": {
@@ -153568,7 +156493,7 @@
               "$ref": "#/components/schemas/ProposalObject"
             },
             "type": "array",
-            "maxItems": 15000,
+            "maxItems": 75000,
             "title": "Productsdosing"
           },
           "armsCohortsBranches": {
@@ -153576,7 +156501,7 @@
               "$ref": "#/components/schemas/ProposalObject"
             },
             "type": "array",
-            "maxItems": 15000,
+            "maxItems": 75000,
             "title": "Armscohortsbranches"
           },
           "epochsElementsCells": {
@@ -153584,7 +156509,7 @@
               "$ref": "#/components/schemas/ProposalObject"
             },
             "type": "array",
-            "maxItems": 15000,
+            "maxItems": 75000,
             "title": "Epochselementscells"
           },
           "visitsTiming": {
@@ -153592,7 +156517,7 @@
               "$ref": "#/components/schemas/ProposalObject"
             },
             "type": "array",
-            "maxItems": 15000,
+            "maxItems": 75000,
             "title": "Visitstiming"
           },
           "activitiesItems": {
@@ -153600,7 +156525,7 @@
               "$ref": "#/components/schemas/ProposalObject"
             },
             "type": "array",
-            "maxItems": 15000,
+            "maxItems": 75000,
             "title": "Activitiesitems"
           },
           "soa": {
@@ -153608,7 +156533,7 @@
               "$ref": "#/components/schemas/ProposalObject"
             },
             "type": "array",
-            "maxItems": 15000,
+            "maxItems": 75000,
             "title": "Soa"
           },
           "odm": {
@@ -153616,7 +156541,7 @@
               "$ref": "#/components/schemas/ProposalObject"
             },
             "type": "array",
-            "maxItems": 15000,
+            "maxItems": 75000,
             "title": "Odm"
           },
           "extensions": {
@@ -153624,7 +156549,7 @@
               "$ref": "#/components/schemas/ProposalObject"
             },
             "type": "array",
-            "maxItems": 15000,
+            "maxItems": 75000,
             "title": "Extensions"
           },
           "retainedNarrative": {
@@ -153632,7 +156557,7 @@
               "$ref": "#/components/schemas/ProposalObject"
             },
             "type": "array",
-            "maxItems": 15000,
+            "maxItems": 75000,
             "title": "Retainednarrative"
           },
           "unresolved": {
@@ -153640,7 +156565,7 @@
               "$ref": "#/components/schemas/ProposalObject"
             },
             "type": "array",
-            "maxItems": 15000,
+            "maxItems": 75000,
             "title": "Unresolved"
           }
         },
@@ -153664,6 +156589,65 @@
           "unresolved"
         ],
         "title": "ProposalSections"
+      },
+      "ProposalSourceAuthority": {
+        "properties": {
+          "authorityType": {
+            "type": "string",
+            "const": "semantic_claim_projection",
+            "title": "Authoritytype"
+          },
+          "system": {
+            "type": "string",
+            "const": "ClinicalSemanticLayer",
+            "title": "System"
+          },
+          "contractVersion": {
+            "type": "string",
+            "const": "1.0",
+            "title": "Contractversion"
+          },
+          "tenantId": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Tenantid"
+          },
+          "studyId": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Studyid"
+          },
+          "packageHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Packagehash"
+          },
+          "contentHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Contenthash"
+          },
+          "mediaType": {
+            "type": "string",
+            "const": "application/vnd.accuratrials.semantic-claim-projection+json;version=1.0",
+            "title": "Mediatype"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "authorityType",
+          "system",
+          "contractVersion",
+          "tenantId",
+          "studyId",
+          "packageHash",
+          "contentHash",
+          "mediaType"
+        ],
+        "title": "ProposalSourceAuthority"
       },
       "ProposalSourceDisposition": {
         "properties": {
@@ -154491,6 +157475,460 @@
           "effective_date"
         ],
         "title": "RequestedMappingContextPackage"
+      },
+      "SelectedActivityItemFields": {
+        "properties": {
+          "textValue": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Textvalue"
+          },
+          "isAdamParamSpecific": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isadamparamspecific"
+          },
+          "isActivityInstanceIdSpecific": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isactivityinstanceidspecific"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "textValue",
+          "isAdamParamSpecific",
+          "isActivityInstanceIdSpecific"
+        ],
+        "title": "SelectedActivityItemFields"
+      },
+      "SelectedActivityItemLink": {
+        "properties": {
+          "order": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2147483647.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order"
+          },
+          "primary": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary"
+          },
+          "presetResponseValue": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Presetresponsevalue"
+          },
+          "valueCondition": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valuecondition"
+          },
+          "valueDependentMap": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valuedependentmap"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "order",
+          "primary",
+          "presetResponseValue",
+          "valueCondition",
+          "valueDependentMap"
+        ],
+        "title": "SelectedActivityItemLink"
+      },
+      "SelectedActivityItemPath": {
+        "properties": {
+          "nativeStudyId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Nativestudyid"
+          },
+          "studyValueVersion": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Studyvalueversion"
+          },
+          "studyVersionStatus": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Studyversionstatus"
+          },
+          "studyActivityInstanceUid": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Studyactivityinstanceuid"
+          },
+          "activityInstanceUid": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Activityinstanceuid"
+          },
+          "activityInstanceVersion": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Activityinstanceversion"
+          },
+          "activityInstanceStatus": {
+            "type": "string",
+            "const": "Final",
+            "title": "Activityinstancestatus"
+          },
+          "activityItemClassUid": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Activityitemclassuid"
+          },
+          "activityItemClassVersion": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Activityitemclassversion"
+          },
+          "activityItemClassStatus": {
+            "type": "string",
+            "const": "Final",
+            "title": "Activityitemclassstatus"
+          },
+          "itemUid": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Itemuid"
+          },
+          "itemVersion": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Itemversion"
+          },
+          "itemStatus": {
+            "type": "string",
+            "const": "Final",
+            "title": "Itemstatus"
+          },
+          "activityItem": {
+            "$ref": "#/components/schemas/SelectedActivityItemFields"
+          },
+          "itemLink": {
+            "$ref": "#/components/schemas/SelectedActivityItemLink"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "nativeStudyId",
+          "studyValueVersion",
+          "studyVersionStatus",
+          "studyActivityInstanceUid",
+          "activityInstanceUid",
+          "activityInstanceVersion",
+          "activityInstanceStatus",
+          "activityItemClassUid",
+          "activityItemClassVersion",
+          "activityItemClassStatus",
+          "itemUid",
+          "itemVersion",
+          "itemStatus",
+          "activityItem",
+          "itemLink"
+        ],
+        "title": "SelectedActivityItemPath"
+      },
+      "SelectedActivityItemRequest": {
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "OsbSelectedActivityItemRequestV1@1.0.0",
+            "title": "Contractversion"
+          },
+          "scope": {
+            "type": "string",
+            "const": "selected-activity-item",
+            "title": "Scope"
+          },
+          "platformStudyId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Platformstudyid"
+          },
+          "nativeStudyId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Nativestudyid"
+          },
+          "nativeStudyVersion": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Nativestudyversion"
+          },
+          "bindingId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Bindingid"
+          },
+          "decisionId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Decisionid"
+          },
+          "decisionHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Decisionhash"
+          },
+          "candidateSetVersionId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Candidatesetversionid"
+          },
+          "candidateSetHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Candidatesethash"
+          },
+          "mappingContextHash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Mappingcontexthash"
+          },
+          "evidenceSetVersionId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Evidencesetversionid"
+          },
+          "evidenceSetHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Evidencesethash"
+          },
+          "evidenceId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Evidenceid"
+          },
+          "factId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Factid"
+          },
+          "revision": {
+            "type": "integer",
+            "maximum": 2147483647.0,
+            "minimum": 1.0,
+            "title": "Revision"
+          },
+          "targetKey": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Targetkey"
+          },
+          "itemUid": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Itemuid"
+          },
+          "itemVersion": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Itemversion"
+          },
+          "studyValueVersion": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Studyvalueversion"
+          },
+          "studyActivityInstanceUid": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Studyactivityinstanceuid"
+          },
+          "activityInstanceUid": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Activityinstanceuid"
+          },
+          "activityInstanceVersion": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Activityinstanceversion"
+          },
+          "activityItemClassUid": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Activityitemclassuid"
+          },
+          "activityItemClassVersion": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+            "title": "Activityitemclassversion"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "contractVersion",
+          "scope",
+          "platformStudyId",
+          "nativeStudyId",
+          "nativeStudyVersion",
+          "bindingId",
+          "decisionId",
+          "decisionHash",
+          "candidateSetVersionId",
+          "candidateSetHash",
+          "mappingContextHash",
+          "evidenceSetVersionId",
+          "evidenceSetHash",
+          "evidenceId",
+          "factId",
+          "revision",
+          "targetKey",
+          "itemUid",
+          "itemVersion",
+          "studyValueVersion",
+          "studyActivityInstanceUid",
+          "activityInstanceUid",
+          "activityInstanceVersion",
+          "activityItemClassUid",
+          "activityItemClassVersion"
+        ],
+        "title": "SelectedActivityItemRequest"
+      },
+      "SelectedActivityItemResponse": {
+        "properties": {
+          "contractVersion": {
+            "type": "string",
+            "const": "OsbSelectedActivityItemObservationV1@1.0.0",
+            "title": "Contractversion"
+          },
+          "scope": {
+            "type": "string",
+            "const": "selected-activity-item",
+            "title": "Scope"
+          },
+          "pins": {
+            "$ref": "#/components/schemas/SelectedActivityItemRequest"
+          },
+          "libraryObservation": {
+            "$ref": "#/components/schemas/NativeItemObservationResponse"
+          },
+          "selection": {
+            "$ref": "#/components/schemas/SelectedActivityItemPath"
+          },
+          "selectionHash": {
+            "$ref": "#/components/schemas/ObservationHash"
+          },
+          "selectedActivityReachabilityVerified": {
+            "type": "boolean",
+            "const": true,
+            "title": "Selectedactivityreachabilityverified"
+          },
+          "semanticApprovalVerified": {
+            "type": "boolean",
+            "const": false,
+            "title": "Semanticapprovalverified"
+          },
+          "formApplicabilityVerified": {
+            "type": "boolean",
+            "const": false,
+            "title": "Formapplicabilityverified"
+          },
+          "requirednessVerified": {
+            "type": "boolean",
+            "const": false,
+            "title": "Requirednessverified"
+          },
+          "observedAt": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+            "title": "Observedat"
+          },
+          "authorityCheckedAt": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+            "title": "Authoritycheckedat"
+          },
+          "expiresAt": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+            "title": "Expiresat"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "contractVersion",
+          "scope",
+          "pins",
+          "libraryObservation",
+          "selection",
+          "selectionHash",
+          "selectedActivityReachabilityVerified",
+          "semanticApprovalVerified",
+          "formApplicabilityVerified",
+          "requirednessVerified",
+          "observedAt",
+          "authorityCheckedAt",
+          "expiresAt"
+        ],
+        "title": "SelectedActivityItemResponse"
       },
       "SimpleActiveSubstance": {
         "properties": {
@@ -163804,6 +167242,122 @@
           "uid"
         ],
         "title": "StudyMinimal"
+      },
+      "StudyNullAdjudicationCapability": {
+        "properties": {
+          "contract_version": {
+            "type": "string",
+            "const": "StudyNullAdjudicationV1@1.0.0",
+            "title": "Contract Version"
+          },
+          "comparison": {
+            "type": "string",
+            "const": "native-json-identity-v1",
+            "title": "Comparison"
+          },
+          "study_uid": {
+            "type": "string",
+            "title": "Study Uid"
+          },
+          "atomic_preconditions": {
+            "type": "boolean",
+            "const": true,
+            "title": "Atomic Preconditions"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/NullAdjudicationField"
+            },
+            "type": "array",
+            "title": "Fields"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "contract_version",
+          "comparison",
+          "study_uid",
+          "atomic_preconditions",
+          "fields"
+        ],
+        "title": "StudyNullAdjudicationCapability"
+      },
+      "StudyNullAdjudicationReceipt": {
+        "properties": {
+          "contract_version": {
+            "type": "string",
+            "const": "StudyNullAdjudicationV1@1.0.0",
+            "title": "Contract Version"
+          },
+          "study_uid": {
+            "type": "string",
+            "title": "Study Uid"
+          },
+          "request_hash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Request Hash"
+          },
+          "preconditions_verified": {
+            "type": "boolean",
+            "const": true,
+            "title": "Preconditions Verified"
+          },
+          "checked_paths": {
+            "items": {
+              "type": "string",
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[a-z_]+(?:\\.[a-z_]+)+$"
+            },
+            "type": "array",
+            "title": "Checked Paths"
+          },
+          "applied": {
+            "items": {
+              "$ref": "#/components/schemas/AppliedNullAdjudication"
+            },
+            "type": "array",
+            "title": "Applied"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "contract_version",
+          "study_uid",
+          "request_hash",
+          "preconditions_verified",
+          "checked_paths",
+          "applied"
+        ],
+        "title": "StudyNullAdjudicationReceipt"
+      },
+      "StudyNullAdjudicationRequest": {
+        "properties": {
+          "contract_version": {
+            "type": "string",
+            "const": "StudyNullAdjudicationV1@1.0.0",
+            "title": "Contract Version"
+          },
+          "adjudications": {
+            "items": {
+              "$ref": "#/components/schemas/NullAdjudication"
+            },
+            "type": "array",
+            "maxItems": 128,
+            "minItems": 1,
+            "title": "Adjudications"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "contract_version",
+          "adjudications"
+        ],
+        "title": "StudyNullAdjudicationRequest"
       },
       "StudyObjectiveListingModel": {
         "properties": {
@@ -178456,7 +182010,7 @@
             "minLength": 1,
             "format": "html",
             "title": "Name",
-            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []."
+            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []. Use numeric entities &#91; and &#93; for literal square brackets."
           },
           "guidance_text": {
             "anyOf": [
@@ -178500,7 +182054,7 @@
             "minLength": 1,
             "format": "html",
             "title": "Name",
-            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []."
+            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []. Use numeric entities &#91; and &#93; for literal square brackets."
           },
           "guidance_text": {
             "anyOf": [
@@ -178595,7 +182149,7 @@
             "minLength": 1,
             "format": "html",
             "title": "Name",
-            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []."
+            "description": "The actual value/content. It may include parameters referenced by simple strings in square brackets []. Use numeric entities &#91; and &#93; for literal square brackets."
           },
           "guidance_text": {
             "anyOf": [

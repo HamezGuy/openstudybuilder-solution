@@ -18,6 +18,7 @@ import hashlib
 import json
 import os
 import re
+from copy import deepcopy
 
 # OSB validates a vendor-namespace `prefix` as letters-only, so the prefix
 # cannot literally be "x360i" (contains a digit). The prefix is an opaque
@@ -901,7 +902,7 @@ def _canonical_json(value):
 def source_form_value(payload, form_ref):
     """Exact source form, including fields for one bounded lossless carrier."""
     for form in (
-        payload.get("sourceBundle", {}).get("forms", {}).get("forms", [])
+        _source_execution(payload.get("sourceBundle", {})).get("forms", {}).get("forms", [])
     ):
         if form.get("refKey") == form_ref:
             return _canonical_json(form)
@@ -911,7 +912,7 @@ def source_form_value(payload, form_ref):
 def source_field_value(payload, form_ref, field_ref):
     """Exact source field for one form placement (compound identity)."""
     for form in (
-        payload.get("sourceBundle", {}).get("forms", {}).get("forms", [])
+        _source_execution(payload.get("sourceBundle", {})).get("forms", {}).get("forms", [])
     ):
         if form.get("refKey") != form_ref:
             continue
@@ -921,12 +922,34 @@ def source_field_value(payload, form_ref, field_ref):
     return None
 
 
+def _source_execution(source):
+    """Current execution scope, with read-only historical snapshot support."""
+    return source["execution"] if source.get("formatVersion") == "2.0" else source
+
+
+def source_bundle_snapshot(payload):
+    """Keep V2 unchanged inside a private snapshot carrier when extra custody exists."""
+    snapshot = deepcopy(payload.get("sourceBundle", {}))
+    custody = payload.get("sourceCustody")
+    if custody is not None:
+        if snapshot.get("formatVersion") == "2.0":
+            # Mutating even an empty extensions object can invalidate an exact
+            # ledger target. Extra importer custody belongs outside the exchange.
+            return {"formatVersion": "osb-edc-source-snapshot/2", "studyExchange": snapshot,
+                    "semanticSourceCustody": deepcopy(custody)}
+        target = snapshot
+        if "semanticSourceCustody" in target and target["semanticSourceCustody"] != custody:
+            raise ValueError("SEMANTIC_SOURCE_CUSTODY_CONFLICT")
+        target["semanticSourceCustody"] = deepcopy(custody)
+    return snapshot
+
+
 def bundle_meta_value(payload):
-    """Source StudyBundle except form rows, which ride their own FormDefs."""
-    source = payload.get("sourceBundle", {})
+    """Current V2 is retained whole; historical form carriers remain readable."""
+    source = source_bundle_snapshot(payload)
+    if source.get("formatVersion") in {"2.0", "osb-edc-source-snapshot/2"}:
+        return _canonical_json(source)
     meta = {key: value for key, value in source.items() if key != "forms"}
-    if payload.get("sourceCustody") is not None:
-        meta["semanticSourceCustody"] = payload["sourceCustody"]
     forms_envelope = source.get("forms")
     if isinstance(forms_envelope, dict):
         forms_meta = {

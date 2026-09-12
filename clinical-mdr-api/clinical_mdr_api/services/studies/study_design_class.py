@@ -45,26 +45,36 @@ class StudyDesignClassService:
         study_uid: str,
         study_value_version: str | None = None,
     ) -> StudyDesignClass:
+        existing = self.get_existing_study_design_class(study_uid, study_value_version)
+        if existing is not None:
+            return existing
+        if study_value_version:
+            raise exceptions.NotFoundException(
+                msg=f"The StudyDesignClass node for Study with UID '{study_uid}' and study value version '{study_value_version}' doesn't exist."
+            )
+        return self.create(
+            study_uid=study_uid,
+            study_design_class_input=StudyDesignClassInput(
+                value=StudyDesignClassEnum.MANUAL
+            ),
+        )
+
+    def get_existing_study_design_class(
+        self,
+        study_uid: str,
+        study_value_version: str | None = None,
+    ) -> StudyDesignClass | None:
+        """Read the selected native fact without creating the UI's default."""
         self.check_if_study_exists(study_uid=study_uid)
         study_design_class_node = (
             self._repos.study_design_class_repository.get_study_design_class(
                 study_uid=study_uid, study_value_version=study_value_version
             )
         )
-        # If Study Design Class does not exist we should return Study Design Class defaulter to 'Manual' value
-        if not study_design_class_node:
-            if study_value_version:
-                raise exceptions.NotFoundException(
-                    msg=f"The StudyDesignClass node for Study with UID '{study_uid}' and study value version '{study_value_version}' doesn't exist."
-                )
-            return self.create(
-                study_uid=study_uid,
-                study_design_class_input=StudyDesignClassInput(
-                    value=StudyDesignClassEnum.MANUAL
-                ),
-            )
-
-        return StudyDesignClass.model_validate(study_design_class_node)
+        return (
+            StudyDesignClass.model_validate(study_design_class_node)
+            if study_design_class_node is not None else None
+        )
 
     def is_study_design_class_edition_allowed(
         self,

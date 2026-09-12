@@ -21,6 +21,7 @@ from clinical_mdr_api.repositories._utils import FilterOperator
 from clinical_mdr_api.services._meta_repository import MetaRepository  # type: ignore
 from clinical_mdr_api.services._utils import (
     calculate_diffs,
+    ensure_transaction,
     fill_missing_values_in_base_model_from_reference_base_model,
     is_library_editable,
 )
@@ -99,7 +100,7 @@ class DictionaryTermGenericService(ABC):
         )
         return item
 
-    @db.transaction
+    @ensure_transaction(db)
     def get_all_dictionary_terms(
         self,
         codelist_uid: str,

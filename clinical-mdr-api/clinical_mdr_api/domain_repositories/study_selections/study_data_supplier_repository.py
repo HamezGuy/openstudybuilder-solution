@@ -102,9 +102,9 @@ class StudyDataSupplierRepository:
             query += "MATCH (study_root)-[study_has_version:HAS_VERSION WHERE study_has_version.end_date IS NULL]->(study_value)"
         else:
             if study_uid is not None:
-                query = "MATCH (study_root:StudyRoot {uid:$study_uid})-[study_has_version:HAS_VERSION {status:'RELEASED', version:$study_value_version}]->(study_value:StudyValue)"
+                query = "MATCH (study_root:StudyRoot {uid:$study_uid})-[study_has_version:HAS_VERSION {version:$study_value_version}]->(study_value:StudyValue)"
             else:
-                query = "MATCH (study_root:StudyRoot)-[study_has_version:HAS_VERSION {status:'RELEASED', version:$study_value_version}]->(study_value:StudyValue)"
+                query = "MATCH (study_root:StudyRoot)-[study_has_version:HAS_VERSION {version:$study_value_version}]->(study_value:StudyValue)"
 
             query += f"""OPTIONAL MATCH (study_value)-[:HAS_STUDY_STANDARD_VERSION]->(:StudyStandardVersion)-[:HAS_CT_PACKAGE]->(ct_package:CTPackage)
             <-[:CONTAINS_PACKAGE]-(:CTCatalogue {{name: "{settings.sdtm_ct_catalogue_name}"}})"""

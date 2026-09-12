@@ -124,6 +124,7 @@ class StudyEpochService(StudySelectionMixin):
             )
 
         return StudyEpoch(
+            terminology_source=epoch.terminology_source,
             epoch=epoch.epoch.term_uid,
             epoch_subtype_name=epoch.subtype.sponsor_preferred_name,
             epoch_name=epoch.epoch.sponsor_preferred_name,
@@ -255,6 +256,9 @@ class StudyEpochService(StudySelectionMixin):
         study_epochs = StudyEpochRepository.find_all_epochs_by_study(
             study_uid=study_uid, study_value_version=study_value_version
         )
+        from clinical_mdr_api.services.studies.study_epoch_snapshot import resolve_epoch_term_history
+
+        resolve_epoch_term_history(study_epochs, study_uid, study_value_version)
 
         study_visits = StudyVisitRepository.find_all_visits_by_study_uid(
             study_uid, study_value_version=study_value_version
@@ -289,7 +293,12 @@ class StudyEpochService(StudySelectionMixin):
         study_epoch = StudyEpochRepository.find_by_uid(
             uid=uid, study_uid=study_uid, study_value_version=study_value_version
         )
-        study_visits = StudyVisitRepository.find_all_visits_by_study_uid(study_uid)
+        from clinical_mdr_api.services.studies.study_epoch_snapshot import resolve_epoch_term_history
+
+        resolve_epoch_term_history([study_epoch], study_uid, study_value_version)
+        study_visits = StudyVisitRepository.find_all_visits_by_study_uid(
+            study_uid, study_value_version=study_value_version,
+        )
         timeline = TimelineAR(study_uid, _visits=study_visits)
         timeline.collect_visits_to_epochs(
             StudyEpochRepository.find_all_epochs_by_study(
@@ -297,7 +306,7 @@ class StudyEpochService(StudySelectionMixin):
             )
         )
 
-        return cls._transform_all_to_response_model(study_epoch)
+        return cls._transform_all_to_response_model(study_epoch, study_value_version=study_value_version)
 
     def _validate_creation(self, epoch_input: StudyEpochCreateInput):
         ValidationException.raise_if(

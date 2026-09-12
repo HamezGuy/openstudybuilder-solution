@@ -36,8 +36,10 @@ def enforce_visible_study(request: Request, _auth=security) -> None:
             assert_collection_scope,
         )
 
-        route = request.scope.get("route")
-        route_path = getattr(route, "path", None) or request.url.path
+        # Included routers may expose the local route template ("/list") in
+        # scope["route"], without the "/studies" mount prefix. Authorize the
+        # concrete path that FastAPI matched, including its application prefix.
+        route_path = request.url.path
         assert_collection_scope(
             require_write=require_write,
             route_path=route_path,

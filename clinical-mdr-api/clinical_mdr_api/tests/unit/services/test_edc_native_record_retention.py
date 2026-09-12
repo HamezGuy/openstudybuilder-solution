@@ -11,6 +11,8 @@ from clinical_mdr_api.services.integrations.edc_export import (
     _source_study_id,
 )
 
+from clinical_mdr_api.tests.unit.services.test_edc_study_exchange import document, exchange, retained
+
 
 def test_real_study_response_resolves_source_identity_from_identification_metadata():
     assert (
@@ -239,14 +241,39 @@ def test_empty_native_parameter_projection_keeps_all_source_design_values(monkey
     exporter._group_classes = lambda *args: []
     exporter._retain_native_associated_records = lambda *args: None
     bundle = exporter.build_bundle("Study_1")
-    assert bundle["study"]["studyParameters"] == parameters
-    assert bundle["_osbNative"]["records"][0]["record"] == {"uid": "Study_1"}
+    assert retained(bundle, "openstudybuilder.edc-source-snapshot")["study"]["studyParameters"] == parameters
+    assert bundle["definition"]["document"] == document()
+    assert bundle["extensions"]["_osbExport"]["native"]["records"][0]["record"] == {"uid": "Study_1"}
+    report = bundle["extensions"]["_osbExport"]["mappingReport"]
+    assert (report["state"], report["studyUid"], report["studyValueVersion"]) == (
+        "incomplete", "Study_1", None,
+    )
+    assert report["issues"][0]["code"] == "SYNTHETIC_MAPPING_NOT_VALIDATED"
+    assert bundle["extensions"]["_osbExport"]["native"]["usdmMappingRecords"] == []
 
 
 def service():
     value = object.__new__(EdcExportService)
     value.census = []
     value.source_bundle_meta = {}
+    # This fixture isolates retention, not mapper/standards conformance. Model
+    # the actual report boundary without claiming its partial document is ready.
+    value.usdm_service = SimpleNamespace(
+        get_by_uid_with_report=lambda uid, study_value_version=None: {
+            "document": document(),
+            "mappingReport": {
+                "state": "incomplete", "studyUid": uid,
+                "studyValueVersion": study_value_version,
+                "issues": [{
+                    "code": "SYNTHETIC_MAPPING_NOT_VALIDATED",
+                    "sourcePath": "fixture", "targetPath": "Study",
+                    "message": "This retention fixture supplies a partial document.",
+                    "resolution": "Use the actual mapper/schema tests for conformance evidence.",
+                }],
+            },
+            "nativeRecords": [],
+        }
+    )
     return value
 
 
@@ -331,20 +358,18 @@ def test_semantic_study_identifiers_are_not_replaced_with_osb_internal_identifie
         "uniqueIdentifier": "SEMANTIC-123",
     }
 
+    canonical = document()
+    canonical["study"]["name"] = source_study["name"]
+    source_exchange = exchange(document=canonical)
+    source_exchange["definition"]["execution"]["identification"]["nativeIdentifier"] = source_study["uniqueIdentifier"]
+    source_exchange["extensions"].update({
+        "_provenance": {"builtBy": "csl.bundle-builder/2.0/preview"},
+        "_exportCensus": {"contractVersion": "source-v1", "units": [{"id": "claim-1", "unknown": [0, False, None]}], "counts": {"mapped": 0}},
+        "_mappingAuthority": {"mode": "preview", "semanticMetadata": {"accepted": False}},
+    })
+
     def forms(*args):
-        exporter.source_bundle_meta = {
-            "study": source_study,
-            "_provenance": {"builtBy": "csl.bundle-builder/2.0/preview"},
-            "_exportCensus": {
-                "contractVersion": "source-v1",
-                "units": [{"id": "claim-1", "unknown": [0, False, None]}],
-                "counts": {"mapped": 0},
-            },
-            "_mappingAuthority": {
-                "mode": "preview",
-                "semanticMetadata": {"accepted": False},
-            },
-        }
+        exporter.source_bundle_meta = deepcopy(source_exchange)
         return ([{"name": "F", "fields": []}], {}, {})
 
     exporter._forms = forms
@@ -352,18 +377,14 @@ def test_semantic_study_identifiers_are_not_replaced_with_osb_internal_identifie
     exporter._group_classes = lambda *a: []
     exporter._retain_native_associated_records = lambda *a: None
     bundle = exporter.build_bundle("Study_1")
-    assert bundle["study"]["name"] == source_study["name"]
-    assert bundle["study"]["uniqueIdentifier"] == source_study["uniqueIdentifier"]
-    assert bundle["_mappingAuthority"]["sourceTruthSystem"] == "ClinicalSemanticLayer"
-    assert bundle["_mappingAuthority"]["deploymentAllowed"] is False
-    assert (
-        bundle["_mappingAuthority"]["sourceAuthority"]
-        == exporter.source_bundle_meta["_mappingAuthority"]
-    )
-    assert (
-        bundle["_exportCensus"]["sourceCensus"]
-        == exporter.source_bundle_meta["_exportCensus"]
-    )
+    assert bundle["definition"]["document"]["study"]["name"] == source_study["name"]
+    assert bundle["definition"]["execution"]["identification"]["nativeIdentifier"] == source_study["uniqueIdentifier"]
+    assert bundle["definition"] == source_exchange["definition"]
+    report = bundle["extensions"]["_osbExport"]
+    assert report["mappingAuthority"]["sourceTruthSystem"] == "canonical-study-exchange"
+    assert report["mappingAuthority"]["deploymentAllowed"] is False
+    assert report["mappingAuthority"]["sourceAuthority"] == source_exchange["extensions"]["_mappingAuthority"]
+    assert bundle["extensions"]["_exportCensus"] == source_exchange["extensions"]["_exportCensus"]
     assert any(
         row["nativeValue"] == "OSB-123"
         for row in exporter.census
@@ -410,8 +431,8 @@ def test_native_item_keeps_all_units_translations_links_and_unknown_metadata():
         "future": {"nullable": None, "enabled": False, "values": [0, ""]},
     }
     expected = deepcopy(item)
-    field = exporter._field("LAB", "Chemistry", item, {"order_number": 2}, 1)
-    assert field["unit"] == "mg/dL"
+    with pytest.raises(EdcExportError, match="EDC_NATIVE_UNIT_CHOICE_UNREPRESENTABLE"):
+        exporter._field("LAB", "Chemistry", item, {"order_number": 2}, 1)
     assert exporter._native_records == [
         {"kind": "item", "uid": "OdmItem_1", "record": expected}
     ]

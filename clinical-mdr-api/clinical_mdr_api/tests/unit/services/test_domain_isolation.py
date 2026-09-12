@@ -67,7 +67,7 @@ def test_collection_scope_never_turns_missing_authority_into_wildcard(monkeypatc
 @pytest.mark.parametrize(
     ("route_path", "require_write"),
     [
-        ("/api/studies/list", False),
+        ("/api/studies/list", True),
         ("/api/studies/headers", False),
         ("/api/studies/template", False),
         ("/api/studies", True),
@@ -79,6 +79,120 @@ def test_legacy_unscoped_collection_routes_fail_closed(route_path, require_write
             require_write=require_write,
             route_path=route_path,
         )
+
+
+def test_scoped_list_route_is_read_only():
+    vis.assert_collection_scope(require_write=False, route_path="/api/studies/list")
+
+
+@pytest.mark.parametrize(
+    ("local_path", "request_path"),
+    [("/list", "/studies/list"), ("/list", "/api/studies/list"), ("", "/studies")],
+)
+def test_included_router_uses_concrete_prefixed_collection_path(local_path, request_path):
+    from starlette.requests import Request
+    from clinical_mdr_api.routers.studies.study_access import enforce_visible_study
+
+    request = Request({
+        "type": "http", "method": "GET", "path": request_path,
+        "headers": [], "query_string": b"", "path_params": {},
+        "route": SimpleNamespace(path=local_path),
+    })
+    enforce_visible_study(request, _auth=None)
+
+
+def test_local_route_template_cannot_authorize_a_different_collection():
+    from starlette.requests import Request
+    from clinical_mdr_api.routers.studies.study_access import enforce_visible_study
+
+    request = Request({
+        "type": "http", "method": "GET", "path": "/studies/headers",
+        "headers": [], "query_string": b"", "path_params": {},
+        "route": SimpleNamespace(path="/studies/list"),
+    })
+    with pytest.raises(ForbiddenException):
+        enforce_visible_study(request, _auth=None)
+
+
+@pytest.mark.parametrize("minimal_response", [True, False])
+@pytest.mark.parametrize("deleted", [True, False])
+def test_list_repository_queries_only_exact_assigned_roots(
+    monkeypatch, minimal_response, deleted
+):
+    from clinical_mdr_api.domain_repositories.study_definitions import (
+        study_definition_repository as repository_module,
+    )
+
+    calls = []
+    monkeypatch.setattr(
+        repository_module.db,
+        "cypher_query",
+        lambda query, params: (calls.append((query, params)) or ([], [])),
+    )
+    repository = SimpleNamespace(_check_not_closed=lambda: None)
+    result = repository_module.StudyDefinitionRepository.get_studies_list(
+        repository,
+        minimal_response=minimal_response,
+        deleted=deleted,
+        has_study_endpoint=False,
+        study_uids=("Study_000999",),
+    )
+    assert result == []
+    query, params = calls[0]
+    assert "UNWIND $study_uids AS scoped_uid MATCH (sr:StudyRoot {uid: scoped_uid})" in query
+    assert params == {"study_uids": ["Study_000999"]}
+    assert "NOT EXISTS((sv)-[:HAS_STUDY_ENDPOINT]->(:StudyEndpoint))" in query
+    deletion_predicate = "EXISTS((sv)<-[:BEFORE]-(:Delete))"
+    assert (f"NOT {deletion_predicate}" in query) is not deleted
+
+
+def test_list_repository_empty_scope_never_queries_all_studies(monkeypatch):
+    from clinical_mdr_api.domain_repositories.study_definitions import (
+        study_definition_repository as repository_module,
+    )
+
+    def unexpected_query(*_args, **_kwargs):
+        raise AssertionError("An empty assignment must not query the catalogue")
+
+    monkeypatch.setattr(repository_module.db, "cypher_query", unexpected_query)
+    repository = SimpleNamespace(_check_not_closed=lambda: None)
+    assert repository_module.StudyDefinitionRepository.get_studies_list(
+        repository, study_uids=()
+    ) == []
+
+
+def test_list_service_passes_validated_scope_and_closes_repositories(monkeypatch):
+    calls, closed = [], []
+    item = {"uid": "Study_000999", "id": "SCOPED-001", "acronym": None, "subpart_acronym": None}
+    service = object.__new__(study_service.StudyService)
+    service._repos = SimpleNamespace(
+        study_definition_repository=SimpleNamespace(
+            get_studies_list=lambda *args, **kwargs: (
+                calls.append((args, kwargs)) or [item]
+            )
+        ),
+        close=lambda: closed.append(True),
+    )
+    monkeypatch.setattr(study_service, "_caller_may_see", lambda _item: True)
+    result = service.get_studies_list(has_study_endpoint=True, deleted=True)
+    assert result[0].uid == "Study_000999"
+    assert calls[0][1] == {"study_uids": ("Study_000999",)}
+    assert calls[0][0][3] is True
+    assert calls[0][0][-1] is True
+    assert closed == [True]
+
+
+def test_list_service_invalid_assignment_fails_before_repository_read(monkeypatch):
+    principal = SyntheticUser()
+    principal.study_ids = {"Study_000999", "Study_000998"}
+    monkeypatch.setattr(vis, "_request_user", lambda: principal)
+    service = object.__new__(study_service.StudyService)
+    service._repos = SimpleNamespace(
+        study_definition_repository=SimpleNamespace(),
+        close=lambda: None,
+    )
+    with pytest.raises(ForbiddenException):
+        service.get_studies_list()
 
 
 def test_assigned_collection_scope_rejects_any_invalid_binding(monkeypatch):

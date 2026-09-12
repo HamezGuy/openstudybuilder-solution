@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from clinical_mdr_api.services.ddf.usdm_mapper import USDMMapper
 from clinical_mdr_api.domain_repositories.syntax_instances.timeframe_repository import TimeframeRepository
 from clinical_mdr_api.services.ddf.usdm_mapper import USDMMappingAuthorityRequired
+from clinical_mdr_api.services.ddf.usdm_mapping_context import MappingContext
 import pytest
 
 
@@ -12,7 +13,7 @@ import pytest
 def test_opposite_native_typed_design_attributes_require_reconciliation(observational):
     from clinical_mdr_api.services.ddf.usdm_mapper import USDMMappingAuthorityRequired
     mapper = _mapper()
-    term = SimpleNamespace(term_uid='synthetic-term', sponsor_preferred_name='Observational' if observational else 'Interventional')
+    term = SimpleNamespace(term_uid='C16084' if observational else 'C98388', sponsor_preferred_name='Sponsor display label')
     opposite = SimpleNamespace(term_uid='opposite-model')
     high = SimpleNamespace(study_type_code=term, observational_model_code=None if observational else opposite, observational_time_perspective_code=None)
     study = SimpleNamespace(current_metadata=SimpleNamespace(high_level_study_design=high, study_intervention=SimpleNamespace(intervention_model_code=opposite if observational else None)))
@@ -22,7 +23,7 @@ def test_opposite_native_typed_design_attributes_require_reconciliation(observat
 @pytest.mark.parametrize('label,code',[(None,'USDM_STUDY_DESIGN_TYPE_AUTHORITY_REQUIRED'),('Observational','USDM_OBSERVATIONAL_MODEL_AUTHORITY_REQUIRED'),('Interventional','USDM_INTERVENTIONAL_MODEL_AUTHORITY_REQUIRED')])
 def test_concrete_usdm_design_requires_native_type_and_kind_specific_properties(label,code):
     mapper=_mapper()
-    term=SimpleNamespace(sponsor_preferred_name=label) if label else None
+    term=SimpleNamespace(term_uid='C16084' if label == 'Observational' else 'C98388', sponsor_preferred_name=label) if label else None
     study=SimpleNamespace(current_metadata=SimpleNamespace(high_level_study_design=SimpleNamespace(study_type_code=term)))
     with pytest.raises(USDMMappingAuthorityRequired,match=code):mapper._get_study_designs(study)
 
@@ -85,7 +86,14 @@ def test_ct_code_is_resolved_only_through_the_selected_final_package(monkeypatch
     def query(text, params):
         observed["query"] = text
         observed["params"] = params
-        return ([[{"name": "CDISC"}, {"name": "Study Official Title"}]], None)
+        package = {"uid": "DDF CT 2025-09-26", "effective_date": "2025-09-26"}
+        return ([[
+            {"name": "CDISC"}, "NativeTerm_official_title", "TermAttributes:selected:1",
+            {"concept_id": "C207616", "preferred_term": "Study Official Title"},
+            package, "DDF CT", package, "DDF CT",
+            [{"version": "1.0", "status": "Final", "start_date": "2025-09-26T00:00:00Z"}],
+            [package],
+        ]], None)
 
     monkeypatch.setattr(
         "clinical_mdr_api.services.ddf.usdm_mapper.db.cypher_query", query
@@ -101,9 +109,15 @@ def test_ct_code_is_resolved_only_through_the_selected_final_package(monkeypatch
     assert observed["params"]["package_uid"] == "DDF CT 2025-09-26"
     assert "package:CTPackage {uid: $package_uid}" in observed["query"]
     assert "version.status IN ['Final', 'Retired']" in observed["query"]
-    assert "version.start_date <= $package_datetime" in observed["query"]
+    assert "version.start_date <= $source_datetime" in observed["query"]
+    assert "attributes.concept_id = $concept_id" in observed["query"]
+    assert "LIMIT 1" not in observed["query"] and "STARTS WITH" not in observed["query"]
     assert code.code == "C207616"
-    assert code.codeSystemVersion == "DDF CT 2025-09-26"
+    assert code.codeSystem == "http://www.cdisc.org"
+    assert code.codeSystemVersion == "2025-09-26"
+    retained = next(row for row in mapper._context.native_records
+                    if row["kind"] == "ctPackageTermDefinition")
+    assert retained["record"]["selectedPackage"]["uid"] == "DDF CT 2025-09-26"
 
 
 def test_unpinned_ct_lookup_returns_void_without_querying_global_latest(monkeypatch):
@@ -212,6 +226,9 @@ def test_study_element_name_is_native_and_dosing_links_real_intervention():
     )
     mapper._load_study_intervention_selections(study.uid)
 
+    with pytest.raises(USDMMappingAuthorityRequired, match="durationWillVary"):
+        mapper._get_study_interventions(study)
+    mapper._context = MappingContext(allow_incomplete=True)
     interventions = mapper._get_study_interventions(study)
     elements = mapper._get_study_elements(study)
 
@@ -223,6 +240,7 @@ def test_study_element_name_is_native_and_dosing_links_real_intervention():
     )
     assert elements[0].name == "Monthly treatment"
     assert elements[0].studyInterventionIds == [interventions[0].id]
+    assert "durationWillVary" not in interventions[0].administrations[0].duration.model_dump()
 
 
 def test_indication_survives_unknown_rare_disease_state(monkeypatch):
@@ -244,11 +262,14 @@ def test_indication_survives_unknown_rare_disease_state(monkeypatch):
         )
     )
 
+    with pytest.raises(USDMMappingAuthorityRequired, match="isRareDisease"):
+        mapper._get_study_indications(study)
+    mapper._context = MappingContext(allow_incomplete=True)
     indications = mapper._get_study_indications(study)
 
     assert len(indications) == 1
     assert indications[0].name == "Wet AMD"
-    assert indications[0].isRareDisease is False
+    assert "isRareDisease" not in indications[0].model_dump()
     assert (
         indications[0]
         .extensionAttributes[0]
@@ -296,6 +317,9 @@ def test_endpoint_source_semantics_are_typed_extensions():
         endpoints=lambda *_args, **_kwargs: [endpoint],
     )
 
+    with pytest.raises(USDMMappingAuthorityRequired, match="purpose"):
+        mapper._get_study_objectives(SimpleNamespace(uid="Study_1"))
+    mapper._context = MappingContext(allow_incomplete=True)
     projected = mapper._get_study_objectives(SimpleNamespace(uid="Study_1"))
     payload = projected[0].endpoints[0].model_dump(by_alias=True)
     extensions = {
@@ -303,7 +327,8 @@ def test_endpoint_source_semantics_are_typed_extensions():
     }
 
     assert payload["name"] == "Change in BCVA"
-    assert payload["purpose"] == ""
+    assert "purpose" not in payload
+    assert any(row["targetPath"] == "Endpoint/purpose" for row in mapper._context.issues)
     assert extensions["endpoint-sublevel"]["valueCode"]["code"] == "C98772"
     assert extensions["endpoint-timeframe"]["valueString"] == "At month 12"
     assert (
@@ -318,6 +343,9 @@ def test_document_uses_native_identity_and_version_reference(monkeypatch):
     # This test isolates document identity; clinical type authority is covered separately.
     monkeypatch.setattr(mapper, "_get_study_designs", lambda _study: [])
     monkeypatch.setattr(mapper, "_load_registid_labels", lambda: {})
+    mapper._get_protocol_header = lambda uid: SimpleNamespace(
+        protocol_header_version="1.1", has_final_protocol_locked_version=False
+    )
     study = SimpleNamespace(
         uid="Study_1",
         current_metadata=SimpleNamespace(
@@ -349,16 +377,18 @@ def test_document_uses_native_identity_and_version_reference(monkeypatch):
         ),
     )
 
-    wrapper = mapper.map(study)
-    version = wrapper["study"].versions[0]
-    document = wrapper["study"].documentedBy[0]
+    wrapper = mapper.map_with_report(study)
+    version = wrapper["document"]["study"]["versions"][0]
+    document = wrapper["document"]["study"]["documentedBy"][0]
 
-    assert document.name == "TIDE-AMD"
-    assert document.label == "TIDE AMD"
-    assert document.description == "Treat-and-extend in wet AMD"
-    assert document.versions[0].version == "2.0"
-    assert version.documentVersionIds == [document.versions[0].id]
-    assert version.documentVersionIds != [document.id]
+    assert document["name"] == "TIDE-AMD"
+    assert document["label"] == "TIDE AMD"
+    assert document["versions"][0]["version"] == "1.1"
+    assert version["versionIdentifier"] == "2.0"
+    assert "status" not in document["versions"][0]
+    assert version["documentVersionIds"] == [document["versions"][0]["id"]]
+    assert version["documentVersionIds"] != [document["id"]]
+    assert wrapper["mappingReport"]["state"] == "incomplete"
 
 
 def test_population_preserves_unknown_health_one_sided_age_and_diagnosis_semantics():
@@ -385,17 +415,24 @@ def test_population_preserves_unknown_health_one_sided_age_and_diagnosis_semanti
             SimpleNamespace(term_uid="MedDRA_10029114", name="Neoplasms")
         ],
     )
-    projected = mapper._get_study_population(
-        SimpleNamespace(current_metadata=SimpleNamespace(study_population=population))
-    )
+    study = SimpleNamespace(current_metadata=SimpleNamespace(study_population=population))
+    with pytest.raises(USDMMappingAuthorityRequired, match="maxValue"):
+        mapper._get_study_population(study)
+    mapper._context = MappingContext(allow_incomplete=True)
+    projected = mapper._get_study_population(study)
     payload = projected.model_dump(by_alias=True)
     extensions = {
         item["url"].rsplit("/", 1)[-1]: item
         for item in payload["extensionAttributes"]
     }
 
-    assert payload["includesHealthySubjects"] is False
-    assert payload["plannedAge"] is None
+    assert "includesHealthySubjects" not in payload
+    assert payload["plannedAge"]["minValue"]["value"] == 18
+    assert "maxValue" not in payload["plannedAge"]
+    assert "isApproximate" not in payload["plannedAge"]
+    assert {"Range/maxValue", "Range/isApproximate", "StudyDesignPopulation/includesHealthySubjects"} <= {
+        row["targetPath"] for row in mapper._context.issues
+    }
     assert payload["description"] is None
     assert extensions["healthy-subject-indicator-unresolved"]["valueBoolean"] is True
     assert extensions["planned-minimum-age"]["valueQuantity"]["value"] == 18

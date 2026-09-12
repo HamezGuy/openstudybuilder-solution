@@ -221,17 +221,45 @@ class StudyEpochRepository:
         else:
             if study_value_version:
                 query.append(
-                    "MATCH (study_root:StudyRoot {uid: $study_uid})-[:HAS_VERSION{status: $study_status, version: $study_value_version}]->(study_value:StudyValue)"
+                    "MATCH (study_root:StudyRoot {uid: $study_uid})-[snapshot:HAS_VERSION]->(study_value:StudyValue) "
+                    "WHERE snapshot.version = $study_value_version AND snapshot.status IN $study_status "
+                    "WITH study_root, study_value, collect(DISTINCT snapshot) AS states "
+                    "WITH study_root, study_value, "
+                    "[state IN states WHERE state.status='LOCKED'] AS locked, "
+                    "[state IN states WHERE state.status='RELEASED'] AS released "
+                    "WITH study_root, study_value, CASE "
+                    "WHEN size(locked)=1 THEN locked[0].start_date "
+                    "WHEN size(locked)=0 AND size(released)=1 THEN released[0].start_date "
+                    "ELSE null END AS native_study_as_of"
                 )
                 params["study_value_version"] = study_value_version
-                params["study_status"] = StudyStatus.RELEASED.value
+                params["study_status"] = [StudyStatus.LOCKED.value, StudyStatus.RELEASED.value]
 
             else:
                 query.append(
                     "MATCH (study_root:StudyRoot {uid: $study_uid})-[:LATEST]->(study_value:StudyValue)"
                 )
 
-            query.append(queries.study_standard_version_ct_terms_datetime)
+            if study_value_version:
+                # Resolve the actual catalogue association, not a package UID
+                # naming convention. Ambiguous/missing selections stay unknown.
+                query.append("""
+                    CALL {
+                        WITH study_value, native_study_as_of
+                        OPTIONAL MATCH (study_value)-[:HAS_STUDY_STANDARD_VERSION]->
+                            (:StudyStandardVersion)-[:HAS_CT_PACKAGE]->(package:CTPackage)
+                            <-[:CONTAINS_PACKAGE]-(:CTCatalogue {name:'SDTM CT'})
+                        WITH native_study_as_of, collect(DISTINCT package) AS packages
+                        WITH native_study_as_of, CASE WHEN size(packages)=1 THEN
+                            datetime(toString(date(packages[0].effective_date)) + 'T23:59:59.999999000Z')
+                            ELSE null END AS package_date
+                        RETURN CASE WHEN native_study_as_of IS NULL OR package_date IS NULL THEN null
+                            WHEN native_study_as_of < package_date THEN native_study_as_of
+                            ELSE package_date END AS ct_terms_datetime
+                    }
+                """)
+            else:
+                query.append(queries.study_standard_version_ct_terms_datetime)
 
             if study_epoch_uid:
                 query.append(
@@ -262,18 +290,37 @@ class StudyEpochRepository:
             """))
 
         else:
+            term_query = queries.ct_term_name_at_datetime
+            if study_value_version:
+                term_query = """
+                    CALL {{
+                        WITH {root}, ct_terms_datetime
+                        OPTIONAL MATCH ({root})-[:HAS_NAME_ROOT]->(:CTTermNameRoot)
+                            -[state:HAS_VERSION]->(value:CTTermNameValue)
+                        WHERE ct_terms_datetime IS NOT NULL AND state.status IN ['Final','Retired']
+                            AND state.start_date <= ct_terms_datetime
+                            AND (state.end_date IS NULL OR ct_terms_datetime < state.end_date)
+                        WITH {root}, ct_terms_datetime, collect(DISTINCT value) AS candidates
+                        RETURN {{
+                            term_uid: {root}.uid,
+                            sponsor_preferred_name: CASE WHEN size(candidates)=1 THEN candidates[0].name ELSE null END,
+                            queried_effective_date: CASE WHEN size(candidates)=1 THEN ct_terms_datetime ELSE null END,
+                            date_conflict: size(candidates)<>1
+                        }} AS {value}
+                    }}
+                """
             query.append(
-                queries.ct_term_name_at_datetime.format(
+                term_query.format(
                     root="epoch_ct_term_root", value="epoch_term"
                 )
             )
             query.append(
-                queries.ct_term_name_at_datetime.format(
+                term_query.format(
                     root="epoch_subtype_ct_term_root", value="epoch_subtype_term"
                 )
             )
             query.append(
-                queries.ct_term_name_at_datetime.format(
+                term_query.format(
                     root="epoch_type_ct_term_root", value="epoch_type_term"
                 )
             )

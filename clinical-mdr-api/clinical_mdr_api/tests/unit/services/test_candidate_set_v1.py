@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 
@@ -9,7 +10,9 @@ from clinical_mdr_api.generated.platform_contracts.hash_signing_v1 import (
     canonical_json,
     canonical_json_hash_ref,
     descriptor_hash,
+    sha256_bytes,
 )
+from clinical_mdr_api.services.integrations import candidate_set as candidate_set_module
 from clinical_mdr_api.services.integrations.candidate_set import (
     CANDIDATE_REQUEST_MEDIA_TYPE,
     OsbCandidateSetError,
@@ -215,6 +218,33 @@ def test_verified_exact_request_is_accepted() -> None:
     verify_candidate_request_artifact(*values[:2], TENANT_ID, STUDY_ID, *values[2:])
 
 
+@pytest.mark.parametrize("identity_version", ["1.0.0", "1.1.0"])
+def test_supported_external_identity_versions_are_accepted(identity_version: str) -> None:
+    values = list(_fixture())
+    values[0]["osbStudyIdentity"]["contractVersion"] = identity_version
+    _refresh(values)
+    verify_candidate_request_artifact(*values[:2], TENANT_ID, STUDY_ID, *values[2:])
+
+
+@pytest.mark.parametrize("identity_version", ["1.0.0", "1.1.0"])
+@pytest.mark.parametrize("field,value", [
+    ("contractVersion", "1.2.0"),
+    ("tenantId", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
+    ("platformStudyId", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
+    ("verificationStatus", "pending"),
+    ("namespace", "another-osb"),
+    ("objectType", "another-root"),
+])
+def test_external_identity_version_does_not_relax_scope_or_verification(
+    identity_version: str, field: str, value: str,
+) -> None:
+    values = list(_fixture())
+    values[0]["osbStudyIdentity"]["contractVersion"] = identity_version
+    values[0]["osbStudyIdentity"][field] = value
+    _refresh(values)
+    assert _code(tuple(values)) == "OSB_CANDIDATE_REQUEST_IDENTITY_INVALID"
+
+
 @pytest.mark.parametrize("mutation,expected", [
     (lambda payload: payload["typedSourceIntents"].pop(), "OSB_CANDIDATE_REQUEST_MEMBER_MISMATCH"),
     (lambda payload: payload["typedSourceIntents"].append(deepcopy(payload["typedSourceIntents"][0])),
@@ -256,16 +286,17 @@ def _set_contract_version(values: list[dict], minor: str) -> None:
     _refresh(values)
 
 
-def test_incremented_minor_contract_version_is_accepted() -> None:
+@pytest.mark.parametrize("version", ["1.1.0", "1.2.0", "1.3.0"])
+def test_incremented_minor_contract_version_is_accepted(version) -> None:
     """CSL's change-window bump inside the V1 major must not 422."""
     values = list(_fixture())
-    _set_contract_version(values, "1.1.0")
+    _set_contract_version(values, version)
     verify_candidate_request_artifact(*values[:2], TENANT_ID, STUDY_ID, *values[2:])
 
 
 def test_unknown_contract_version_is_rejected() -> None:
     values = list(_fixture())
-    _set_contract_version(values, "1.2.0")
+    _set_contract_version(values, "1.4.0")
     assert _code(tuple(values)) == "OSB_CANDIDATE_REQUEST_ARTIFACT_INVALID"
 
 
@@ -274,3 +305,117 @@ def test_contract_version_mismatch_between_payload_and_artifact_is_rejected() ->
     values[0]["contractVersion"] = "OsbCandidateRequestV1@1.1.0"
     _refresh(values)
     assert _code(tuple(values)) == "OSB_CANDIDATE_REQUEST_SCOPE_INVALID"
+
+
+def _refresh_intent_census(values):
+    payload = values[0]
+    for index, intent in enumerate(payload["typedSourceIntents"]):
+        payload["inputConservation"]["rows"][index]["target"]["valueHash"] = canonical_json_hash_ref(
+            intent, schema_version="OsbTypedSourceIntentV1@1.0.0"
+        )
+    payload["inputConservation"]["rowSetHash"] = canonical_json_hash_ref(
+        payload["inputConservation"]["rows"], schema_version="ConservationCensusRowsV1@1.0.0"
+    )
+    _refresh(values)
+
+
+@pytest.mark.parametrize("version", ["1.0.0", "1.1.0", "1.2.0"])
+@pytest.mark.parametrize("context", [{}, {"encounters": None}, {"relationships": []}])
+def test_historical_request_versions_cannot_claim_new_source_context(version, context):
+    values = list(_fixture())
+    _set_contract_version(values, version)
+    values[0]["typedSourceIntents"][0]["source"]["context"] = context
+    _refresh_intent_census(values)
+    assert _code(tuple(values)) == "OSB_SOURCE_CONTEXT_REQUEST_VERSION_REQUIRED"
+
+
+@pytest.mark.parametrize("context", [
+    None, [], False, "", {"other": []}, {"encounters": {}},
+    {"relationships": "lost"}, {"semanticAssociations": 0}, {"unresolvedRelationships": True},
+])
+def test_current_request_rejects_malformed_context_sections(context):
+    values = list(_fixture())
+    _set_contract_version(values, "1.3.0")
+    values[0]["typedSourceIntents"][0]["source"]["context"] = context
+    _refresh_intent_census(values)
+    assert _code(tuple(values)) == "OSB_TYPED_SOURCE_CONTEXT_INVALID"
+
+
+@pytest.mark.parametrize("context", [
+    {},
+    {"encounters": None, "relationships": [], "semanticAssociations": [None, False, 0],
+     "unresolvedRelationships": [{"sourceFactId": "fact-0001", "reason": "ambiguous"}]},
+])
+def test_current_request_preserves_absent_null_empty_and_ordered_context(context):
+    values = list(_fixture())
+    _set_contract_version(values, "1.3.0")
+    values[0]["typedSourceIntents"][0]["source"]["context"] = context
+    _refresh_intent_census(values)
+    before = deepcopy(values)
+    verify_candidate_request_artifact(*values[:2], TENANT_ID, STUDY_ID, *values[2:])
+    assert values == before
+    assert "context" not in values[0]["typedSourceIntents"][1]["source"]
+
+
+@pytest.mark.parametrize("missing", ["source", "evidence"])
+def test_current_request_requires_source_and_evidence_members(missing):
+    values = list(_fixture())
+    _set_contract_version(values, "1.3.0")
+    del values[0]["typedSourceIntents"][0][missing]
+    _refresh_intent_census(values)
+    assert _code(tuple(values)) == "OSB_TYPED_SOURCE_INTENT_INVALID"
+
+
+@pytest.mark.parametrize("version,context,code", [
+    ("1.2.0", {}, "OSB_SOURCE_CONTEXT_REQUEST_VERSION_REQUIRED"),
+    ("1.3.0", {"relationships": {}}, "OSB_TYPED_SOURCE_CONTEXT_INVALID"),
+])
+def test_transfer_context_guard_rejects_before_retaining_bytes(monkeypatch, version, context, code):
+    values = list(_fixture())
+    _set_contract_version(values, version)
+    values[0]["typedSourceIntents"][0]["source"]["context"] = context
+    _refresh_intent_census(values)
+    writes = []
+
+    def persist(query, params):
+        writes.append(params)
+        return [[params["platform_study_id"], params["artifact_version_id"], params["payload_json"],
+                 params["byte_size"], params["envelope_json"]]], None
+
+    monkeypatch.setattr(candidate_set_module, "db", SimpleNamespace(cypher_query=persist))
+    wire = canonical_json(values[0]).encode("utf-8")
+    values[2]["signatureProfile"] = "jws-detached-rfc7797/1.0"
+    values[2]["signingStatement"]["payloadHash"] = values[1]["payloadHash"]
+    with pytest.raises(OsbCandidateSetError) as error:
+        candidate_set_module.store_candidate_request_bytes(
+            tenant_id=TENANT_ID, platform_study_id=STUDY_ID,
+            bytes_value=wire, expected_hash=sha256_bytes(wire), signed_envelope=values[2],
+        )
+    assert error.value.code == code
+    assert writes == []
+
+
+def test_current_transfer_retains_exact_context_bytes(monkeypatch):
+    values = list(_fixture())
+    _set_contract_version(values, "1.3.0")
+    values[0]["typedSourceIntents"][0]["source"]["context"] = {
+        "encounters": None, "relationships": [], "semanticAssociations": [None, False, 0, 0],
+    }
+    _refresh_intent_census(values)
+    retained = []
+
+    def persist(query, params):
+        retained.append(params)
+        return [[params["platform_study_id"], params["artifact_version_id"], params["payload_json"],
+                 params["byte_size"], params["envelope_json"]]], None
+
+    monkeypatch.setattr(candidate_set_module, "db", SimpleNamespace(cypher_query=persist))
+    wire = canonical_json(values[0]).encode("utf-8")
+    values[2]["signatureProfile"] = "jws-detached-rfc7797/1.0"
+    values[2]["signingStatement"]["payloadHash"] = values[1]["payloadHash"]
+    result = candidate_set_module.store_candidate_request_bytes(
+        tenant_id=TENANT_ID, platform_study_id=STUDY_ID,
+        bytes_value=wire, expected_hash=sha256_bytes(wire), signed_envelope=values[2],
+    )
+    assert retained[0]["payload_json"].encode("utf-8") == wire
+    assert result["contentHash"] == sha256_bytes(wire)

@@ -177,7 +177,7 @@ class Settings(BaseSettings):
         alias="OIDC_ALLOWED_PURPOSES",
     )
     ENV_OAUTH_ALLOWED_CAPABILITIES: str = Field(
-        default="study:read,study:write,candidate:read,candidate:generate,candidate:apply,package:release,native-identity:bind,native-identity:inventory,platform-command:execute",
+        default="study:read,study:write,candidate:read,candidate:generate,candidate:apply,draft:stage,draft:read,package:release,native-identity:bind,native-identity:inventory,platform-command:execute",
         alias="OIDC_ALLOWED_CAPABILITIES",
     )
     ENV_OAUTH_ALLOWED_ROLES: str = Field(

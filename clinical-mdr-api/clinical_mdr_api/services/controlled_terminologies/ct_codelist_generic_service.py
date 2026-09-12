@@ -109,7 +109,7 @@ class CTCodelistGenericService(Generic[_AggregateRootType], abc.ABC):
 
         return header_values
 
-    @db.transaction
+    @ensure_transaction(db)
     def get_by_uid(
         self,
         codelist_uid: str,

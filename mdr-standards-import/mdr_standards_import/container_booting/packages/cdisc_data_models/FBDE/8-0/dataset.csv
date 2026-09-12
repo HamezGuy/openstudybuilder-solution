@@ -1,5 +1,0 @@
-data_model_ig,dataset_class,name,description,version,release_date
-Lab Spec v0.1,Finding,LAB,Laboratory Findings,8.0,2024-01-23
-Lab Spec v0.1,Finding Definition,LABRANGE,Laboratory  reference ranges,8.0,2024-01-23
-Lab Spec v0.1,Finding,AB,Antibody Findings,8.0,2024-01-23
-Lab Spec v0.1,Finding,PK,Pharmacokinetics Findings,8.0,2024-01-23

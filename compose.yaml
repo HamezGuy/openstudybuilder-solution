@@ -4,6 +4,7 @@ services:
 
   # Database service for local development
   database:
+    restart: unless-stopped
     build:
       args:
         NEO4J_VERSION_PINNED: ${NEO4J_VERSION_PINNED:-2026.06.0}
@@ -45,6 +46,7 @@ services:
 
   # API image & service, distinct build stages for production and development
   api:
+    restart: unless-stopped
     build:
       context: ./clinical-mdr-api
       dockerfile: Dockerfile
@@ -53,6 +55,8 @@ services:
     image: ${API_IMAGE:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${API_PORT:-5003}:5003"
     depends_on:
       database:
         condition: service_healthy
@@ -71,6 +75,7 @@ services:
       # .env.production.example.
       OAUTH_ENABLED: "${OSB_API_AUTH_ENABLED:-False}"
       OAUTH_RBAC_ENABLED: "${OSB_API_RBAC_ENABLED:-False}"
+      OIDC_DELEGATED_CLAIMS_REQUIRED: "${OSB_DELEGATED_CLAIMS_REQUIRED:-False}"
       OAUTH_METADATA_URL: "${COMMAND_CENTER_METADATA_URL:-http://host.docker.internal:7000/.well-known/openid-configuration}"
       OAUTH_API_APP_ID: "${COMMAND_CENTER_OSB_AUDIENCE:-accuratrial-openstudybuilder}"
       OAUTH_API_APP_SECRET: "${OAUTH_API_APP_SECRET:-}"
@@ -116,6 +121,7 @@ services:
 
   # Consumer API image & service
   consumerapi:
+    restart: unless-stopped
     build:
       context: ./clinical-mdr-api
       dockerfile: Dockerfile
@@ -132,6 +138,7 @@ services:
       ALLOW_ORIGIN_REGEX: '${ALLOW_ORIGIN_REGEX:-^https?://(osb\.)?(localhost|127\.0\.0\.1)(:[0-9]+)?$}'
       OAUTH_ENABLED: "${OSB_API_AUTH_ENABLED:-False}"
       OAUTH_RBAC_ENABLED: "${OSB_API_RBAC_ENABLED:-False}"
+      OIDC_DELEGATED_CLAIMS_REQUIRED: "${OSB_DELEGATED_CLAIMS_REQUIRED:-False}"
       OAUTH_METADATA_URL: "${COMMAND_CENTER_METADATA_URL:-http://host.docker.internal:7000/.well-known/openid-configuration}"
       OAUTH_API_APP_ID: "${COMMAND_CENTER_OSB_AUDIENCE:-accuratrial-openstudybuilder}"
       OAUTH_SWAGGER_APP_ID: "${OAUTH_SWAGGER_APP_ID:-}"
@@ -141,6 +148,7 @@ services:
 
   # Extensions API image & service
   extensionsapi:
+    restart: unless-stopped
     build:
       context: ./clinical-mdr-api
       dockerfile: Dockerfile
@@ -157,6 +165,7 @@ services:
       ALLOW_ORIGIN_REGEX: '${ALLOW_ORIGIN_REGEX:-^https?://(osb\.)?(localhost|127\.0\.0\.1)(:[0-9]+)?$}'
       OAUTH_ENABLED: "${OSB_API_AUTH_ENABLED:-False}"
       OAUTH_RBAC_ENABLED: "${OSB_API_RBAC_ENABLED:-False}"
+      OIDC_DELEGATED_CLAIMS_REQUIRED: "${OSB_DELEGATED_CLAIMS_REQUIRED:-False}"
       OAUTH_METADATA_URL: "${COMMAND_CENTER_METADATA_URL:-http://host.docker.internal:7000/.well-known/openid-configuration}"
       OAUTH_API_APP_ID: "${COMMAND_CENTER_OSB_AUDIENCE:-accuratrial-openstudybuilder}"
       OAUTH_SWAGGER_APP_ID: "${OAUTH_SWAGGER_APP_ID:-}"
@@ -166,6 +175,7 @@ services:
 
   # Frontend image for production (see UI service for local development)
   frontend:
+    restart: unless-stopped
     build:
       args:
         NGINX_IMAGE: ${NGINX_IMAGE:-nginx:alpine}
@@ -176,16 +186,9 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      # Nginx reverse-proxy configuration requires downstream services to be ready at startup
+      # The proxy resolves backend addresses at request time. Optional reports,
+      # documentation and companion APIs must not block the primary study UI.
       api:
-        condition: service_healthy
-      documentation:
-        condition: service_healthy
-      neodash:
-        condition: service_healthy
-      consumerapi:
-        condition: service_healthy
-      extensionsapi:
         condition: service_healthy
     ports:
       - "${BIND_ADDRESS:-127.0.0.1}:${FRONTEND_PORT:-5005}:5005"
@@ -203,6 +206,7 @@ services:
 
   # Documentation portal image for production (see docs service for local development)
   documentation:
+    restart: unless-stopped
     build:
       args:
         NGINX_IMAGE: ${NGINX_IMAGE:-nginx:alpine}
@@ -213,6 +217,7 @@ services:
 
   # Neodash service used with defined parameters
   neodash:
+    restart: unless-stopped
     image: ${NEODASH_IMAGE:-}
     build:
       context: ./osb-neodash
