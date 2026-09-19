@@ -441,6 +441,8 @@ class CTCodelistGenericRepository(
         order: int,
         submission_value: str,
         ordinal: float | None = None,
+        *,
+        initial_draft: bool = False,
     ) -> None:
         """
         Method adds term identified by term_uid to the codelist identified by codelist_uid.
@@ -467,6 +469,43 @@ class CTCodelistGenericRepository(
         exceptions.ValidationException.raise_if(
             ct_term_node is None, msg=f"Term with UID '{term_uid}' doesn't exist."
         )
+
+        # Hold the native root lock before current-state and duplicate checks.
+        self._lock_object2(codelist_uid)
+        if initial_draft is True:
+            # The internal source authoring service checks domain rules; repeat
+            # the exact current native state here before the relationship write.
+            rows, _ = db.cypher_query(
+                """MATCH (library:Library {is_editable:true})-[:CONTAINS_CODELIST]->
+                     (codelist:CTCodelistRoot {uid:$codelist_uid})
+                   MATCH (library)-[:CONTAINS_TERM]->(term:CTTermRoot {uid:$term_uid})
+                   MATCH (codelist)-[:HAS_NAME_ROOT]->(cnr)-[:LATEST]->(cnv)
+                   MATCH (cnr)-[cn:HAS_VERSION {version:'0.1',status:'Draft'}]->(cnv)
+                   MATCH (codelist)-[:HAS_ATTRIBUTES_ROOT]->(car)-[:LATEST]->(cav)
+                   MATCH (car)-[ca:HAS_VERSION {version:'0.1',status:'Draft'}]->(cav)
+                   MATCH (term)-[:HAS_NAME_ROOT]->(tnr)-[:LATEST]->(tnv)
+                   MATCH (tnr)-[tn:HAS_VERSION {version:'0.1',status:'Draft'}]->(tnv)
+                   MATCH (term)-[:HAS_ATTRIBUTES_ROOT]->(tar)-[:LATEST]->(tav)
+                   MATCH (tar)-[ta:HAS_VERSION {version:'0.1',status:'Draft'}]->(tav)
+                   WHERE cn.end_date IS NULL AND ca.end_date IS NULL
+                     AND tn.end_date IS NULL AND ta.end_date IS NULL
+                     AND NOT cnv:TemplateParameter
+                     AND NOT EXISTS { MATCH (cnr)-[:LATEST_FINAL]->() }
+                     AND NOT EXISTS { MATCH (car)-[:LATEST_FINAL]->() }
+                     AND NOT EXISTS { MATCH (tnr)-[:LATEST_FINAL]->() }
+                     AND NOT EXISTS { MATCH (tar)-[:LATEST_FINAL]->() }
+                   RETURN codelist.uid,term.uid""",
+                {"codelist_uid": codelist_uid, "term_uid": term_uid},
+            )
+            exceptions.BusinessLogicException.raise_if(
+                rows != [[codelist_uid, term_uid]],
+                msg="Initial CT draft versions, library or approval state changed.",
+            )
+        else:
+            exceptions.BusinessLogicException.raise_if_not(
+                initial_draft is False and is_codelist_in_final(ct_codelist_node),
+                msg=f"Term with UID '{term_uid}' cannot be added to Codelist with UID '{codelist_uid}' as the codelist is in a draft state.",
+            )
 
         # Single Cypher query to check all duplicate conditions at once,
         # replacing the N+1 loop that made 3 DB calls per existing term.
@@ -530,11 +569,8 @@ class CTCodelistGenericRepository(
             },
         )
 
-        # Validate that the term is added to a codelist that isn't in a draft state.
-        exceptions.BusinessLogicException.raise_if_not(
-            is_codelist_in_final(ct_codelist_node),
-            msg=f"Term with UID '{term_uid}' cannot be added to Codelist with UID '{codelist_uid}' as the codelist is in a draft state.",
-        )
+        if initial_draft:
+            return
 
         query = """
             MATCH (codelist_root:CTCodelistRoot {uid: $codelist_uid})-[:HAS_NAME_ROOT]->()-[:LATEST]->

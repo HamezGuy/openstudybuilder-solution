@@ -1,5 +1,5 @@
 """AUTO-GENERATED from OSB-owned OsbCandidateRequestV1.
-Schema sha256:56e536ed278f63ffbc517c4fc5386f9ac86624166c5688fb38526dfa024d447e
+Schema sha256:45d262d24358599e752a7a177d6b4fa523670a9b6d89c1eb298f6b76d0d9769e
 Do not edit by hand. Run generate-p4-request-contracts.mjs.
 """
 
@@ -98,7 +98,7 @@ class OsbCandidateHashRefV1(TypedDict):
     excludedPaths: list[str]
 
 class OsbCandidateRequestV1(TypedDict):
-    contractVersion: Literal["OsbCandidateRequestV1@1.0.0", "OsbCandidateRequestV1@1.1.0"]
+    contractVersion: Literal["OsbCandidateRequestV1@1.0.0", "OsbCandidateRequestV1@1.1.0", "OsbCandidateRequestV1@1.2.0", "OsbCandidateRequestV1@1.3.0"]
     requestId: str
     requestVersionId: str
     tenantId: str
@@ -136,14 +136,46 @@ class OsbCreateOptionV1(TypedDict):
     allowed: Literal[True]
     requestedNativeType: str | None
 
-class OsbProjectionRulesetV1(TypedDict):
-    id: Literal["csl-to-osb-candidate-request"]
-    version: Literal["1.0.0"]
-    hash: OsbCandidateHashRefV1
+class OsbExternalIdentityEvidenceV1(TypedDict):
+    receiptId: str
+    receiptPayloadHash: OsbExternalIdentityHashRefV1
+    signedEnvelopeHash: NotRequired[OsbExternalIdentityHashRefV1]
+    trustBundleVersion: NotRequired[int]
+    trustBundleHash: NotRequired[OsbExternalIdentityHashRefV1]
+    trustedSigningTime: NotRequired[str]
+    evidenceRefs: NotRequired[list[str]]
 
-OsbResourceFamilyV1 = Literal["activities", "activity_instruction_templates", "activity_schedules", "cdash_variables", "compound_product_relationships", "controlled_terminology", "controlled_terminology_codelists", "criteria_templates", "endpoint_templates", "objective_templates", "odm_aliases", "odm_conditions", "odm_forms", "odm_item_groups", "odm_items", "odm_methods", "study_compound_dosing_relationships", "timeframe_templates", "timeframes", "units"]
+class OsbExternalIdentityHashRefV1(TypedDict):
+    algorithm: Literal["sha-256"]
+    canonicalizationVersion: Literal["canonical-json/1.0"]
+    value: str
+    mediaType: Literal["application/json"]
+    schemaVersion: str
+    excludedPaths: list[Any]
 
-class OsbStudyIdentityV1(TypedDict):
+class OsbExternalStudyIdentityV1(TypedDict):
+    contractVersion: Literal["1.0.0", "1.1.0"]
+    bindingId: str
+    tenantId: str
+    platformStudyId: str
+    system: Literal["osb"]
+    namespace: Literal["accuratrials-osb"]
+    objectType: Literal["study-draft-root"]
+    nativeIdentity: str
+    nativeVersion: str
+    verificationStatus: Literal["verified"]
+    verifiedBy: str
+    verifiedAt: str
+    validFrom: str
+    validTo: NotRequired[str | None]
+    evidence: OsbExternalIdentityEvidenceV1
+    supersedesBindingId: NotRequired[str | None]
+    createdAt: str
+    createdBy: str
+    updatedAt: NotRequired[str]
+    updatedBy: NotRequired[str]
+
+class OsbLegacyStudyIdentityV1(TypedDict):
     contractVersion: Literal["1.0.0"]
     system: Literal["osb"]
     tenantId: str
@@ -155,6 +187,72 @@ class OsbStudyIdentityV1(TypedDict):
     nativeVersion: str
     verificationStatus: Literal["verified"]
 
+class OsbMetadataDictionaryRefV1(TypedDict):
+    termName: str
+    libraryName: str
+    dictionaryCodelistName: str
+    basis: str
+
+class OsbMetadataTermRefV1(TypedDict):
+    termName: str
+    codelistName: str
+    basis: str
+
+class OsbMetadataUnitRefV1(TypedDict):
+    unitName: str
+    basis: str
+
+class OsbProjectionRulesetV1(TypedDict):
+    id: Literal["csl-to-osb-candidate-request"]
+    version: Literal["1.0.0"]
+    hash: OsbCandidateHashRefV1
+
+OsbResourceFamilyV1 = Literal["activities", "activity_instruction_templates", "activity_schedules", "assignments", "branching", "cdash_variables", "compound_product_relationships", "conditions", "controlled_terminology", "controlled_terminology_codelists", "criteria_templates", "edit_checks", "endpoint_templates", "objective_templates", "odm_aliases", "odm_conditions", "odm_forms", "odm_item_groups", "odm_items", "odm_methods", "study_compound_dosing_relationships", "study_metadata", "timeframe_templates", "timeframes", "units"]
+
+class OsbSourceEncounterProjectionV1(TypedDict):
+    contract: Literal["study-build-encounter-projection/1"]
+    buildHash: str
+    encounters: list[OsbSourceEncounterRefV1]
+
+class OsbSourceEncounterRefV1(TypedDict):
+    visitId: str
+    visitLabel: str | None
+    timepoint: str | None
+    required: bool | None
+    derivedFrom: str | None
+    evidenceRef: str
+    formObjectId: NotRequired[str]
+    objectMetadata: NotRequired[dict[str, Any]]
+    properties: NotRequired[dict[str, Any]]
+
+OsbStudyIdentityV1 = OsbLegacyStudyIdentityV1 | OsbExternalStudyIdentityV1
+
+class OsbStudyMetadataPlanV1(TypedDict):
+    contractVersion: Literal["OsbStudyMetadataPlanV1@1.0.0"]
+    assertionType: str
+    ruled: Literal[True]
+    osbResourceType: Literal["StudyMetadata"]
+    osbCapability: str
+    kind: Literal["native-metadata"]
+    route: Literal["/studies/{study_uid}"]
+    method: Literal["PATCH"]
+    metadataPath: str
+    metadataValue: Any
+    metadataJoinedText: NotRequired[bool]
+    metadataMultiValued: NotRequired[bool]
+    termRefs: NotRequired[dict[str, Any]]
+    unitRefs: NotRequired[dict[str, Any]]
+    dictionaryRefs: NotRequired[dict[str, Any]]
+    consumedFields: NotRequired[list[str]]
+    basis: NotRequired[dict[str, Any]]
+
+class OsbTypedSourceContextV1(TypedDict):
+    encounters: NotRequired[list[Any] | None]
+    encounterProjection: NotRequired[OsbSourceEncounterProjectionV1]
+    relationships: NotRequired[list[Any] | None]
+    semanticAssociations: NotRequired[list[Any] | None]
+    unresolvedRelationships: NotRequired[list[Any] | None]
+
 class OsbTypedSourceIntentSourceV1(TypedDict):
     assertionType: str | None
     clinicalDomain: str | None
@@ -162,6 +260,7 @@ class OsbTypedSourceIntentSourceV1(TypedDict):
     exactQuote: str | None
     label: str | None
     classification: NotRequired[dict[str, Any] | None]
+    context: NotRequired[OsbTypedSourceContextV1]
     values: list[OsbTypedSourceValueV1]
 
 class OsbTypedSourceIntentV1(TypedDict):
@@ -171,6 +270,7 @@ class OsbTypedSourceIntentV1(TypedDict):
     targetKey: Literal["primary"]
     semanticRole: str
     resourceFamily: OsbResourceFamilyV1
+    nativeStudyOperation: NotRequired[OsbStudyMetadataPlanV1]
     source: OsbTypedSourceIntentSourceV1
     evidence: Any
     searchStrings: list[str]

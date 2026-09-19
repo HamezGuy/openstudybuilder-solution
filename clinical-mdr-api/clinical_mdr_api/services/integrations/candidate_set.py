@@ -6,7 +6,7 @@ import base64
 import json
 import re
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, NoReturn
 from uuid import NAMESPACE_URL, uuid5
 
 from fastapi.encoders import jsonable_encoder
@@ -24,6 +24,14 @@ from clinical_mdr_api.models.integrations.mapping_context import (
     MappingContextV2Request,
 )
 from clinical_mdr_api.services.integrations.mapping_context import MappingContextService
+from clinical_mdr_api.services.integrations.native_study_head import read_current_study_head
+from clinical_mdr_api.services.integrations.osb_candidate_request_versions import (
+    ACCEPTED_REQUEST_CONTRACT_MINOR_VERSIONS,
+    ACCEPTED_REQUEST_CONTRACT_VERSIONS,
+    METADATA_REQUEST_CONTRACT_VERSIONS,
+    SOURCE_CONTEXT_REQUEST_CONTRACT_VERSIONS,
+)
+from clinical_mdr_api.services.integrations.study_metadata_mapping import prepare_metadata_offers
 from clinical_mdr_api.services.integrations.osb_family_map import (
     SUPPORTED_RESOURCE_FAMILIES,
     canonicalize_family,
@@ -36,15 +44,9 @@ CANDIDATE_SET_MEDIA_TYPE = (
     "application/vnd.accuratrials.osb-candidate-set-v1+json"
 )
 
-# CSL is evolving OsbCandidateRequestV1 additively inside the V1 major; accept
-# the current minor and the incremented one so the change-window is not a
-# wholesale 422. The payload hash is computed against the DECLARED version so
-# hash_refs_equal keeps matching the CSL-computed reference.
-ACCEPTED_REQUEST_CONTRACT_MINOR_VERSIONS = ("1.0.0", "1.1.0")
-ACCEPTED_REQUEST_CONTRACT_VERSIONS = tuple(
-    f"OsbCandidateRequestV1@{version}"
-    for version in ACCEPTED_REQUEST_CONTRACT_MINOR_VERSIONS
-)
+# The signed-envelope binding evidence was added in ExternalStudyIdentityV1
+# 1.1. The identity coordinates and active native binding checks are unchanged.
+ACCEPTED_EXTERNAL_IDENTITY_VERSIONS = ("1.0.0", "1.1.0")
 
 # The six conservation dispositions, and how each tallies into census counts.
 CENSUS_DISPOSITION_COUNT_KEYS = {
@@ -109,8 +111,7 @@ def _fact_key(value: dict[str, Any], id_field: str) -> str:
 
 
 def _request_contract_minor(payload: dict[str, Any]) -> str | None:
-    """Return the bare minor version ('1.0.0'/'1.1.0') the payload declares,
-    or None when the declared contract version is unsupported."""
+    """Return the supported declared version used to hash and sign the bytes."""
     declared = payload.get("contractVersion")
     if isinstance(declared, str) and declared in ACCEPTED_REQUEST_CONTRACT_VERSIONS:
         return declared.split("@", 1)[1]
@@ -120,6 +121,12 @@ def _request_contract_minor(payload: dict[str, Any]) -> str | None:
 def _assert_intent_additive_fields(intent: dict[str, Any]) -> None:
     """Loosely validate the additive intent fields CSL's parallel change may
     send: correct types when present, never a rejection of unknown keys."""
+    operation = intent.get("nativeStudyOperation")
+    if intent.get("resourceFamily") == "study_metadata":
+        if not isinstance(operation, dict) or operation.get("contractVersion") != "OsbStudyMetadataPlanV1@1.0.0":
+            raise OsbCandidateSetError("OSB_STUDY_METADATA_PLAN_REQUIRED", "Native metadata requires its source-pinned plan.", 422)
+    elif operation is not None:
+        raise OsbCandidateSetError("OSB_STUDY_METADATA_FAMILY_MISMATCH", "The metadata plan must use its native family.", 422)
     source = intent.get("source")
     if source is not None and not isinstance(source, dict):
         raise OsbCandidateSetError(
@@ -155,6 +162,73 @@ def _assert_intent_additive_fields(intent: dict[str, Any]) -> None:
             raise OsbCandidateSetError(
                 "OSB_TYPED_SOURCE_INTENT_INVALID",
                 "createOption.requestedNativeType must be a string or null.",
+                422,
+            )
+
+
+def _assert_encounter_projection(value: Any) -> None:
+    """Validate the Build-owned binding without rewriting retained source bytes."""
+    invalid = (
+        not isinstance(value, dict)
+        or value.get("contract") != "study-build-encounter-projection/1"
+        or not isinstance(value.get("buildHash"), str)
+        or re.fullmatch(r"[a-f0-9]{64}", value["buildHash"]) is None
+        or not isinstance(value.get("encounters"), list)
+    )
+    if not invalid:
+        for encounter in value["encounters"]:
+            if not isinstance(encounter, dict):
+                invalid = True
+                break
+            required_fields = {"visitId", "visitLabel", "timepoint", "required", "derivedFrom", "evidenceRef"}
+            if not required_fields.issubset(encounter) \
+                    or any(not isinstance(encounter[name], str) or not encounter[name]
+                           for name in ("visitId", "evidenceRef")) \
+                    or any(encounter[name] is not None and not isinstance(encounter[name], str)
+                           for name in ("visitLabel", "timepoint", "derivedFrom")) \
+                    or (encounter["required"] is not None and not isinstance(encounter["required"], bool)) \
+                    or ("formObjectId" in encounter and (
+                        not isinstance(encounter["formObjectId"], str) or not encounter["formObjectId"])) \
+                    or any(name in encounter and not isinstance(encounter[name], dict)
+                           for name in ("objectMetadata", "properties")):
+                invalid = True
+                break
+    if invalid:
+        raise OsbCandidateSetError(
+            "OSB_TYPED_SOURCE_CONTEXT_INVALID",
+            "Encounter projection requires its contract, exact Build hash and complete visit bindings.",
+            422,
+        )
+
+
+def _assert_request_source_context(payload: dict[str, Any], intents: list[dict[str, Any]]) -> None:
+    """Use the same version and shape rules before byte storage and generation."""
+    for intent in intents:
+        source = intent.get("source")
+        if isinstance(source, dict) and "context" in source:
+            if payload.get("contractVersion") not in SOURCE_CONTEXT_REQUEST_CONTRACT_VERSIONS:
+                raise OsbCandidateSetError(
+                    "OSB_SOURCE_CONTEXT_REQUEST_VERSION_REQUIRED",
+                    "Source context requires request 1.3.0.",
+                    422,
+                )
+            context = source["context"]
+            retained_arrays = {"encounters", "relationships", "semanticAssociations", "unresolvedRelationships"}
+            if not isinstance(context, dict) or set(context) - (retained_arrays | {"encounterProjection"}) \
+                    or any(value is not None and not isinstance(value, list)
+                           for name, value in context.items() if name in retained_arrays):
+                raise OsbCandidateSetError(
+                    "OSB_TYPED_SOURCE_CONTEXT_INVALID",
+                    "Source context must contain retained array or null sections and an optional typed encounter projection.",
+                    422,
+                )
+            if "encounterProjection" in context:
+                _assert_encounter_projection(context["encounterProjection"])
+        if payload.get("contractVersion") in SOURCE_CONTEXT_REQUEST_CONTRACT_VERSIONS \
+                and (not isinstance(source, dict) or "evidence" not in intent):
+            raise OsbCandidateSetError(
+                "OSB_TYPED_SOURCE_INTENT_INVALID",
+                "Current source intents must retain their source and evidence members.",
                 422,
             )
 
@@ -198,7 +272,8 @@ def _assert_request_projection(payload: dict[str, Any], artifact: dict[str, Any]
     snapshot = _record(payload.get("semanticSnapshot"), "OSB_CANDIDATE_REQUEST_SNAPSHOT_REQUIRED")
     identity = _record(payload.get("osbStudyIdentity"), "OSB_CANDIDATE_REQUEST_IDENTITY_REQUIRED")
     checkpoint = _record(payload.get("checkpointPreconditions"), "OSB_CANDIDATE_REQUEST_CHECKPOINT_REQUIRED")
-    if identity.get("contractVersion") != "1.0.0" or identity.get("system") != "osb" \
+    if identity.get("contractVersion") not in ACCEPTED_EXTERNAL_IDENTITY_VERSIONS \
+            or identity.get("system") != "osb" \
             or identity.get("namespace") != "accuratrials-osb" \
             or identity.get("objectType") != "study-draft-root" \
             or identity.get("tenantId") != payload.get("tenantId") \
@@ -215,6 +290,10 @@ def _assert_request_projection(payload: dict[str, Any], artifact: dict[str, Any]
                _list(payload.get("activeClaimRevisions"), "OSB_CANDIDATE_REQUEST_MEMBERS_REQUIRED")]
     intents = [_record(item, "OSB_TYPED_SOURCE_INTENT_INVALID") for item in
                _list(payload.get("typedSourceIntents"), "OSB_TYPED_SOURCE_INTENTS_REQUIRED")]
+    if any(item.get("resourceFamily") == "study_metadata" for item in intents) \
+            and payload.get("contractVersion") not in METADATA_REQUEST_CONTRACT_VERSIONS:
+        raise OsbCandidateSetError("OSB_STUDY_METADATA_REQUEST_VERSION_REQUIRED", "Native metadata requires request 1.2.0 or 1.3.0.", 422)
+    _assert_request_source_context(payload, intents)
     member_keys = [_fact_key(member, "sourceFactId") for member in members]
     intent_keys = [_fact_key(intent, "factId") for intent in intents]
     if len(set(member_keys)) != len(member_keys) or len(set(intent_keys)) != len(intent_keys):
@@ -489,6 +568,10 @@ def store_candidate_request_bytes(
     ):
         raise OsbCandidateSetError("OSB_CANDIDATE_REQUEST_TRANSFER_SCOPE_MISMATCH", "Transferred request scope differs.", 422)
     envelope = assert_candidate_request_transfer_envelope(payload, expected_hash, signed_envelope)
+    _assert_request_source_context(payload, [
+        _record(item, "OSB_TYPED_SOURCE_INTENT_INVALID")
+        for item in _list(payload.get("typedSourceIntents"), "OSB_TYPED_SOURCE_INTENTS_REQUIRED")
+    ])
     envelope_json = canonical_json(envelope)
     rows, _ = db.cypher_query(
         """MERGE (artifact:OsbInboundArtifact {tenant_id: $tenant_id, payload_hash: $payload_hash})
@@ -557,7 +640,7 @@ def load_candidate_request(payload_hash: str, tenant_id: str, platform_study_id:
     return _record(json.loads(str(rows[0][0])), "OSB_CANDIDATE_REQUEST_INVALID")
 
 
-def _active_binding(tenant_id: str, platform_study_id: str) -> dict[str, str]:
+def active_osb_binding(tenant_id: str, platform_study_id: str) -> dict[str, str]:
     rows, _ = db.cypher_query(
         """MATCH (binding:PlatformNativeStudyBinding {tenant_id: $tenant_id,
              platform_study_id: $platform_study_id, namespace: 'accuratrials-osb',
@@ -566,6 +649,92 @@ def _active_binding(tenant_id: str, platform_study_id: str) -> dict[str, str]:
         {"tenant_id": tenant_id, "platform_study_id": platform_study_id},
     )
     return require_exactly_one_active_osb_binding(rows)
+
+
+def _assert_identity_binding(
+    identity: dict[str, Any], binding: dict[str, str], *,
+    tenant_id: str, platform_study_id: str, error_code: str,
+) -> None:
+    """Resolve a platform binding through OSB's own published receipt.
+
+    The platform and native binding UUIDs belong to different registries.
+    Version 1.1 carries the hashes of the exact receipt and envelope joining
+    them. The signed target state also commits to the native binding UUID.
+    """
+    def reject() -> NoReturn:
+        raise OsbCandidateSetError(error_code, "OSB binding evidence or native checkpoint changed.")
+
+    if identity.get("nativeIdentity") != binding["nativeIdentity"] \
+            or str(identity.get("nativeVersion") or "") != binding["nativeVersion"]:
+        reject()
+    if identity.get("contractVersion") == "1.0.0":
+        if identity.get("bindingId") != binding["bindingId"]:
+            reject()
+        return
+    if identity.get("contractVersion") != "1.1.0" \
+            or identity.get("tenantId") != tenant_id \
+            or identity.get("platformStudyId") != platform_study_id \
+            or identity.get("system") != "osb" \
+            or identity.get("namespace") != "accuratrials-osb" \
+            or identity.get("objectType") != "study-draft-root" \
+            or identity.get("verificationStatus") != "verified" \
+            or identity.get("validTo") is not None:
+        reject()
+    evidence = identity.get("evidence")
+    if not isinstance(evidence, dict) or not isinstance(evidence.get("receiptId"), str):
+        reject()
+    rows, _ = db.cypher_query(
+        """MATCH (audit:PlatformNativeIdentityAudit {
+             tenant_id: $tenant_id, platform_study_id: $platform_study_id,
+             receipt_id: $receipt_id, action: 'PLATFORM_NATIVE_IDENTITY_PUBLISHED'})
+             -[:AUDITS_EFFECT]->(effect:PlatformNativeIdentityEffect {
+               tenant_id: $tenant_id, platform_study_id: $platform_study_id,
+               namespace: 'accuratrials-osb', object_type: 'study-draft-root'})
+           RETURN effect.receipt_json,effect.signed_envelope_json""",
+        {"tenant_id": tenant_id, "platform_study_id": platform_study_id,
+         "receipt_id": evidence["receiptId"]},
+    )
+    if len(rows) != 1:
+        reject()
+    try:
+        receipt = json.loads(str(rows[0][0]))
+        envelope = json.loads(str(rows[0][1]))
+    except (ValueError, TypeError, IndexError):
+        reject()
+    if not isinstance(receipt, dict) or not isinstance(envelope, dict):
+        reject()
+    expected_receipt = {
+        "contractVersion": "1.0.0", "receiptId": evidence["receiptId"],
+        "tenantId": tenant_id, "platformStudyId": platform_study_id,
+        "targetSystem": "osb", "namespace": "accuratrials-osb",
+        "objectType": "study-draft-root", "nativeIdentity": binding["nativeIdentity"],
+        "nativeVersion": binding["nativeVersion"],
+    }
+    if any(receipt.get(key) != value for key, value in expected_receipt.items()) \
+            or not hash_refs_equal(evidence.get("receiptPayloadHash"), canonical_json_hash_ref(
+                receipt, schema_version="NativeIdentityBindingReceiptV1@1.0.0",
+            )) \
+            or not hash_refs_equal(evidence.get("signedEnvelopeHash"), canonical_json_hash_ref(
+                envelope, schema_version="SignedArtifactEnvelopeV1@1.0.0",
+            )):
+        reject()
+    try:
+        head = read_current_study_head(binding["nativeIdentity"], query=db.cypher_query)
+    except ValueError:
+        reject()
+    if head is None:
+        reject()
+    native_status = head["nativeStatus"].lower()
+    native_version = head["nativeVersion"]
+    target_state = {
+        "nativeIdentity": binding["nativeIdentity"], "nativeVersion": native_version,
+        "status": native_status, "domainBindingId": binding["bindingId"],
+    }
+    if native_version != binding["nativeVersion"] or not hash_refs_equal(
+        receipt.get("targetStateHash"),
+        canonical_json_hash_ref(target_state, schema_version="OSBNativeStudyRootStateV1@1.0.0"),
+    ):
+        reject()
 
 
 def _census_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
@@ -664,21 +833,107 @@ def bind_candidate_set_envelope(artifact_ref: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def assert_candidate_set_current(
-    payload: dict[str, Any], *, binding: dict[str, str], osb_openapi_hash: str, now: datetime | None = None,
-) -> None:
+def _assert_candidate_native_checkpoint_current(
+    payload: dict[str, Any], *, binding: dict[str, str], now: datetime | None = None,
+) -> dict[str, Any]:
     identity = _record(payload.get("osbStudyIdentity"), "OSB_CANDIDATE_SET_IDENTITY_REQUIRED")
     checkpoint = _record(payload.get("capabilityCheckpoint"), "OSB_CANDIDATE_CHECKPOINT_REQUIRED")
     clock = now or datetime.now(UTC)
-    if identity.get("nativeIdentity") != binding["nativeIdentity"] \
+    if identity.get("contractVersion") == "1.1.0":
+        _assert_identity_binding(
+            identity, binding, tenant_id=str(payload.get("tenantId")),
+            platform_study_id=str(payload.get("platformStudyId")), error_code="OSB_CANDIDATE_SET_STALE",
+        )
+    elif identity.get("nativeIdentity") != binding["nativeIdentity"] \
             or str(identity.get("nativeVersion") or "") != binding["nativeVersion"] \
             or identity.get("bindingId") != binding["bindingId"]:
         raise OsbCandidateSetError("OSB_CANDIDATE_SET_STALE", "OSB binding or native version changed.")
-    if str(checkpoint.get("nativeVersion") or "") != binding["nativeVersion"] \
-            or str(checkpoint.get("osbOpenApiHash") or "") != osb_openapi_hash:
+    if str(checkpoint.get("nativeVersion") or "") != binding["nativeVersion"]:
         raise OsbCandidateSetError("OSB_CANDIDATE_SET_STALE", "Capability or native checkpoint changed.")
     if _iso(payload.get("expiresAt")) <= clock:
         raise OsbCandidateSetError("OSB_CANDIDATE_SET_EXPIRED", "Candidate set expired.")
+    return checkpoint
+
+
+def assert_candidate_set_current(
+    payload: dict[str, Any], *, binding: dict[str, str], osb_openapi_hash: str, now: datetime | None = None,
+) -> None:
+    checkpoint = _assert_candidate_native_checkpoint_current(payload, binding=binding, now=now)
+    if str(checkpoint.get("osbOpenApiHash") or "") != osb_openapi_hash:
+        raise OsbCandidateSetError("OSB_CANDIDATE_SET_STALE", "Capability or native checkpoint changed.")
+
+
+def read_candidate_set_for_publication(
+    *, request_payload: dict[str, Any], request_artifact: dict[str, Any],
+    candidate_artifact: dict[str, Any], tenant_id: str, platform_study_id: str,
+    osb_openapi_hash: str, signed_envelope: dict[str, Any],
+    signature_verification: dict[str, Any],
+) -> dict[str, Any]:
+    """Read-only preparation/revalidation for a new signed publication receipt."""
+    verify_candidate_request_artifact(
+        request_payload, request_artifact, tenant_id, platform_study_id,
+        signed_envelope, signature_verification,
+    )
+    version_id = candidate_artifact.get("artifactVersionId")
+    rows, _ = db.cypher_query(
+        """MATCH (candidate:OsbCandidateSetV1 {tenant_id: $tenant_id,
+             platform_study_id: $platform_study_id,
+             candidate_set_version_id: $candidate_set_version_id})
+           RETURN candidate.payload_json,candidate.payload_hash,candidate.artifact_ref_json,
+                  candidate.candidate_set_id,candidate.candidate_set_version_id,
+                  candidate.native_study_id,candidate.native_version,candidate.signed_envelope_json""",
+        {"tenant_id": tenant_id, "platform_study_id": platform_study_id,
+         "candidate_set_version_id": version_id},
+    )
+    if len(rows) != 1:
+        raise OsbCandidateSetError(
+            "OSB_CANDIDATE_PUBLICATION_TARGET_REQUIRED", "One exact retained candidate version is required.", 409,
+        )
+    row = rows[0]
+    payload = _record(json.loads(str(row[0])), "OSB_CANDIDATE_SET_STORED_INVALID")
+    artifact = _record(json.loads(str(row[2])), "OSB_CANDIDATE_SET_STORED_INVALID")
+    payload_hash = canonical_json_hash_ref(
+        payload, schema_version="OsbCandidateSetV1@1.0.0", media_type=CANDIDATE_SET_MEDIA_TYPE,
+    )
+    retained_descriptor_hash = descriptor_hash({
+        "contractVersion": "ArtifactDescriptorV1@1.0.0",
+        **{key: value for key, value in artifact.items() if key not in {"contractVersion", "descriptorHash"}},
+    })
+    if payload_hash["value"] != str(row[1]) or not hash_refs_equal(payload_hash, artifact.get("payloadHash")) \
+            or not hash_refs_equal(retained_descriptor_hash, artifact.get("descriptorHash")) \
+            or artifact.get("kind") != "osb-candidate-set" \
+            or artifact.get("producerService") != "osb.package" \
+            or canonical_json(payload) != str(row[0]) \
+            or len(str(row[0]).encode("utf-8")) != artifact.get("byteSize") \
+            or artifact != candidate_artifact:
+        raise OsbCandidateSetError(
+            "OSB_CANDIDATE_PUBLICATION_ARTIFACT_MISMATCH", "Retained bytes or descriptor differ from the named candidate artifact.", 409,
+        )
+    if payload.get("tenantId") != tenant_id or payload.get("platformStudyId") != platform_study_id \
+            or payload.get("candidateSetVersionId") != str(row[4]) or str(row[4]) != version_id \
+            or payload.get("candidateSetId") != str(row[3]) \
+            or payload.get("assignment") != candidate_assignment_identity(
+                tenant_id=tenant_id, platform_study_id=platform_study_id, candidate_set_version_id=str(row[4]),
+            ) \
+            or payload.get("osbStudyIdentity") != request_payload.get("osbStudyIdentity") \
+            or payload.get("request") != {
+                "requestVersionId": request_payload.get("requestVersionId"),
+                "payloadHash": request_artifact.get("payloadHash"),
+            }:
+        raise OsbCandidateSetError(
+            "OSB_CANDIDATE_PUBLICATION_SOURCE_MISMATCH", "Candidate identity or source request differs.", 409,
+        )
+    binding = active_osb_binding(tenant_id, platform_study_id)
+    assert_candidate_set_current(payload, binding=binding, osb_openapi_hash=osb_openapi_hash)
+    if str(row[5]) != binding["nativeIdentity"] or str(row[6]) != binding["nativeVersion"]:
+        raise OsbCandidateSetError("OSB_CANDIDATE_SET_STALE", "Retained native checkpoint differs.")
+    return {
+        "payload": payload, "payloadHash": payload_hash, "artifactRef": artifact,
+        "candidateSetId": str(row[3]), "candidateSetVersionId": str(row[4]),
+        "nativeIdentity": str(row[5]), "nativeVersion": str(row[6]),
+        "assignment": payload.get("assignment"),
+        "signedEnvelope": json.loads(str(row[7])) if row[7] else bind_candidate_set_envelope(artifact),
+    }
 
 
 def _assert_readable_or_create(record: dict[str, Any]) -> str:
@@ -708,7 +963,7 @@ def _assert_readable_or_create(record: dict[str, Any]) -> str:
     if record.get("blockers"):
         return "deferred_blocking"
     if create_allowed:
-        return "governed_extension"
+        return "native" if record.get("resourceFamily") == "study_metadata" else "governed_extension"
     raise OsbCandidateSetError(
         "OSB_CANDIDATE_SET_TARGET_UNREADABLE",
         "Candidate must name a readable native target or an explicit create request.",
@@ -723,19 +978,29 @@ def generate_candidate_set(
     signature_verification: dict[str, Any] | None = None,
     mapping_context_service: Any | None = None,
     artifact_signer: Any | None = None,
+    supersedes_candidate_set_version_id: str | None = None,
 ) -> dict[str, Any]:
     verify_candidate_request_artifact(
         request_payload, artifact, tenant_id, platform_study_id,
         signed_envelope, signature_verification,
     )
-    binding = _active_binding(tenant_id, platform_study_id)
+    binding = active_osb_binding(tenant_id, platform_study_id)
     expected_identity = _record(request_payload.get("osbStudyIdentity"), "OSB_CANDIDATE_REQUEST_IDENTITY_REQUIRED")
-    if (
-        expected_identity.get("nativeIdentity") != binding["nativeIdentity"]
-        or str(expected_identity.get("nativeVersion") or "") != binding["nativeVersion"]
-        or expected_identity.get("bindingId") != binding["bindingId"]
+    _assert_identity_binding(
+        expected_identity, binding, tenant_id=tenant_id, platform_study_id=platform_study_id,
+        error_code="OSB_CANDIDATE_REQUEST_NATIVE_PRECONDITION_FAILED",
+    )
+    if supersedes_candidate_set_version_id is not None and (
+        not isinstance(supersedes_candidate_set_version_id, str)
+        or not re.fullmatch(
+            r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            supersedes_candidate_set_version_id,
+        )
     ):
-        raise OsbCandidateSetError("OSB_CANDIDATE_REQUEST_NATIVE_PRECONDITION_FAILED", "OSB binding or version changed.")
+        raise OsbCandidateSetError(
+            "OSB_CANDIDATE_REFRESH_PRECONDITION_INVALID",
+            "An exact prior candidate-set version UUID is required for refresh.", 422,
+        )
     request_hash = _record(artifact.get("payloadHash"), "OSB_CANDIDATE_REQUEST_HASH_REQUIRED")["value"]
     db.cypher_query(
         """MERGE (lock:OsbCandidateRequestLock {key: $key})
@@ -745,14 +1010,22 @@ def generate_candidate_set(
         {"key": f"{tenant_id}|{request_hash}"},
     )
     prior, _ = db.cypher_query(
-        """MATCH (candidate:OsbCandidateSetV1 {tenant_id: $tenant_id, request_hash: $request_hash})
+        """MATCH (candidate:OsbCandidateSetV1 {tenant_id: $tenant_id, request_hash: $request_hash,
+             platform_study_id: $platform_study_id})
            RETURN candidate.payload_json,candidate.payload_hash,candidate.artifact_ref_json,
                   candidate.candidate_set_id,candidate.candidate_set_version_id,
                   candidate.native_study_id,candidate.native_version,candidate.signed_envelope_json""",
-        {"tenant_id": tenant_id, "request_hash": request_hash},
+        {"tenant_id": tenant_id, "request_hash": request_hash, "platform_study_id": platform_study_id},
     )
-    if prior:
-        row = prior[0]
+    if supersedes_candidate_set_version_id is not None and sum(
+        str(row[4]) == supersedes_candidate_set_version_id for row in prior
+    ) != 1:
+        raise OsbCandidateSetError(
+            "OSB_CANDIDATE_REFRESH_PRECONDITION_FAILED",
+            "The named prior version must belong to this exact study and signed request.", 409,
+        )
+    current: list[tuple[Any, dict[str, Any], dict[str, Any]]] = []
+    for row in prior:
         prior_payload = _record(json.loads(str(row[0])), "OSB_CANDIDATE_SET_STORED_INVALID")
         expected_prior_hash = canonical_json_hash_ref(
             prior_payload, schema_version="OsbCandidateSetV1@1.0.0",
@@ -760,9 +1033,23 @@ def generate_candidate_set(
         )
         if expected_prior_hash["value"] != str(row[1]):
             raise OsbCandidateSetError("OSB_CANDIDATE_SET_STORED_HASH_MISMATCH", "Stored candidate set is corrupt.", 500)
-        assert_candidate_set_current(
-            prior_payload, binding=binding, osb_openapi_hash=osb_openapi_hash,
+        if prior_payload.get("osbStudyIdentity") != expected_identity:
+            raise OsbCandidateSetError(
+                "OSB_CANDIDATE_SET_STORED_IDENTITY_MISMATCH", "Stored candidate identity differs from its exact request.", 500,
+            )
+        # Validate identity, native checkpoint and expiry unconditionally.
+        # Only the separately compared capability hash is refreshable; a
+        # concurrent native-binding failure must never be swallowed.
+        checkpoint = _assert_candidate_native_checkpoint_current(prior_payload, binding=binding)
+        if str(checkpoint.get("osbOpenApiHash") or "") != osb_openapi_hash:
+            continue
+        current.append((row, prior_payload, expected_prior_hash))
+    if len(current) > 1:
+        raise OsbCandidateSetError(
+            "OSB_CANDIDATE_SET_CURRENT_AMBIGUOUS", "Multiple candidate versions claim the same current checkpoint.", 409,
         )
+    if current:
+        row, prior_payload, expected_prior_hash = current[0]
         envelope = json.loads(str(row[7])) if len(row) > 7 and row[7] else bind_candidate_set_envelope(
             json.loads(str(row[2]))
         )
@@ -774,6 +1061,11 @@ def generate_candidate_set(
             "nativeVersion": str(row[6]), "assignment": assignment,
             "signedEnvelope": envelope, "replay": True,
         }
+    if prior and supersedes_candidate_set_version_id is None:
+        raise OsbCandidateSetError(
+            "OSB_CANDIDATE_SET_STALE",
+            "Capability or native checkpoint changed. Explicit versioned refresh is required.", 409,
+        )
     intents = [_record(item, "OSB_TYPED_SOURCE_INTENT_INVALID") for item in _list(
         request_payload.get("typedSourceIntents"), "OSB_TYPED_SOURCE_INTENTS_REQUIRED"
     )]
@@ -849,6 +1141,8 @@ def generate_candidate_set(
     context_value["schemaVersion"] = "osb-mapping-context/2.0"
     context_value["mappingAuthority"] = "OpenStudyBuilder"
     context_value["contextHash"] = context.context_hash
+    metadata_offers = prepare_metadata_offers(intents, binding["nativeIdentity"], context)
+    metadata_blockers: list[str] = []
     candidates: list[dict[str, Any]] = []
     census_rows: list[dict[str, Any]] = []
     request_id = str(request_payload["requestId"])
@@ -856,6 +1150,8 @@ def generate_candidate_set(
         if str(group.fact_id) != str(intent["factId"]) or str(group.target_key) != str(intent["targetKey"]):
             raise OsbCandidateSetError("OSB_CANDIDATE_SET_MEMBER_MISMATCH", "Mapping context reordered source intents.", 422)
         candidate_records = _camelize(jsonable_encoder(group.candidates, by_alias=True, exclude_none=False))
+        if intent["resourceFamily"] == "study_metadata" and candidate_records:
+            raise OsbCandidateSetError("OSB_STUDY_METADATA_CANDIDATE_INVALID", "Study properties cannot select library candidates.", 422)
         record = {
             "factId": intent["factId"], "revision": intent["revision"],
             "conceptId": intent["conceptId"], "targetKey": intent["targetKey"],
@@ -874,6 +1170,20 @@ def generate_candidate_set(
             "complete": group.complete, "truncated": group.truncated,
             "blockers": list(group.release_blockers),
         }
+        metadata_offer = metadata_offers.get(f'{intent["factId"]}@{intent["revision"]}:{intent["targetKey"]}')
+        if metadata_offer is None:
+            # Validate native create offers with the same planner as execution.
+            # Keeping an unavailable create button would defer a known failure
+            # until after a human signed their mapping choice.
+            from clinical_mdr_api.services.integrations.native_capture_mapping import prepare_capture_create_offer
+
+            metadata_offer = prepare_capture_create_offer(intent)
+        if metadata_offer is not None:
+            record["createOption"] = metadata_offer["createOption"]
+            record["blockers"].extend(metadata_offer["blockers"])
+            record["complete"] = record["complete"] and not metadata_offer["blockers"]
+            metadata_blockers.extend(f'{code}:{intent["factId"]}:{intent["targetKey"]}'
+                                     for code in metadata_offer["blockers"])
         disposition = _assert_readable_or_create(record)
         candidates.append(record)
         record_hash = canonical_json_hash_ref(record, schema_version="OsbCandidateRecordV1@1.0.0")
@@ -919,7 +1229,8 @@ def generate_candidate_set(
         ))
     candidate_set_id = str(uuid5(NAMESPACE_URL, f"accuratrials:osb-candidate-set:v1:{request_hash}"))
     set_seed = canonical_json_hash_ref(
-        {"requestHash": request_hash, "contextHash": context.context_hash, "candidates": candidates},
+        {"requestHash": request_hash, "contextHash": context.context_hash,
+         "osbOpenApiHash": osb_openapi_hash, "candidates": candidates},
         schema_version="OsbCandidateSetSeedV1@1.0.0",
     )["value"]
     candidate_set_version_id = str(uuid5(NAMESPACE_URL, f"{candidate_set_id}:{set_seed}"))
@@ -941,8 +1252,7 @@ def generate_candidate_set(
         "request": {"requestVersionId": request_payload["requestVersionId"], "payloadHash": artifact["payloadHash"]},
         "semanticSnapshot": request_payload["semanticSnapshot"],
         "sourceFactPackage": request_payload["sourceFactPackage"],
-        "osbStudyIdentity": {**expected_identity, "bindingId": binding["bindingId"],
-                             "nativeIdentity": binding["nativeIdentity"], "nativeVersion": binding["nativeVersion"]},
+        "osbStudyIdentity": expected_identity,
         "capabilityCheckpoint": {"osbOpenApiHash": osb_openapi_hash,
                                  "mappingContextHash": context.context_hash,
                                  "nativeVersion": binding["nativeVersion"], "governed": context.governed},
@@ -952,7 +1262,7 @@ def generate_candidate_set(
         "conservation": {"contractVersion": "ConservationCensusV1@1.0.0", "rows": census_rows,
                          "rowSetHash": census_hash, "counts": _census_counts(census_rows)},
         "assignment": assignment,
-        "blockers": list(context.release_blockers),
+        "blockers": sorted(set([*context.release_blockers, *metadata_blockers])),
         "expiresAt": request_payload["expiresAt"],
         "createdAt": created_at,
         "createdBy": actor,
@@ -975,14 +1285,14 @@ def generate_candidate_set(
             or not hash_refs_equal(envelope.get("payloadHash"), payload_hash) \
             or _record(envelope.get("signingStatement"), "OSB_CANDIDATE_SET_SIGNATURE_INVALID").get("signingPurpose") != "osb-candidate-set":
         raise OsbCandidateSetError("OSB_CANDIDATE_SET_SIGNATURE_INVALID", "Candidate set envelope does not bind the payload.", 422)
-    db.cypher_query(
+    stored, _ = db.cypher_query(
         """MERGE (request:OsbCandidateRequestV1 {tenant_id: $tenant_id, request_hash: $request_hash})
            ON CREATE SET request.request_version_id=$request_version_id, request.request_id=$request_id,
              request.platform_study_id=$platform_study_id, request.payload_json=$request_json,
              request.received_at=datetime()
-           MERGE (candidate:OsbCandidateSetV1 {tenant_id: $tenant_id, request_hash: $request_hash})
-           ON CREATE SET candidate.candidate_set_version_id=$set_version_id,
-             candidate.candidate_set_id=$set_id, candidate.platform_study_id=$platform_study_id,
+           MERGE (candidate:OsbCandidateSetV1 {tenant_id: $tenant_id, request_hash: $request_hash,
+             candidate_set_version_id: $set_version_id})
+           ON CREATE SET candidate.candidate_set_id=$set_id, candidate.platform_study_id=$platform_study_id,
              candidate.payload_hash=$payload_hash, candidate.context_hash=$context_hash,
              candidate.native_study_id=$native_study_id, candidate.native_version=$native_version,
              candidate.payload_json=$payload_json, candidate.artifact_ref_json=$artifact_ref_json,
@@ -999,6 +1309,12 @@ def generate_candidate_set(
          "assignment_id": assignment["assignmentId"], "signed_envelope_json": canonical_json(envelope),
          "osb_openapi_hash": osb_openapi_hash},
     )
+    if len(stored) != 1 or list(stored[0]) != [
+        candidate_set_version_id, payload_hash["value"], assignment["assignmentId"],
+    ]:
+        raise OsbCandidateSetError(
+            "OSB_CANDIDATE_SET_VERSION_COLLISION", "Candidate version already has different immutable bytes.", 409,
+        )
     return {"payload": payload, "payloadHash": payload_hash, "artifactRef": artifact_ref,
             "candidateSetId": candidate_set_id, "candidateSetVersionId": candidate_set_version_id,
             "nativeIdentity": binding["nativeIdentity"], "nativeVersion": binding["nativeVersion"],
@@ -1020,7 +1336,7 @@ def _camelize(value: Any) -> Any:
 
 __all__ = [
     "CANDIDATE_REQUEST_MEDIA_TYPE", "CANDIDATE_SET_MEDIA_TYPE", "OsbCandidateSetError",
-    "assert_candidate_request_transfer_envelope", "assert_candidate_set_current",
+    "active_osb_binding", "assert_candidate_request_transfer_envelope", "assert_candidate_set_current",
     "bind_candidate_set_envelope", "candidate_assignment_identity",
     "decode_signed_artifact_envelope_header",
     "generate_candidate_set", "load_candidate_request", "require_exactly_one_active_osb_binding",

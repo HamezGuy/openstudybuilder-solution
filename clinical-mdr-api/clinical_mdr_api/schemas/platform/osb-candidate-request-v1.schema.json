@@ -26,7 +26,7 @@
     "createdBy"
   ],
   "properties": {
-    "contractVersion": { "enum": ["OsbCandidateRequestV1@1.0.0", "OsbCandidateRequestV1@1.1.0"] },
+    "contractVersion": { "enum": ["OsbCandidateRequestV1@1.0.0", "OsbCandidateRequestV1@1.1.0", "OsbCandidateRequestV1@1.2.0", "OsbCandidateRequestV1@1.3.0"] },
     "requestId": { "type": "string", "format": "uuid" },
     "requestVersionId": { "type": "string", "format": "uuid" },
     "tenantId": { "type": "string", "format": "uuid" },
@@ -64,7 +64,313 @@
     "createdAt": { "type": "string", "format": "date-time" },
     "createdBy": { "type": "string", "minLength": 1, "maxLength": 1024 }
   },
+  "allOf": [{
+    "if": { "properties": { "contractVersion": { "enum": ["OsbCandidateRequestV1@1.0.0", "OsbCandidateRequestV1@1.1.0"] } } },
+    "then": { "properties": { "typedSourceIntents": { "type": "array", "items": {
+      "type": "object", "properties": { "resourceFamily": { "not": { "const": "study_metadata" } }, "nativeStudyOperation": false }
+    } } } }
+  }, {
+    "if": { "properties": { "contractVersion": { "enum": ["OsbCandidateRequestV1@1.0.0", "OsbCandidateRequestV1@1.1.0", "OsbCandidateRequestV1@1.2.0"] } } },
+    "then": { "properties": { "typedSourceIntents": { "type": "array", "items": {
+      "type": "object", "properties": { "source": { "type": "object", "properties": { "context": false } } }
+    } } } }
+  }],
   "$defs": {
+    "legacyOsbStudyIdentity": {
+      "title": "OsbLegacyStudyIdentityV1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "system",
+        "tenantId",
+        "platformStudyId",
+        "namespace",
+        "objectType",
+        "bindingId",
+        "nativeIdentity",
+        "nativeVersion",
+        "verificationStatus"
+      ],
+      "properties": {
+        "contractVersion": {
+          "const": "1.0.0"
+        },
+        "system": {
+          "const": "osb"
+        },
+        "tenantId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "platformStudyId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "namespace": {
+          "const": "accuratrials-osb"
+        },
+        "objectType": {
+          "const": "study-draft-root"
+        },
+        "bindingId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "nativeIdentity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "nativeVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "verificationStatus": {
+          "const": "verified"
+        }
+      }
+    },
+    "externalOsbStudyIdentity": {
+      "title": "OsbExternalStudyIdentityV1",
+      "description": "The complete verified external identity, including its original receipt evidence; copied without replacing the platform binding ID.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "bindingId",
+        "tenantId",
+        "platformStudyId",
+        "system",
+        "namespace",
+        "objectType",
+        "nativeIdentity",
+        "verificationStatus",
+        "verifiedBy",
+        "verifiedAt",
+        "validFrom",
+        "evidence",
+        "createdAt",
+        "createdBy",
+        "nativeVersion"
+      ],
+      "properties": {
+        "contractVersion": {
+          "enum": [
+            "1.0.0",
+            "1.1.0"
+          ]
+        },
+        "bindingId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "tenantId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "platformStudyId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "system": {
+          "const": "osb"
+        },
+        "namespace": {
+          "const": "accuratrials-osb"
+        },
+        "objectType": {
+          "const": "study-draft-root"
+        },
+        "nativeIdentity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "nativeVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "verificationStatus": {
+          "const": "verified"
+        },
+        "verifiedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "verifiedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "validFrom": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "validTo": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "evidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "receiptId",
+            "receiptPayloadHash"
+          ],
+          "dependentRequired": {
+            "signedEnvelopeHash": [
+              "trustBundleVersion",
+              "trustBundleHash",
+              "trustedSigningTime"
+            ],
+            "trustBundleVersion": [
+              "signedEnvelopeHash",
+              "trustBundleHash",
+              "trustedSigningTime"
+            ],
+            "trustBundleHash": [
+              "signedEnvelopeHash",
+              "trustBundleVersion",
+              "trustedSigningTime"
+            ],
+            "trustedSigningTime": [
+              "signedEnvelopeHash",
+              "trustBundleVersion",
+              "trustBundleHash"
+            ]
+          },
+          "properties": {
+            "receiptId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "receiptPayloadHash": {
+              "$ref": "#/$defs/externalIdentityHashRef"
+            },
+            "signedEnvelopeHash": {
+              "$ref": "#/$defs/externalIdentityHashRef"
+            },
+            "trustBundleVersion": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "trustBundleHash": {
+              "$ref": "#/$defs/externalIdentityHashRef"
+            },
+            "trustedSigningTime": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "evidenceRefs": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2048
+              },
+              "uniqueItems": true,
+              "maxItems": 64
+            }
+          },
+          "title": "OsbExternalIdentityEvidenceV1"
+        },
+        "supersedesBindingId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "createdBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "contractVersion": {
+                "const": "1.0.0"
+              }
+            },
+            "required": [
+              "contractVersion"
+            ]
+          },
+          "then": {
+            "properties": {
+              "evidence": {
+                "type": "object",
+                "properties": {
+                  "signedEnvelopeHash": false,
+                  "trustBundleVersion": false,
+                  "trustBundleHash": false,
+                  "trustedSigningTime": false
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "externalIdentityHashRef": {
+      "title": "OsbExternalIdentityHashRefV1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "canonicalizationVersion",
+        "value",
+        "mediaType",
+        "schemaVersion",
+        "excludedPaths"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "sha-256"
+        },
+        "canonicalizationVersion": {
+          "const": "canonical-json/1.0"
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "mediaType": {
+          "const": "application/json"
+        },
+        "schemaVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "excludedPaths": {
+          "type": "array",
+          "maxItems": 0
+        }
+      }
+    },
     "hashRef": {
       "title": "OsbCandidateHashRefV1",
       "type": "object",
@@ -85,11 +391,15 @@
         "activities",
         "activity_instruction_templates",
         "activity_schedules",
+        "assignments",
+        "branching",
         "cdash_variables",
         "compound_product_relationships",
+        "conditions",
         "controlled_terminology",
         "controlled_terminology_codelists",
         "criteria_templates",
+        "edit_checks",
         "endpoint_templates",
         "objective_templates",
         "odm_aliases",
@@ -99,6 +409,7 @@
         "odm_items",
         "odm_methods",
         "study_compound_dosing_relationships",
+        "study_metadata",
         "timeframe_templates",
         "timeframes",
         "units"
@@ -106,24 +417,15 @@
     },
     "osbStudyIdentity": {
       "title": "OsbStudyIdentityV1",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "contractVersion", "system", "tenantId", "platformStudyId", "namespace",
-        "objectType", "bindingId", "nativeIdentity", "nativeVersion", "verificationStatus"
-      ],
-      "properties": {
-        "contractVersion": { "const": "1.0.0" },
-        "system": { "const": "osb" },
-        "tenantId": { "type": "string", "format": "uuid" },
-        "platformStudyId": { "type": "string", "format": "uuid" },
-        "namespace": { "const": "accuratrials-osb" },
-        "objectType": { "const": "study-draft-root" },
-        "bindingId": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "nativeIdentity": { "type": "string", "minLength": 1, "maxLength": 256 },
-        "nativeVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "verificationStatus": { "const": "verified" }
-      }
+      "description": "Preserve the historical thin 1.0 identity and complete verified ExternalStudyIdentityV1 1.0/1.1 values. Full identities retain every receipt and trust field.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/legacyOsbStudyIdentity"
+        },
+        {
+          "$ref": "#/$defs/externalOsbStudyIdentity"
+        }
+      ]
     },
     "sourcePackageRef": {
       "title": "OsbCandidateSourcePackageRefV1",
@@ -171,6 +473,39 @@
         "value": true
       }
     },
+    "encounterProjection": {
+      "title": "OsbSourceEncounterProjectionV1",
+      "description": "Exact Build-owned FactDto.downstream.encounterProjection. An absent projection is unknown; an explicit empty encounter array records the establishing Build's empty result. It grants no native execution or approval authority.",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["contract", "buildHash", "encounters"],
+      "properties": {
+        "contract": { "const": "study-build-encounter-projection/1" },
+        "buildHash": { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[a-f0-9]{64}$" },
+        "encounters": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/encounterRef" }
+        }
+      }
+    },
+    "encounterRef": {
+      "title": "OsbSourceEncounterRefV1",
+      "description": "A complete occurrence-specific visit binding, including retained form, timing, conditions and evidence metadata.",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["visitId", "visitLabel", "timepoint", "required", "derivedFrom", "evidenceRef"],
+      "properties": {
+        "visitId": { "type": "string", "minLength": 1 },
+        "visitLabel": { "type": ["string", "null"] },
+        "timepoint": { "type": ["string", "null"] },
+        "required": { "type": ["boolean", "null"] },
+        "derivedFrom": { "type": ["string", "null"] },
+        "evidenceRef": { "type": "string", "minLength": 1 },
+        "formObjectId": { "type": "string", "minLength": 1 },
+        "objectMetadata": { "type": "object", "additionalProperties": true },
+        "properties": { "type": "object", "additionalProperties": true }
+      }
+    },
     "typedSourceIntent": {
       "title": "OsbTypedSourceIntentV1",
       "type": "object",
@@ -179,6 +514,14 @@
         "factId", "revision", "conceptId", "targetKey", "semanticRole",
         "resourceFamily", "source", "evidence", "searchStrings", "searchCodes", "createOption"
       ],
+      "allOf": [{
+        "if": { "properties": { "resourceFamily": { "const": "study_metadata" } } },
+        "then": {
+          "required": ["nativeStudyOperation"],
+          "properties": { "nativeStudyOperation": { "$ref": "#/$defs/studyMetadataPlan" } }
+        },
+        "else": { "properties": { "nativeStudyOperation": false } }
+      }],
       "properties": {
         "factId": { "type": "string", "minLength": 1, "maxLength": 256 },
         "revision": { "type": "integer", "minimum": 1 },
@@ -186,6 +529,7 @@
         "targetKey": { "const": "primary" },
         "semanticRole": { "type": "string", "minLength": 1, "maxLength": 256 },
         "resourceFamily": { "$ref": "#/$defs/resourceFamily" },
+        "nativeStudyOperation": { "$ref": "#/$defs/studyMetadataPlan" },
         "source": {
           "title": "OsbTypedSourceIntentSourceV1",
           "type": "object",
@@ -200,6 +544,35 @@
             "classification": {
               "description": "1.1.0: the claim's classification object carried VERBATIM (already inside the hash-pinned fact). Deliberately open — its shape is the IL fact's, not this contract's.",
               "type": ["object", "null"]
+            },
+            "context": {
+              "title": "OsbTypedSourceContextV1",
+              "description": "1.3.0: exact source collection and relationship context. These retained sections are not native execution fields or approval. Absence, explicit null and empty arrays remain distinct.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "encounters": {
+                  "description": "Legacy FactDto.encounters retained as source custody. Current Build-derived visit bindings are in encounterProjection.",
+                  "type": ["array", "null"],
+                  "items": true
+                },
+                "encounterProjection": { "$ref": "#/$defs/encounterProjection" },
+                "relationships": {
+                  "description": "FactDto.relationships with exact endpoints, evidence and source attribution.",
+                  "type": ["array", "null"],
+                  "items": true
+                },
+                "semanticAssociations": {
+                  "description": "FactDto.downstream.semanticAssociations, including unresolved or ambiguous native object references.",
+                  "type": ["array", "null"],
+                  "items": true
+                },
+                "unresolvedRelationships": {
+                  "description": "FactDto.extraction.unresolvedRelationships retained with their original evidence.",
+                  "type": ["array", "null"],
+                  "items": true
+                }
+              }
             },
             "values": {
               "type": "array",
@@ -244,6 +617,62 @@
             }
           }
         }
+      }
+    },
+    "studyMetadataPlan": {
+      "title": "OsbStudyMetadataPlanV1",
+      "description": "Source-pinned CSL metadata proposal. OSB resolves references and supplies a native precondition before a signed decision can apply it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contractVersion", "assertionType", "ruled", "osbResourceType", "osbCapability", "kind", "route", "method", "metadataPath", "metadataValue"],
+      "properties": {
+        "contractVersion": { "const": "OsbStudyMetadataPlanV1@1.0.0" },
+        "assertionType": { "type": "string", "minLength": 1 },
+        "ruled": { "const": true },
+        "osbResourceType": { "const": "StudyMetadata" },
+        "osbCapability": { "type": "string", "minLength": 1 },
+        "kind": { "const": "native-metadata" },
+        "route": { "const": "/studies/{study_uid}" },
+        "method": { "const": "PATCH" },
+        "metadataPath": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "metadataValue": true,
+        "metadataJoinedText": { "type": "boolean" },
+        "metadataMultiValued": { "type": "boolean" },
+        "termRefs": { "type": "object", "additionalProperties": { "$ref": "#/$defs/metadataTermRef" } },
+        "unitRefs": { "type": "object", "additionalProperties": { "$ref": "#/$defs/metadataUnitRef" } },
+        "dictionaryRefs": { "type": "object", "additionalProperties": { "$ref": "#/$defs/metadataDictionaryRef" } },
+        "consumedFields": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "basis": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    },
+    "metadataTermRef": {
+      "title": "OsbMetadataTermRefV1",
+      "type": "object", "additionalProperties": false,
+      "required": ["termName", "codelistName", "basis"],
+      "properties": {
+        "termName": { "type": "string", "minLength": 1 },
+        "codelistName": { "type": "string", "minLength": 1 },
+        "basis": { "type": "string", "minLength": 1 }
+      }
+    },
+    "metadataUnitRef": {
+      "title": "OsbMetadataUnitRefV1",
+      "type": "object", "additionalProperties": false,
+      "required": ["unitName", "basis"],
+      "properties": {
+        "unitName": { "type": "string", "minLength": 1 },
+        "basis": { "type": "string", "minLength": 1 }
+      }
+    },
+    "metadataDictionaryRef": {
+      "title": "OsbMetadataDictionaryRefV1",
+      "type": "object", "additionalProperties": false,
+      "required": ["termName", "libraryName", "dictionaryCodelistName", "basis"],
+      "properties": {
+        "termName": { "type": "string", "minLength": 1 },
+        "libraryName": { "type": "string", "minLength": 1 },
+        "dictionaryCodelistName": { "type": "string", "minLength": 1 },
+        "basis": { "type": "string", "minLength": 1 }
       }
     },
     "artifactRef": {

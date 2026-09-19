@@ -1,5 +1,5 @@
 """AUTO-GENERATED from CSL-owned StudyMappingDecisionV1.
-Schema sha256:79b51d8e4e45b3da44ee58063408e24f4c8986e01aab04b9a705afac5bcf078c
+Schema sha256:fdb7a71dacec74845d5e90e6fded2f7c4934c5f61aa3db8e81e78da78371e607
 Do not edit by hand. Run generate-p4-request-contracts.mjs.
 """
 
@@ -24,9 +24,9 @@ class HumanElectronicSignatureV1(TypedDict):
     platformStudyId: str
     failedAttemptAuditRefs: list[str]
 
-OsbCandidateSetResourceFamilyV1 = Literal["activities", "compound_product_relationships", "controlled_terminology", "criteria_templates", "endpoint_templates", "objective_templates", "odm_forms", "odm_item_groups", "odm_items", "study_compound_dosing_relationships", "units"]
+OsbCandidateSetResourceFamilyV1 = Literal["activities", "activity_instruction_templates", "activity_schedules", "cdash_variables", "compound_product_relationships", "controlled_terminology", "controlled_terminology_codelists", "criteria_templates", "endpoint_templates", "objective_templates", "odm_aliases", "odm_conditions", "odm_forms", "odm_item_groups", "odm_items", "odm_methods", "study_compound_dosing_relationships", "study_metadata", "timeframe_templates", "timeframes", "units"]
 
-class OsbCandidateSetStudyIdentityV1(TypedDict):
+class OsbLegacyStudyIdentityV1(TypedDict):
     contractVersion: Literal["1.0.0"]
     system: Literal["osb"]
     tenantId: str
@@ -37,6 +37,47 @@ class OsbCandidateSetStudyIdentityV1(TypedDict):
     nativeIdentity: str
     nativeVersion: str
     verificationStatus: Literal["verified"]
+
+class OsbExternalStudyIdentityV1(TypedDict):
+    contractVersion: Literal["1.0.0", "1.1.0"]
+    bindingId: str
+    tenantId: str
+    platformStudyId: str
+    system: Literal["osb"]
+    namespace: Literal["accuratrials-osb"]
+    objectType: Literal["study-draft-root"]
+    nativeIdentity: str
+    nativeVersion: str
+    verificationStatus: Literal["verified"]
+    verifiedBy: str
+    verifiedAt: str
+    validFrom: str
+    validTo: NotRequired[str | None]
+    evidence: OsbExternalIdentityEvidenceV1
+    supersedesBindingId: NotRequired[str | None]
+    createdAt: str
+    createdBy: str
+    updatedAt: NotRequired[str]
+    updatedBy: NotRequired[str]
+
+OsbCandidateSetStudyIdentityV1 = OsbLegacyStudyIdentityV1 | OsbExternalStudyIdentityV1
+
+class OsbExternalIdentityEvidenceV1(TypedDict):
+    receiptId: str
+    receiptPayloadHash: OsbExternalIdentityHashRefV1
+    signedEnvelopeHash: NotRequired[OsbExternalIdentityHashRefV1]
+    trustBundleVersion: NotRequired[int]
+    trustBundleHash: NotRequired[OsbExternalIdentityHashRefV1]
+    trustedSigningTime: NotRequired[str]
+    evidenceRefs: NotRequired[list[str]]
+
+class OsbExternalIdentityHashRefV1(TypedDict):
+    algorithm: Literal["sha-256"]
+    canonicalizationVersion: Literal["canonical-json/1.0"]
+    value: str
+    mediaType: Literal["application/json"]
+    schemaVersion: str
+    excludedPaths: list[Any]
 
 class OsbNativeCandidateIdentityV1(TypedDict):
     resourceFamily: OsbCandidateSetResourceFamilyV1

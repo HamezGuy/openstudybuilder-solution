@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from copy import deepcopy
+
 import pytest
 
 from clinical_mdr_api.generated.platform_contracts.hash_signing_v1 import (
@@ -12,6 +14,15 @@ from clinical_mdr_api.services.integrations.candidate_set import (
     OsbCandidateSetError,
 )
 from clinical_mdr_api.services.integrations.mapping_decision_v1 import apply_mapping_decision
+from clinical_mdr_api.services.integrations.native_capture_projection import (
+    CAPTURE_FAMILY_TYPES,
+    CAPTURE_READBACK_SCHEMA,
+    capture_field_receipts,
+)
+from clinical_mdr_api.tests.unit.services.test_native_capture_mapping import (
+    selected_dependency_fixture,
+    selected_library_fixture,
+)
 
 TENANT = "11111111-1111-4111-8111-111111111111"
 STUDY = "22222222-2222-4222-8222-222222222222"
@@ -33,9 +44,12 @@ class FakeQuery:
         self.evidence = None
         self.managed = {}
         self.openapi_hash = openapi_hash
+        self.binding = ("bind-1", "Study_990001", "0.1")
 
     def cypher_query(self, query, params=None):
         params = params or {}
+        if "PlatformNativeStudyBinding" in query:
+            return ([list(self.binding)], None)
         if "OsbInboundArtifact" in query and "study-mapping-decision" in query:
             if "MERGE" in query:
                 self.decision_json = params["payload_json"]
@@ -43,7 +57,7 @@ class FakeQuery:
                           params["payload_json"], params["byte_size"]]], None)
             return ([[self.decision_json]], None)
         if "OsbCandidateSetV1" in query and "GENERATED_FROM" in query:
-            return ([[self.candidate_json, self.request_json, "Study_990001", "0.1",
+            return ([[self.candidate_json, self.request_json, self.binding[1], self.binding[2],
                       "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"]], None)
         if "OsbCandidateRequestLock" in query:
             return ([[1]], None)
@@ -61,10 +75,10 @@ class FakeQuery:
                 return ([], None)
             uid = str(params.get("uid") or params.get("name") or "alias-1")
             return ([[uid, str(params.get("version") or "0.1"), params.get("name") or uid]], None)
-        if "CriteriaTemplateRoot" in query or "CTTermRoot" in query or "UnitDefinitionRoot" in query:
+        if any(label in query for label in ("CriteriaTemplateRoot", "CTTermRoot", "CTCodelistRoot", "UnitDefinitionRoot")):
             if not self.native_readable:
                 return ([], None)
-            return ([["CriteriaTemplate_1", "1.0", "Age >= 18"]], None)
+            return ([[params.get("uid", "CriteriaTemplate_1"), params.get("version", "1.0"), "Age >= 18"]], None)
         if "PlatformManagedStudyConcept" in query:
             key = params["managed_key"]
             stored = self.managed.setdefault(key, [params["payload_json"], params["content_hash"], 1])
@@ -87,12 +101,12 @@ def _hash(value, schema, media=None):
     return canonical_json_hash_ref(value, **kwargs)
 
 
-def _decision_pair(action="select", family="criteria_templates", native=None):
+def _decision_pair(action="select", family="criteria_templates", native=None, source=None, create_option=None):
     native = native or (
         NATIVE if family == "criteria_templates"
         else {"resourceFamily": family, "resourceType": family, "uid": f"{family}-1", "version": "1.0"}
     )
-    source_intent = {
+    source_intent = source or {
         "factId": "fact-1", "revision": 1, "targetKey": "primary",
         "resourceFamily": family, "semanticRole": "protocol concept",
         "source": {"label": "Age at least 18 years"},
@@ -101,7 +115,7 @@ def _decision_pair(action="select", family="criteria_templates", native=None):
         "factId": "fact-1", "revision": 1, "targetKey": "primary",
         "resourceFamily": family, "semanticRole": "protocol concept",
         "nativeCandidates": [native] if action == "select" else [],
-        "createOption": {"allowed": True, "requestedNativeType": "governed-extension"},
+        "createOption": create_option or {"allowed": True, "requestedNativeType": "governed-extension"},
     }
     request_payload = {"typedSourceIntents": [source_intent]}
     candidate_set = {
@@ -202,9 +216,148 @@ def test_select_reads_native_target_not_managed_concept(monkeypatch):
     )
     evidence = applied["payload"]["evidenceRecords"][0]["evidence"]
     assert evidence["disposition"] == "native"
-    assert evidence["nativeTargetIdentity"] == "CriteriaTemplate_1"
+    assert evidence["nativeTargetIdentity"] == NATIVE
     assert evidence["normalizedReadBack"]["uid"] == "CriteriaTemplate_1"
     assert evidence["adapterVersion"] == "native-study/1.0.0"
+    assert store.managed == {}
+
+
+def capture_decision_pair(items, request_version="1.3.0"):
+    request, candidate, payload, artifact = _decision_pair()
+    intents, records, selections = [], [], []
+    for item in items:
+        intent = deepcopy(item["intent"])
+        intent["semanticRole"] = "capture definition"
+        intent["evidence"] = {"citations": [{"exactQuote": "Synthetic capture source", "page": None}]}
+        key = {field: intent[field] for field in ("factId", "revision", "targetKey")}
+        selection = {**key, **deepcopy(item["selection"]), "rationale": "Exact native capture source"}
+        intents.append(intent)
+        selections.append(selection)
+        records.append({**key, "resourceFamily": intent["resourceFamily"], "semanticRole": intent["semanticRole"],
+                        "source": deepcopy(intent["source"]), "evidence": deepcopy(intent["evidence"]),
+                        "nativeCandidates": [selection["candidateIdentity"]] if selection["action"] == "select" else [],
+                        "createOption": {"allowed": True, "requestedNativeType": CAPTURE_FAMILY_TYPES[intent["resourceFamily"]]}})
+    request.update(contractVersion=f"OsbCandidateRequestV1@{request_version}", typedSourceIntents=intents)
+    candidate["candidateRecords"] = records
+    statement = payload["statement"]
+    statement["candidateSetHash"] = _hash(candidate, "OsbCandidateSetV1@1.0.0", CANDIDATE_SET_MEDIA_TYPE)
+    statement["selections"] = selections
+    statement["decisionSetHash"] = _hash(selections, "StudyMappingSelectionSetV1@1.0.0")
+    payload["humanSignature"]["recordHash"] = _hash(statement, "StudyMappingDecisionStatementV1@1.0.0")
+    payload["serviceAttestation"]["compositeHash"] = _hash(
+        {key: value for key, value in payload.items() if key != "serviceAttestation"},
+        "StudyMappingDecisionCompositeV1@1.0.0",
+    )
+    artifact["payloadHash"] = _hash(payload, "StudyMappingDecisionV1@1.0.0")
+    artifact["byteSize"] = len(canonical_json(payload).encode("utf-8"))
+    artifact["descriptorHash"] = descriptor_hash({
+        **{key: value for key, value in artifact.items() if key != "descriptorHash"},
+        "contractVersion": "ArtifactDescriptorV1@1.0.0",
+    })
+    return request, candidate, payload, artifact
+
+
+@pytest.mark.parametrize("request_version", ["1.0.0", "1.1.0", "1.2.0", "1.3.0"])
+def test_selected_capture_decision_retains_full_native_source_readback_only_under_current_request(monkeypatch, request_version):
+    items, port = selected_dependency_fixture(select_group=True)
+    if request_version == "1.3.0":
+        items[0]["intent"]["source"]["context"] = {
+            "encounters": [], "relationships": [{"condition": None}], "semanticAssociations": None,
+        }
+    request, candidate, payload, artifact = capture_decision_pair(items, request_version)
+    store = FakeQuery()
+    store.request_json, store.candidate_json, store.decision_json = map(canonical_json, (request, candidate, payload))
+    monkeypatch.setattr("clinical_mdr_api.services.integrations.mapping_decision_v1.db.cypher_query", store.cypher_query)
+    monkeypatch.setattr("clinical_mdr_api.services.integrations.native_capture_mapping.NativeCapturePort", lambda: port)
+    applied = apply_mapping_decision(
+        tenant_id=TENANT, platform_study_id=STUDY, decision_artifact=artifact,
+        actor="synthetic-reviewer", osb_openapi_hash=OPENAPI,
+    )
+    evidence = {wrapper["evidence"]["idempotencyKey"]: wrapper["evidence"] for wrapper in applied["payload"]["evidenceRecords"]}
+    for intent, selection in zip(request["typedSourceIntents"], payload["statement"]["selections"], strict=True):
+        key = f'{TENANT}|{STUDY}|{intent["factId"]}@1:primary'
+        operation = evidence[key]
+        if selection["action"] == "select" and request_version != "1.3.0":
+            assert operation["normalizedReadBackHash"]["schemaVersion"] == "OsbNativeTargetReadBackV1@1.0.0"
+            assert "sourceBinding" not in operation["normalizedReadBack"]
+            continue
+        assert operation["normalizedReadBackHash"]["schemaVersion"] == CAPTURE_READBACK_SCHEMA
+        observed = operation["normalizedReadBack"]
+        assert observed["sourceBinding"] == port.bindings[key]
+        assert observed["sourceBinding"]["source"] == intent["source"]
+        assert observed["native"] == port.read(intent["resourceFamily"], observed["uid"])
+        assert operation["postTargetVersion"] == observed["version"]
+        receipts, blockers = capture_field_receipts(intent, observed)
+        assert all(receipt["disposition"] in {"native", "governed_extension"} for receipt in receipts)
+        assert all(blocker["code"] == "NATIVE_CAPTURE_LIBRARY_REVIEW_REQUIRED" for blocker in blockers)
+    if request_version == "1.3.0":
+        codelist = evidence[f"{TENANT}|{STUDY}|codelist@1:primary"]["normalizedReadBack"]
+        assert codelist["native"]["name"]["version"] == "2.0"
+        assert codelist["version"] == codelist["native"]["attributes"]["version"] == "5.0"
+    before = deepcopy((port.creates, port.associations, port.bindings))
+    replay = apply_mapping_decision(
+        tenant_id=TENANT, platform_study_id=STUDY, decision_artifact=artifact,
+        actor="synthetic-reviewer", osb_openapi_hash=OPENAPI,
+    )
+    assert replay["replay"] is True and replay["payload"] == applied["payload"]
+    assert (port.creates, port.associations, port.bindings) == before
+
+
+def test_selected_only_native_capture_decision_observes_existing_definitions(monkeypatch):
+    items, port = selected_library_fixture()
+    request, candidate, payload, artifact = capture_decision_pair(items)
+    store = FakeQuery()
+    store.request_json, store.candidate_json, store.decision_json = map(canonical_json, (request, candidate, payload))
+    monkeypatch.setattr("clinical_mdr_api.services.integrations.mapping_decision_v1.db.cypher_query", store.cypher_query)
+    monkeypatch.setattr("clinical_mdr_api.services.integrations.native_capture_mapping.NativeCapturePort", lambda: port)
+    result = apply_mapping_decision(
+        tenant_id=TENANT, platform_study_id=STUDY, decision_artifact=artifact,
+        actor="synthetic-reviewer", osb_openapi_hash=OPENAPI,
+    )
+    assert port.creates == port.associations == []
+    assert len(result["payload"]["evidenceRecords"]) == len(items)
+    for wrapper, intent in zip(result["payload"]["evidenceRecords"], request["typedSourceIntents"], strict=True):
+        operation = wrapper["evidence"]
+        assert operation["normalizedReadBackHash"]["schemaVersion"] == CAPTURE_READBACK_SCHEMA
+        _, blockers = capture_field_receipts(intent, operation["normalizedReadBack"])
+        assert blockers == []
+
+
+def test_metadata_decision_applies_native_property_once_and_replays_the_original_evidence(monkeypatch):
+    from clinical_mdr_api.services.integrations import study_metadata_mapping
+    from clinical_mdr_api.tests.unit.services.test_study_metadata_mapping import COUNT, CONTEXT, NativePort, intent
+
+    port = NativePort("Study_990001")
+    source = intent("fact-1", COUNT, 30000)
+    source.update({"semanticRole": "STUDY_DESIGN_ATTRIBUTE", "source": {
+        "label": "Planned enrollment", "values": [
+            {"name": "numericValue", "sourcePath": "/fields/numericValue", "valueType": "integer", "value": 30000},
+        ],
+    }})
+    option = study_metadata_mapping.prepare_metadata_offers([source], port.uid, CONTEXT, port=port)["fact-1@1:primary"]["createOption"]
+    request_payload, candidate_set, payload, artifact = _decision_pair(
+        "create", family="study_metadata", source=source, create_option=option,
+    )
+    store = FakeQuery()
+    store.request_json = canonical_json(request_payload)
+    store.candidate_json = canonical_json(candidate_set)
+    store.decision_json = canonical_json(payload)
+    monkeypatch.setattr("clinical_mdr_api.services.integrations.mapping_decision_v1.db.cypher_query", store.cypher_query)
+    monkeypatch.setattr(study_metadata_mapping, "NativeStudyMetadataPort", lambda: port)
+    first = apply_mapping_decision(tenant_id=TENANT, platform_study_id=STUDY,
+                                   decision_artifact=artifact, actor="synthetic-test", osb_openapi_hash=OPENAPI)
+    second = apply_mapping_decision(tenant_id=TENANT, platform_study_id=STUDY,
+                                    decision_artifact=artifact, actor="synthetic-test", osb_openapi_hash=OPENAPI)
+    assert len(port.patches) == 1
+    assert port.study["current_metadata"]["study_population"]["number_of_expected_subjects"] == 30000
+    assert second["replay"] is True
+    assert second["payload"] == first["payload"]
+    evidence = first["payload"]["evidenceRecords"][0]["evidence"]
+    assert evidence["disposition"] == "native"
+    assert evidence["normalizedReadBack"]["metadataValue"] == 30000
+    assert evidence["nativeTargetIdentity"]["uid"] == port.uid
+    assert evidence["nativeTargetIdentity"]["metadataPath"] == COUNT
+    assert evidence["normalizedReadBackHash"]["schemaVersion"] == "OsbStudyMetadataReadBackV1@1.0.0"
     assert store.managed == {}
 
 
@@ -226,6 +379,27 @@ def test_current_openapi_hash_mismatch_fails_closed(monkeypatch):
     assert error.value.code == "OSB_CANDIDATE_SET_STALE"
 
 
+def test_native_binding_rollover_blocks_decision_before_any_native_write(monkeypatch):
+    request_payload, candidate_set, payload, artifact = _decision_pair("select")
+    store = FakeQuery()
+    store.binding = ("replacement-binding", "Study_990001", "0.1")
+    store.request_json = canonical_json(request_payload)
+    store.candidate_json = canonical_json(candidate_set)
+    store.decision_json = canonical_json(payload)
+    monkeypatch.setattr(
+        "clinical_mdr_api.services.integrations.mapping_decision_v1.db.cypher_query",
+        store.cypher_query,
+    )
+    with pytest.raises(OsbCandidateSetError) as error:
+        apply_mapping_decision(
+            tenant_id=TENANT, platform_study_id=STUDY, decision_artifact=artifact,
+            actor="reviewer@example.com", osb_openapi_hash=OPENAPI,
+        )
+    assert error.value.code == "OSB_CANDIDATE_SET_STALE"
+    assert store.managed == {}
+    assert store.evidence is None
+
+
 def test_unreadable_native_select_fails_closed(monkeypatch):
     request_payload, candidate_set, payload, artifact = _decision_pair("select")
     store = FakeQuery(native_readable=False)
@@ -244,7 +418,7 @@ def test_unreadable_native_select_fails_closed(monkeypatch):
     assert error.value.code == "OSB_NATIVE_TARGET_UNREADABLE"
 
 
-def test_create_writes_native_library_node(monkeypatch):
+def test_unimplemented_create_cannot_manufacture_a_final_name_only_library_node(monkeypatch):
     request_payload, candidate_set, payload, artifact = _decision_pair("create")
     store = FakeQuery()
     store.request_json = canonical_json(request_payload)
@@ -254,14 +428,13 @@ def test_create_writes_native_library_node(monkeypatch):
         "clinical_mdr_api.services.integrations.mapping_decision_v1.db.cypher_query",
         store.cypher_query,
     )
-    applied = apply_mapping_decision(
-        tenant_id=TENANT, platform_study_id=STUDY, decision_artifact=artifact,
-        actor="reviewer@example.com", osb_openapi_hash=OPENAPI,
-    )
-    evidence = applied["payload"]["evidenceRecords"][0]["evidence"]
-    assert evidence["disposition"] == "native"
-    assert evidence["adapterVersion"] == "native-study/1.0.0"
-    assert evidence["nativeTargetIdentity"]
+    with pytest.raises(OsbCandidateSetError) as error:
+        apply_mapping_decision(
+            tenant_id=TENANT, platform_study_id=STUDY, decision_artifact=artifact,
+            actor="reviewer@example.com", osb_openapi_hash=OPENAPI,
+        )
+    assert error.value.code == "OSB_NATIVE_SOURCE_CREATE_UNSUPPORTED"
+    assert store.evidence is None
     assert store.managed == {}
 
 
@@ -284,4 +457,34 @@ def test_create_compound_relationship_is_governed_extension(monkeypatch):
     evidence = applied["payload"]["evidenceRecords"][0]["evidence"]
     assert evidence["disposition"] == "governed_extension"
     assert evidence["adapterVersion"] == "platform-managed-study/1.0.0"
+    assert evidence["nativeTargetIdentity"] == {
+        "resourceType": "PlatformManagedStudyConcept", "resourceFamily": "compound_product_relationships",
+        "managedKey": f"{TENANT}|{STUDY}|fact-1@1:primary", "nativeStudyId": "Study_990001", "version": "1"}
     assert store.managed
+
+
+def test_original_scalar_evidence_replay_preserves_exact_retained_bytes(monkeypatch):
+    request, candidate, decision, artifact = _decision_pair("select")
+    store = FakeQuery()
+    store.request_json, store.candidate_json, store.decision_json = map(canonical_json, [request, candidate, decision])
+    monkeypatch.setattr("clinical_mdr_api.services.integrations.mapping_decision_v1.db.cypher_query", store.cypher_query)
+    first = apply_mapping_decision(tenant_id=TENANT, platform_study_id=STUDY, decision_artifact=artifact,
+                                   actor="authored", osb_openapi_hash=OPENAPI)
+    payload = first["payload"]
+    wrapped = payload["evidenceRecords"][0]
+    wrapped["evidence"]["nativeTargetIdentity"] = "CriteriaTemplate_1"
+    wrapped["payloadHash"] = _hash(wrapped["evidence"], "NativeOperationEvidenceV1@1.0.0")
+    payload_hash = _hash(payload, "OsbNativeEvidenceSetV1@1.0.0", "application/vnd.accuratrials.osb-native-evidence-set-v1+json")
+    retained_artifact = first["artifactRef"]
+    retained_artifact.update({"payloadHash": payload_hash, "byteSize": len(canonical_json(payload).encode())})
+    retained_artifact["descriptorHash"] = descriptor_hash({"contractVersion": "ArtifactDescriptorV1@1.0.0",
+        **{k: v for k, v in retained_artifact.items() if k not in {"contractVersion", "descriptorHash"}}})
+    store.evidence = [canonical_json(payload), payload_hash["value"], canonical_json(retained_artifact),
+                      payload["evidenceSetId"], payload["evidenceSetVersionId"]]
+    retained = tuple(store.evidence)
+    store.native_readable = False
+    replay = apply_mapping_decision(tenant_id=TENANT, platform_study_id=STUDY, decision_artifact=artifact,
+                                    actor="authored", osb_openapi_hash=OPENAPI)
+    assert canonical_json(replay["payload"]) == retained[0]
+    assert canonical_json(replay["artifactRef"]) == retained[2]
+    assert tuple(store.evidence) == retained

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -15,6 +17,7 @@ from clinical_mdr_api.models.integrations.mapping_context import (
     MappingContextV2Response,
 )
 from clinical_mdr_api.services.integrations import candidate_set as candidate_set_module
+from clinical_mdr_api.services.integrations import study_metadata_mapping as metadata_module
 from clinical_mdr_api.services.integrations.candidate_set import (
     CANDIDATE_REQUEST_MEDIA_TYPE,
     OsbCandidateSetError,
@@ -27,6 +30,12 @@ from clinical_mdr_api.tests.unit.services.test_osb_candidate_request_projection 
     _payload,
     _routed,
 )
+from clinical_mdr_api.tests.unit.services.test_candidate_set_v1 import _refresh, _set_contract_version
+from clinical_mdr_api.tests.unit.services.test_study_metadata_mapping import (
+    COUNT,
+    NativePort as MetadataPort,
+    intent as metadata_intent,
+)
 
 TENANT = "11111111-1111-4111-8111-111111111111"
 STUDY = "22222222-2222-4222-8222-222222222222"
@@ -38,24 +47,37 @@ class FakeQuery:
         self.binding = binding or (
             "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "Study_990001", "0.1",
         )
-        self.sets: dict[tuple[str, str], list] = {}
+        self.sets: dict[tuple[str, str, str], list] = {}
+        self.binding_receipts: list[list[str]] = []
+        self.native_checkpoint = ("0.1", "DRAFT")
 
     def cypher_query(self, query, params=None):
         params = params or {}
         if "PlatformNativeStudyBinding" in query:
             return ([list(self.binding)], None)
+        if "PlatformNativeIdentityAudit" in query:
+            return (self.binding_receipts, None)
+        if "RETURN study.uid,type(head)" in query:
+            return ([[self.binding[1], "LATEST_DRAFT", *self.native_checkpoint, None, None, True]], None)
         if "OsbCandidateRequestLock" in query:
             return ([[1]], None)
         if "MATCH (candidate:OsbCandidateSetV1" in query:
-            stored = self.sets.get((params["tenant_id"], params["request_hash"]))
-            return ([stored], None) if stored else ([], None)
+            stored = [
+                row for key, row in self.sets.items()
+                if key[0] == params["tenant_id"] and (
+                    key[2] == params["candidate_set_version_id"]
+                    if "candidate_set_version_id" in params else key[1] == params["request_hash"]
+                )
+            ]
+            return (stored, None)
         if "MERGE (request:OsbCandidateRequestV1" in query:
             row = [
                 params["payload_json"], params["payload_hash"], params["artifact_ref_json"],
                 params["set_id"], params["set_version_id"], params["native_study_id"],
                 params["native_version"], params["signed_envelope_json"],
             ]
-            self.sets[(params["tenant_id"], params["request_hash"])] = row
+            key = (params["tenant_id"], params["request_hash"], params["set_version_id"])
+            self.sets.setdefault(key, row)
             return ([[params["set_version_id"], params["payload_hash"], params["assignment_id"]]], None)
         return ([], None)
 
@@ -173,6 +195,175 @@ def test_generate_projects_conservation_census_and_assignment(monkeypatch):
     assert generated["signedEnvelope"]["signingStatement"]["signingPurpose"] == "osb-candidate-set"
 
 
+@pytest.mark.parametrize("version", ["1.2.0", "1.3.0"])
+def test_current_candidate_producer_retains_full_source_and_evidence_through_storage(monkeypatch, version):
+    intent = _intent("source-with-context", family="criteria_templates")
+    intent["source"]["classification"] = {"standardsBindings": [
+        {"domain": "VS", "variable": "VSTESTCD"}, {"domain": "LB", "variable": "LBTESTCD"}]}
+    intent["source"]["values"] = [
+        {"name": "value", "sourcePath": "/fields/value", "valueType": "number", "value": 0}]
+    intent["evidence"] = {"citations": [{"quote": "Source", "tableId": "table-1"}, None]}
+    if version == "1.3.0":
+        intent["source"]["context"] = {
+            "encounters": [{"formScope": ["F1", "F2"], "required": False}, None],
+            "relationships": [{"targetFactId": "target"}, {"targetFactId": "target"}],
+            "semanticAssociations": None,
+            "unresolvedRelationships": [],
+        }
+    values = list(_request_bundle(intents=[intent]))
+    _set_contract_version(values, version)
+    store = FakeQuery()
+    monkeypatch.setattr(candidate_set_module, "db", store)
+    before = deepcopy(values)
+    result = generate_candidate_set(
+        request_payload=values[0], artifact=values[1], tenant_id=TENANT, platform_study_id=STUDY,
+        osb_openapi_hash=OPENAPI_HASH, actor="service:osb", signed_envelope=values[2],
+        signature_verification=values[3], mapping_context_service=FakeMapping(),
+    )
+    record = result["payload"]["candidateRecords"][0]
+    assert record["source"] == intent["source"]
+    assert record["evidence"] == intent["evidence"]
+    stored = json.loads(next(iter(store.sets.values()))[0])
+    assert stored["candidateRecords"] == result["payload"]["candidateRecords"]
+    assert values == before
+    replay = generate_candidate_set(
+        request_payload=values[0], artifact=values[1], tenant_id=TENANT, platform_study_id=STUDY,
+        osb_openapi_hash=OPENAPI_HASH, actor="service:osb", signed_envelope=values[2],
+        signature_verification=values[3], mapping_context_service=FakeMapping(),
+    )
+    assert replay["replay"] is True and replay["payload"] == result["payload"]
+
+
+@pytest.mark.parametrize("version", ["1.0.0", "1.1.0", "1.2.0", "1.3.0"])
+def test_candidate_metadata_version_guard_uses_actual_source_plan_and_native_dto(monkeypatch, version):
+    source = _intent("enrollment", family="study_metadata")
+    source.update(metadata_intent("enrollment", COUNT, 42))
+    values = list(_request_bundle(intents=[source]))
+    _set_contract_version(values, version)
+    store, mapping = FakeQuery(), FakeMapping(native=False)
+    port = MetadataPort(uid=store.binding[1])
+    monkeypatch.setattr(candidate_set_module, "db", store)
+    monkeypatch.setattr(metadata_module, "NativeStudyMetadataPort", lambda: port)
+
+    def generate():
+        return generate_candidate_set(
+            request_payload=values[0], artifact=values[1], tenant_id=TENANT, platform_study_id=STUDY,
+            osb_openapi_hash=OPENAPI_HASH, actor="service:osb", signed_envelope=values[2],
+            signature_verification=values[3], mapping_context_service=mapping,
+        )
+
+    if version in {"1.0.0", "1.1.0"}:
+        with pytest.raises(OsbCandidateSetError) as error:
+            generate()
+        assert error.value.code == "OSB_STUDY_METADATA_REQUEST_VERSION_REQUIRED"
+        assert store.sets == {} and mapping.requested_fact_ids == []
+    else:
+        record = generate()["payload"]["candidateRecords"][0]
+        offer = record["createOption"]["nativeStudyOperation"]
+        assert offer["metadataValue"] == 42
+        assert offer["metadataPath"] == COUNT
+        assert record["source"] == source["source"] and record["evidence"] == source["evidence"]
+    assert port.patches == port.locked == []
+
+
+def _external_binding_bundle():
+    values = list(_request_bundle())
+    store = FakeQuery()
+    identity = values[0]["osbStudyIdentity"]
+    identity["contractVersion"] = "1.1.0"
+    identity["bindingId"] = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+    receipt = {
+        "contractVersion": "1.0.0",
+        "receiptId": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        "tenantId": TENANT, "platformStudyId": STUDY,
+        "targetSystem": "osb", "namespace": "accuratrials-osb",
+        "objectType": "study-draft-root",
+        "nativeIdentity": store.binding[1], "nativeVersion": store.binding[2],
+        "targetStateHash": canonical_json_hash_ref({
+            "nativeIdentity": store.binding[1], "nativeVersion": store.binding[2],
+            "status": "draft", "domainBindingId": store.binding[0],
+        }, schema_version="OSBNativeStudyRootStateV1@1.0.0"),
+    }
+    retained_envelope = {"testFixture": "retained native publisher envelope"}
+    identity["evidence"] = {
+        "receiptId": receipt["receiptId"],
+        "receiptPayloadHash": canonical_json_hash_ref(
+            receipt, schema_version="NativeIdentityBindingReceiptV1@1.0.0",
+        ),
+        "signedEnvelopeHash": canonical_json_hash_ref(
+            retained_envelope, schema_version="SignedArtifactEnvelopeV1@1.0.0",
+        ),
+    }
+    store.binding_receipts = [[canonical_json(receipt), canonical_json(retained_envelope)]]
+    _refresh(values)
+    return store, values
+
+
+def _generate_external(monkeypatch, store, values):
+    monkeypatch.setattr(candidate_set_module, "db", store)
+    return generate_candidate_set(
+        request_payload=values[0], artifact=values[1], tenant_id=TENANT, platform_study_id=STUDY,
+        osb_openapi_hash=OPENAPI_HASH, actor="service:osb",
+        signed_envelope=values[2], signature_verification=values[3],
+        mapping_context_service=FakeMapping(),
+    )
+
+
+def test_external_and_native_binding_ids_join_through_exact_published_receipt(monkeypatch):
+    store, values = _external_binding_bundle()
+    generated = _generate_external(monkeypatch, store, values)
+    assert generated["payload"]["osbStudyIdentity"] == values[0]["osbStudyIdentity"]
+    assert generated["payload"]["osbStudyIdentity"]["bindingId"] != store.binding[0]
+    assert _generate_external(monkeypatch, store, values)["replay"] is True
+
+
+@pytest.mark.parametrize("mutation", [
+    "missing_receipt", "duplicate_receipt", "changed_receipt", "changed_envelope",
+    "changed_binding", "changed_root_version", "wrong_receipt_scope",
+])
+def test_external_binding_join_rejects_missing_mutated_or_stale_evidence(monkeypatch, mutation):
+    store, values = _external_binding_bundle()
+    if mutation == "missing_receipt":
+        store.binding_receipts = []
+    elif mutation == "duplicate_receipt":
+        store.binding_receipts *= 2
+    elif mutation == "changed_receipt":
+        receipt = json.loads(store.binding_receipts[0][0])
+        receipt["receiptId"] = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+        store.binding_receipts[0][0] = canonical_json(receipt)
+    elif mutation == "changed_envelope":
+        store.binding_receipts[0][1] = canonical_json({"testFixture": "different envelope"})
+    elif mutation == "changed_binding":
+        store.binding = ("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", *store.binding[1:])
+    elif mutation == "changed_root_version":
+        store.native_checkpoint = ("1.0", "RELEASED")
+    else:
+        receipt = json.loads(store.binding_receipts[0][0])
+        receipt["platformStudyId"] = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+        store.binding_receipts[0][0] = canonical_json(receipt)
+        values[0]["osbStudyIdentity"]["evidence"]["receiptPayloadHash"] = canonical_json_hash_ref(
+            receipt, schema_version="NativeIdentityBindingReceiptV1@1.0.0",
+        )
+        _refresh(values)
+    with pytest.raises(OsbCandidateSetError) as error:
+        _generate_external(monkeypatch, store, values)
+    assert error.value.code == "OSB_CANDIDATE_REQUEST_NATIVE_PRECONDITION_FAILED"
+    assert store.sets == {}
+
+
+def test_external_binding_rollover_invalidates_previously_generated_set(monkeypatch):
+    store, values = _external_binding_bundle()
+    generated = _generate_external(monkeypatch, store, values)
+    store.binding = ("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", *store.binding[1:])
+    with pytest.raises(OsbCandidateSetError) as error:
+        assert_candidate_set_current(
+            deepcopy(generated["payload"]),
+            binding=dict(zip(("bindingId", "nativeIdentity", "nativeVersion"), store.binding)),
+            osb_openapi_hash=OPENAPI_HASH,
+        )
+    assert error.value.code == "OSB_CANDIDATE_SET_STALE"
+
+
 def test_crash_retry_returns_one_candidate_set_and_assignment(monkeypatch):
     generated, store, payload, artifact, envelope, verification = _generate(monkeypatch)
     replay = generate_candidate_set(
@@ -198,6 +389,113 @@ def test_capability_mutation_invalidates_stored_set(monkeypatch):
         )
     assert error.value.code == "OSB_CANDIDATE_SET_STALE"
     assert generated["payload"]["capabilityCheckpoint"]["osbOpenApiHash"] == OPENAPI_HASH
+    assert len(store.sets) == 1
+
+
+def test_explicit_capability_refresh_preserves_prior_version_and_replays_current(monkeypatch):
+    generated, store, payload, artifact, envelope, verification = _generate(monkeypatch)
+    original = deepcopy(generated)
+    original_rows = deepcopy(store.sets)
+    changed_hash = "sha256:" + "cd" * 32
+    args = {
+        "request_payload": payload, "artifact": artifact, "tenant_id": TENANT,
+        "platform_study_id": STUDY, "osb_openapi_hash": changed_hash,
+        "actor": "service:osb", "signed_envelope": envelope,
+        "signature_verification": verification, "mapping_context_service": FakeMapping(),
+    }
+    refreshed = generate_candidate_set(
+        **args, supersedes_candidate_set_version_id=generated["candidateSetVersionId"],
+    )
+    assert refreshed["candidateSetId"] == generated["candidateSetId"]
+    assert refreshed["candidateSetVersionId"] != generated["candidateSetVersionId"]
+    assert refreshed["payload"]["capabilityCheckpoint"]["osbOpenApiHash"] == changed_hash
+    assert refreshed["payload"]["request"] == original["payload"]["request"]
+    assert refreshed["payload"]["candidateRecords"] == original["payload"]["candidateRecords"]
+    assert refreshed["payload"]["deferredMembers"] == original["payload"]["deferredMembers"]
+    assert generated == original
+    assert all(store.sets[key] == value for key, value in original_rows.items())
+    assert len(store.sets) == 2
+    for extra in [{}, {"supersedes_candidate_set_version_id": generated["candidateSetVersionId"]}]:
+        replay = generate_candidate_set(**args, **extra)
+        assert replay["replay"] is True
+        assert replay["candidateSetVersionId"] == refreshed["candidateSetVersionId"]
+        assert replay["payloadHash"] == refreshed["payloadHash"]
+    with pytest.raises(OsbCandidateSetError, match="Capability or native checkpoint changed"):
+        assert_candidate_set_current(
+            original["payload"],
+            binding=dict(zip(("bindingId", "nativeIdentity", "nativeVersion"), store.binding)),
+            osb_openapi_hash=changed_hash,
+        )
+    assert len(store.sets) == 2
+
+
+def test_capability_refresh_requires_exact_prior_version(monkeypatch):
+    generated, store, payload, artifact, envelope, verification = _generate(monkeypatch)
+    with pytest.raises(OsbCandidateSetError) as error:
+        generate_candidate_set(
+            request_payload=payload, artifact=artifact, tenant_id=TENANT, platform_study_id=STUDY,
+            osb_openapi_hash="sha256:" + "cd" * 32, actor="service:osb",
+            signed_envelope=envelope, signature_verification=verification,
+            mapping_context_service=FakeMapping(),
+            supersedes_candidate_set_version_id="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        )
+    assert error.value.code == "OSB_CANDIDATE_REFRESH_PRECONDITION_FAILED"
+    assert len(store.sets) == 1
+    assert generated["payload"]["capabilityCheckpoint"]["osbOpenApiHash"] == OPENAPI_HASH
+
+
+@pytest.mark.parametrize("prior_version", ["", "not-a-uuid", 3, []])
+def test_capability_refresh_rejects_invalid_prior_identity(monkeypatch, prior_version):
+    _, store, payload, artifact, envelope, verification = _generate(monkeypatch)
+    with pytest.raises(OsbCandidateSetError) as error:
+        generate_candidate_set(
+            request_payload=payload, artifact=artifact, tenant_id=TENANT, platform_study_id=STUDY,
+            osb_openapi_hash="sha256:" + "cd" * 32, actor="service:osb",
+            signed_envelope=envelope, signature_verification=verification,
+            mapping_context_service=FakeMapping(), supersedes_candidate_set_version_id=prior_version,
+        )
+    assert error.value.code == "OSB_CANDIDATE_REFRESH_PRECONDITION_INVALID"
+    assert len(store.sets) == 1
+
+
+def test_capability_refresh_does_not_bypass_native_binding_change(monkeypatch):
+    generated, store, payload, artifact, envelope, verification = _generate(monkeypatch)
+    store.binding = (store.binding[0], store.binding[1], "0.2")
+    with pytest.raises(OsbCandidateSetError) as error:
+        generate_candidate_set(
+            request_payload=payload, artifact=artifact, tenant_id=TENANT, platform_study_id=STUDY,
+            osb_openapi_hash="sha256:" + "cd" * 32, actor="service:osb",
+            signed_envelope=envelope, signature_verification=verification,
+            mapping_context_service=FakeMapping(),
+            supersedes_candidate_set_version_id=generated["candidateSetVersionId"],
+        )
+    assert error.value.code == "OSB_CANDIDATE_REQUEST_NATIVE_PRECONDITION_FAILED"
+    assert len(store.sets) == 1
+
+
+def test_capability_refresh_does_not_swallow_identity_failure_during_prior_validation(monkeypatch):
+    store, values = _external_binding_bundle()
+    generated = _generate_external(monkeypatch, store, values)
+    validate_identity = candidate_set_module._assert_identity_binding
+    checked = 0
+
+    def concurrent_identity_change(*args, **kwargs):
+        nonlocal checked
+        checked += 1
+        if checked == 2:
+            raise OsbCandidateSetError("OSB_CANDIDATE_SET_STALE", "Native binding changed during prior-set validation.")
+        return validate_identity(*args, **kwargs)
+
+    monkeypatch.setattr(candidate_set_module, "_assert_identity_binding", concurrent_identity_change)
+    with pytest.raises(OsbCandidateSetError, match="Native binding changed during prior-set validation"):
+        generate_candidate_set(
+            request_payload=values[0], artifact=values[1], tenant_id=TENANT, platform_study_id=STUDY,
+            osb_openapi_hash="sha256:" + "cd" * 32, actor="service:osb",
+            signed_envelope=values[2], signature_verification=values[3],
+            mapping_context_service=FakeMapping(),
+            supersedes_candidate_set_version_id=generated["candidateSetVersionId"],
+        )
+    assert checked == 2
     assert len(store.sets) == 1
 
 
@@ -244,10 +542,36 @@ def test_unreadable_target_without_create_is_rejected(monkeypatch):
     assert error.value.code == "OSB_CANDIDATE_SET_TARGET_UNREADABLE"
 
 
-def test_create_option_without_native_target_is_governed_extension(monkeypatch):
+def test_unsupported_native_create_cannot_be_reported_as_governed_extension(monkeypatch):
     generated, *_ = _generate(monkeypatch, mapping=FakeMapping(native=False))
+    assert generated["payload"]["conservation"]["counts"]["governedExtension"] == 0
+    assert generated["payload"]["conservation"]["counts"]["deferredBlocking"] == 1
+    record = generated["payload"]["candidateRecords"][0]
+    assert record["createOption"] is None
+    assert record["blockers"] == ["OSB_NATIVE_SOURCE_CREATE_UNSUPPORTED"]
+    assert record["source"] == _intent("fact-eligibility-age-18", family="criteria_templates")["source"]
+
+
+def test_supported_managed_create_without_native_target_remains_governed_extension(monkeypatch):
+    intent = _intent("fact-managed", family="compound_product_relationships")
+    generated, *_ = _generate(monkeypatch, mapping=FakeMapping(native=False), intents=[intent])
     assert generated["payload"]["conservation"]["counts"]["governedExtension"] == 1
     assert generated["payload"]["candidateRecords"][0]["createOption"]["allowed"] is True
+
+
+def test_capture_create_offer_uses_the_native_source_planner(monkeypatch):
+    from clinical_mdr_api.tests.unit.services.test_native_capture_mapping import fixture
+
+    intent = _intent("fact-capture", family="odm_forms", extra={"source": fixture()[0]["intent"]["source"]})
+    generated, *_ = _generate(monkeypatch, mapping=FakeMapping(native=False), intents=[intent])
+    record = generated["payload"]["candidateRecords"][0]
+    assert record["createOption"] == {"allowed": True, "requestedNativeType": "OdmForm"}
+    assert record["blockers"] == []
+    intent["source"]["values"] = [value for value in intent["source"]["values"] if value["name"] != "repeating"]
+    blocked, *_ = _generate(monkeypatch, mapping=FakeMapping(native=False), intents=[intent])
+    blocked_record = blocked["payload"]["candidateRecords"][0]
+    assert blocked_record["createOption"] is None
+    assert blocked_record["blockers"] == ["OSB_CAPTURE_SOURCE_FIELD_REQUIRED"]
 
 
 def test_incomplete_native_identity_is_rejected(monkeypatch):

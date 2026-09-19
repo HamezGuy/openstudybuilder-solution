@@ -362,7 +362,7 @@ class StudyService:
         return filtered_sections
 
     @trace_calls
-    @db.transaction
+    @ensure_transaction(db)
     def get_by_uid(
         self,
         uid: str,
