@@ -42,6 +42,11 @@ from usdm_model import ObservationalStudyDesign as USDMObservationalStudyDesign
 
 class USDMMappingAuthorityRequired(ValidationException):
     status_code = 422
+
+    def __init__(self, msg: str):
+        super().__init__(msg=msg)
+
+
 from usdm_model import StudyDesignPopulation as USDMStudyDesignPopulation
 from usdm_model import StudyElement as USDMStudyElement
 from usdm_model import StudyEpoch as USDMStudyEpoch
@@ -725,7 +730,9 @@ class USDMMapper:
                     f"USDM_ARM_TYPE_AUTHORITY_REQUIRED: study-arms/{row.arm_uid}"
                 )
             arm_type_code = self.get_ct_package_term_as_usdm_code(row.arm_type.term_uid)
-            if not arm_type_code.code or not arm_type_code.codeSystemVersion:
+            if not getattr(arm_type_code, "code", None) or not getattr(
+                arm_type_code, "codeSystemVersion", None
+            ):
                 raise USDMMappingAuthorityRequired(
                     f"USDM_ARM_TYPE_CT_PIN_REQUIRED: study-arms/{row.arm_uid}"
                 )

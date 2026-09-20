@@ -4,6 +4,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
+from fastapi import Request
+from fastapi.encoders import jsonable_encoder
 from usdm_model import Code
 
 from clinical_mdr_api.domain_repositories.study_selections.study_arm_origin_repository import (
@@ -18,6 +20,7 @@ from clinical_mdr_api.models.study_selections.study_selection import (
 )
 from clinical_mdr_api.services.ddf.usdm_mapper import USDMMapper, USDMMappingAuthorityRequired
 from common.exceptions import ValidationException
+from common.models.error import ErrorResponse
 
 
 def _mapper():
@@ -145,6 +148,82 @@ class NativeArmOriginGeneralityTests(unittest.TestCase):
         }):
             with self.assertRaisesRegex(USDMMappingAuthorityRequired, "ARM_TYPE_AUTHORITY_REQUIRED"):
                 mapper._get_study_arms(SimpleNamespace(uid="Study_synthetic"))
+
+    def test_authority_error_preserves_the_explicit_message_in_the_api_error_dto(self):
+        request = Request({
+            "type": "http", "method": "GET", "scheme": "http",
+            "server": ("testserver", 80), "path": "/test-usdm-export",
+            "query_string": b"", "headers": [],
+        })
+        for message in (
+            "USDM_ARM_TYPE_CT_PIN_REQUIRED: study-arms/Arm_synthetic",
+            "  USDM_SOURCE_AUTHORITY_REQUIRED: café / Ω / e\u0301\nPreserve source text: UID None.  ",
+        ):
+            with self.subTest(message=message):
+                error = USDMMappingAuthorityRequired(message)
+                self.assertEqual(str(error), message)
+                self.assertEqual(error.msg, message)
+                self.assertEqual(error.status_code, 422)
+                body = jsonable_encoder(ErrorResponse(request, error))
+                self.assertEqual(body["message"], message)
+                self.assertEqual(body["type"], "USDMMappingAuthorityRequired")
+                self.assertEqual(body["path"], "http://testserver/test-usdm-export")
+                self.assertEqual(body["method"], "GET")
+                self.assertEqual(body["details"], [])
+
+    def _assert_partial_arm_type_refused(self, missing_attribute):
+        values = {
+            "id": "arm-type", "code": "C174266", "codeSystem": "CDISC",
+            "codeSystemVersion": "sdtmct-2024-09-27", "decode": "Control Arm",
+            "instanceType": "Code",
+        }
+        del values[missing_attribute]
+        # This is a real native Code instance, as returned by an incomplete
+        # projection using Pydantic model_construct, not an attribute stub.
+        partial_code = Code.model_construct(**values)
+        self.assertFalse(hasattr(partial_code, missing_attribute))
+        before_code = partial_code.model_dump(mode="json")
+        row = _native_arm(
+            origin_uid="C188864_HISTORICAL",
+            origin_description="  Explicit historical source.\nKeep this wording.  ",
+        )
+        row.arm_type = SimpleCodelistTermModel(
+            term_uid="C174266", term_name="Control Arm",
+        )
+        before_arm = row.model_dump(mode="json")
+        mapper = _mapper()
+        mapper._get_osb_study_arms = lambda *_args, **_kwargs: [row]
+        mapper._get_osb_study_standard_versions = lambda **_kwargs: [
+            SimpleNamespace(ct_package=SimpleNamespace(
+                catalogue_name="DDF CT", uid="ddfct-2024-09-27",
+                effective_date=date(2024, 9, 27),
+            ))
+        ]
+        mapper._load_selected_ct_packages("Study_synthetic")
+        with patch.object(
+            mapper, "get_ct_package_term_as_usdm_code", return_value=partial_code,
+        ) as type_lookup, patch.object(StudyArmOriginRepository, "package_code", return_value={
+            "code": "C188864", "decode": "Historical Data", "code_system": "CDISC",
+            "code_system_version": "ddfct-2024-09-27",
+        }) as origin_lookup:
+            with self.assertRaisesRegex(
+                USDMMappingAuthorityRequired,
+                "^USDM_ARM_TYPE_CT_PIN_REQUIRED: study-arms/Arm_synthetic$",
+            ) as error:
+                mapper._get_study_arms(SimpleNamespace(uid="Study_synthetic"))
+        self.assertEqual(error.exception.status_code, 422)
+        type_lookup.assert_called_once_with("C174266")
+        origin_lookup.assert_called_once_with(
+            "C188864_HISTORICAL", "ddfct-2024-09-27", "2024-09-27",
+        )
+        self.assertEqual(partial_code.model_dump(mode="json"), before_code)
+        self.assertEqual(row.model_dump(mode="json"), before_arm)
+
+    def test_absent_arm_type_code_refuses_a_partial_native_code(self):
+        self._assert_partial_arm_type_refused("code")
+
+    def test_absent_arm_type_version_refuses_a_partial_native_code(self):
+        self._assert_partial_arm_type_refused("codeSystemVersion")
 
     def test_selected_package_is_read_from_the_requested_study_version(self):
         mapper = _mapper()
