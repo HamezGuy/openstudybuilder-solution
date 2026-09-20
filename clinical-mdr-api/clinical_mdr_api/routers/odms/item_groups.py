@@ -4,6 +4,9 @@ from fastapi import APIRouter, Body, Path, Query
 from starlette.requests import Request
 
 from clinical_mdr_api.models.odms.common_models import OdmElementWithParentUid
+from clinical_mdr_api.models.odms.collection_initialization import (
+    OdmCollectionInitializationInput,
+)
 from clinical_mdr_api.models.odms.item_group import (
     OdmItemGroup,
     OdmItemGroupItemPostInput,
@@ -14,6 +17,10 @@ from clinical_mdr_api.models.utils import CustomPage
 from clinical_mdr_api.repositories._utils import FilterOperator
 from clinical_mdr_api.routers import _generic_descriptions, decorators
 from clinical_mdr_api.services.odms.item_groups import OdmItemGroupService
+from clinical_mdr_api.services.odms.items import OdmItemService
+from clinical_mdr_api.services.odms.collection_initialization import (
+    initialize_odm_collection,
+)
 from common.auth import rbac
 from common.auth.dependencies import security
 from common.config import settings
@@ -500,6 +507,22 @@ When false, appends the provided item relationships to existing ones, continuing
         uid=odm_item_group_uid,
         odm_item_group_item_post_input=odm_item_group_item_post_input,
         override=override,
+    )
+
+
+@router.post(
+    "/{odm_item_group_uid}/items/initialize",
+    dependencies=[security, rbac.LIBRARY_WRITE],
+    summary="Initialize an empty ODM item-group collection or verify its exact replay.",
+    status_code=201,
+)
+def initialize_items_of_odm_item_group(
+    odm_item_group_uid: Annotated[str, OdmItemGroupUID],
+    request: OdmCollectionInitializationInput,
+) -> OdmItemGroup:
+    return initialize_odm_collection(
+        OdmItemGroupService(), OdmItemService(), odm_item_group_uid, request,
+        collection="items",
     )
 
 

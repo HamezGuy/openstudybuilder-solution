@@ -61,6 +61,12 @@ from usdm_model.extension import (
 from clinical_mdr_api.domains.study_definition_aggregates.study_metadata import (
     StudyStatus,
 )
+from clinical_mdr_api.domain_repositories.study_selections.study_arm_origin_repository import (
+    StudyArmOriginRepository,
+)
+from clinical_mdr_api.domains.study_selections.study_arm_origin import (
+    STUDY_ARM_ORIGIN_CATALOGUE,
+)
 from clinical_mdr_api.models.study_selections.study import Study as OSBStudy
 from clinical_mdr_api.services.ddf.usdm_utils import IdManager
 from common.telemetry import trace_calls
@@ -347,15 +353,33 @@ class USDMMapper:
             catalogue_name = getattr(package, "catalogue_name", None)
             package_uid = getattr(package, "uid", None)
             effective_date = getattr(package, "effective_date", None)
-            if not catalogue_name or not package_uid or effective_date is None:
-                continue
+            if (
+                not isinstance(catalogue_name, str) or not catalogue_name.strip()
+                or not isinstance(package_uid, str) or not package_uid.strip()
+                or effective_date is None
+            ):
+                raise USDMMappingAuthorityRequired(
+                    "USDM_CT_PACKAGE_SELECTION_INCOMPLETE: each selected standard "
+                    "requires its catalogue, package UID and publication date."
+                )
+            effective_date_string = str(effective_date)
+            try:
+                valid_date = date.fromisoformat(effective_date_string).isoformat() == effective_date_string
+            except ValueError:
+                valid_date = False
+            if not valid_date:
+                raise USDMMappingAuthorityRequired(
+                    "USDM_CT_PACKAGE_SELECTION_DATE_INVALID: " + package_uid
+                )
+            if catalogue_name in self._ct_packages:
+                raise USDMMappingAuthorityRequired(
+                    "USDM_CT_PACKAGE_SELECTION_AMBIGUOUS: multiple selections for " + catalogue_name
+                )
             candidate = {
-                "uid": str(package_uid),
-                "effective_date": self._effective_date_to_str(effective_date),
+                "uid": package_uid,
+                "effective_date": effective_date_string,
             }
-            existing = self._ct_packages.get(catalogue_name)
-            if existing is None or candidate["effective_date"] > existing["effective_date"]:
-                self._ct_packages[catalogue_name] = candidate
+            self._ct_packages[catalogue_name] = candidate
 
     def _resolve_ct_package_effective_date(self, study_uid: str) -> str:
         self._load_selected_ct_packages(study_uid)
@@ -659,36 +683,57 @@ class USDMMapper:
         rows = _stable_selection_order(_items(self._call(self._get_osb_study_arms, study.uid)), "arm_uid")
         result = []
         for row in rows:
-            # The current persisted StudySelectionArm DTO has no origin slot.
-            # An arm name, type or description is not authority to fabricate
-            # Data Generated Within Study. Only a declared DTO field backed by
-            # native persistence may provide a future explicit origin term.
             declared_fields = getattr(type(row), "model_fields", {})
-            origin_field = next((name for name in ("data_origin_type_code", "data_origin_type")
-                                 if name in declared_fields), None)
-            if origin_field is None:
+            if not {"data_origin_type_uid", "data_origin_description"} <= declared_fields.keys():
                 raise USDMMappingAuthorityRequired(
                     f"USDM_ARM_DATA_ORIGIN_CAPABILITY_REQUIRED: study-arms/{row.arm_uid}; "
-                    "StudySelectionArm persistence/create/patch/response contract does not expose data origin. "
-                    "Retain native arm data and add a governed origin field before USDM arm export."
+                    "the native response must expose the persisted origin UID and description."
                 )
-            origin = getattr(row, origin_field, None)
-            origin_uid = getattr(origin, "term_uid", None)
-            if not origin_uid:
+            origin_uid = row.data_origin_type_uid
+            origin_description = row.data_origin_description
+            if (
+                not isinstance(origin_uid, str) or not origin_uid.strip()
+                or not isinstance(origin_description, str) or not origin_description.strip()
+            ):
                 raise USDMMappingAuthorityRequired(
-                    f"USDM_ARM_DATA_ORIGIN_AUTHORITY_REQUIRED: study-arms/{row.arm_uid}/{origin_field}"
+                    f"USDM_ARM_DATA_ORIGIN_AUTHORITY_REQUIRED: study-arms/{row.arm_uid}; "
+                    "select an explicit origin term and provide its supporting description."
                 )
-            origin_code = self.get_ct_package_term_as_usdm_code(origin_uid)
-            if not origin_code.code or not origin_code.codeSystemVersion:
+            package = self._ct_packages.get(STUDY_ARM_ORIGIN_CATALOGUE)
+            if package is None:
                 raise USDMMappingAuthorityRequired(
-                    f"USDM_ARM_DATA_ORIGIN_CT_PIN_REQUIRED: study-arms/{row.arm_uid}/{origin_field}"
+                    f"USDM_ARM_DATA_ORIGIN_CT_PIN_REQUIRED: study-arms/{row.arm_uid}; "
+                    "select the DDF terminology package for this study version."
+                )
+            try:
+                origin = StudyArmOriginRepository.package_code(
+                    origin_uid, package["uid"], package["effective_date"]
+                )
+            except ValidationException as error:
+                raise USDMMappingAuthorityRequired(
+                    f"USDM_ARM_DATA_ORIGIN_CT_PIN_REQUIRED: study-arms/{row.arm_uid}; "
+                    "the explicit origin must belong to the selected package and codelist."
+                ) from error
+            origin_code = USDMCode(
+                id=self._id_manager.get_id(USDMCode.__name__, origin_uid),
+                code=origin["code"], codeSystem=origin["code_system"],
+                codeSystemVersion=origin["code_system_version"], decode=origin["decode"],
+                instanceType="Code",
+            )
+            if row.arm_type is None:
+                raise USDMMappingAuthorityRequired(
+                    f"USDM_ARM_TYPE_AUTHORITY_REQUIRED: study-arms/{row.arm_uid}"
+                )
+            arm_type_code = self.get_ct_package_term_as_usdm_code(row.arm_type.term_uid)
+            if not arm_type_code.code or not arm_type_code.codeSystemVersion:
+                raise USDMMappingAuthorityRequired(
+                    f"USDM_ARM_TYPE_CT_PIN_REQUIRED: study-arms/{row.arm_uid}"
                 )
             result.append(StudyArm(
                 id=self._id_manager.get_id(StudyArm.__name__, row.arm_uid),
                 name=row.name, label=row.name, description=row.description,
-                type=(self.get_ct_package_term_as_usdm_code(row.arm_type.term_uid)
-                      if row.arm_type else self.get_void_usdm_code()),
-                dataOriginDescription=getattr(row, "data_origin_description", None) or "",
+                type=arm_type_code,
+                dataOriginDescription=origin_description,
                 dataOriginType=origin_code,
             ))
         return result

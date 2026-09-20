@@ -596,7 +596,9 @@
             "arm_code": "An abbreviated code of the interventions in the arm, e.g. AB for a cross-over study with Drug A followed by drug B, or  PBO for a Placebo arm",
             "randomisation_group": "The group assigned in the randomisation list, e.g. A=AB and B=BA from the randomisation list.",
             "planned_number": "The planned number of subjects in the arm.",
-            "description": "(optional) A description of the arm."
+            "description": "(optional) A description of the arm.",
+            "data_origin_type": "Select the documented source of this arm's data. An unspecified origin remains unknown.",
+            "data_origin_description": "Describe the source evidence supporting the selected data origin. The origin and description are required together."
         },
         "StudyEpochForm": {
             "epoch_type": "No Treatment: used for a period in a treatment when a treatment pause is made, e.g. a washout in a cross-over study. Post Treatment: period after treatment has ended, e.g. Follow-up. Treatment: the period where the treatment(s) is given. Pre Treatment: period before treatment has started, e.g. screening",
@@ -3971,6 +3973,11 @@
         "connected_branches": "Connected Branches",
         "add_arm": "Add study arm",
         "edit_arm": "Edit study arm",
+        "edit_data_origin": "Edit data origin",
+        "loading_arm": "Loading current arm",
+        "retry_arm": "Retry arm",
+        "arm_load_failed": "The current arm could not be loaded or its data origin is incomplete. Retry before editing.",
+        "arm_read_only": "This arm is read-only for the selected study version or your current permissions.",
         "arm_name": "Arm name",
         "arm_short_name": "Arm short name",
         "arm_label": "Arm label",
@@ -3980,7 +3987,17 @@
         "planned_number": "Planned number of subjects",
         "description": "Description",
         "arm_created": "Study Arm created",
-        "arm_updated": "Study Arm updated"
+        "arm_updated": "Study Arm updated",
+        "data_origin_type": "Data origin term",
+        "data_origin_description": "Data origin description",
+        "data_origin_hint": "Select the documented data source and explain it before exporting this arm to USDM.",
+        "origin_unknown": "Not specified",
+        "origin_terms_failed": "The data origin terms could not be loaded. Retry to select an origin.",
+        "origin_pair_required": "Select a data origin term and provide its description, or clear both fields.",
+        "retry_origin_terms": "Retry terms",
+        "no_origin_terms": "No approved data origin terms are available in codelist C188727. Configure the DDF terminology before selecting an origin.",
+        "recorded_origin": "Recorded origin {uid} is retained, but is not in the current approved term list.",
+        "clear_origin": "Clear data origin"
     },
     "StudyCopyForm": {
         "title": "Select study to copy from",

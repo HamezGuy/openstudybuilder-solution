@@ -3,6 +3,9 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Self
 
 from clinical_mdr_api.domain_repositories.models.study_selections import StudyArm
+from clinical_mdr_api.domains.study_selections.study_arm_origin import (
+    validate_study_arm_origin,
+)
 from clinical_mdr_api.services.user_info import UserInfoService
 from clinical_mdr_api.utils import normalize_string
 from common import exceptions
@@ -32,6 +35,8 @@ class StudySelectionArmVO:
     change_type: str | None
     merge_branch_for_this_arm_for_sdtm_adam: bool = False
     accepted_version: bool = False
+    data_origin_type_uid: str | None = None
+    data_origin_description: str | None = None
 
     @classmethod
     def from_input_values(
@@ -47,6 +52,8 @@ class StudySelectionArmVO:
         randomization_group: str | None = None,
         number_of_subjects: int | None = 0,
         arm_type_uid: str | None = None,
+        data_origin_type_uid: str | None = None,
+        data_origin_description: str | None = None,
         start_date: datetime.datetime | None = None,
         end_date: datetime.datetime | None = None,
         status: str | None = None,
@@ -76,6 +83,8 @@ class StudySelectionArmVO:
         :param merge_branch_for_this_arm_for_sdtm_adam
         :return:
         """
+        validate_study_arm_origin(data_origin_type_uid, data_origin_description)
+
         if study_selection_uid is None:
             study_selection_uid = generate_uid_callback()
 
@@ -95,6 +104,8 @@ class StudySelectionArmVO:
             randomization_group=randomization_group,
             number_of_subjects=number_of_subjects,
             arm_type_uid=arm_type_uid,
+            data_origin_type_uid=data_origin_type_uid,
+            data_origin_description=data_origin_description,
             start_date=start_date,
             author_id=author_id,
             author_username=UserInfoService.get_author_username_from_id(author_id),
@@ -118,6 +129,8 @@ class StudySelectionArmVO:
         :param arm_exists_callback:
         :return:
         """
+        validate_study_arm_origin(self.data_origin_type_uid, self.data_origin_description)
+
         # Check if there exist a Term with the selected uid
         exceptions.ValidationException.raise_if(
             self.arm_type_uid and not ct_term_exists_callback(self.arm_type_uid),

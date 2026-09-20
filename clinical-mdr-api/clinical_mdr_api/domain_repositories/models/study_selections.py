@@ -533,6 +533,7 @@ class StudyArm(StudySelection):
     label = StringProperty()
     arm_code = StringProperty()
     description = StringProperty()
+    data_origin_description = StringProperty()
     randomization_group = StringProperty()
     merge_branch_for_this_arm_for_sdtm_adam = BooleanProperty(default=False)
     number_of_subjects = IntegerProperty()
@@ -549,6 +550,12 @@ class StudyArm(StudySelection):
         "HAS_ARM_TYPE",
         model=ClinicalMdrRel,
         cardinality=One,
+    )
+    data_origin_type = RelationshipTo(
+        CTTermContext,
+        "HAS_ARM_DATA_ORIGIN_TYPE",
+        model=ClinicalMdrRel,
+        cardinality=ZeroOrOne,
     )
     has_design_cell = RelationshipTo(
         StudyDesignCell,

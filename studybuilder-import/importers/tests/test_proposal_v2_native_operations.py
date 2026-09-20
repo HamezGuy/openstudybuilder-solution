@@ -793,6 +793,81 @@ def test_epoch_and_visit_create_requests_use_native_routes_and_receipt_reference
     assert visit_operation["record_hash_scope"] == "match"
 
 
+def _arm_origin_request(origin="Historical Data", description="  External cohort.\nRetain source wording.  ", **candidate_overrides):
+    placeholder = candidate("arm-create", "StudySelectionArm", "not-selected")
+    origin_candidate = candidate(
+        "origin-choice", "CTTerm", "C188864_HISTORICAL",
+        parentResourceType="CTCodelist", parentUid="C188727",
+        parentSubmissionValue="Study Arm Data Origin Type Value Set Terminology",
+        catalogueName="DDF CT", packageUid="ddfct-2024-09-27",
+        packageEffectiveDate="2024-09-27",
+    )
+    origin_candidate.update(candidate_overrides)
+    arm = proposal_object(
+        "arm-object", "study-arm", "StudySelectionArm", placeholder,
+        dependencies=["arm-data-origin"],
+    )
+    arm["mapping"]["candidates"] = []
+    arm["source"] = {"values": [
+        {"name": "armId", "value": "arm-a"},
+        {"name": "name", "value": "Historical control"},
+        {"name": "dataOriginType", "value": origin},
+        {"name": "dataOriginDescription", "value": description},
+    ]}
+    origin_object = proposal_object(
+        "origin-object", "arm-data-origin", "CTTerm", origin_candidate
+    )
+    objects = [arm, origin_object]
+    review = receipt(objects, [placeholder, origin_candidate])
+    mark_create_request(review, "arm-object")
+    return envelope(objects), review
+
+
+@pytest.mark.parametrize("origin", [
+    "Historical Data",
+    {"code": "C188864", "codeSystem": "CDISC",
+     "codeSystemVersion": "ddfct-2024-09-27", "decode": "Historical Data"},
+])
+def test_explicit_reviewed_arm_origin_is_persisted_and_required_in_readback(origin):
+    description = "  External cohort.\nRetain source wording.  "
+    proposal, review = _arm_origin_request(origin=origin, description=description)
+    plan = native_operation_plan(proposal, review, "Study_1", "DRAFT")
+    assert plan["blockers"] == []
+    assert len(plan["operations"]) == 1
+    operation = plan["operations"][0]
+    assert operation["body"]["data_origin_type_uid"] == "C188864_HISTORICAL"
+    assert operation["body"]["data_origin_description"] == description
+    assert operation["read_after_write"]["match"]["data_origin_type_uid"] == "C188864_HISTORICAL"
+    assert operation["read_after_write"]["match"]["data_origin_description"] == description
+
+
+@pytest.mark.parametrize("change", [
+    {"parentUid": "OTHER"},
+    {"catalogueName": "SDTM CT"},
+    {"packageUid": None},
+    {"packageEffectiveDate": None},
+    {"resourceType": "Activity"},
+])
+def test_wrong_scope_or_unpinned_arm_origin_prevents_native_creation(change):
+    proposal, review = _arm_origin_request(**change)
+    plan = native_operation_plan(proposal, review, "Study_1", "DRAFT")
+    assert plan["operations"] == []
+    assert any(row["code"] == "OSB_NATIVE_V2_ARM_DATA_ORIGIN_CT_REQUIRED" for row in plan["blockers"])
+
+
+@pytest.mark.parametrize(("origin", "description"), [
+    (None, "External cohort."),
+    ("Historical Data", None),
+    ("Historical Data", " \n"),
+    ({"code": "C188864"}, "External cohort."),
+])
+def test_partial_origin_source_prevents_silent_drop_into_native_arm(origin, description):
+    proposal, review = _arm_origin_request(origin=origin, description=description)
+    plan = native_operation_plan(proposal, review, "Study_1", "DRAFT")
+    assert plan["operations"] == []
+    assert any(row["code"] == "OSB_NATIVE_V2_ARM_DATA_ORIGIN_SOURCE_INCOMPLETE" for row in plan["blockers"])
+
+
 def test_arm_element_epoch_and_design_cell_create_native_relationship_graph():
     arm_placeholder = candidate("arm-create", "StudySelectionArm", "not-selected")
     arm_type = candidate(

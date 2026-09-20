@@ -119,7 +119,7 @@ def test_parent_child_plan_resolves_receipt_uids_and_verifies_full_collection():
     link=next(op for op in plan['operations'] if op['family']=='OdmItemGroupItemLink')
     worker=object.__new__(ImportOsbProposalV2)
     resolved=worker._resolve_operation_references(link,[{'proposal_object_id':'group','family':'OdmItemGroup','native_uid':'NativeGroup'},{'proposal_object_id':'item','family':'OdmItem','native_uid':'NativeItem'}])
-    assert resolved['path']=='/odms/item-groups/NativeGroup/items'
+    assert resolved['path']=='/odms/item-groups/NativeGroup/items/initialize'
     assert resolved['body'][0]['uid']=='NativeItem'
     expected=resolved['read_after_write']['match']
     assert expected['uid']=='NativeGroup' and expected['items'][0]['uid']=='NativeItem'

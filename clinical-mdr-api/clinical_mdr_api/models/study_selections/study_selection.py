@@ -16,6 +16,7 @@ from pydantic import (
     ConfigDict,
     Field,
     StringConstraints,
+    ValidationInfo,
     field_validator,
     model_validator,
 )
@@ -3891,6 +3892,22 @@ class StudySelectionArm(StudySelection):
         ),
     ] = None
 
+    data_origin_type_uid: Annotated[
+        str | None,
+        Field(
+            description="Explicit term UID from the DDF Study Arm Data Origin codelist",
+            json_schema_extra={"nullable": True},
+        ),
+    ] = None
+
+    data_origin_description: Annotated[
+        str | None,
+        Field(
+            description="Native description supporting the selected study arm data origin",
+            json_schema_extra={"nullable": True},
+        ),
+    ] = None
+
     start_date: Annotated[datetime, Field(description=START_DATE_DESC)]
 
     author_username: Annotated[
@@ -3954,6 +3971,8 @@ class StudySelectionArm(StudySelection):
             randomization_group=selection.randomization_group,
             number_of_subjects=selection.number_of_subjects,
             arm_type=arm_type_call_back,
+            data_origin_type_uid=selection.data_origin_type_uid,
+            data_origin_description=selection.data_origin_description,
             start_date=selection.start_date,
             author_username=UserInfoService.get_author_username_from_id(
                 selection.author_id
@@ -3997,6 +4016,8 @@ class StudySelectionArm(StudySelection):
             randomization_group=study_selection_history.arm_randomization_group,
             number_of_subjects=study_selection_history.arm_number_of_subjects,
             arm_type=arm_type_call_back,
+            data_origin_type_uid=study_selection_history.data_origin_type_uid,
+            data_origin_description=study_selection_history.data_origin_description,
             start_date=study_selection_history.start_date,
             author_username=UserInfoService.get_author_username_from_id(
                 study_selection_history.author_id
@@ -4062,6 +4083,8 @@ class StudySelectionArmWithConnectedBranchArms(StudySelectionArm):
             randomization_group=selection.randomization_group,
             number_of_subjects=selection.number_of_subjects,
             arm_type=arm_type_call_back,
+            data_origin_type_uid=selection.data_origin_type_uid,
+            data_origin_description=selection.data_origin_description,
             arm_connected_branch_arms=find_multiple_connected_branch_arm(
                 study_uid=study_uid,
                 study_arm_uid=selection.study_selection_uid,
@@ -4109,12 +4132,29 @@ class StudySelectionArmCreateInput(PostInputModel):
     ] = None
 
     arm_type_uid: Annotated[str | None, Field(description=ARM_UID_DESC)] = None
+    data_origin_type_uid: Annotated[
+        str | None,
+        Field(description="Explicit term UID from the DDF Study Arm Data Origin codelist"),
+    ] = None
+    data_origin_description: Annotated[
+        str | None,
+        Field(description="Native description supporting the selected study arm data origin"),
+    ] = None
     merge_branch_for_this_arm_for_sdtm_adam: Annotated[
         bool,
         Field(
             description="Indicates whether to merge branches for this arm for SDTM/ADM"
         ),
     ] = False
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _string_validator(cls, value: Any, validation_info: ValidationInfo):
+        # Source evidence remains verbatim; the field schema and domain still
+        # validate its type and whether the complete origin pair is eligible.
+        if validation_info.field_name == "data_origin_description":
+            return value
+        return super()._string_validator(value, validation_info)
 
 
 class StudySelectionArmInput(PatchInputModel):
@@ -4146,6 +4186,14 @@ class StudySelectionArmInput(PatchInputModel):
     ] = None
 
     arm_type_uid: Annotated[str | None, Field(description=ARM_UID_DESC)] = None
+    data_origin_type_uid: Annotated[
+        str | None,
+        Field(description="Explicit term UID from the DDF Study Arm Data Origin codelist"),
+    ] = None
+    data_origin_description: Annotated[
+        str | None,
+        Field(description="Native description supporting the selected study arm data origin"),
+    ] = None
     arm_uid: Annotated[str | None, Field(description=ARM_UID_DESC)] = None
     merge_branch_for_this_arm_for_sdtm_adam: Annotated[
         bool,
@@ -4153,6 +4201,14 @@ class StudySelectionArmInput(PatchInputModel):
             description="Indicates whether to merge branches for this arm for SDTM/ADM"
         ),
     ] = False
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _string_validator(cls, value: Any, validation_info: ValidationInfo):
+        # This also applies when an ordinary patch reconstructs the current DTO.
+        if validation_info.field_name == "data_origin_description":
+            return value
+        return super()._string_validator(value, validation_info)
 
 
 class StudySelectionArmNewOrder(PatchInputModel):
@@ -4180,6 +4236,15 @@ class StudySelectionArmBatchInput(BatchInputModel):
         StudySelectionArmBatchUpdateInput | StudySelectionArmCreateInput,
         Field(),
     ]
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _string_validator(cls, value: Any, validation_info: ValidationInfo):
+        # The typed arm DTO validates every content field. Recursively stripping
+        # the raw dictionary here would destroy origin evidence before that DTO.
+        if validation_info.field_name == "content":
+            return value
+        return super()._string_validator(value, validation_info)
 
 
 class StudySelectionArmBatchOutput(BaseModel):

@@ -73,6 +73,24 @@
           </v-col>
         </v-row>
         <v-row>
+          <v-col cols="12" sm="3" class="font-weight-bold">
+            {{ $t('StudyArmsForm.data_origin_type') }}
+          </v-col>
+          <v-col cols="12" sm="9" data-cy="arm-origin-readback">
+            {{ arm.data_origin_type_uid || $t('StudyArmsForm.origin_unknown') }}
+          </v-col>
+        </v-row>
+        <v-row>
+          <v-col cols="12" sm="3" class="font-weight-bold">
+            {{ $t('StudyArmsForm.data_origin_description') }}
+          </v-col>
+          <v-col cols="12" sm="9" style="white-space: pre-wrap">
+            {{
+              arm.data_origin_description || $t('StudyArmsForm.origin_unknown')
+            }}
+          </v-col>
+        </v-row>
+        <v-row>
           <v-col cols="2" class="font-weight-bold">
             {{ $t('StudyArmsForm.connected_branches') }}
           </v-col>

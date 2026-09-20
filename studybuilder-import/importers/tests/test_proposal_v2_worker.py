@@ -1540,6 +1540,7 @@ def test_retry_with_persisted_receipt_reconciles_without_duplicate_post(monkeypa
         "target_study_version": "DRAFT",
         "authorization_content_hash": "a" * 64,
         "native_record_hash_scope": "record",
+        "native_uid": record["study_activity_uid"],
         "native_record_hash": _stable_hash(record),
     }
     db = FakeNativeDb(proposal_value, item_results=[prior_receipt])

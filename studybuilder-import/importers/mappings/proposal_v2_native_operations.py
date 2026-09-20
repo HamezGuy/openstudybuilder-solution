@@ -10,7 +10,12 @@ from __future__ import annotations
 import hashlib
 
 from .proposal_v2_capabilities import target_capability
-from .proposal_v2_capture_operations import CAPTURE_CONTRACTS, capture_operation_values
+from .proposal_v2_capture_operations import (
+    CAPTURE_CONTRACTS,
+    COLLECTION_INITIALIZATION_CONTRACT,
+    capture_operation_values,
+    complete_capture_relation,
+)
 
 
 class NativeOperationPlanError(ValueError):
@@ -344,6 +349,42 @@ def _arm_operation_values(item, dependencies):
             return None, None, None, "OSB_NATIVE_V2_ARM_TYPE_INVALID"
         body["arm_type_uid"] = arm_type["uid"]
         reconcile["arm_type.term_uid"] = arm_type["uid"]
+    has_origin = (
+        values.get("dataOriginType") is not None
+        or values.get("dataOriginDescription") is not None
+        or "arm-data-origin" in dependencies
+    )
+    if has_origin:
+        origin = values.get("dataOriginType")
+        origin_description = values.get("dataOriginDescription")
+        origin_is_text = isinstance(origin, str) and bool(origin.strip())
+        origin_is_code = isinstance(origin, dict) and all(
+            isinstance(origin.get(key), str) and bool(origin[key].strip())
+            for key in ("code", "codeSystem", "codeSystemVersion", "decode")
+        )
+        if (
+            not (origin_is_text or origin_is_code)
+            or not isinstance(origin_description, str)
+            or not origin_description.strip()
+        ):
+            return None, None, None, "OSB_NATIVE_V2_ARM_DATA_ORIGIN_SOURCE_INCOMPLETE"
+        selected_origin = dependencies.get("arm-data-origin")
+        if (
+            not isinstance(selected_origin, dict)
+            or selected_origin.get("resourceType") != "CTTerm"
+            or selected_origin.get("parentResourceType") != "CTCodelist"
+            or selected_origin.get("parentUid") != "C188727"
+            or selected_origin.get("catalogueName") != "DDF CT"
+            or any(
+                not isinstance(selected_origin.get(key), str) or not selected_origin[key].strip()
+                for key in ("uid", "packageUid", "packageEffectiveDate")
+            )
+        ):
+            return None, None, None, "OSB_NATIVE_V2_ARM_DATA_ORIGIN_CT_REQUIRED"
+        body["data_origin_type_uid"] = selected_origin["uid"]
+        body["data_origin_description"] = origin_description
+        reconcile["data_origin_type_uid"] = selected_origin["uid"]
+        reconcile["data_origin_description"] = origin_description
     return body, reconcile, {"armId": arm_id}, None
 
 
@@ -1053,6 +1094,7 @@ def native_operation_plan(
     operations = []
     blockers = []
     deferred_objects = []
+    capture_link_parents = set()
     proposal_hash = proposal["proposalHash"]
     for object_id, item in proposal_objects.items():
         mapping = item.get("mapping") or {}
@@ -1139,31 +1181,58 @@ def native_operation_plan(
             parent = values.get("parentProposalObjectId")
             children = values.get("children")
             parent_family, child_family, root_path, collection = ("OdmForm", "OdmItemGroup", "/odms/forms", "item_groups") if resource_type == "OdmFormItemGroupLink" else ("OdmItemGroup", "OdmItem", "/odms/item-groups", "items")
-            allowed = {"order_number", "mandatory", "collection_exception_condition_oid", "vendor"}
-            if child_family == "OdmItem":
-                allowed.update({"key_sequence", "method_oid", "imputation_method_oid", "role", "role_codelist_oid"})
             if not isinstance(parent, str) or parent not in proposal_objects or (proposal_objects[parent].get("mapping") or {}).get("proposedResourceType") != parent_family or not isinstance(children, list) or not children:
                 blockers.append({"proposal_object_id": object_id, "code": "OSB_NATIVE_V2_CAPTURE_PARENT_OR_CHILDREN_UNRESOLVED", "details": []})
+                continue
+            if parent in capture_link_parents:
+                blockers.append({"proposal_object_id": object_id, "code": "OSB_NATIVE_V2_CAPTURE_PARENT_COLLECTION_AMBIGUOUS", "details": [parent]})
+                continue
+            capture_link_parents.add(parent)
+            if decisions.get(parent, {}).get("action") != "create_request":
+                blockers.append({"proposal_object_id": object_id, "code": "OSB_NATIVE_V2_CAPTURE_PARENT_CREATE_RECEIPT_REQUIRED", "details": [parent]})
                 continue
             references = [{"family": parent_family, "proposal_object_id": parent, "path_parameter": "parent_uid", "read_match_path": "uid"}]
             body = []
             invalid = False
+            child_ids = []
+            orders = set()
             for index, child in enumerate(children):
-                child_id = child.get("proposalObjectId")
-                relation = child.get("relation")
-                if child_id not in proposal_objects or (proposal_objects[child_id].get("mapping") or {}).get("proposedResourceType") != child_family or not isinstance(relation, dict) or set(relation) - allowed or not {"order_number", "mandatory", "vendor"}.issubset(relation) or relation["mandatory"] not in {"Yes", "No"}:
+                if not isinstance(child, dict):
                     invalid = True
                     break
-                body.append(dict(relation))
+                child_id = child.get("proposalObjectId")
+                relation = child.get("relation")
+                if not isinstance(child_id, str) or child_id not in proposal_objects or child_id in child_ids or (proposal_objects[child_id].get("mapping") or {}).get("proposedResourceType") != child_family or decisions.get(child_id, {}).get("action") != "create_request":
+                    invalid = True
+                    break
+                try:
+                    complete_relation = complete_capture_relation(resource_type, relation)
+                except ValueError:
+                    invalid = True
+                    break
+                if complete_relation["order_number"] in orders:
+                    invalid = True
+                    break
+                orders.add(complete_relation["order_number"])
+                child_ids.append(child_id)
+                body.append(complete_relation)
                 references.append({"family": child_family, "proposal_object_id": child_id,
                     "body_path": f"{index}.uid", "read_match_nested_path": f"{collection}.{index}.uid"})
             if invalid:
                 blockers.append({"proposal_object_id": object_id, "code": "OSB_NATIVE_V2_CAPTURE_REFERENCE_DTO_INVALID", "details": []})
                 continue
             read_match = {collection: [dict(row) for row in body]}
-            operations.append(_operation(proposal_hash, object_id, resource_type, root_path + "/{parent_uid}/" + collection.replace('_','-'),
-                body, {"override": True}, read_match, target_study_uid, target_study_version, read_collection=False,
-                read_path=root_path + "/{parent_uid}", body_references=references, record_hash_scope="match"))
+            operation = _operation(proposal_hash, object_id, resource_type,
+                root_path + "/{parent_uid}/" + collection.replace('_','-') + "/initialize",
+                body, None, read_match, target_study_uid, target_study_version, read_collection=False,
+                read_path=root_path + "/{parent_uid}", body_references=references, record_hash_scope="match")
+            operation["capture_collection"] = {
+                "contract": COLLECTION_INITIALIZATION_CONTRACT,
+                "parent_object_id": parent,
+                "child_object_ids": child_ids,
+                "collection": collection,
+            }
+            operations.append(operation)
         elif resource_type == "StudySelectionActivityInstance":
             values = _source_values(item)
             activity_id = _string(values.get("activityId"))

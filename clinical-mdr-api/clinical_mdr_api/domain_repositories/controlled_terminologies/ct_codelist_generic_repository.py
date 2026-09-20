@@ -2,7 +2,6 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Any, Generic, Iterable, cast
 
-from cachetools import cached
 from cachetools.keys import hashkey
 from neomodel import db
 
@@ -10,6 +9,9 @@ from clinical_mdr_api.domain_repositories._generic_repository_interface import (
     _AggregateRootType,
 )
 from clinical_mdr_api.domain_repositories._utils.helpers import is_codelist_in_final
+from clinical_mdr_api.domain_repositories._utils.native_read_cache import (
+    native_read_cached,
+)
 from clinical_mdr_api.domain_repositories.controlled_terminologies.ct_get_all_query_utils import (
     create_codelist_filter_statement,
     format_codelist_filter_sort_keys,
@@ -726,7 +728,7 @@ class CTCodelistGenericRepository(
         )
 
     # Get the details of a term - codelist relationship
-    @cached(
+    @native_read_cached(
         cache=LibraryItemRepositoryImplBase.cache_store_term_by_uid_and_submval,
         key=hashkey_codelist_term,
         lock=LibraryItemRepositoryImplBase.lock_store_term_by_uid_and_submval,

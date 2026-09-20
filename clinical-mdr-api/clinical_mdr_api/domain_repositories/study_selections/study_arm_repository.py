@@ -26,13 +26,21 @@ from clinical_mdr_api.domain_repositories.models.study_audit_trail import (
     StudyAction,
 )
 from clinical_mdr_api.domain_repositories.models.study_selections import StudyArm
+from clinical_mdr_api.domain_repositories.study_selections.study_arm_origin_repository import (
+    StudyArmOriginRepository,
+)
 from clinical_mdr_api.domains.enums import StudyDesignClassEnum
+from clinical_mdr_api.domains.study_selections.study_arm_origin import (
+    STUDY_ARM_ORIGIN_CATALOGUE,
+    STUDY_ARM_ORIGIN_CODELIST_UID,
+    validate_study_arm_origin,
+)
 from clinical_mdr_api.domains.study_selections.study_selection_arm import (
     StudySelectionArmAR,
     StudySelectionArmVO,
 )
 from common.config import settings
-from common.exceptions import BusinessLogicException
+from common.exceptions import BusinessLogicException, ValidationException
 from common.telemetry import trace_calls
 from common.utils import convert_to_datetime, get_db_result_as_dict
 
@@ -60,6 +68,8 @@ class SelectionHistoryArm:
     status: str | None
     accepted_version: bool | None
     merge_branch_for_this_arm_for_sdtm_adam: bool
+    data_origin_type_uid: str | None = None
+    data_origin_description: str | None = None
 
 
 class StudySelectionArmRepository:
@@ -216,9 +226,18 @@ class StudySelectionArmRepository:
             MATCH (sv)-[:HAS_STUDY_ARM]->(sar:StudyArm)
             WITH DISTINCT sr, sar, sv
             OPTIONAL MATCH (sar)-[:HAS_ARM_TYPE]->(st:CTTermContext)-[:HAS_SELECTED_TERM]->(elr:CTTermRoot)
+            CALL {
+                WITH sar
+                OPTIONAL MATCH (sar)-[:HAS_ARM_DATA_ORIGIN_TYPE]->(origin_context:CTTermContext)
+                OPTIONAL MATCH (origin_context)-[:HAS_SELECTED_TERM]->(origin:CTTermRoot)
+                OPTIONAL MATCH (origin_context)-[:HAS_SELECTED_CODELIST]->(origin_cl:CTCodelistRoot)
+                RETURN collect(CASE WHEN origin_context IS NULL THEN null ELSE
+                    {term_uid: origin.uid, codelist_uid: origin_cl.uid}
+                END) AS origin_memberships
+            }
             OPTIONAL MATCH (sv)-[:HAS_STUDY_BRANCH_ARM]-(bars:StudyBranchArm)<-[:STUDY_ARM_HAS_BRANCH_ARM]-(sar)
             WITH DISTINCT 
-                bars.uid as branch_arm_uid, elr, sr, sar,
+                bars.uid as branch_arm_uid, elr, origin_memberships, sr, sar,
                 exists((sv)-[:HAS_STUDY_DESIGN_CLASS]->(:StudyDesignClass {value:$is_cohort_stepper_defined})) AS is_cohort_stepper_defined
             CALL {
                 WITH branch_arm_uid
@@ -229,7 +248,7 @@ class StudySelectionArmRepository:
                 RETURN CASE WHEN exists((study_branch_arm)--(:Delete)) THEN NULL ELSE study_branch_arm END AS study_branch_arm
             }
             MATCH (sar)<-[:AFTER]-(sa:StudyAction)
-            WITH DISTINCT elr, sr, sar, sa, sum(study_branch_arm.number_of_subjects) as branch_sum, is_cohort_stepper_defined
+            WITH DISTINCT elr, origin_memberships, sr, sar, sa, sum(study_branch_arm.number_of_subjects) as branch_sum, is_cohort_stepper_defined
             RETURN DISTINCT 
                 sr.uid AS study_uid,
                 sar.uid AS study_selection_uid,
@@ -247,6 +266,8 @@ class StudySelectionArmRepository:
                 sar.randomization_group AS randomization_group,
                 coalesce(sar.merge_branch_for_this_arm_for_sdtm_adam, false) AS merge_branch_for_this_arm_for_sdtm_adam,
                 elr.uid AS arm_type_uid,
+                origin_memberships AS data_origin_memberships,
+                sar.data_origin_description AS data_origin_description,
                 sar.text AS text,
                 sa.date AS start_date,
                 sa.author_id AS author_id
@@ -270,6 +291,10 @@ class StudySelectionArmRepository:
                 description=selection["arm_description"],
                 study_selection_uid=selection["study_selection_uid"],
                 arm_type_uid=selection["arm_type_uid"],
+                data_origin_type_uid=StudyArmOriginRepository.selected_uid(
+                    selection["data_origin_memberships"], selection["data_origin_description"]
+                ),
+                data_origin_description=selection["data_origin_description"],
                 number_of_subjects=selection["number_of_subjects"],
                 randomization_group=selection["randomization_group"],
                 merge_branch_for_this_arm_for_sdtm_adam=selection[
@@ -481,6 +506,42 @@ class StudySelectionArmRepository:
         for_deletion: bool = False,
         before_node: StudyArm | None = None,
     ):
+        validate_study_arm_origin(
+            selection.data_origin_type_uid, selection.data_origin_description
+        )
+        origin_context = None
+        if selection.data_origin_type_uid is not None:
+            if before_node is not None:
+                previous_context = before_node.data_origin_type.single()
+                if previous_context is not None:
+                    previous_term = previous_context.has_selected_term.single()
+                    if (
+                        previous_term is not None
+                        and previous_term.uid == selection.data_origin_type_uid
+                    ):
+                        previous_codelist = previous_context.has_selected_codelist.single()
+                        if (
+                            previous_codelist is None
+                            or previous_codelist.uid != STUDY_ARM_ORIGIN_CODELIST_UID
+                        ):
+                            raise ValidationException(
+                                msg="STUDY_ARM_DATA_ORIGIN_CONTEXT_SCOPE_INVALID"
+                            )
+                        # An unchanged native selection keeps its existing
+                        # context through edit/reorder/delete history.
+                        origin_context = previous_context
+            if origin_context is None:
+                origin_term = StudyArmOriginRepository.get_term(
+                    selection.data_origin_type_uid
+                )
+                origin_context = (
+                    CTCodelistAttributesRepository().get_or_create_selected_term(
+                        CTTermRoot.nodes.get(uid=selection.data_origin_type_uid),
+                        codelist_uid=origin_term.ct_simple_codelist_term_vo.codelist_uid,
+                        catalogue_name=STUDY_ARM_ORIGIN_CATALOGUE,
+                    )
+                )
+
         # Create new arm selection
         study_arm_selection_node: StudyArm = StudyArm(
             uid=selection.study_selection_uid,
@@ -490,6 +551,7 @@ class StudySelectionArmRepository:
             label=selection.label,
             arm_code=selection.code,
             description=selection.description,
+            data_origin_description=selection.data_origin_description,
             randomization_group=selection.randomization_group,
             number_of_subjects=selection.number_of_subjects,
             merge_branch_for_this_arm_for_sdtm_adam=selection.merge_branch_for_this_arm_for_sdtm_adam,
@@ -516,6 +578,9 @@ class StudySelectionArmRepository:
             # connect to node
             # pylint: disable=no-member
             study_arm_selection_node.arm_type.connect(selected_arm_type_node)
+
+        if origin_context is not None:
+            study_arm_selection_node.data_origin_type.connect(origin_context)
 
         _manage_versioning_with_relations(
             study_root=study_root,
@@ -565,8 +630,17 @@ class StudySelectionArmRepository:
             cypher + """
             WITH DISTINCT all_sa
             OPTIONAL MATCH (all_sa)-[:HAS_ARM_TYPE]->(st:CTTermContext)-[:HAS_SELECTED_TERM]->(at:CTTermRoot)
+            CALL {
+                WITH all_sa
+                OPTIONAL MATCH (all_sa)-[:HAS_ARM_DATA_ORIGIN_TYPE]->(origin_context:CTTermContext)
+                OPTIONAL MATCH (origin_context)-[:HAS_SELECTED_TERM]->(origin:CTTermRoot)
+                OPTIONAL MATCH (origin_context)-[:HAS_SELECTED_CODELIST]->(origin_cl:CTCodelistRoot)
+                RETURN collect(CASE WHEN origin_context IS NULL THEN null ELSE
+                    {term_uid: origin.uid, codelist_uid: origin_cl.uid}
+                END) AS origin_memberships
+            }
             OPTIONAL MATCH (bars:StudyBranchArm)<-[:STUDY_ARM_HAS_BRANCH_ARM]-(all_sa)
-            WITH DISTINCT bars.uid as branch_arm_uid, at, all_sa 
+            WITH DISTINCT bars.uid as branch_arm_uid, at, origin_memberships, all_sa
             CALL {
                 WITH branch_arm_uid
                 MATCH (study_branch_arm:StudyBranchArm {uid:branch_arm_uid})-[:AFTER]-(action:StudyAction)
@@ -575,11 +649,11 @@ class StudySelectionArmRepository:
                 WITH collect(study_branch_arm) as branch_arms
                 RETURN last(branch_arms) AS study_branch_arm
             }
-            WITH DISTINCT all_sa, at, sum(study_branch_arm.number_of_subjects) as branch_sum
+            WITH DISTINCT all_sa, at, origin_memberships, sum(study_branch_arm.number_of_subjects) as branch_sum
             ORDER BY all_sa.order ASC
             MATCH (all_sa)<-[:AFTER]-(asa:StudyAction)
             OPTIONAL MATCH (all_sa)<-[:BEFORE]-(bsa:StudyAction)
-            WITH all_sa, asa, bsa, at, branch_sum
+            WITH all_sa, asa, bsa, at, origin_memberships, branch_sum
             ORDER BY all_sa.uid, asa.date DESC
             RETURN
                 all_sa.uid AS study_selection_uid,
@@ -597,6 +671,8 @@ class StudySelectionArmRepository:
                 all_sa.randomization_group AS randomization_group,
                 coalesce(all_sa.merge_branch_for_this_arm_for_sdtm_adam, false) AS merge_branch_for_this_arm_for_sdtm_adam,
                 at.uid AS arm_type_uid,
+                origin_memberships AS data_origin_memberships,
+                all_sa.data_origin_description AS data_origin_description,
                 all_sa.text AS text,
                 asa.date AS start_date,
                 asa.author_id AS author_id,
@@ -626,6 +702,10 @@ class StudySelectionArmRepository:
                     arm_randomization_group=res["randomization_group"],
                     arm_number_of_subjects=res["number_of_subjects"],
                     arm_type=res["arm_type_uid"],
+                    data_origin_type_uid=StudyArmOriginRepository.selected_uid(
+                        res["data_origin_memberships"], res["data_origin_description"]
+                    ),
+                    data_origin_description=res["data_origin_description"],
                     merge_branch_for_this_arm_for_sdtm_adam=res[
                         "merge_branch_for_this_arm_for_sdtm_adam"
                     ],

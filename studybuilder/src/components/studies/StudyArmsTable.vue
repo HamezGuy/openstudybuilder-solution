@@ -36,12 +36,15 @@
             <td>{{ arm.order }}</td>
             <td>{{ arm.arm_type?.sponsor_preferred_name }}</td>
             <td>{{ arm.name }}</td>
+            <td>{{ arm.label }}</td>
             <td>{{ arm.short_name }}</td>
             <td>{{ arm.number_of_subjects }}</td>
             <td>{{ arm.randomization_group }}</td>
             <td>{{ arm.code }}</td>
             <td>{{ arm.arm_connected_branch_arms?.length }}</td>
             <td>{{ arm.description }}</td>
+            <td>{{ arm.data_origin_type_uid }}</td>
+            <td>{{ arm.data_origin_description }}</td>
             <td>{{ $filters.date(arm.start_date) }}</td>
             <td>{{ arm.author_username }}</td>
           </tr>
@@ -117,6 +120,7 @@
     <StudyArmsForm
       :open="showArmsForm"
       :edited-arm="armToEdit"
+      :origin-only="editOriginOnly"
       @close="closeForm"
     />
     <v-dialog
@@ -216,6 +220,11 @@ const headers = [
     key: 'arm_connected_branch_arms',
   },
   { title: t('StudyArmsTable.description'), key: 'description' },
+  { title: t('StudyArmsForm.data_origin_type'), key: 'data_origin_type_uid' },
+  {
+    title: t('StudyArmsForm.data_origin_description'),
+    key: 'data_origin_description',
+  },
   { title: t('_global.modified'), key: 'start_date' },
   { title: t('_global.modified_by'), key: 'author_username' },
 ]
@@ -226,6 +235,13 @@ const actions = [
     iconColor: 'primary',
     condition: () => !studiesGeneralStore.selectedStudyVersion,
     click: editArm,
+    accessRole: roles.STUDY_WRITE,
+  },
+  {
+    label: t('StudyArmsForm.edit_data_origin'),
+    icon: 'mdi-database-edit-outline',
+    condition: () => studiesGeneralStore.selectedStudyVersion === null,
+    click: editArmOrigin,
     accessRole: roles.STUDY_WRITE,
   },
   {
@@ -244,6 +260,7 @@ const actions = [
 ]
 const total = ref(0)
 const showArmsForm = ref(false)
+const editOriginOnly = ref(false)
 const armToEdit = ref({})
 const showArmHistory = ref(false)
 const armHistoryItems = ref([])
@@ -312,16 +329,29 @@ function closeCohortStepper() {
 function closeForm() {
   armToEdit.value = {}
   showArmsForm.value = false
+  editOriginOnly.value = false
   table.value.filterTable()
 }
 
 function editArm(item) {
   if (designClass.value === cohortConstants.MANUAL) {
+    editOriginOnly.value = false
     armToEdit.value = item
     showArmsForm.value = true
   } else {
     showCohortsStepper.value = true
   }
+}
+
+function editArmOrigin(item) {
+  if (
+    studiesGeneralStore.selectedStudyVersion !== null ||
+    !accessGuard.checkPermission(roles.STUDY_WRITE)
+  )
+    return
+  editOriginOnly.value = true
+  armToEdit.value = item
+  showArmsForm.value = true
 }
 
 async function openArmHistory(arm) {

@@ -71,6 +71,7 @@ const knownCodelists = {
     value: 'EPCHALLC',
   },
   armTypes: { attribute: 'codelist_submission_value', value: 'ARMTTP' },
+  armDataOrigins: { attribute: 'codelist_uid', value: 'C188727' },
   unitDimensions: { attribute: 'codelist_submission_value', value: 'UNITDIM' },
   unitSubsets: { attribute: 'codelist_submission_value', value: 'UNITSUBS' },
   elementSubTypes: { attribute: 'codelist_submission_value', value: 'ELEMSTP' },

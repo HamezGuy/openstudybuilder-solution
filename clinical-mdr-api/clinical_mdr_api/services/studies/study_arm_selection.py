@@ -520,6 +520,8 @@ class StudyArmSelectionService(StudySelectionMixin):
                 randomization_group=selection_create_input.randomization_group,
                 number_of_subjects=selection_create_input.number_of_subjects,
                 arm_type_uid=selection_create_input.arm_type_uid,
+                data_origin_type_uid=selection_create_input.data_origin_type_uid,
+                data_origin_description=selection_create_input.data_origin_description,
                 merge_branch_for_this_arm_for_sdtm_adam=selection_create_input.merge_branch_for_this_arm_for_sdtm_adam,
                 generate_uid_callback=repos.study_arm_repository.generate_uid,
             )
@@ -576,6 +578,8 @@ class StudyArmSelectionService(StudySelectionMixin):
             randomization_group=current_study_arm.randomization_group,
             number_of_subjects=current_study_arm.number_of_subjects,
             arm_type_uid=current_study_arm.arm_type_uid,
+            data_origin_type_uid=current_study_arm.data_origin_type_uid,
+            data_origin_description=current_study_arm.data_origin_description,
             merge_branch_for_this_arm_for_sdtm_adam=current_study_arm.merge_branch_for_this_arm_for_sdtm_adam,
         )
 
@@ -595,6 +599,8 @@ class StudyArmSelectionService(StudySelectionMixin):
             randomization_group=request_study_arm.randomization_group,
             number_of_subjects=request_study_arm.number_of_subjects,
             arm_type_uid=request_study_arm.arm_type_uid,
+            data_origin_type_uid=request_study_arm.data_origin_type_uid,
+            data_origin_description=request_study_arm.data_origin_description,
             merge_branch_for_this_arm_for_sdtm_adam=request_study_arm.merge_branch_for_this_arm_for_sdtm_adam,
             study_selection_uid=current_study_arm.study_selection_uid,
             author_id=self.author,

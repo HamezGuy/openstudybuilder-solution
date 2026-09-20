@@ -574,8 +574,17 @@ class OdmGenericRepository(
                     "target_uid": uid,
                 },
             )
-            return result[0][0] if result and len(result) > 0 else False
+            BusinessLogicException.raise_if(
+                not isinstance(result, list)
+                or len(result) != 1
+                or not isinstance(result[0], list)
+                or len(result[0]) != 1
+                or type(result[0][0]) is not bool,
+                msg="ODM_RELATIONSHIP_OWNERSHIP_QUERY_UNPROVEN",
+            )
+            return result[0][0]
 
+        cls.lock_for_relationship_update(uid)
         root_class_node = cls.root_class.nodes.get_or_none(uid=uid)
         value_class_node = root_class_node.has_latest_value.single()
 
@@ -634,6 +643,63 @@ class OdmGenericRepository(
             )
 
         return getattr(value_class_node, origin_label), relation_node
+
+    @classmethod
+    def validate_capture_item_custody(cls, uid: str, item_uid: str) -> None:
+        """Apply the ordinary item writer's ownership validation without a write."""
+        BusinessLogicException.raise_if(
+            cls.root_class is not OdmItemGroupRoot,
+            msg="Unsupported capture item owner.",
+        )
+        cls._get_origin_and_relation_node(
+            uid=uid, relation_uid=item_uid, relationship_type=RelationType.ITEM,
+            zero_or_one_relation=True,
+        )
+
+    @classmethod
+    def lock_for_relationship_update(cls, uid: str) -> None:
+        """Serialize native definition/collection checks with relation writes."""
+        db.cypher_query(
+            f"""
+            MATCH (root:{cls.root_class.__label__} {{uid: $uid}})
+            CALL apoc.lock.nodes([root])
+            RETURN root.uid
+            """,
+            {"uid": uid},
+        )
+
+    @classmethod
+    def read_capture_collection(cls, uid: str, collection: str) -> list[dict[str, Any]]:
+        """Read every current edge and property, including unmodelled properties.
+
+        The caller owns the transaction and root locks. Do not use the ODM DTO
+        projection here: it can omit unknown properties or unresolvable targets.
+        """
+        kinds = {
+            (OdmFormRoot, "item_groups"): ("ITEM_GROUP_REF", OdmItemGroupRoot),
+            (OdmItemGroupRoot, "items"): ("ITEM_REF", OdmItemRoot),
+        }
+        BusinessLogicException.raise_if(
+            (cls.root_class, collection) not in kinds,
+            msg="Unsupported capture collection.",
+        )
+        relation_type, child_root = kinds[(cls.root_class, collection)]
+        rows, _ = db.cypher_query(
+            f"""
+            MATCH (root:{cls.root_class.__label__} {{uid: $uid}})
+                  -[:LATEST]->(value)-[relation:{relation_type}]->(child)
+            OPTIONAL MATCH (child)<-[:HAS_VERSION]-(owner:{child_root.__label__})
+            WITH relation, child, collect(DISTINCT owner.uid) AS owner_uids
+            RETURN properties(relation) AS properties, owner_uids,
+                   [(current:{child_root.__label__})-[:LATEST]->(child) |
+                    current.uid] AS current_owner_uids
+            """,
+            {"uid": uid},
+        )
+        return [
+            {"properties": row[0], "owner_uids": row[1], "current_owner_uids": row[2]}
+            for row in rows
+        ]
 
     @sb_clear_cache(caches=["cache_store_item_by_uid"])
     def add_relation(

@@ -16,7 +16,7 @@ from clinical_mdr_api.services.integrations import atomic_signed_command as atom
 from clinical_mdr_api.services.integrations.atomic_signed_command import (
     execute_osb_atomic_signed_command,
 )
-from clinical_mdr_api.tests.unit.services.test_candidate_signed_publication import (
+from clinical_mdr_api.tests.unit.services.signed_command_test_fixtures import (
     MemoryCommandStore,
     StubPublisher,
     TENANT,

@@ -4,6 +4,9 @@ from fastapi import APIRouter, Body, Path, Query
 from starlette.requests import Request
 
 from clinical_mdr_api.models.odms.common_models import OdmElementWithParentUid
+from clinical_mdr_api.models.odms.collection_initialization import (
+    OdmCollectionInitializationInput,
+)
 from clinical_mdr_api.models.odms.form import (
     OdmForm,
     OdmFormItemGroupPostInput,
@@ -14,6 +17,10 @@ from clinical_mdr_api.models.utils import CustomPage
 from clinical_mdr_api.repositories._utils import FilterOperator
 from clinical_mdr_api.routers import _generic_descriptions, decorators
 from clinical_mdr_api.services.odms.forms import OdmFormService
+from clinical_mdr_api.services.odms.item_groups import OdmItemGroupService
+from clinical_mdr_api.services.odms.collection_initialization import (
+    initialize_odm_collection,
+)
 from common.auth import rbac
 from common.auth.dependencies import security
 from common.config import settings
@@ -489,6 +496,22 @@ When false, appends the provided item relationships to existing ones, continuing
         uid=odm_form_uid,
         odm_form_item_group_post_input=odm_form_item_group_post_input,
         override=override,
+    )
+
+
+@router.post(
+    "/{odm_form_uid}/item-groups/initialize",
+    dependencies=[security, rbac.LIBRARY_WRITE],
+    summary="Initialize an empty ODM form collection or verify its exact replay.",
+    status_code=201,
+)
+def initialize_item_groups_of_odm_form(
+    odm_form_uid: Annotated[str, OdmFormUID],
+    request: OdmCollectionInitializationInput,
+) -> OdmForm:
+    return initialize_odm_collection(
+        OdmFormService(), OdmItemGroupService(), odm_form_uid, request,
+        collection="item_groups",
     )
 
 
