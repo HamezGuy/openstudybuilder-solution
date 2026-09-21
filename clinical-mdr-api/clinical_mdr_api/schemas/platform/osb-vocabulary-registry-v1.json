@@ -1,0 +1,1097 @@
+{
+  "contractVersion": "OsbVocabularyRegistryV1@1.0.0",
+  "version": "1.0.0",
+  "owner": "ClinicalSemanticLayer",
+  "canonicalNames": "OpenStudyBuilder clinical_mdr_api/services/integrations/proposal_target_capabilities.py TARGET_CAPABILITIES",
+  "sources": {
+    "ruleset": {
+      "path": "packages/mappings/il-to-usdm-v4.rules.json",
+      "version": "1.16.0"
+    },
+    "cslMirror": "packages/semantic-core/src/osb-target-rules-v1.ts",
+    "cslCapabilityCopy": "packages/semantic-core/src/osb-target-capabilities.ts",
+    "osbCapabilities": "clinical_mdr_api/services/integrations/proposal_target_capabilities.py",
+    "osbFamilyMap": "clinical_mdr_api/services/integrations/osb_family_map.py",
+    "osbFamilyAliases": {
+      "edit_checks": "odm_methods",
+      "conditions": "odm_conditions",
+      "branching": "odm_aliases",
+      "assignments": "activity_schedules"
+    }
+  },
+  "correspondenceVocabulary": {
+    "exact": "the CSL type and the OSB resource type name the same kind of object",
+    "broader": "the CSL type covers more than the OSB resource type (or the reverse is a selection of it)",
+    "narrower": "the CSL type is one facet of the OSB resource type",
+    "edge": "the OSB resource type is a relationship; CSL states it as a link type",
+    "property": "the OSB resource type is a property of a CSL object, not an object",
+    "none": "no CSL object corresponds; the content is an extension, narrative, pin or unresolved work item"
+  },
+  "rows": [
+    {
+      "osbResourceType": "StudyMetadata",
+      "rulesetAliases": [],
+      "cslObjectType": "Study",
+      "correspondence": "broader",
+      "cslAssertionTypes": [
+        "STOPPING_RULE",
+        "STUDY_ADMINISTRATION_FACT",
+        "STUDY_DESIGN_ATTRIBUTE"
+      ],
+      "cslCapability": "native_study_mutation",
+      "cslExecutable": true,
+      "osbCapability": "native_study_mutation",
+      "osbNativeExecutor": true,
+      "osbSelection": false,
+      "osbDualMode": false,
+      "osbCreateRequest": true,
+      "osbDeclinable": false,
+      "osbFamily": "study_metadata",
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": null,
+      "osbNodeLabels": [
+        "StudyValue",
+        "StudyTextField",
+        "StudyIntField",
+        "StudyBooleanField",
+        "StudyTimeField",
+        "StudyArrayField",
+        "StudyProjectField"
+      ],
+      "apiPath": "/studies/{studyUid}",
+      "semanticMismatch": false,
+      "note": "Study metadata fields are properties of Study, StudyDesign and StudyVersion in CSL (STUDY_DESIGN_ATTRIBUTE, STOPPING_RULE and STUDY_ADMINISTRATION_FACT route here); OSB stores one typed StudyField node per configured field."
+    },
+    {
+      "osbResourceType": "StudyStandardVersion",
+      "rulesetAliases": [],
+      "cslObjectType": null,
+      "correspondence": "none",
+      "cslAssertionTypes": [],
+      "cslCapability": null,
+      "cslExecutable": false,
+      "osbCapability": "native_study_mutation",
+      "osbNativeExecutor": true,
+      "osbSelection": false,
+      "osbDualMode": false,
+      "osbCreateRequest": true,
+      "osbDeclinable": true,
+      "osbFamily": null,
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": null,
+      "osbNodeLabels": [
+        "StudyStandardVersion",
+        "CTPackage"
+      ],
+      "apiPath": "/studies/{studyUid}/study-standard-versions",
+      "semanticMismatch": false,
+      "note": "The CT package pinned for a study; CSL pins terminology per binding (terminology_binding.version) and per release, not as an object."
+    },
+    {
+      "osbResourceType": "StudySelectionObjective",
+      "rulesetAliases": [],
+      "cslObjectType": "Objective",
+      "correspondence": "exact",
+      "cslAssertionTypes": [
+        "STUDY_OBJECTIVE"
+      ],
+      "cslCapability": "native_study_mutation",
+      "cslExecutable": true,
+      "osbCapability": "native_study_mutation",
+      "osbNativeExecutor": true,
+      "osbSelection": true,
+      "osbDualMode": false,
+      "osbCreateRequest": false,
+      "osbDeclinable": false,
+      "osbFamily": "objective_templates",
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": {
+        "root": "ObjectiveTemplateRoot",
+        "value": "ObjectiveTemplateValue"
+      },
+      "osbNodeLabels": [
+        "StudyObjective",
+        "ObjectiveTemplateRoot",
+        "ObjectiveTemplateValue"
+      ],
+      "apiPath": "/studies/{studyUid}/study-objectives",
+      "semanticMismatch": false,
+      "note": ""
+    },
+    {
+      "osbResourceType": "StudySelectionEndpoint",
+      "rulesetAliases": [],
+      "cslObjectType": "Endpoint",
+      "correspondence": "exact",
+      "cslAssertionTypes": [
+        "STUDY_ENDPOINT"
+      ],
+      "cslCapability": "native_study_mutation",
+      "cslExecutable": true,
+      "osbCapability": "native_study_mutation",
+      "osbNativeExecutor": true,
+      "osbSelection": true,
+      "osbDualMode": false,
+      "osbCreateRequest": false,
+      "osbDeclinable": false,
+      "osbFamily": "endpoint_templates",
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": {
+        "root": "EndpointTemplateRoot",
+        "value": "EndpointTemplateValue"
+      },
+      "osbNodeLabels": [
+        "StudyEndpoint",
+        "EndpointTemplateRoot",
+        "EndpointTemplateValue"
+      ],
+      "apiPath": "/studies/{studyUid}/study-endpoints",
+      "semanticMismatch": false,
+      "note": ""
+    },
+    {
+      "osbResourceType": "StudySelectionCriteria",
+      "rulesetAliases": [],
+      "cslObjectType": "EligibilityCriterion",
+      "correspondence": "exact",
+      "cslAssertionTypes": [
+        "ELIGIBILITY_EXCLUSION",
+        "ELIGIBILITY_INCLUSION"
+      ],
+      "cslCapability": "native_study_mutation",
+      "cslExecutable": true,
+      "osbCapability": "native_study_mutation",
+      "osbNativeExecutor": true,
+      "osbSelection": true,
+      "osbDualMode": false,
+      "osbCreateRequest": false,
+      "osbDeclinable": false,
+      "osbFamily": "criteria_templates",
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": {
+        "root": "CriteriaTemplateRoot",
+        "value": "CriteriaTemplateValue"
+      },
+      "osbNodeLabels": [
+        "StudyCriteria",
+        "CriteriaTemplateRoot",
+        "CriteriaTemplateValue"
+      ],
+      "apiPath": "/studies/{studyUid}/study-criteria",
+      "semanticMismatch": false,
+      "note": ""
+    },
+    {
+      "osbResourceType": "StudySelectionCompound",
+      "rulesetAliases": [],
+      "cslObjectType": "StudyIntervention",
+      "correspondence": "broader",
+      "cslAssertionTypes": [
+        "MEDICINAL_PRODUCT"
+      ],
+      "cslCapability": "requires_compound_product_relationship",
+      "cslExecutable": false,
+      "osbCapability": "native_study_mutation",
+      "osbNativeExecutor": true,
+      "osbSelection": true,
+      "osbDualMode": false,
+      "osbCreateRequest": false,
+      "osbDeclinable": true,
+      "osbFamily": "compound_product_relationships",
+      "osbFamilyBlockerOnly": true,
+      "osbReadModel": null,
+      "osbNodeLabels": [
+        "StudyCompound",
+        "CompoundRoot",
+        "CompoundValue",
+        "MedicinalProductRoot"
+      ],
+      "apiPath": "/studies/{studyUid}/study-compounds",
+      "semanticMismatch": false,
+      "note": "Blocker-only family: the compound-product relationship must resolve in the library before a native write."
+    },
+    {
+      "osbResourceType": "StudyCompoundDosing",
+      "rulesetAliases": [],
+      "cslObjectType": "DosingRegimen",
+      "correspondence": "exact",
+      "cslAssertionTypes": [
+        "DOSING_REGIMEN"
+      ],
+      "cslCapability": "requires_study_compound_dosing_relationship",
+      "cslExecutable": false,
+      "osbCapability": "native_study_mutation",
+      "osbNativeExecutor": true,
+      "osbSelection": false,
+      "osbDualMode": false,
+      "osbCreateRequest": true,
+      "osbDeclinable": true,
+      "osbFamily": "study_compound_dosing_relationships",
+      "osbFamilyBlockerOnly": true,
+      "osbReadModel": null,
+      "osbNodeLabels": [
+        "StudyCompoundDosing"
+      ],
+      "apiPath": "/studies/{studyUid}/study-compound-dosings",
+      "semanticMismatch": false,
+      "note": "Blocker-only family (USDM dosing normalization required)."
+    },
+    {
+      "osbResourceType": "StudySelectionArm",
+      "rulesetAliases": [],
+      "cslObjectType": "StudyArm",
+      "correspondence": "exact",
+      "cslAssertionTypes": [
+        "STUDY_ARM"
+      ],
+      "cslCapability": "native_study_mutation",
+      "cslExecutable": true,
+      "osbCapability": "native_study_mutation",
+      "osbNativeExecutor": true,
+      "osbSelection": false,
+      "osbDualMode": false,
+      "osbCreateRequest": true,
+      "osbDeclinable": false,
+      "osbFamily": null,
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": null,
+      "osbNodeLabels": [
+        "StudyArm"
+      ],
+      "apiPath": "/studies/{studyUid}/study-arms",
+      "semanticMismatch": false,
+      "note": "Executed by resource type through the study executor, not through a section family."
+    },
+    {
+      "osbResourceType": "StudySelectionElement",
+      "rulesetAliases": [],
+      "cslObjectType": "StudyElement",
+      "correspondence": "exact",
+      "cslAssertionTypes": [
+        "STUDY_ELEMENT"
+      ],
+      "cslCapability": "native_study_mutation",
+      "cslExecutable": true,
+      "osbCapability": "native_study_mutation",
+      "osbNativeExecutor": true,
+      "osbSelection": false,
+      "osbDualMode": false,
+      "osbCreateRequest": true,
+      "osbDeclinable": false,
+      "osbFamily": null,
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": null,
+      "osbNodeLabels": [
+        "StudyElement"
+      ],
+      "apiPath": "/studies/{studyUid}/study-elements",
+      "semanticMismatch": false,
+      "note": ""
+    },
+    {
+      "osbResourceType": "StudyEpoch",
+      "rulesetAliases": [],
+      "cslObjectType": "StudyEpoch",
+      "correspondence": "exact",
+      "cslAssertionTypes": [
+        "STUDY_EPOCH"
+      ],
+      "cslCapability": "native_study_mutation",
+      "cslExecutable": true,
+      "osbCapability": "native_study_mutation",
+      "osbNativeExecutor": true,
+      "osbSelection": false,
+      "osbDualMode": false,
+      "osbCreateRequest": true,
+      "osbDeclinable": false,
+      "osbFamily": null,
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": null,
+      "osbNodeLabels": [
+        "StudyEpoch"
+      ],
+      "apiPath": "/studies/{studyUid}/study-epochs",
+      "semanticMismatch": false,
+      "note": ""
+    },
+    {
+      "osbResourceType": "StudyDesignCell",
+      "rulesetAliases": [],
+      "cslObjectType": "StudyCell",
+      "correspondence": "exact",
+      "cslAssertionTypes": [
+        "STUDY_DESIGN_CELL"
+      ],
+      "cslCapability": "native_study_mutation",
+      "cslExecutable": true,
+      "osbCapability": "native_study_mutation",
+      "osbNativeExecutor": true,
+      "osbSelection": false,
+      "osbDualMode": false,
+      "osbCreateRequest": true,
+      "osbDeclinable": false,
+      "osbFamily": null,
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": null,
+      "osbNodeLabels": [
+        "StudyDesignCell"
+      ],
+      "apiPath": "/studies/{studyUid}/study-design-cells",
+      "semanticMismatch": false,
+      "note": ""
+    },
+    {
+      "osbResourceType": "StudyVisit",
+      "rulesetAliases": [],
+      "cslObjectType": "Encounter",
+      "correspondence": "exact",
+      "cslAssertionTypes": [
+        "STUDY_VISIT"
+      ],
+      "cslCapability": "native_study_mutation",
+      "cslExecutable": true,
+      "osbCapability": "native_study_mutation",
+      "osbNativeExecutor": true,
+      "osbSelection": false,
+      "osbDualMode": false,
+      "osbCreateRequest": true,
+      "osbDeclinable": false,
+      "osbFamily": null,
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": null,
+      "osbNodeLabels": [
+        "StudyVisit",
+        "TimePointRoot",
+        "StudyDayRoot",
+        "StudyWeekRoot",
+        "VisitNameRoot"
+      ],
+      "apiPath": "/studies/{studyUid}/study-visits",
+      "semanticMismatch": false,
+      "note": "Timing and window travel as the simple-concept chain on the visit; CSL keeps Timing as an object of its own."
+    },
+    {
+      "osbResourceType": "StudySelectionActivity",
+      "rulesetAliases": [],
+      "cslObjectType": "Activity",
+      "correspondence": "exact",
+      "cslAssertionTypes": [
+        "ECG_MEASUREMENT",
+        "LAB_PANEL",
+        "MEDICAL_HISTORY_FIELD",
+        "PROCEDURE_ASSESSMENT",
+        "QUALITY_OF_LIFE",
+        "SPECIAL_LAB",
+        "STUDY_SOA_ACTIVITY",
+        "VITAL_SIGN_MEASUREMENT"
+      ],
+      "cslCapability": "native_study_mutation",
+      "cslExecutable": true,
+      "osbCapability": "native_study_mutation",
+      "osbNativeExecutor": true,
+      "osbSelection": true,
+      "osbDualMode": false,
+      "osbCreateRequest": false,
+      "osbDeclinable": false,
+      "osbFamily": "activities",
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": {
+        "root": "ActivityRoot",
+        "value": "ActivityValue"
+      },
+      "osbNodeLabels": [
+        "StudyActivity",
+        "ActivityRoot",
+        "ActivityValue"
+      ],
+      "apiPath": "/studies/{studyUid}/study-activities",
+      "semanticMismatch": false,
+      "note": ""
+    },
+    {
+      "osbResourceType": "StudyActivitySchedule",
+      "rulesetAliases": [],
+      "cslObjectType": "ScheduleOccurrence",
+      "correspondence": "exact",
+      "cslAssertionTypes": [
+        "STUDY_ACTIVITY_SCHEDULE"
+      ],
+      "cslCapability": "requires_scoped_schedule_identity_and_applicability",
+      "cslExecutable": false,
+      "osbCapability": "native_study_mutation",
+      "osbNativeExecutor": true,
+      "osbSelection": false,
+      "osbDualMode": false,
+      "osbCreateRequest": true,
+      "osbDeclinable": false,
+      "osbFamily": "activity_schedules",
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": {
+        "root": "StudyActivitySchedule",
+        "value": null
+      },
+      "osbNodeLabels": [
+        "StudyActivitySchedule"
+      ],
+      "apiPath": "/studies/{studyUid}/study-activity-schedules",
+      "semanticMismatch": false,
+      "note": "ScheduledActivityInstance (USDM-native) is a second CSL representation of the same schedule cell (R9)."
+    },
+    {
+      "osbResourceType": "StudyActivityInstruction",
+      "rulesetAliases": [],
+      "cslObjectType": null,
+      "correspondence": "none",
+      "cslAssertionTypes": [
+        "CONDITIONAL_PROCEDURE"
+      ],
+      "cslCapability": "requires_instruction_template_mapping",
+      "cslExecutable": false,
+      "osbCapability": "native_study_mutation",
+      "osbNativeExecutor": true,
+      "osbSelection": true,
+      "osbDualMode": false,
+      "osbCreateRequest": false,
+      "osbDeclinable": true,
+      "osbFamily": "activity_instruction_templates",
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": {
+        "root": "ActivityInstructionTemplateRoot",
+        "value": "ActivityInstructionTemplateValue"
+      },
+      "osbNodeLabels": [
+        "StudyActivityInstruction",
+        "ActivityInstructionTemplateRoot",
+        "ActivityInstructionTemplateValue"
+      ],
+      "apiPath": "/studies/{studyUid}/study-activity-instructions/batch",
+      "semanticMismatch": false,
+      "note": "CONDITIONAL_PROCEDURE routes here as a governed extension of Activity; CSL has no instruction object."
+    },
+    {
+      "osbResourceType": "CTTerm",
+      "rulesetAliases": [
+        "CtTerm"
+      ],
+      "cslObjectType": "Code",
+      "correspondence": "exact",
+      "cslAssertionTypes": [
+        "CT_TERM_STATEMENT"
+      ],
+      "cslCapability": "requires_library_mapping",
+      "cslExecutable": false,
+      "osbCapability": "governed_library_reference",
+      "osbNativeExecutor": false,
+      "osbSelection": false,
+      "osbDualMode": false,
+      "osbCreateRequest": false,
+      "osbDeclinable": false,
+      "osbFamily": "controlled_terminology",
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": {
+        "root": "CTTermRoot",
+        "value": null
+      },
+      "osbNodeLabels": [
+        "CTTermRoot",
+        "CTTermNameRoot",
+        "CTTermAttributesRoot",
+        "CTTermContext"
+      ],
+      "apiPath": "/ct/terms",
+      "semanticMismatch": false,
+      "note": ""
+    },
+    {
+      "osbResourceType": "CTCodelist",
+      "rulesetAliases": [
+        "CtCodelist"
+      ],
+      "cslObjectType": "CodeList",
+      "correspondence": "exact",
+      "cslAssertionTypes": [
+        "CT_CODELIST_STATEMENT"
+      ],
+      "cslCapability": "requires_library_mapping",
+      "cslExecutable": false,
+      "osbCapability": "governed_library_reference",
+      "osbNativeExecutor": false,
+      "osbSelection": false,
+      "osbDualMode": false,
+      "osbCreateRequest": false,
+      "osbDeclinable": false,
+      "osbFamily": "controlled_terminology_codelists",
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": {
+        "root": "CTCodelistRoot",
+        "value": null
+      },
+      "osbNodeLabels": [
+        "CTCodelistRoot",
+        "CTCodelistNameRoot",
+        "CTCodelistAttributesRoot"
+      ],
+      "apiPath": "/ct/codelists",
+      "semanticMismatch": false,
+      "note": ""
+    },
+    {
+      "osbResourceType": "UnitDefinition",
+      "rulesetAliases": [],
+      "cslObjectType": "Unit",
+      "correspondence": "exact",
+      "cslAssertionTypes": [
+        "UNIT_STATEMENT"
+      ],
+      "cslCapability": "requires_library_mapping",
+      "cslExecutable": false,
+      "osbCapability": "governed_library_reference",
+      "osbNativeExecutor": false,
+      "osbSelection": false,
+      "osbDualMode": false,
+      "osbCreateRequest": false,
+      "osbDeclinable": false,
+      "osbFamily": "units",
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": {
+        "root": "UnitDefinitionRoot",
+        "value": "UnitDefinitionValue"
+      },
+      "osbNodeLabels": [
+        "UnitDefinitionRoot",
+        "UnitDefinitionValue"
+      ],
+      "apiPath": "/concepts/unit-definitions",
+      "semanticMismatch": false,
+      "note": ""
+    },
+    {
+      "osbResourceType": "DatasetVariable",
+      "rulesetAliases": [
+        "CdashVariable"
+      ],
+      "cslObjectType": null,
+      "correspondence": "property",
+      "cslAssertionTypes": [
+        "CDASH_VARIABLE_BINDING"
+      ],
+      "cslCapability": "requires_library_mapping",
+      "cslExecutable": false,
+      "osbCapability": "governed_library_reference",
+      "osbNativeExecutor": false,
+      "osbSelection": false,
+      "osbDualMode": false,
+      "osbCreateRequest": false,
+      "osbDeclinable": false,
+      "osbFamily": "cdash_variables",
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": {
+        "root": "DatasetVariable",
+        "value": null
+      },
+      "osbNodeLabels": [
+        "DatasetVariable",
+        "VariableClass"
+      ],
+      "apiPath": "/standards/dataset-variables",
+      "semanticMismatch": false,
+      "note": "A CDASH or SDTM variable is the cdashVariable / sdtmVariable property of a CSL Item and of claim revisions, never an object."
+    },
+    {
+      "osbResourceType": "Activity",
+      "rulesetAliases": [],
+      "cslObjectType": "Activity",
+      "correspondence": "exact",
+      "cslAssertionTypes": [],
+      "cslCapability": null,
+      "cslExecutable": false,
+      "osbCapability": "governed_library_reference",
+      "osbNativeExecutor": false,
+      "osbSelection": false,
+      "osbDualMode": false,
+      "osbCreateRequest": false,
+      "osbDeclinable": false,
+      "osbFamily": "activities",
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": {
+        "root": "ActivityRoot",
+        "value": "ActivityValue"
+      },
+      "osbNodeLabels": [
+        "ActivityRoot",
+        "ActivityValue"
+      ],
+      "apiPath": "/concepts/activities/activities",
+      "semanticMismatch": false,
+      "note": "The library item behind StudySelectionActivity."
+    },
+    {
+      "osbResourceType": "ActivityInstance",
+      "rulesetAliases": [],
+      "cslObjectType": "BiomedicalConcept",
+      "correspondence": "exact",
+      "cslAssertionTypes": [],
+      "cslCapability": null,
+      "cslExecutable": false,
+      "osbCapability": "governed_library_reference",
+      "osbNativeExecutor": false,
+      "osbSelection": false,
+      "osbDualMode": false,
+      "osbCreateRequest": false,
+      "osbDeclinable": false,
+      "osbFamily": null,
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": null,
+      "osbNodeLabels": [
+        "ActivityInstanceRoot",
+        "ActivityInstanceValue",
+        "ActivityItem"
+      ],
+      "apiPath": "/concepts/activities/activity-instances",
+      "semanticMismatch": false,
+      "note": "The concept bridge (plan items A3, A4): derived implements and measures edges keyed by scoped external identifiers; no signed truth."
+    },
+    {
+      "osbResourceType": "Timeframe",
+      "rulesetAliases": [],
+      "cslObjectType": null,
+      "correspondence": "property",
+      "cslAssertionTypes": [
+        "ENDPOINT_TIMEFRAME"
+      ],
+      "cslCapability": "requires_library_mapping",
+      "cslExecutable": false,
+      "osbCapability": "governed_library_reference",
+      "osbNativeExecutor": false,
+      "osbSelection": false,
+      "osbDualMode": false,
+      "osbCreateRequest": false,
+      "osbDeclinable": false,
+      "osbFamily": "timeframes",
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": {
+        "root": "TimeframeRoot",
+        "value": "TimeframeValue"
+      },
+      "osbNodeLabels": [
+        "TimeframeRoot",
+        "TimeframeValue",
+        "TimeframeTemplateRoot"
+      ],
+      "apiPath": "/timeframes",
+      "semanticMismatch": false,
+      "note": "ENDPOINT_TIMEFRAME is a governed extension of the Endpoint; the timeframe is a property, not an object, in CSL."
+    },
+    {
+      "osbResourceType": "MedicinalProduct",
+      "rulesetAliases": [],
+      "cslObjectType": "MedicinalProduct",
+      "correspondence": "exact",
+      "cslAssertionTypes": [],
+      "cslCapability": null,
+      "cslExecutable": false,
+      "osbCapability": "governed_library_reference",
+      "osbNativeExecutor": false,
+      "osbSelection": false,
+      "osbDualMode": false,
+      "osbCreateRequest": false,
+      "osbDeclinable": false,
+      "osbFamily": null,
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": null,
+      "osbNodeLabels": [
+        "MedicinalProductRoot",
+        "MedicinalProductValue"
+      ],
+      "apiPath": "/concepts/medicinal-products",
+      "semanticMismatch": false,
+      "note": ""
+    },
+    {
+      "osbResourceType": "PharmaceuticalProduct",
+      "rulesetAliases": [],
+      "cslObjectType": "AdministrableProduct",
+      "correspondence": "exact",
+      "cslAssertionTypes": [],
+      "cslCapability": null,
+      "cslExecutable": false,
+      "osbCapability": "governed_library_reference",
+      "osbNativeExecutor": false,
+      "osbSelection": false,
+      "osbDualMode": false,
+      "osbCreateRequest": false,
+      "osbDeclinable": false,
+      "osbFamily": null,
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": null,
+      "osbNodeLabels": [
+        "PharmaceuticalProductRoot",
+        "PharmaceuticalProductValue"
+      ],
+      "apiPath": "/concepts/pharmaceutical-products",
+      "semanticMismatch": false,
+      "note": ""
+    },
+    {
+      "osbResourceType": "OdmForm",
+      "rulesetAliases": [],
+      "cslObjectType": "Form",
+      "correspondence": "exact",
+      "cslAssertionTypes": [
+        "STUDY_FORM"
+      ],
+      "cslCapability": "requires_library_mapping",
+      "cslExecutable": false,
+      "osbCapability": "governed_library_reference",
+      "osbNativeExecutor": true,
+      "osbSelection": false,
+      "osbDualMode": true,
+      "osbCreateRequest": true,
+      "osbDeclinable": false,
+      "osbFamily": "odm_forms",
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": {
+        "root": "OdmFormRoot",
+        "value": "OdmFormValue"
+      },
+      "osbNodeLabels": [
+        "OdmFormRoot",
+        "OdmFormValue"
+      ],
+      "apiPath": "/odms/forms",
+      "semanticMismatch": false,
+      "note": ""
+    },
+    {
+      "osbResourceType": "OdmItemGroup",
+      "rulesetAliases": [],
+      "cslObjectType": "ItemGroup",
+      "correspondence": "exact",
+      "cslAssertionTypes": [
+        "STUDY_ITEM_GROUP"
+      ],
+      "cslCapability": "requires_library_mapping",
+      "cslExecutable": false,
+      "osbCapability": "governed_library_reference",
+      "osbNativeExecutor": true,
+      "osbSelection": false,
+      "osbDualMode": true,
+      "osbCreateRequest": true,
+      "osbDeclinable": false,
+      "osbFamily": "odm_item_groups",
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": {
+        "root": "OdmItemGroupRoot",
+        "value": "OdmItemGroupValue"
+      },
+      "osbNodeLabels": [
+        "OdmItemGroupRoot",
+        "OdmItemGroupValue"
+      ],
+      "apiPath": "/odms/item-groups",
+      "semanticMismatch": false,
+      "note": ""
+    },
+    {
+      "osbResourceType": "OdmItem",
+      "rulesetAliases": [],
+      "cslObjectType": "Item",
+      "correspondence": "exact",
+      "cslAssertionTypes": [
+        "STUDY_ITEM"
+      ],
+      "cslCapability": "requires_library_mapping",
+      "cslExecutable": false,
+      "osbCapability": "governed_library_reference",
+      "osbNativeExecutor": true,
+      "osbSelection": false,
+      "osbDualMode": true,
+      "osbCreateRequest": true,
+      "osbDeclinable": false,
+      "osbFamily": "odm_items",
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": {
+        "root": "OdmItemRoot",
+        "value": "OdmItemValue"
+      },
+      "osbNodeLabels": [
+        "OdmItemRoot",
+        "OdmItemValue"
+      ],
+      "apiPath": "/odms/items",
+      "semanticMismatch": false,
+      "note": ""
+    },
+    {
+      "osbResourceType": "OdmMethod",
+      "rulesetAliases": [],
+      "cslObjectType": "OdmMethod",
+      "correspondence": "exact",
+      "cslAssertionTypes": [
+        "EDIT_CHECK"
+      ],
+      "cslCapability": "requires_library_mapping",
+      "cslExecutable": false,
+      "osbCapability": "governed_library_reference",
+      "osbNativeExecutor": true,
+      "osbSelection": false,
+      "osbDualMode": true,
+      "osbCreateRequest": true,
+      "osbDeclinable": false,
+      "osbFamily": "odm_methods",
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": {
+        "root": "OdmMethodRoot",
+        "value": "OdmMethodValue"
+      },
+      "osbNodeLabels": [
+        "OdmMethodRoot",
+        "OdmMethodValue"
+      ],
+      "apiPath": null,
+      "semanticMismatch": true,
+      "note": "EDIT_CHECK routes here and OSB aliases edit_checks to odm_methods, but an ODM Method is a derivation and a CSL ValidationRule is a constraint (F11, R7); ValidationRule has no OSB counterpart."
+    },
+    {
+      "osbResourceType": "OdmCondition",
+      "rulesetAliases": [],
+      "cslObjectType": "OdmCondition",
+      "correspondence": "exact",
+      "cslAssertionTypes": [
+        "FIELD_CONDITION"
+      ],
+      "cslCapability": "requires_library_mapping",
+      "cslExecutable": false,
+      "osbCapability": "governed_library_reference",
+      "osbNativeExecutor": true,
+      "osbSelection": false,
+      "osbDualMode": true,
+      "osbCreateRequest": true,
+      "osbDeclinable": false,
+      "osbFamily": "odm_conditions",
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": {
+        "root": "OdmConditionRoot",
+        "value": "OdmConditionValue"
+      },
+      "osbNodeLabels": [
+        "OdmConditionRoot",
+        "OdmConditionValue"
+      ],
+      "apiPath": null,
+      "semanticMismatch": false,
+      "note": ""
+    },
+    {
+      "osbResourceType": "OdmItemActivityBinding",
+      "rulesetAliases": [],
+      "cslObjectType": null,
+      "correspondence": "edge",
+      "cslAssertionTypes": [],
+      "cslCapability": null,
+      "cslExecutable": false,
+      "osbCapability": "governed_library_reference",
+      "osbNativeExecutor": true,
+      "osbSelection": false,
+      "osbDualMode": false,
+      "osbCreateRequest": true,
+      "osbDeclinable": false,
+      "osbFamily": null,
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": null,
+      "osbNodeLabels": [
+        "ActivityItemRel (LINKS_TO_ACTIVITY_ITEM)"
+      ],
+      "apiPath": null,
+      "semanticMismatch": false,
+      "note": "An OSB relationship between OdmItem and ActivityItem; in CSL the edge is Item measures BiomedicalConcept (and implements)."
+    },
+    {
+      "osbResourceType": "OdmFormItemGroupLink",
+      "rulesetAliases": [],
+      "cslObjectType": null,
+      "correspondence": "edge",
+      "cslAssertionTypes": [],
+      "cslCapability": null,
+      "cslExecutable": false,
+      "osbCapability": "governed_library_reference",
+      "osbNativeExecutor": true,
+      "osbSelection": false,
+      "osbDualMode": false,
+      "osbCreateRequest": true,
+      "osbDeclinable": false,
+      "osbFamily": null,
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": null,
+      "osbNodeLabels": [
+        "ITEM_GROUP_REF (OdmFormRefRelation)"
+      ],
+      "apiPath": null,
+      "semanticMismatch": false,
+      "note": "CSL link containsGroup (Form to ItemGroup)."
+    },
+    {
+      "osbResourceType": "OdmItemGroupItemLink",
+      "rulesetAliases": [],
+      "cslObjectType": null,
+      "correspondence": "edge",
+      "cslAssertionTypes": [],
+      "cslCapability": null,
+      "cslExecutable": false,
+      "osbCapability": "governed_library_reference",
+      "osbNativeExecutor": true,
+      "osbSelection": false,
+      "osbDualMode": false,
+      "osbCreateRequest": true,
+      "osbDeclinable": false,
+      "osbFamily": null,
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": null,
+      "osbNodeLabels": [
+        "ITEM_REF (OdmItemRefRelation)"
+      ],
+      "apiPath": null,
+      "semanticMismatch": false,
+      "note": "CSL link containsItem (ItemGroup to Item)."
+    },
+    {
+      "osbResourceType": "ActivityItemClass",
+      "rulesetAliases": [],
+      "cslObjectType": "BiomedicalConceptBinding",
+      "correspondence": "narrower",
+      "cslAssertionTypes": [],
+      "cslCapability": null,
+      "cslExecutable": false,
+      "osbCapability": "governed_library_reference",
+      "osbNativeExecutor": false,
+      "osbSelection": false,
+      "osbDualMode": false,
+      "osbCreateRequest": false,
+      "osbDeclinable": false,
+      "osbFamily": null,
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": null,
+      "osbNodeLabels": [
+        "ActivityItemClassRoot",
+        "ActivityItemClassValue"
+      ],
+      "apiPath": null,
+      "semanticMismatch": false,
+      "note": "MAPS_VARIABLE_CLASS and HAS_VALID_CODELIST_FOR_ITEMS are the dataset-specialization half of a CSL concept binding."
+    },
+    {
+      "osbResourceType": "StudySelectionActivityInstance",
+      "rulesetAliases": [],
+      "cslObjectType": "BiomedicalConcept",
+      "correspondence": "broader",
+      "cslAssertionTypes": [],
+      "cslCapability": null,
+      "cslExecutable": false,
+      "osbCapability": "native_study_mutation",
+      "osbNativeExecutor": true,
+      "osbSelection": true,
+      "osbDualMode": false,
+      "osbCreateRequest": false,
+      "osbDeclinable": false,
+      "osbFamily": null,
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": null,
+      "osbNodeLabels": [
+        "StudyActivityInstance"
+      ],
+      "apiPath": null,
+      "semanticMismatch": false,
+      "note": "The study's selection of a library ActivityInstance; CSL scopes a concept to the study by identity, not by a selection object."
+    },
+    {
+      "osbResourceType": "IntegrationExtension",
+      "rulesetAliases": [],
+      "cslObjectType": null,
+      "correspondence": "none",
+      "cslAssertionTypes": [
+        "AESI_DEFINITION",
+        "AE_GRADING_SCALE",
+        "AE_REPORTING_RULES",
+        "CLINICAL_SEVERITY_SCORE",
+        "CONCOMITANT_MEDICATION_POLICY",
+        "CONSENT_ELEMENT",
+        "DLT_DEFINITION",
+        "DOSE_MODIFICATION",
+        "PREGNANCY_REPORTING",
+        "PROTOCOL_OBLIGATION",
+        "SAE_PROCEDURES",
+        "USER_AUTHORED",
+        "VALIDATION_RULE_SOURCE",
+        "WITHDRAWAL_CRITERION"
+      ],
+      "cslCapability": "governed_extension",
+      "cslExecutable": false,
+      "osbCapability": "governed_extension",
+      "osbNativeExecutor": false,
+      "osbSelection": false,
+      "osbDualMode": false,
+      "osbCreateRequest": false,
+      "osbDeclinable": false,
+      "osbFamily": null,
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": null,
+      "osbNodeLabels": [
+        "PlatformManagedStudyConcept"
+      ],
+      "apiPath": null,
+      "semanticMismatch": false,
+      "note": "Governed extension payloads (14 rules); they stay properties of the CSL object they extend."
+    },
+    {
+      "osbResourceType": "RetainedNarrative",
+      "rulesetAliases": [],
+      "cslObjectType": "NarrativeContent",
+      "correspondence": "broader",
+      "cslAssertionTypes": [
+        "PROTOCOL_STATEMENT",
+        "RETAINED_SOURCE_RECORD",
+        "STATISTICAL_CONSIDERATION"
+      ],
+      "cslCapability": "retained_narrative",
+      "cslExecutable": false,
+      "osbCapability": "retained_narrative",
+      "osbNativeExecutor": false,
+      "osbSelection": false,
+      "osbDualMode": false,
+      "osbCreateRequest": false,
+      "osbDeclinable": false,
+      "osbFamily": null,
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": null,
+      "osbNodeLabels": [
+        "PlatformManagedStudyConcept"
+      ],
+      "apiPath": null,
+      "semanticMismatch": false,
+      "note": "Verbatim sentences are retained as claims in CSL; NarrativeContent only when a definition must reference a text as a whole."
+    },
+    {
+      "osbResourceType": "Unresolved",
+      "rulesetAliases": [],
+      "cslObjectType": null,
+      "correspondence": "none",
+      "cslAssertionTypes": [],
+      "cslCapability": null,
+      "cslExecutable": false,
+      "osbCapability": "unresolved",
+      "osbNativeExecutor": false,
+      "osbSelection": false,
+      "osbDualMode": false,
+      "osbCreateRequest": false,
+      "osbDeclinable": false,
+      "osbFamily": null,
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": null,
+      "osbNodeLabels": [],
+      "apiPath": null,
+      "semanticMismatch": false,
+      "note": "Content OSB could not route; a retained work item in CSL."
+    }
+  ],
+  "registryHash": "sha256:3b0e931cede719b3c1a8a438823ef925ea5f4782b16a3eadb441255aa279d3be"
+}
