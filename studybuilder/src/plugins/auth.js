@@ -1,7 +1,6 @@
 import { eventBusEmit } from './eventBus'
 import { UserManager } from 'oidc-client-ts'
 import roles from '@/constants/roles'
-import { Buffer } from 'buffer'
 
 let manager = null
 let gatewayToken = null
@@ -106,11 +105,7 @@ const authInterface = {
       const user = await manager.getUser()
       if (user && !user.expired && user.access_token) {
         try {
-          return formatUserInfo(
-            JSON.parse(
-              Buffer.from(user.access_token.split('.')[1], 'base64').toString()
-            )
-          )
+          return formatUserInfo(decodeTokenPayload(user.access_token))
         } catch {
           return null
         }
