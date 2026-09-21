@@ -5,10 +5,9 @@ import importlib
 import sys
 from typing import Any
 
-from fastapi.exceptions import RequestValidationError
 from opencensus.trace.print_exporter import PrintExporter
 
-from common.logger import default_logging_config, log_exception
+from common.logger import default_logging_config
 from common.telemetry.request_metrics import patch_neomodel_database
 from common.telemetry.tracing_middleware import TracingMiddleware
 from extensions.common import get_api_version
@@ -20,25 +19,21 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, status
-from fastapi.encoders import jsonable_encoder
+from fastapi import FastAPI
 from fastapi.middleware import Middleware
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from neomodel import config as neomodel_config
 from opencensus.ext.azure.trace_exporter import AzureExporter
 from opencensus.trace.samplers import AlwaysOnSampler
-from pydantic import ValidationError
 from starlette_context.middleware import RawContextMiddleware
 
 from common.auth.dependencies import security
 from common.auth.discovery import reconfigure_with_openid_discovery
 from common.config import settings
-from common.exceptions import MDRApiBaseException
-from common.models.error import ErrorResponse
+from common.exception_handlers import register_exception_handlers
 from common.telemetry.traceback_middleware import ExceptionTracebackMiddleware
 
 log = logging.getLogger(__name__)
@@ -165,67 +160,7 @@ Microsoft Identity Platform documentation can be read
 app.openapi_version = "3.1.0"
 
 
-@app.exception_handler(MDRApiBaseException)
-async def extension_api_exception_handler(
-    request: Request, exception: MDRApiBaseException
-):
-    """Returns an HTTP error code associated to given exception."""
-
-    safe = await log_exception(request, exception)
-
-    ExceptionTracebackMiddleware.add_traceback_attributes(exception, safe["rejectionId"])
-
-    return JSONResponse(
-        status_code=exception.status_code,
-        content=jsonable_encoder(ErrorResponse(request, exception)),
-        headers=exception.headers,
-    )
-
-
-@app.exception_handler(ValidationError)
-async def pydantic_validation_error_handler(
-    request: Request, exception: ValidationError
-):
-    """Returns `400 Bad Request` http error status code in case Pydantic detects validation issues
-    with supplied payloads or parameters."""
-
-    safe = await log_exception(request, exception)
-
-    ExceptionTracebackMiddleware.add_traceback_attributes(exception, safe["rejectionId"])
-
-    return JSONResponse(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        content=jsonable_encoder(ErrorResponse(request, exception)),
-    )
-
-
-@app.exception_handler(RequestValidationError)
-async def handle_request_validation_error(
-    request: Request, exception: RequestValidationError
-) -> JSONResponse:
-    safe = await log_exception(request, exception)
-
-    ExceptionTracebackMiddleware.add_traceback_attributes(exception, safe["rejectionId"])
-
-    return JSONResponse(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        content=jsonable_encoder(ErrorResponse(request, exception)),
-        headers={},
-    )
-
-
-@app.exception_handler(ValueError)
-async def value_error_handler(request: Request, exception: ValueError):
-    """Returns `400 Bad Request` http error status code in case ValueError is raised"""
-
-    safe = await log_exception(request, exception)
-
-    ExceptionTracebackMiddleware.add_traceback_attributes(exception, safe["rejectionId"])
-
-    return JSONResponse(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        content=jsonable_encoder(ErrorResponse(request, exception)),
-    )
+register_exception_handlers(app, http_exception=False)
 
 
 class PathContext:

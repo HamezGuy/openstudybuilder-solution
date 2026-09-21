@@ -100,14 +100,24 @@ METADATA = definitions(
         "ValidationException": NativePreviewBusinessError,
     },
 )
-CAPTURE_PROJECTION = definitions(SERVICES / "native_capture_projection.py", dependencies=HASHING)
+CAPTURE_PROJECTION = definitions(
+    SERVICES / "native_capture_projection.py", dependencies=HASHING
+)
 CAPTURE_MAPPING = definitions(
     SERVICES / "native_capture_mapping.py",
     dependencies={**HASHING, **CAPTURE_PROJECTION, "db": DB},
 )
 CAPTURE_FIXTURE = definitions(
     Path(__file__).with_name("test_native_capture_mapping.py"),
-    {"TYPES", "source", "fixture", "NativePort", "apply", "selected_dependency_fixture", "selected_library_fixture"},
+    {
+        "TYPES",
+        "source",
+        "fixture",
+        "NativePort",
+        "apply",
+        "selected_dependency_fixture",
+        "selected_library_fixture",
+    },
     {**HASHING, **CAPTURE_PROJECTION, **CAPTURE_MAPPING},
 )
 MAPPING = definitions(
@@ -119,13 +129,24 @@ MAPPING = definitions(
         **REQUEST_VERSIONS,
         "db": DB,
         "apply_metadata_selections": METADATA["apply_metadata_selections"],
-        "apply_native_capture_selections": CAPTURE_MAPPING["apply_native_capture_selections"],
+        "apply_native_capture_selections": CAPTURE_MAPPING[
+            "apply_native_capture_selections"
+        ],
         "CAPTURE_READBACK_SCHEMA": CAPTURE_PROJECTION["CAPTURE_READBACK_SCHEMA"],
     },
 )
 SOURCE = definitions(
     Path(__file__).with_name("test_osb_mapping_decision_apply.py"),
-    {"TENANT", "STUDY", "OPENAPI", "NATIVE", "FakeQuery", "_hash", "_decision_pair", "capture_decision_pair"},
+    {
+        "TENANT",
+        "STUDY",
+        "OPENAPI",
+        "NATIVE",
+        "FakeQuery",
+        "_hash",
+        "_decision_pair",
+        "capture_decision_pair",
+    },
     {**HASHING, **CANDIDATE, **MAPPING, **CAPTURE_PROJECTION},
 )
 STATE = definitions(
@@ -139,7 +160,9 @@ STATE = definitions(
         **REQUEST_VERSIONS,
         **STUDY_HEADS,
         "read_capture_target": CAPTURE_MAPPING["read_capture_target"],
-        "assert_selected_capture_identity": CAPTURE_MAPPING["assert_selected_capture_identity"],
+        "assert_selected_capture_identity": CAPTURE_MAPPING[
+            "assert_selected_capture_identity"
+        ],
         "db": DB,
         "METADATA_PATHS": METADATA["METADATA_PATHS"],
         "normalize_metadata_value": METADATA["_normalized"],
@@ -363,8 +386,13 @@ def wire(
     capture_port = None
     if capture_graph is not None:
         capture_items, capture_port = capture_graph
-        spec = tuple((item["selection"]["action"], item["intent"]["resourceFamily"]) for item in capture_items)
-        request, candidate, decision, decision_artifact = SOURCE["capture_decision_pair"](capture_items, request_version)
+        spec = tuple(
+            (item["selection"]["action"], item["intent"]["resourceFamily"])
+            for item in capture_items
+        )
+        request, candidate, decision, decision_artifact = SOURCE[
+            "capture_decision_pair"
+        ](capture_items, request_version)
         intents = request["typedSourceIntents"]
         candidates = candidate["candidateRecords"]
         selections = decision["statement"]["selections"]
@@ -485,6 +513,7 @@ def wire(
         "semanticSnapshotHash": snapshot["payloadHash"],
         "actor": "synthetic-test",
         "createdAt": "2026-09-10T12:00:00.000Z",
+        "region": applied["artifactRef"]["region"],
         "producerEnvironment": "test",
         "producerVersion": "package-contract-test",
     }
@@ -885,69 +914,122 @@ def test_selected_native_and_created_managed_objects_retain_exact_source_evidenc
 def test_selected_capture_producer_csl_checkpoint_and_package_preserve_full_native_evidence():
     items, port = CAPTURE_FIXTURE["selected_library_fixture"]()
     items[0]["intent"]["source"]["context"] = {
-        "encounters": [], "relationships": [{"source": "synthetic", "condition": None}],
-        "semanticAssociations": None, "unresolvedRelationships": [],
+        "encounters": [],
+        "relationships": [{"source": "synthetic", "condition": None}],
+        "semanticAssociations": None,
+        "unresolvedRelationships": [],
         "encounterProjection": {
             "contract": "study-build-encounter-projection/1",
             "buildHash": "a" * 64,
-            "encounters": [{
-                "visitId": "visit-monthly", "visitLabel": "Monthly follow-up",
-                "timepoint": None, "required": False, "derivedFrom": "soa_matrix",
-                "evidenceRef": "source-table:row-4:col-2", "formObjectId": "form-a",
-                "properties": {"condition": None, "window": {"unit": "day", "value": 0}},
-                "occurrenceEvidence": [{"page": 14}, {"page": 15}],
-            }],
+            "encounters": [
+                {
+                    "visitId": "visit-monthly",
+                    "visitLabel": "Monthly follow-up",
+                    "timepoint": None,
+                    "required": False,
+                    "derivedFrom": "soa_matrix",
+                    "evidenceRef": "source-table:row-4:col-2",
+                    "formObjectId": "form-a",
+                    "properties": {
+                        "condition": None,
+                        "window": {"unit": "day", "value": 0},
+                    },
+                    "occurrenceEvidence": [{"page": 14}, {"page": 15}],
+                }
+            ],
         },
     }
     store = setup(request_version="1.3.0", capture_graph=(items, port))
     observed = state(store)
     assert len(observed["records"]) == len(items) == 6
     assert all(entry["sourceProjectionVerified"] for entry in observed["records"])
-    assert all(entry["selection"]["action"] == "select" for entry in observed["records"])
+    assert all(
+        entry["selection"]["action"] == "select" for entry in observed["records"]
+    )
     assert store.checkpoint["blockers"] == []
     assert store.capture.creates == store.capture.associations == []
-    intents = {STATE["_key"](intent): intent for intent in store.request["typedSourceIntents"]}
-    assert {STATE["_key"](entry["sourceIntent"]) for entry in observed["records"]} == set(intents)
+    intents = {
+        STATE["_key"](intent): intent for intent in store.request["typedSourceIntents"]
+    }
+    assert {
+        STATE["_key"](entry["sourceIntent"]) for entry in observed["records"]
+    } == set(intents)
     for entry in observed["records"]:
         intent = intents[STATE["_key"](entry["sourceIntent"])]
         assert entry["payload"]["sourceBinding"]["source"] == intent["source"]
         assert entry["sourceIntent"] == intent
-        assert entry["payload"]["native"] == store.capture.read(entry["resourceFamily"], entry["payload"]["uid"])
-    codelist = next(entry["payload"] for entry in observed["records"] if entry["resourceFamily"] == "controlled_terminology_codelists")
-    term = next(entry["payload"] for entry in observed["records"] if entry["resourceFamily"] == "controlled_terminology")
-    assert (codelist["native"]["name"]["version"], codelist["version"]) == ("2.0", "5.0")
+        assert entry["payload"]["native"] == store.capture.read(
+            entry["resourceFamily"], entry["payload"]["uid"]
+        )
+    codelist = next(
+        entry["payload"]
+        for entry in observed["records"]
+        if entry["resourceFamily"] == "controlled_terminology_codelists"
+    )
+    term = next(
+        entry["payload"]
+        for entry in observed["records"]
+        if entry["resourceFamily"] == "controlled_terminology"
+    )
+    assert (codelist["native"]["name"]["version"], codelist["version"]) == (
+        "2.0",
+        "5.0",
+    )
     assert (term["native"]["name"]["version"], term["version"]) == ("3.0", "7.0")
     package = generate(package_inputs(store, review(store)))
     assert len(package["payload"]["contentIndex"]) == 6
     assert canonical(package["payload"]["captureDesign"]["nativeRecords"]) == canonical(
-        [entry for entry in observed["records"] if entry["resourceFamily"].startswith("odm_")]
+        [
+            entry
+            for entry in observed["records"]
+            if entry["resourceFamily"].startswith("odm_")
+        ]
     )
 
 
 @pytest.mark.parametrize("select_group", [False, True])
-def test_selected_parent_created_child_graph_reaches_checkpoint_with_only_native_review_debt(select_group):
+def test_selected_parent_created_child_graph_reaches_checkpoint_with_only_native_review_debt(
+    select_group,
+):
     graph = CAPTURE_FIXTURE["selected_dependency_fixture"](select_group=select_group)
     store = setup(request_version="1.3.0", capture_graph=graph)
     observed = state(store)
     assert len(observed["records"]) == 6
-    assert all(entry["readBackHash"]["schemaVersion"] == CAPTURE_PROJECTION["CAPTURE_READBACK_SCHEMA"] for entry in observed["records"])
-    assert all(blocker["code"] == "NATIVE_CAPTURE_LIBRARY_REVIEW_REQUIRED" for blocker in store.checkpoint["blockers"])
+    assert all(
+        entry["readBackHash"]["schemaVersion"]
+        == CAPTURE_PROJECTION["CAPTURE_READBACK_SCHEMA"]
+        for entry in observed["records"]
+    )
+    assert all(
+        blocker["code"] == "NATIVE_CAPTURE_LIBRARY_REVIEW_REQUIRED"
+        for blocker in store.checkpoint["blockers"]
+    )
     assert store.checkpoint["blockers"]
     with pytest.raises(Error, match="Checkpoint is not zero-loss"):
         review(store)
     assert not store.writes
 
 
-@pytest.mark.parametrize("family,clock", [
-    ("odm_forms", "version"),
-    ("controlled_terminology_codelists", "name"),
-    ("controlled_terminology_codelists", "attributes"),
-    ("controlled_terminology", "name"),
-    ("controlled_terminology", "attributes"),
-])
+@pytest.mark.parametrize(
+    "family,clock",
+    [
+        ("odm_forms", "version"),
+        ("controlled_terminology_codelists", "name"),
+        ("controlled_terminology_codelists", "attributes"),
+        ("controlled_terminology", "name"),
+        ("controlled_terminology", "attributes"),
+    ],
+)
 def test_selected_capture_native_clock_changes_block_package_reread(family, clock):
-    store = setup(request_version="1.3.0", capture_graph=CAPTURE_FIXTURE["selected_library_fixture"]())
-    entry = next(record for record in state(store)["records"] if record["resourceFamily"] == family)
+    store = setup(
+        request_version="1.3.0",
+        capture_graph=CAPTURE_FIXTURE["selected_library_fixture"](),
+    )
+    entry = next(
+        record
+        for record in state(store)["records"]
+        if record["resourceFamily"] == family
+    )
     native = store.capture.values[entry["payload"]["uid"]]
     if clock == "version":
         native["version"] = "9.0"
@@ -961,14 +1043,22 @@ def test_selected_capture_native_clock_changes_block_package_reread(family, cloc
 
 
 @pytest.mark.parametrize("version", ["1.0.0", "1.1.0", "1.2.0"])
-def test_selected_full_capture_profile_is_not_accepted_for_historical_request_versions(version):
-    store = setup(request_version="1.3.0", capture_graph=CAPTURE_FIXTURE["selected_library_fixture"]())
+def test_selected_full_capture_profile_is_not_accepted_for_historical_request_versions(
+    version,
+):
+    store = setup(
+        request_version="1.3.0",
+        capture_graph=CAPTURE_FIXTURE["selected_library_fixture"](),
+    )
     operation = store.applied["payload"]["evidenceRecords"][0]["evidence"]
     with pytest.raises(Error):
         STATE["_verify_native_projection"](
-            operation, store.decision["statement"]["selections"][0],
-            store.request["typedSourceIntents"][0], store.candidate["candidateRecords"][0],
-            store.request["osbStudyIdentity"], request_contract_version=f"OsbCandidateRequestV1@{version}",
+            operation,
+            store.decision["statement"]["selections"][0],
+            store.request["typedSourceIntents"][0],
+            store.candidate["candidateRecords"][0],
+            store.request["osbStudyIdentity"],
+            request_contract_version=f"OsbCandidateRequestV1@{version}",
         )
 
 
@@ -1110,6 +1200,7 @@ def test_actual_package_bytes_validate_schema_and_csl_approval_consumer(
         "platformStudyId": STUDY,
         "actor": "synthetic-consumer",
         "createdAt": "2026-09-10T12:00:00.000Z",
+        "region": package["artifactRef"]["region"],
         "producerEnvironment": "test",
         "producerVersion": "contract-test",
     }
@@ -1342,10 +1433,13 @@ def test_unknown_metadata_profile_cannot_select_its_own_hash_schema():
 
 @pytest.mark.parametrize("version", ["1.2.0", "1.3.0"])
 @pytest.mark.parametrize("mode", ["distinct", "joined", "multi"])
-def test_actual_metadata_batch_readback_is_retained_and_matches_reviewed_values(mode, version):
+def test_actual_metadata_batch_readback_is_retained_and_matches_reviewed_values(
+    mode, version
+):
     store = setup(
         (("create", "study_metadata"), ("create", "study_metadata")),
-        metadata_mode=mode, request_version=version,
+        metadata_mode=mode,
+        request_version=version,
     )
     assert store.metadata.writes == [
         "lock",

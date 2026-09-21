@@ -9,7 +9,6 @@ from clinical_mdr_api.services.integrations.canonical_json import (
     canonical_json,
 )
 
-
 FIXTURE = json.loads(
     (
         Path(__file__).parents[5]
@@ -30,5 +29,7 @@ def test_api_matches_every_cross_language_vector():
 
 @pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf])
 def test_api_rejects_non_finite_numbers(value):
-    with pytest.raises(ValueError, match="CANONICAL_JSON_NON_FINITE_NUMBER"):
+    # The platform contract's PlatformHashError is a ValueError carrying the code.
+    with pytest.raises(ValueError) as error:
         canonical_json(value)
+    assert error.value.code == "CANONICAL_JSON_NON_FINITE_NUMBER"

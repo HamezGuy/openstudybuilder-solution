@@ -3,13 +3,11 @@
 # Placed at the top to ensure logging is configured before anything else is loaded
 from typing import Any
 
-from fastapi.exceptions import RequestValidationError
 from opencensus.trace.print_exporter import PrintExporter
-from pydantic import ValidationError
 
 from common.config import settings
 from common.database import configure_database
-from common.logger import default_logging_config, log_exception
+from common.logger import default_logging_config
 from common.telemetry.request_metrics import patch_neomodel_database
 from common.telemetry.tracing_middleware import TracingMiddleware
 
@@ -26,12 +24,10 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request, status
-from fastapi.encoders import jsonable_encoder
+from fastapi import FastAPI
 from fastapi.middleware import Middleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from opencensus.ext.azure.trace_exporter import AzureExporter
 from opencensus.trace.samplers import AlwaysOnSampler
@@ -39,8 +35,7 @@ from starlette_context.middleware import RawContextMiddleware
 
 from common.auth.dependencies import security
 from common.auth.discovery import reconfigure_with_openid_discovery
-from common.exceptions import MDRApiBaseException
-from common.models.error import ErrorResponse
+from common.exception_handlers import register_exception_handlers
 from common.telemetry.traceback_middleware import ExceptionTracebackMiddleware
 from consumer_api.shared.common import get_api_version
 from consumer_api.system.routes import router as system_router
@@ -154,64 +149,7 @@ Microsoft Identity Platform documentation can be read
 )
 
 
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exception: HTTPException):
-    """Returns an HTTP error code associated to given exception."""
-
-    safe = await log_exception(request, exception)
-
-    ExceptionTracebackMiddleware.add_traceback_attributes(exception, safe["rejectionId"])
-
-    return JSONResponse(
-        status_code=exception.status_code,
-        content=jsonable_encoder(ErrorResponse(request, exception)),
-        headers=exception.headers,
-    )
-
-
-@app.exception_handler(MDRApiBaseException)
-async def mdr_api_exception_handler(request: Request, exception: MDRApiBaseException):
-    """Returns an HTTP error code associated to given exception."""
-
-    safe = await log_exception(request, exception)
-
-    ExceptionTracebackMiddleware.add_traceback_attributes(exception, safe["rejectionId"])
-
-    return JSONResponse(
-        status_code=exception.status_code,
-        content=jsonable_encoder(ErrorResponse(request, exception)),
-        headers=exception.headers,
-    )
-
-
-@app.exception_handler(ValidationError)
-async def handle_validation_error(
-    request: Request, exception: ValidationError
-) -> JSONResponse:
-    safe = await log_exception(request, exception)
-
-    ExceptionTracebackMiddleware.add_traceback_attributes(exception, safe["rejectionId"])
-
-    return JSONResponse(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        content=jsonable_encoder(ErrorResponse(request, exception)),
-        headers={},
-    )
-
-
-@app.exception_handler(RequestValidationError)
-async def handle_request_validation_error(
-    request: Request, exception: RequestValidationError
-) -> JSONResponse:
-    safe = await log_exception(request, exception)
-
-    ExceptionTracebackMiddleware.add_traceback_attributes(exception, safe["rejectionId"])
-
-    return JSONResponse(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        content=jsonable_encoder(ErrorResponse(request, exception)),
-        headers={},
-    )
+register_exception_handlers(app, value_error=False)
 
 
 app.include_router(system_router, tags=["System"])

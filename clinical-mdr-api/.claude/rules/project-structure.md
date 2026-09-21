@@ -21,7 +21,8 @@
 
 ## Git Workflow
 
-- Uses Git-flow (main/develop branches, feature branches)
-- Pre-commit Hooks: Configured in `.pre-commit-config.yaml`
+- Work only on `main` in this primary checkout; never create another branch or worktree.
+- Preserve the main-only hooks and `core.hooksPath`; follow `C:\Projects\CLAUDE.md`.
+- Run the configured checks, commit finished work on `main`, and push the existing `origin`.
 
 
