@@ -3,6 +3,7 @@
 import base64
 import gzip
 import json
+import re
 
 import pytest
 
@@ -12,6 +13,8 @@ from clinical_mdr_api.services.integrations.edc_export import (
     _carrier_json,
     _source_study_id,
 )
+
+from clinical_mdr_api.tests.unit.services.test_edc_study_exchange import exchange
 
 
 def _service():
@@ -354,10 +357,10 @@ def _sendable_service(monkeypatch, bundle, body):
 def test_send_keeps_export_census_on_the_wire(monkeypatch):
     census = {"rows": [{"kind": "mapping_authority", "ref": "s", "detail": "d"}],
               "counts": {"total": 1, "downgrades": 0, "ambiguous_joins": 0, "lossy": 0}}
-    bundle = {"study": {"name": "S"}, "_exportCensus": census, "_mappingAuthority": {"mode": "legacy"}}
+    bundle = exchange(census=census, disclosure={"mode": "legacy", "deploymentAllowed": False})
     service, captured = _sendable_service(monkeypatch, bundle, {"success": True})
     result = service.send_to_edc("Study_1", dry_run=True)
-    assert captured["json"]["bundle"]["_exportCensus"] == census
+    assert captured["json"]["bundle"]["extensions"]["_osbExport"]["census"] == census
     assert result["exportCensus"] == census
 
 
@@ -369,10 +372,8 @@ def test_send_keeps_export_census_on_the_wire(monkeypatch):
      "studyTasksSkipped="),
 ])
 def test_send_rejects_narrowed_edc_acceptance(monkeypatch, body, expect):
-    bundle = {"study": {"name": "S"}, "_exportCensus": {"rows": [], "counts": {}}}
+    bundle = exchange()
     service, _ = _sendable_service(monkeypatch, bundle, body)
     with pytest.raises(EdcExportError, match="EDC_IMPORT_NARROWED") as caught:
         service.send_to_edc("Study_1", dry_run=True)
-    import re as _re
-
-    assert _re.search(expect, str(caught.value))
+    assert re.search(expect, str(caught.value))

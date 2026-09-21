@@ -33,6 +33,11 @@ class VisitSubclass(Enum):
     REPEATING_VISIT = "REPEATING_VISIT"
 
 
+class VisitTimingMode(Enum):
+    STANDARD = "STANDARD"
+    UNTIMED = "UNTIMED"
+
+
 @dataclass
 class TimeUnit:
     name: str
@@ -83,6 +88,11 @@ class BaseTimelineAR(Generic[StudyVisit]):
 
         # Create Anchor lookups
         for visit in self._visits:
+            if getattr(visit, "timing_mode", VisitTimingMode.STANDARD) == VisitTimingMode.UNTIMED:
+                visit.anchor_visit = visits_dict.get(
+                    (visit.untimed_timing or {}).get("anchor_visit_uid")
+                )
+                continue
             # There can be multiple Visits with same VisitType that can work as TimeRef
             # If Study contains multiple such Visits, the first occurence of the Visit with given VisitType
             # that works as TimeRef will be picked to be an anchor for the other visits
@@ -111,10 +121,14 @@ class BaseTimelineAR(Generic[StudyVisit]):
                 )
 
         # Assign Anchors
-        for order, visit in enumerate(self._visits):
+        standard_visits = [
+            visit for visit in self._visits
+            if getattr(visit, "timing_mode", VisitTimingMode.STANDARD) != VisitTimingMode.UNTIMED
+        ]
+        for order, visit in enumerate(standard_visits):
             time_anchor = visit.time_reference_name
-            if time_anchor == settings.previous_visit_name and len(self._visits) > 1:
-                visit.anchor_visit = self._visits[order - 1]
+            if time_anchor == settings.previous_visit_name and len(standard_visits) > 1:
+                visit.anchor_visit = standard_visits[order - 1]
             elif time_anchor in anchors and visit.uid != anchors[time_anchor].uid:
                 visit.anchor_visit = anchors[time_anchor]
 
@@ -132,6 +146,7 @@ class BaseTimelineAR(Generic[StudyVisit]):
             key=lambda x: (
                 x.get_absolute_duration() is None,
                 x.get_absolute_duration(),
+                x.visit_number if getattr(x, "timing_mode", VisitTimingMode.STANDARD) == VisitTimingMode.UNTIMED else float("-inf"),
             ),
         )
 
@@ -188,6 +203,7 @@ class BaseTimelineAR(Generic[StudyVisit]):
             key=lambda x: (
                 x.get_absolute_duration() is None,
                 x.get_absolute_duration(),
+                x.visit_number if getattr(x, "timing_mode", VisitTimingMode.STANDARD) == VisitTimingMode.UNTIMED else float("-inf"),
             ),
         )
 

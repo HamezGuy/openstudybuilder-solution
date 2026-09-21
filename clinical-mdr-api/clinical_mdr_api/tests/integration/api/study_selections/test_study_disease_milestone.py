@@ -211,6 +211,19 @@ def test_get_disease_milestone_data_for_specific_study_version(api_client):
     ).json()
     for i, _ in enumerate(res_old["items"]):
         res_old["items"][i]["study_version"] = mock.ANY
+        assert res_old["items"][i].get("terminology_source") is None
+        res_old["items"][i]["terminology_source"] = mock.ANY
+    # Historical text now carries its exact native term-history evidence.
+    # Preserve the original complete selection comparison independently of
+    # that newly exposed provenance, including false and null values.
+    for item in res_v1["items"]:
+        source = item["terminology_source"]
+        assert source["state"] == "resolved"
+        assert source["study_uid"] == study.uid
+        assert source["study_value_version"] == "1"
+        assert source["term_uid"] == item["disease_milestone_type"]
+        assert source["name"]["value"]["name"] == item["disease_milestone_type_name"]
+        assert source["attributes"]["value"]["definition"] == item["disease_milestone_type_definition"]
     assert res_v1 == res_old
     assert res_v1 != res_new
 

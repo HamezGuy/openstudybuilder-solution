@@ -1,0 +1,895 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "NativeItemObservationRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "contractVersion": {
+          "const": "OsbNativeItemObservationRequestV1@1.0.0",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "library-item",
+            "study-selection"
+          ],
+          "title": "Scope",
+          "type": "string"
+        },
+        "platformStudyId": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Platformstudyid",
+          "type": "string"
+        },
+        "nativeStudyId": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Nativestudyid",
+          "type": "string"
+        },
+        "nativeStudyVersion": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Nativestudyversion",
+          "type": "string"
+        },
+        "bindingId": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Bindingid",
+          "type": "string"
+        },
+        "decisionId": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Decisionid",
+          "type": "string"
+        },
+        "decisionHash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Decisionhash",
+          "type": "string"
+        },
+        "candidateSetVersionId": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Candidatesetversionid",
+          "type": "string"
+        },
+        "candidateSetHash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Candidatesethash",
+          "type": "string"
+        },
+        "mappingContextHash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Mappingcontexthash",
+          "type": "string"
+        },
+        "evidenceSetVersionId": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Evidencesetversionid",
+          "type": "string"
+        },
+        "evidenceSetHash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Evidencesethash",
+          "type": "string"
+        },
+        "evidenceId": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Evidenceid",
+          "type": "string"
+        },
+        "factId": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Factid",
+          "type": "string"
+        },
+        "revision": {
+          "maximum": 2147483647,
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "targetKey": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Targetkey",
+          "type": "string"
+        },
+        "itemUid": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Itemuid",
+          "type": "string"
+        },
+        "itemVersion": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Itemversion",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contractVersion",
+        "scope",
+        "platformStudyId",
+        "nativeStudyId",
+        "nativeStudyVersion",
+        "bindingId",
+        "decisionId",
+        "decisionHash",
+        "candidateSetVersionId",
+        "candidateSetHash",
+        "mappingContextHash",
+        "evidenceSetVersionId",
+        "evidenceSetHash",
+        "evidenceId",
+        "factId",
+        "revision",
+        "targetKey",
+        "itemUid",
+        "itemVersion"
+      ],
+      "title": "NativeItemObservationRequest",
+      "type": "object"
+    },
+    "NativeItemObservationResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "contractVersion": {
+          "const": "OsbNativeItemObservationV1@1.1.0",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "scope": {
+          "const": "library-item",
+          "title": "Scope",
+          "type": "string"
+        },
+        "pins": {
+          "$ref": "#/$defs/NativeItemObservationRequest"
+        },
+        "tenantId": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Tenantid",
+          "type": "string"
+        },
+        "item": {
+          "$ref": "#/$defs/NativeLibraryItem"
+        },
+        "itemHash": {
+          "$ref": "#/$defs/ObservationHash"
+        },
+        "decisionHash": {
+          "$ref": "#/$defs/ObservationHash"
+        },
+        "candidateSetHash": {
+          "$ref": "#/$defs/ObservationHash"
+        },
+        "evidenceSetHash": {
+          "$ref": "#/$defs/ObservationHash"
+        },
+        "operationHash": {
+          "$ref": "#/$defs/ObservationHash"
+        },
+        "decisionAssurance": {
+          "const": "retained-prototype-attestation",
+          "title": "Decisionassurance",
+          "type": "string"
+        },
+        "contextAssurance": {
+          "const": "retained-exact-context",
+          "title": "Contextassurance",
+          "type": "string"
+        },
+        "studySelectionVerified": {
+          "const": false,
+          "title": "Studyselectionverified",
+          "type": "boolean"
+        },
+        "semanticApprovalVerified": {
+          "const": false,
+          "title": "Semanticapprovalverified",
+          "type": "boolean"
+        },
+        "observedAt": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "title": "Observedat",
+          "type": "string"
+        },
+        "authorityCheckedAt": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "title": "Authoritycheckedat",
+          "type": "string"
+        },
+        "expiresAt": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+          "title": "Expiresat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contractVersion",
+        "scope",
+        "pins",
+        "tenantId",
+        "item",
+        "itemHash",
+        "decisionHash",
+        "candidateSetHash",
+        "evidenceSetHash",
+        "operationHash",
+        "decisionAssurance",
+        "contextAssurance",
+        "studySelectionVerified",
+        "semanticApprovalVerified",
+        "observedAt",
+        "authorityCheckedAt",
+        "expiresAt"
+      ],
+      "title": "NativeItemObservationResponse",
+      "type": "object"
+    },
+    "NativeLibraryItem": {
+      "additionalProperties": false,
+      "properties": {
+        "uid": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Uid",
+          "type": "string"
+        },
+        "version": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Version",
+          "type": "string"
+        },
+        "status": {
+          "const": "Final",
+          "title": "Status",
+          "type": "string"
+        },
+        "fields": {
+          "$ref": "#/$defs/NativeLibraryItemScalars"
+        }
+      },
+      "required": [
+        "uid",
+        "version",
+        "status",
+        "fields"
+      ],
+      "title": "NativeLibraryItem",
+      "type": "object"
+    },
+    "NativeLibraryItemScalars": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Name"
+        },
+        "oid": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Oid"
+        },
+        "prompt": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Prompt"
+        },
+        "datatype": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Datatype",
+          "type": "string"
+        },
+        "length": {
+          "anyOf": [
+            {
+              "maximum": 2147483647,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Length"
+        },
+        "significantDigits": {
+          "anyOf": [
+            {
+              "maximum": 2147483647,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Significantdigits"
+        },
+        "sasFieldName": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Sasfieldname"
+        },
+        "sdsVarName": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Sdsvarname"
+        },
+        "origin": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Origin"
+        },
+        "comment": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Comment"
+        }
+      },
+      "required": [
+        "name",
+        "oid",
+        "prompt",
+        "datatype",
+        "length",
+        "significantDigits",
+        "sasFieldName",
+        "sdsVarName",
+        "origin",
+        "comment"
+      ],
+      "title": "NativeLibraryItemScalars",
+      "type": "object"
+    },
+    "ObservationHash": {
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": {
+          "const": "sha-256",
+          "title": "Algorithm",
+          "type": "string"
+        },
+        "canonicalizationVersion": {
+          "const": "canonical-json/1.0",
+          "title": "Canonicalizationversion",
+          "type": "string"
+        },
+        "value": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Value",
+          "type": "string"
+        },
+        "mediaType": {
+          "maxLength": 128,
+          "title": "Mediatype",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "maxLength": 128,
+          "title": "Schemaversion",
+          "type": "string"
+        },
+        "excludedPaths": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 0,
+          "title": "Excludedpaths",
+          "type": "array"
+        }
+      },
+      "required": [
+        "algorithm",
+        "canonicalizationVersion",
+        "value",
+        "mediaType",
+        "schemaVersion",
+        "excludedPaths"
+      ],
+      "title": "ObservationHash",
+      "type": "object"
+    },
+    "SelectedActivityItemFields": {
+      "additionalProperties": false,
+      "properties": {
+        "textValue": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Textvalue"
+        },
+        "isAdamParamSpecific": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Isadamparamspecific"
+        },
+        "isActivityInstanceIdSpecific": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Isactivityinstanceidspecific"
+        }
+      },
+      "required": [
+        "textValue",
+        "isAdamParamSpecific",
+        "isActivityInstanceIdSpecific"
+      ],
+      "title": "SelectedActivityItemFields",
+      "type": "object"
+    },
+    "SelectedActivityItemLink": {
+      "additionalProperties": false,
+      "properties": {
+        "order": {
+          "anyOf": [
+            {
+              "maximum": 2147483647,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Order"
+        },
+        "primary": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Primary"
+        },
+        "presetResponseValue": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Presetresponsevalue"
+        },
+        "valueCondition": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Valuecondition"
+        },
+        "valueDependentMap": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Valuedependentmap"
+        }
+      },
+      "required": [
+        "order",
+        "primary",
+        "presetResponseValue",
+        "valueCondition",
+        "valueDependentMap"
+      ],
+      "title": "SelectedActivityItemLink",
+      "type": "object"
+    },
+    "SelectedActivityItemPath": {
+      "additionalProperties": false,
+      "properties": {
+        "nativeStudyId": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Nativestudyid",
+          "type": "string"
+        },
+        "studyValueVersion": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Studyvalueversion",
+          "type": "string"
+        },
+        "studyVersionStatus": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Studyversionstatus",
+          "type": "string"
+        },
+        "studyActivityInstanceUid": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Studyactivityinstanceuid",
+          "type": "string"
+        },
+        "activityInstanceUid": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Activityinstanceuid",
+          "type": "string"
+        },
+        "activityInstanceVersion": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Activityinstanceversion",
+          "type": "string"
+        },
+        "activityInstanceStatus": {
+          "const": "Final",
+          "title": "Activityinstancestatus",
+          "type": "string"
+        },
+        "activityItemClassUid": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Activityitemclassuid",
+          "type": "string"
+        },
+        "activityItemClassVersion": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Activityitemclassversion",
+          "type": "string"
+        },
+        "activityItemClassStatus": {
+          "const": "Final",
+          "title": "Activityitemclassstatus",
+          "type": "string"
+        },
+        "itemUid": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Itemuid",
+          "type": "string"
+        },
+        "itemVersion": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Itemversion",
+          "type": "string"
+        },
+        "itemStatus": {
+          "const": "Final",
+          "title": "Itemstatus",
+          "type": "string"
+        },
+        "activityItem": {
+          "$ref": "#/$defs/SelectedActivityItemFields"
+        },
+        "itemLink": {
+          "$ref": "#/$defs/SelectedActivityItemLink"
+        }
+      },
+      "required": [
+        "nativeStudyId",
+        "studyValueVersion",
+        "studyVersionStatus",
+        "studyActivityInstanceUid",
+        "activityInstanceUid",
+        "activityInstanceVersion",
+        "activityInstanceStatus",
+        "activityItemClassUid",
+        "activityItemClassVersion",
+        "activityItemClassStatus",
+        "itemUid",
+        "itemVersion",
+        "itemStatus",
+        "activityItem",
+        "itemLink"
+      ],
+      "title": "SelectedActivityItemPath",
+      "type": "object"
+    },
+    "SelectedActivityItemRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "contractVersion": {
+          "const": "OsbSelectedActivityItemRequestV1@1.0.0",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "scope": {
+          "const": "selected-activity-item",
+          "title": "Scope",
+          "type": "string"
+        },
+        "platformStudyId": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Platformstudyid",
+          "type": "string"
+        },
+        "nativeStudyId": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Nativestudyid",
+          "type": "string"
+        },
+        "nativeStudyVersion": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Nativestudyversion",
+          "type": "string"
+        },
+        "bindingId": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Bindingid",
+          "type": "string"
+        },
+        "decisionId": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Decisionid",
+          "type": "string"
+        },
+        "decisionHash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Decisionhash",
+          "type": "string"
+        },
+        "candidateSetVersionId": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Candidatesetversionid",
+          "type": "string"
+        },
+        "candidateSetHash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Candidatesethash",
+          "type": "string"
+        },
+        "mappingContextHash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Mappingcontexthash",
+          "type": "string"
+        },
+        "evidenceSetVersionId": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Evidencesetversionid",
+          "type": "string"
+        },
+        "evidenceSetHash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Evidencesethash",
+          "type": "string"
+        },
+        "evidenceId": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Evidenceid",
+          "type": "string"
+        },
+        "factId": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Factid",
+          "type": "string"
+        },
+        "revision": {
+          "maximum": 2147483647,
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "targetKey": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Targetkey",
+          "type": "string"
+        },
+        "itemUid": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Itemuid",
+          "type": "string"
+        },
+        "itemVersion": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Itemversion",
+          "type": "string"
+        },
+        "studyValueVersion": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Studyvalueversion",
+          "type": "string"
+        },
+        "studyActivityInstanceUid": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Studyactivityinstanceuid",
+          "type": "string"
+        },
+        "activityInstanceUid": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Activityinstanceuid",
+          "type": "string"
+        },
+        "activityInstanceVersion": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Activityinstanceversion",
+          "type": "string"
+        },
+        "activityItemClassUid": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Activityitemclassuid",
+          "type": "string"
+        },
+        "activityItemClassVersion": {
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$",
+          "title": "Activityitemclassversion",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contractVersion",
+        "scope",
+        "platformStudyId",
+        "nativeStudyId",
+        "nativeStudyVersion",
+        "bindingId",
+        "decisionId",
+        "decisionHash",
+        "candidateSetVersionId",
+        "candidateSetHash",
+        "mappingContextHash",
+        "evidenceSetVersionId",
+        "evidenceSetHash",
+        "evidenceId",
+        "factId",
+        "revision",
+        "targetKey",
+        "itemUid",
+        "itemVersion",
+        "studyValueVersion",
+        "studyActivityInstanceUid",
+        "activityInstanceUid",
+        "activityInstanceVersion",
+        "activityItemClassUid",
+        "activityItemClassVersion"
+      ],
+      "title": "SelectedActivityItemRequest",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "contractVersion": {
+      "const": "OsbSelectedActivityItemObservationV1@1.0.0",
+      "title": "Contractversion",
+      "type": "string"
+    },
+    "scope": {
+      "const": "selected-activity-item",
+      "title": "Scope",
+      "type": "string"
+    },
+    "pins": {
+      "$ref": "#/$defs/SelectedActivityItemRequest"
+    },
+    "libraryObservation": {
+      "$ref": "#/$defs/NativeItemObservationResponse"
+    },
+    "selection": {
+      "$ref": "#/$defs/SelectedActivityItemPath"
+    },
+    "selectionHash": {
+      "$ref": "#/$defs/ObservationHash"
+    },
+    "selectedActivityReachabilityVerified": {
+      "const": true,
+      "title": "Selectedactivityreachabilityverified",
+      "type": "boolean"
+    },
+    "semanticApprovalVerified": {
+      "const": false,
+      "title": "Semanticapprovalverified",
+      "type": "boolean"
+    },
+    "formApplicabilityVerified": {
+      "const": false,
+      "title": "Formapplicabilityverified",
+      "type": "boolean"
+    },
+    "requirednessVerified": {
+      "const": false,
+      "title": "Requirednessverified",
+      "type": "boolean"
+    },
+    "observedAt": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+      "title": "Observedat",
+      "type": "string"
+    },
+    "authorityCheckedAt": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+      "title": "Authoritycheckedat",
+      "type": "string"
+    },
+    "expiresAt": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+      "title": "Expiresat",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contractVersion",
+    "scope",
+    "pins",
+    "libraryObservation",
+    "selection",
+    "selectionHash",
+    "selectedActivityReachabilityVerified",
+    "semanticApprovalVerified",
+    "formApplicabilityVerified",
+    "requirednessVerified",
+    "observedAt",
+    "authorityCheckedAt",
+    "expiresAt"
+  ],
+  "title": "SelectedActivityItemResponse",
+  "type": "object"
+}

@@ -6,6 +6,27 @@ from clinical_mdr_api.models.utils import BaseModel
 
 
 class FlowchartMetadataAdamListing(BaseModel):
+    SOURCE_SCHEDULE_UID: str | None = Field(
+        default=None,
+        description="Native schedule identity; preserves distinct source cells.",
+    )
+    SOURCE_ACTIVITY_UID: str | None = Field(
+        default=None, description="Native study activity identity."
+    )
+    SOURCE_ACTIVITY_NAME: str | None = Field(
+        default=None,
+        description="Source activity name, independent of analysis parameter configuration.",
+    )
+    SOURCE_VISIT_UID: str | None = Field(
+        default=None, description="Native study visit identity."
+    )
+    TIMING_MODE: str | None = Field(
+        default=None, description="Native visit timing mode."
+    )
+    VISIT_DESCRIPTION: str | None = Field(
+        default=None,
+        description="Source visit description, including event-relative timing.",
+    )
     STUDYID_FLOWCHART: Annotated[
         str | None,
         Field(
@@ -91,12 +112,22 @@ class FlowchartMetadataAdamListing(BaseModel):
     @classmethod
     def from_query(cls, query_result: dict[Any, Any]) -> Self:
         return cls(
+            SOURCE_SCHEDULE_UID=query_result.get("SOURCE_SCHEDULE_UID"),
+            SOURCE_ACTIVITY_UID=query_result.get("SOURCE_ACTIVITY_UID"),
+            SOURCE_ACTIVITY_NAME=query_result.get("SOURCE_ACTIVITY_NAME"),
+            SOURCE_VISIT_UID=query_result.get("SOURCE_VISIT_UID"),
+            TIMING_MODE=query_result.get("TIMING_MODE"),
+            VISIT_DESCRIPTION=query_result.get("VISIT_DESCRIPTION"),
             STUDYID_FLOWCHART=query_result["STUDYID_FLOWCHART"],
             AVISITN=query_result["AVISITN"],
             PARAMCD=query_result["PARAMCD"],
             AVISIT=query_result["AVISIT"],
             PARAM=query_result["PARAM"],
-            PARAMN=str(query_result["PARAMN"]) if query_result["PARAMN"] else None,
+            PARAMN=(
+                str(query_result["PARAMN"])
+                if query_result["PARAMN"] is not None
+                else None
+            ),
             ATPTN=query_result["ATPTN"],
             ATPT=query_result["ATPT"],
             TOPICCD=query_result["TOPICCD"],
@@ -107,6 +138,16 @@ class FlowchartMetadataAdamListing(BaseModel):
 
 
 class StudyVisitAdamListing(BaseModel):
+    SOURCE_VISIT_UID: str | None = Field(
+        default=None, description="Native study visit identity."
+    )
+    TIMING_MODE: str | None = Field(
+        default=None, description="Native visit timing mode."
+    )
+    VISIT_DESCRIPTION: str | None = Field(
+        default=None,
+        description="Source visit description, including event-relative timing.",
+    )
     STUDYID: Annotated[str, Field(description="Unique identifier for a study.")]
     VISTPCD: Annotated[str, Field(description="Visit Type Code")]
     AVISITN: Annotated[
@@ -150,6 +191,9 @@ class StudyVisitAdamListing(BaseModel):
     @classmethod
     def from_query(cls, query_result: dict[Any, Any]) -> Self:
         return cls(
+            SOURCE_VISIT_UID=query_result.get("SOURCE_VISIT_UID"),
+            TIMING_MODE=query_result.get("TIMING_MODE"),
+            VISIT_DESCRIPTION=query_result.get("VISIT_DESCRIPTION"),
             STUDYID=query_result["STUDYID"],
             VISTPCD=query_result["VISIT_TYPE_NAME"],
             AVISITN=query_result["VISIT_NUM"],
@@ -158,7 +202,11 @@ class StudyVisitAdamListing(BaseModel):
             VISLABEL=query_result["VISIT_SHORT_LABEL"],
             AVISIT1=query_result["DAY_NAME"],
             AVISIT2=query_result["WEEK_NAME"],
-            AVISIT2N=str(query_result["WEEK_VALUE"]),
+            AVISIT2N=(
+                str(query_result["WEEK_VALUE"])
+                if query_result["WEEK_VALUE"] is not None
+                else None
+            ),
         )
 
 

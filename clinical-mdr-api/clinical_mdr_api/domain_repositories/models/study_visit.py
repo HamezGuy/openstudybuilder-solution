@@ -1,4 +1,4 @@
-from neomodel import RelationshipFrom, RelationshipTo, ZeroOrMore, ZeroOrOne
+from neomodel import JSONProperty, RelationshipFrom, RelationshipTo, ZeroOrMore, ZeroOrOne
 
 from clinical_mdr_api.domain_repositories.models.concepts import (
     StudyDayRoot,
@@ -102,6 +102,8 @@ class StudyVisit(StudySelection):
     is_global_anchor_visit = BooleanProperty()
     status = StringProperty()
     visit_class = StringProperty()
+    timing_mode = StringProperty()
+    untimed_timing = JSONProperty()
     visit_subclass = StringProperty()
     is_soa_milestone = BooleanProperty(default=False)
 

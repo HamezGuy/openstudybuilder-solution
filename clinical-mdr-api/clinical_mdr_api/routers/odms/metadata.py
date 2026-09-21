@@ -186,9 +186,9 @@ def get_odm_report(
     odm_data_extractor = OdmDataExtractor(target_type, targets)
 
     return templating.templates.TemplateResponse(
-        "odm/crf.html",
-        {
-            "request": request,
+        request=request,
+        name="odm/crf.html",
+        context={
             "data": {
                 "odm_forms": odm_data_extractor.odm_forms,
                 "odm_item_groups": odm_data_extractor.odm_item_groups,

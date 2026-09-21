@@ -10,7 +10,19 @@
             $t('StudyVisitTable.timeline_preview')
           }}</v-expansion-panel-title>
           <v-expansion-panel-text>
-            <div v-if="!loading && studyVisits.length > 0" :key="chartsKey">
+            <v-alert
+              v-if="untimedTimelineCount"
+              type="info"
+              variant="tonal"
+              class="mb-3"
+            >
+              {{
+                $t('StudyVisitForm.untimed_timeline_note', {
+                  count: untimedTimelineCount,
+                })
+              }}
+            </v-alert>
+            <div v-if="!loading && timeLineVisits.length > 0" :key="chartsKey">
               <v-row>
                 <label class="v-label theme--light mr-4 mt-2 mb-2">
                   {{ $t('StudyVisitTable.time_unit') }}
@@ -184,7 +196,7 @@
         <CTTermDisplay :term="item.visit_type" />
       </template>
       <template #[`item.visit_class`]="{ item }">
-        <div v-if="editMode">
+        <div v-if="editMode && !isUntimedVisit(item)">
           <v-select
             v-model="item.visit_class"
             :items="visitClasses"
@@ -202,7 +214,7 @@
         </div>
       </template>
       <template #[`item.visit_subclass`]="{ item }">
-        <div v-if="editMode">
+        <div v-if="editMode && !isUntimedVisit(item)">
           <v-select
             v-model="item.visit_subclass"
             :items="visitSubClasses"
@@ -218,7 +230,10 @@
         </div>
       </template>
       <template #[`item.repeating_frequency_name`]="{ item }">
-        <div v-if="editMode">
+        <div v-if="isUntimedVisit(item)">
+          {{ untimedTimingText(item, t, studyVisits) }}
+        </div>
+        <div v-else-if="editMode">
           <v-select
             v-model="item.repeating_frequency_uid"
             :items="frequencies"
@@ -236,8 +251,11 @@
         </div>
       </template>
       <template #[`item.visit_window`]="{ item }">
+        <div v-if="isUntimedVisit(item)">
+          {{ $t('StudyVisitForm.untimed_unknown_window') }}
+        </div>
         <div
-          v-if="
+          v-else-if="
             editMode &&
             [
               visitConstants.CLASS_MANUALLY_DEFINED_VISIT,
@@ -327,8 +345,11 @@
         }}
       </template>
       <template #[`item.time_value`]="{ item }">
+        <div v-if="isUntimedVisit(item)">
+          {{ untimedTimingText(item, t, studyVisits) }}
+        </div>
         <div
-          v-if="
+          v-else-if="
             editMode &&
             [
               visitConstants.CLASS_MANUALLY_DEFINED_VISIT,
@@ -366,17 +387,29 @@
             :items="contactModes"
             item-title="sponsor_preferred_name"
             item-value="term_uid"
+            :clearable="isUntimedVisit(item)"
+            :placeholder="
+              isUntimedVisit(item)
+                ? $t('StudyVisitForm.untimed_contact_unspecified')
+                : undefined
+            "
             :disabled="item.disabled && itemsDisabled"
             @update:model-value="
               (value) => updateNestedTermUid(item, 'visit_contact_mode', value)
             "
           />
         </div>
+        <span v-else-if="isUntimedVisit(item) && !item.visit_contact_mode">
+          {{ $t('StudyVisitForm.untimed_contact_unspecified') }}
+        </span>
         <CTTermDisplay v-else :term="item.visit_contact_mode || {}" />
       </template>
       <template #[`item.time_reference_name`]="{ item }">
+        <div v-if="isUntimedVisit(item)">
+          {{ item.untimed_timing?.anchor_visit_uid || '—' }}
+        </div>
         <div
-          v-if="
+          v-else-if="
             editMode &&
             [
               visitConstants.CLASS_SPECIAL_VISIT,
@@ -545,6 +578,11 @@
 
 <script setup>
 import units from '@/api/units'
+import {
+  isUntimedVisit,
+  prepareVisitTimingPayload,
+  untimedTimingText,
+} from '@/utils/visitTiming'
 import terms from '@/api/controlledTerminology/terms'
 import codelists from '@/api/controlledTerminology/terms'
 import ActionsMenu from '@/components/tools/ActionsMenu.vue'
@@ -902,6 +940,7 @@ const timeReferences = ref([])
 const visitHistoryItems = ref([])
 const fetchedStudyEpochs = ref([])
 const timeLineVisits = ref([])
+const untimedTimelineCount = ref(0)
 const frequencies = ref([])
 const epochAllocations = ref([])
 const tableLoading = ref(false)
@@ -1044,7 +1083,7 @@ function getVisitClassLabel(visitClass) {
 }
 
 function getVisitSubClassLabel(visitSubClass) {
-  return visitSubClasses.find((c) => c.value === visitSubClass).label
+  return visitSubClasses.find((c) => c.value === visitSubClass)?.label || ''
 }
 
 function getTimeLineVisits() {
@@ -1062,7 +1101,10 @@ function getTimeLineVisits() {
   studyEpochsApi
     .getStudyVisits(studiesGeneralStore.selectedStudy.uid, params)
     .then((resp) => {
-      timeLineVisits.value = resp.data.items
+      untimedTimelineCount.value = resp.data.items.filter(isUntimedVisit).length
+      timeLineVisits.value = resp.data.items.filter(
+        (visit) => !isUntimedVisit(visit)
+      )
       buildChart()
     })
 }
@@ -1134,7 +1176,7 @@ function saveVisit(item) {
     .updateStudyVisit({
       studyUid: studiesGeneralStore.selectedStudy.uid,
       studyVisitUid: item.uid,
-      input: item,
+      input: prepareVisitTimingPayload(item),
     })
     .then(() => {
       tableRef.value.filterTable()

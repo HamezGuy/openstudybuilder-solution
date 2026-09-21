@@ -489,18 +489,22 @@ class QueryService:
             toInteger(v.unique_visit_number) AS VISIT_NUM,
             toUpper(nv.name) AS VISIT_NAME,
             CASE
+                WHEN v.timing_mode = "UNTIMED" THEN coalesce(v.visit_name_label, nv.name)
                 // WEEK
-                WHEN udv.name = "week" THEN nv.name + " (" +udv.name + " "+toInteger(wv.value)+")"
+                WHEN udv.name = "week" AND wv.value IS NOT NULL THEN nv.name + " (" +udv.name + " "+toInteger(wv.value)+")"
                 // DAY
-                WHEN udv.name = "day" THEN nv.name + " (" +udv.name + " "+toInteger(dv.value)+")"
-            ELSE NULL
+                WHEN udv.name = "day" AND dv.value IS NOT NULL THEN nv.name + " (" +udv.name + " "+toInteger(dv.value)+")"
+            ELSE coalesce(nv.name, v.visit_name_label)
             END AS AVISIT,
             toInteger(dv.value) AS DAY_VALUE,
             v.short_visit_label as VISIT_SHORT_LABEL,
             dv.name AS DAY_NAME,
             wv.name AS WEEK_NAME,
             toInteger(wv.value) AS WEEK_VALUE,
-            vtnv.name as VISIT_TYPE_NAME
+            vtnv.name as VISIT_TYPE_NAME,
+            v.uid AS SOURCE_VISIT_UID,
+            v.timing_mode AS TIMING_MODE,
+            v.description AS VISIT_DESCRIPTION
         ORDER BY VISIT_NUM;
         """
         result_array = db.cypher_query(
@@ -525,10 +529,11 @@ class QueryService:
         query = query + """
         MATCH (sv)--(sact_schedule:StudyActivitySchedule)
         MATCH (sact_schedule)--(v:StudyVisit)--(sv)
-        OPTIONAL MATCH (v)-[:HAS_VISIT_TYPE]-(:CTTermRoot)-[:HAS_NAME_ROOT]-(:CTTermNameRoot)-[:LATEST_FINAL]-(ctterm_name_value_visit_type:CTTermNameValue)
+        OPTIONAL MATCH (v)-[:HAS_VISIT_TYPE]->(:CTTermContext)-[:HAS_SELECTED_TERM]->(:CTTermRoot)-[:HAS_NAME_ROOT]->(:CTTermNameRoot)-[:LATEST]->(ctterm_name_value_visit_type:CTTermNameValue)
             where v.is_global_anchor_visit = True
-        OPTIONAL MATCH  (v)-->(nr:VisitNameRoot)-[:LATEST_FINAL]->(nv:VisitNameValue)
+        OPTIONAL MATCH  (v)-->(nr:VisitNameRoot)-[:LATEST]->(nv:VisitNameValue)
         MATCH (sact_schedule)--(sact:StudyActivity)--(sv)
+        OPTIONAL MATCH (sact)-[:HAS_SELECTED_ACTIVITY]->(act_value:ActivityValue)
         OPTIONAL MATCH (sact)--(sactins:StudyActivityInstance)--(sv)
         OPTIONAL MATCH (sactins)--(act_inst_value:ActivityInstanceValue)
         OPTIONAL MATCH (act_inst_value)-[:ACTIVITY_INSTANCE_CLASS]-(aicr:ActivityInstanceClassRoot)-[:LATEST_FINAL]-(aicv:ActivityInstanceClassValue)
@@ -544,14 +549,21 @@ class QueryService:
         OPTIONAL MATCH (udv:UnitDefinitionValue)-[:LATEST_FINAL]-(udr:UnitDefinitionRoot)--(stf:StudyTimeField)--(sv)
             WHERE stf.field_name = "soa_preferred_time_unit"
         WITH  toUpper(sv.study_id_prefix + '-' + sv.study_number) AS STUDYID_FLOWCHART,
+            sact_schedule.uid AS SOURCE_SCHEDULE_UID,
+            sact.uid AS SOURCE_ACTIVITY_UID,
+            act_value.name AS SOURCE_ACTIVITY_NAME,
+            v.uid AS SOURCE_VISIT_UID,
+            v.timing_mode AS TIMING_MODE,
+            v.description AS VISIT_DESCRIPTION,
             v.unique_visit_number AS AVISITN,
             act_inst_value.adam_param_code AS PARAMCD,
             CASE 
+                WHEN v.timing_mode = "UNTIMED" THEN coalesce(v.visit_name_label, nv.name)
                 // WEEK
-                WHEN udv.name = "week" THEN nv.name + " (" +udv.name + " "+toInteger(wv.value)+")"
+                WHEN udv.name = "week" AND wv.value IS NOT NULL THEN nv.name + " (" +udv.name + " "+toInteger(wv.value)+")"
                 // DAY
-                WHEN udv.name = "day" THEN nv.name + " (" +udv.name + " "+toInteger(dv.value)+")"
-            ELSE NULL
+                WHEN udv.name = "day" AND dv.value IS NOT NULL THEN nv.name + " (" +udv.name + " "+toInteger(dv.value)+")"
+            ELSE coalesce(nv.name, v.visit_name_label)
             END AS AVISIT,
             CASE 
                 WHEN (NOT aicv IS NULL) THEN 
@@ -575,6 +587,12 @@ class QueryService:
             END AS ABLFL,
             ctterm_name_value_visit_type.name AS ASSMTYPE
         RETURN distinct  STUDYID_FLOWCHART,
+            SOURCE_SCHEDULE_UID,
+            SOURCE_ACTIVITY_UID,
+            SOURCE_ACTIVITY_NAME,
+            SOURCE_VISIT_UID,
+            TIMING_MODE,
+            VISIT_DESCRIPTION,
             AVISITN,
             PARAMCD,
             AVISIT,

@@ -58,6 +58,9 @@ from clinical_mdr_api.domains.study_definition_aggregates.study_template import 
 from clinical_mdr_api.domains.study_selections.study_selection_standard_version import (
     StudyStandardVersionVO,
 )
+from clinical_mdr_api.models.study_selections.null_adjudication import (
+    StudyNullAdjudicationRequest,
+)
 from clinical_mdr_api.models.study_selections.study import (
     CompactStudy,
     HighLevelStudyDesignJsonModel,
@@ -106,6 +109,9 @@ from clinical_mdr_api.services._utils import (  # type: ignore
     get_unit_def_uid_or_none,
     service_level_generic_filtering,
     service_level_generic_header_filtering,
+)
+from clinical_mdr_api.services.studies.null_adjudication import (
+    prepare_guarded_null_patch,
 )
 from clinical_mdr_api.services.studies.study_visibility import (
     assigned_study_uids,
@@ -1088,22 +1094,31 @@ class StudyService:
         has_study_activity_instruction: bool | None = None,
         deleted: bool = False,
     ) -> list[StudySimple | StudyMinimal]:
-        items = self._repos.study_definition_repository.get_studies_list(
-            minimal_response,
-            has_study_objective,
-            has_study_footnote,
-            has_study_endpoint,
-            has_study_criteria,
-            has_study_activity,
-            has_study_activity_instruction,
-            deleted,
-        )
-        items = [item for item in items if _caller_may_see(item)]
+        try:
+            scope = (
+                {"study_uids": assigned_study_uids(require_write=False)}
+                if delegated_study_scope_required()
+                else {}
+            )
+            items = self._repos.study_definition_repository.get_studies_list(
+                minimal_response,
+                has_study_objective,
+                has_study_footnote,
+                has_study_endpoint,
+                has_study_criteria,
+                has_study_activity,
+                has_study_activity_instruction,
+                deleted,
+                **scope,
+            )
+            items = [item for item in items if _caller_may_see(item)]
 
-        if minimal_response:
-            return [StudyMinimal.from_input(item) for item in items]
+            if minimal_response:
+                return [StudyMinimal.from_input(item) for item in items]
 
-        return [StudySimple.from_input(item, deleted) for item in items]
+            return [StudySimple.from_input(item, deleted) for item in items]
+        finally:
+            self._close_all_repos()
 
     @trace_calls
     def get_all(
@@ -2159,8 +2174,17 @@ class StudyService:
 
     @ensure_transaction(db)
     def patch(
-        self, uid: str, dry: bool, study_patch_request: StudyPatchRequestJsonModel
+        self,
+        uid: str,
+        dry: bool,
+        study_patch_request: StudyPatchRequestJsonModel,
+        *,
+        null_adjudication: StudyNullAdjudicationRequest | None = None,
     ) -> Study:
+        ValidationException.raise_if(
+            null_adjudication is not None and dry,
+            msg="Atomic null adjudication cannot use dry mode.",
+        )
         _study_number = None
         _study_acronym = None
         if (
@@ -2180,6 +2204,19 @@ class StudyService:
 
             if study_definition_ar is None:
                 raise NotFoundException("Study", uid)
+
+            if null_adjudication is not None:
+                study_patch_request = prepare_guarded_null_patch(
+                    study_definition_ar.current_metadata,
+                    null_adjudication,
+                    self._repos.unit_definition_repository.find_all,
+                )
+                # Ordinary PATCH interprets its default None as parent removal.
+                # A guarded metadata-only operation must preserve the parent
+                # from this locked aggregate, never from the earlier HTTP GET.
+                study_patch_request.study_parent_part_uid = (
+                    study_definition_ar.study_parent_part_uid
+                )
 
             initial_study_definition_ar = copy(study_definition_ar)
 
@@ -2210,7 +2247,7 @@ class StudyService:
                 msg="A Study cannot be a Study Parent Part for itself.",
             )
 
-            if study_patch_request.study_parent_part_uid:
+            if null_adjudication is None and study_patch_request.study_parent_part_uid:
                 parent_part_ar = self._repos.study_definition_repository.find_by_uid(
                     study_patch_request.study_parent_part_uid
                 )
@@ -2286,7 +2323,7 @@ class StudyService:
                 and study_patch_request.current_metadata.identification_metadata
                 is not None
             ):
-                if study_patch_request.study_parent_part_uid:
+                if null_adjudication is None and study_patch_request.study_parent_part_uid:
                     # pylint: disable=line-too-long
                     study_patch_request.current_metadata.identification_metadata.registry_identifiers = RegistryIdentifiersJsonModel.from_study_registry_identifiers_vo(
                         parent_part_ar.current_metadata.id_metadata.registry_identifiers,
@@ -2341,7 +2378,7 @@ class StudyService:
                 study_patch_request.current_metadata is not None
                 and study_patch_request.current_metadata.study_description is not None
             ):
-                if study_patch_request.study_parent_part_uid:
+                if null_adjudication is None and study_patch_request.study_parent_part_uid:
                     study_patch_request.current_metadata.study_description.study_title = (
                         parent_part_ar.current_metadata.study_description.study_title
                     )
@@ -2412,10 +2449,11 @@ class StudyService:
                 self._repos.study_definition_repository.save(study_definition_ar)
                 self._cascade_update_subparts(study_definition_ar)
 
-                self._repos.study_definition_repository.update_subpart_relationship(
-                    initial_study_definition_ar,
-                    study_patch_request.study_parent_part_uid,
-                )
+                if null_adjudication is None:
+                    self._repos.study_definition_repository.update_subpart_relationship(
+                        initial_study_definition_ar,
+                        study_patch_request.study_parent_part_uid,
+                    )
 
                 if (
                     previous_is_subpart

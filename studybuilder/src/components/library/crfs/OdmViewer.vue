@@ -119,7 +119,7 @@
           :items="data.stylesheet"
           class="mt-2"
           :label="$t('OdmViewer.stylesheet')"
-          :disabled="selectedForms.length === 0"
+          :disabled="selectedForms.length === 0 || loading"
         />
       </v-col>
       <v-col
@@ -137,7 +137,7 @@
           variant="flat"
           rounded="xl"
           class="mt-2"
-          :disabled="selectedForms.length === 0"
+          :disabled="selectedForms.length === 0 || loading"
           @click="loadXml"
         >
           {{ $t('OdmViewer.generate') }}
@@ -198,6 +198,9 @@
         </v-menu>
       </v-col>
     </v-row>
+    <v-alert v-if="loadError" type="error" class="mt-4">
+      {{ $t('_errors.general') }}
+    </v-alert>
     <div v-show="loading">
       <v-row
         class="align-center justify-center"
@@ -217,7 +220,7 @@
       </v-row>
     </div>
     <div v-show="doc" class="mt-4">
-      <iframe />
+      <iframe class="frame" :srcdoc="doc" :title="$t('OdmViewer.html')" />
     </div>
   </div>
 </template>
@@ -262,6 +265,7 @@ const data = ref({
 })
 const loading = ref(false)
 const exportLoading = ref(false)
+const loadError = ref(false)
 
 onMounted(() => {
   getCollections()
@@ -328,49 +332,38 @@ function getFormsForCollections() {
 
 async function loadXml() {
   doc.value = ''
+  xmlString.value = ''
   loading.value = true
+  loadError.value = false
   data.value.allowed_namespaces = '&allowed_namespaces=*'
   data.value.targets = ''
   for (const form of selectedForms.value) {
     data.value.targets += `targets=${form}&`
   }
-  if (data.value.selectedStylesheet === 'html') {
-    crfs.getReport(data.value).then((resp) => {
+  try {
+    if (data.value.selectedStylesheet === 'html') {
+      const resp = await crfs.getReport(data.value)
       doc.value = resp.data
       xmlString.value = resp.data
-
-      let iframe = document.createElement('iframe')
-      iframe.classList.add('frame')
-      document.querySelector('iframe').replaceWith(iframe)
-      let iframeDoc = iframe.contentDocument
-      iframeDoc.write(doc.value)
-      iframeDoc.close()
-
-      loading.value = false
-    })
-  } else {
-    crfs.getXml(data.value).then((resp) => {
+    } else {
+      const resp = await crfs.getXml(data.value)
       const parser = new DOMParser()
       xmlString.value = resp.data
       xml = parser.parseFromString(resp.data, 'application/xml')
       const xsltProcessor = new XSLTProcessor()
-      crfs.getXsl(data.value.selectedStylesheet).then((resp) => {
-        const xmlDoc = parser.parseFromString(resp.data, 'text/xml')
-        xsltProcessor.importStylesheet(xmlDoc)
-        doc.value = new XMLSerializer().serializeToString(
-          xsltProcessor.transformToDocument(xml)
-        )
-
-        let iframe = document.createElement('iframe')
-        iframe.classList.add('frame')
-        document.querySelector('iframe').replaceWith(iframe)
-        let iframeDoc = iframe.contentDocument
-        iframeDoc.write(doc.value)
-        iframeDoc.close()
-
-        loading.value = false
-      })
-    })
+      const stylesheet = await crfs.getXsl(data.value.selectedStylesheet)
+      const xmlDoc = parser.parseFromString(stylesheet.data, 'text/xml')
+      xsltProcessor.importStylesheet(xmlDoc)
+      doc.value = new XMLSerializer().serializeToString(
+        xsltProcessor.transformToDocument(xml)
+      )
+    }
+  } catch {
+    doc.value = ''
+    xmlString.value = ''
+    loadError.value = true
+  } finally {
+    loading.value = false
   }
 }
 

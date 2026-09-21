@@ -27,6 +27,7 @@ from clinical_mdr_api.services.studies.study_compound_dosing_selection import (
     StudyCompoundDosingRelationMixin,
 )
 from clinical_mdr_api.services.studies.study_selection_base import StudySelectionMixin
+from clinical_mdr_api.services.studies.study_compound_snapshot import StudyCompoundSnapshotReader
 from common.auth.user import user
 from common.exceptions import BusinessLogicException
 
@@ -54,26 +55,11 @@ class StudyCompoundSelectionService(
         for order, selection in enumerate(
             study_selection.study_compounds_selection, start=1
         ):
-            if selection.compound_uid is None:
-                compound_model = None
-            else:
-                compound_model = self._transform_compound_model(
-                    compound_uid=selection.compound_uid
-                )
-
-            if selection.compound_alias_uid is None:
-                compound_alias_model = None
-            else:
-                compound_alias_model = self._transform_compound_alias_model(
-                    selection.compound_alias_uid
-                )
-
-            if selection.medicinal_product_uid is None:
-                medicinal_product_model = None
-            else:
-                medicinal_product_model = self._transform_medicinal_product_model(
-                    selection.medicinal_product_uid
-                )
+            snapshot = StudyCompoundSnapshotReader(
+                self._repos, study_selection.study_uid, study_value_version,
+                terms_at_specific_datetime=terms_at_specific_datetime,
+            )
+            compound_model, compound_alias_model, medicinal_product_model, products = snapshot.selection_models(selection)
 
             result.append(
                 StudySelectionCompound.from_study_compound_ar(
@@ -83,10 +69,12 @@ class StudyCompoundSelectionService(
                     compound_model=compound_model,
                     compound_alias_model=compound_alias_model,
                     medicinal_product_model=medicinal_product_model,
-                    find_codelist_term_by_uid_and_submval=self._repos.ct_codelist_name_repository.get_codelist_term_by_uid_and_submval,
+                    find_codelist_term_by_uid_and_submval=snapshot.codelist_term,
                     find_project_by_study_uid=self._repos.project_repository.find_by_study_uid,
                     study_value_version=study_value_version,
                     terms_at_specific_datetime=terms_at_specific_datetime,
+                    pharmaceutical_products=products,
+                    native_library_bindings=snapshot.bindings,
                 )
             )
         return result
@@ -94,29 +82,14 @@ class StudyCompoundSelectionService(
     def _transform_single_to_response_model(
         self, study_selection: StudySelectionCompoundVO, order: int, study_uid: str
     ) -> StudySelectionCompound:
-        if study_selection.compound_uid is None:
-            compound_model = None
-        else:
-            compound_model = self._transform_compound_model(
-                compound_uid=study_selection.compound_uid
-            )
-
-        if study_selection.compound_alias_uid is None:
-            compound_alias_model = None
-        else:
-            compound_alias_model = self._transform_compound_alias_model(
-                study_selection.compound_alias_uid
-            )
         terms_at_specific_datetime = self._extract_study_standards_effective_date(
             study_uid=study_uid,
         )
-
-        if study_selection.medicinal_product_uid is None:
-            medicinal_product_model = None
-        else:
-            medicinal_product_model = self._transform_medicinal_product_model(
-                study_selection.medicinal_product_uid
-            )
+        snapshot = StudyCompoundSnapshotReader(
+            self._repos, study_uid, None,
+            terms_at_specific_datetime=terms_at_specific_datetime,
+        )
+        compound_model, compound_alias_model, medicinal_product_model, products = snapshot.selection_models(study_selection)
 
         result = StudySelectionCompound.from_study_compound_ar(
             study_uid=study_uid,
@@ -125,9 +98,11 @@ class StudyCompoundSelectionService(
             compound_model=compound_model,
             compound_alias_model=compound_alias_model,
             medicinal_product_model=medicinal_product_model,
-            find_codelist_term_by_uid_and_submval=self._repos.ct_codelist_name_repository.get_codelist_term_by_uid_and_submval,
+            find_codelist_term_by_uid_and_submval=snapshot.codelist_term,
             find_project_by_study_uid=self._repos.project_repository.find_by_study_uid,
             terms_at_specific_datetime=terms_at_specific_datetime,
+            pharmaceutical_products=products,
+            native_library_bindings=snapshot.bindings,
         )
         return result
 
@@ -262,7 +237,9 @@ class StudyCompoundSelectionService(
             )
 
             header_values = service_level_generic_header_filtering(
-                items=self._transform_all_to_response_model(compound_selection_ar),
+                items=self._transform_all_to_response_model(
+                    compound_selection_ar, study_value_version=study_value_version,
+                ),
                 field_name=field_name,
                 search_string=search_string,
                 filter_by=filter_by,

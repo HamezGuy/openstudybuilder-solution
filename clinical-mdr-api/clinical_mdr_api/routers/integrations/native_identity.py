@@ -23,6 +23,7 @@ from clinical_mdr_api.generated.platform_contracts.native_identity_command_proce
 )
 from clinical_mdr_api.services.integrations.native_identity import Neo4jOsbNativeIdentityStoreV1
 from clinical_mdr_api.services.integrations.signing_authorization import platform_signing_authorization
+from clinical_mdr_api.services.integrations.review_workspace_migration import is_review_workspace_claim
 from clinical_mdr_api.generated.platform_contracts.platform_command_v1 import (
     PlatformCommandError,
     PlatformCommandPrincipalV1,
@@ -62,9 +63,16 @@ from clinical_mdr_api.generated.platform_contracts.hash_signing_v1 import (
 from common.auth.dependencies import platform_security
 from common.auth.user import user
 from common.config import settings
+from clinical_mdr_api.routers.integrations.native_item_observation import router as native_item_observation_router
+from clinical_mdr_api.routers.integrations.selected_activity_item_observation import router as selected_activity_item_observation_router
+from clinical_mdr_api.routers.integrations.source_draft_stage import router as source_draft_stage_router
 
 router = APIRouter()
 
+# Additive companion; existing mapping evidence bytes and contracts are unchanged.
+router.include_router(native_item_observation_router)
+router.include_router(selected_activity_item_observation_router)
+router.include_router(source_draft_stage_router)
 
 
 class _UnavailablePublisher:
@@ -413,7 +421,8 @@ def inventory_native_study_roots() -> dict[str, Any]:
     summary="Create or bind one exact OSB draft root (disabled until P2)",
 )
 def create_or_bind_native_study_root(body: dict[str, Any]) -> dict[str, Any]:
-    if (
+    review_migration = settings.review_workspace_identity_enabled and is_review_workspace_claim(body)
+    if not review_migration and (
         not settings.native_identity_endpoint_enabled
         or settings.deployment_environment.strip().lower() in {"prod", "production"}
     ):

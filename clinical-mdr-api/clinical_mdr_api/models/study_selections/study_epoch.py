@@ -99,6 +99,11 @@ class StudyEpochEditInput(PatchInputModel):
 
 
 class StudyEpoch(BaseModel):
+    terminology_source: Annotated[
+        dict | None,
+        Field(description="Exact selected catalogue/date and independent term history used for epoch labels.",
+              json_schema_extra={"nullable": True}),
+    ] = None
     study_uid: Annotated[str, Field()]
     start_rule: Annotated[
         str | None,

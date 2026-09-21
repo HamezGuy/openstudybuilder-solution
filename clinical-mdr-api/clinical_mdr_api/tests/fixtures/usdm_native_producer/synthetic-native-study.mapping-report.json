@@ -1,0 +1,77 @@
+{
+  "state": "incomplete",
+  "studyUid": "Study_semantic_fixture",
+  "studyValueVersion": "2.0",
+  "issues": [
+    {
+      "code": "USDM_REQUIRED_SOURCE_VALUE_MISSING",
+      "sourcePath": "study-protocol-header/status",
+      "targetPath": "StudyDefinitionDocumentVersion/status",
+      "message": "No authoritative native value is available for status.",
+      "resolution": "Supply the corresponding governed native value before validation and release."
+    },
+    {
+      "code": "USDM_REQUIRED_SOURCE_VALUE_MISSING",
+      "sourcePath": "study-protocol-header",
+      "targetPath": "StudyDefinitionDocument/language",
+      "message": "No authoritative native value is available for language.",
+      "resolution": "Supply the corresponding governed native value before validation and release."
+    },
+    {
+      "code": "USDM_REQUIRED_SOURCE_VALUE_MISSING",
+      "sourcePath": "study-protocol-header",
+      "targetPath": "StudyDefinitionDocument/templateName",
+      "message": "No authoritative native value is available for templateName.",
+      "resolution": "Supply the corresponding governed native value before validation and release."
+    },
+    {
+      "code": "USDM_ARM_DATA_ORIGIN_CAPABILITY_REQUIRED",
+      "sourcePath": "study-arms/Arm_1",
+      "targetPath": "StudyArm/dataOriginType",
+      "message": "The native arm contract does not expose a governed data origin.",
+      "resolution": "Add an explicit native arm data-origin field; a name or description cannot supply it."
+    },
+    {
+      "code": "USDM_REQUIRED_SOURCE_VALUE_MISSING",
+      "sourcePath": "study-arms/Arm_1",
+      "targetPath": "StudyArm/dataOriginDescription",
+      "message": "No authoritative native value is available for dataOriginDescription.",
+      "resolution": "Supply the corresponding governed native value before validation and release."
+    },
+    {
+      "code": "USDM_REQUIRED_SOURCE_VALUE_MISSING",
+      "sourcePath": "study-arms/Arm_1",
+      "targetPath": "StudyArm/dataOriginType",
+      "message": "No authoritative native value is available for dataOriginType.",
+      "resolution": "Supply the corresponding governed native value before validation and release."
+    },
+    {
+      "code": "USDM_REQUIRED_SOURCE_VALUE_MISSING",
+      "sourcePath": "current_metadata.study_design",
+      "targetPath": "InterventionalStudyDesign/rationale",
+      "message": "No authoritative native value is available for rationale.",
+      "resolution": "Supply the corresponding governed native value before validation and release."
+    },
+    {
+      "code": "USDM_REQUIRED_SOURCE_VALUE_MISSING",
+      "sourcePath": "study-branch-arms/Branch_1",
+      "targetPath": "StudyArm/dataOriginDescription",
+      "message": "No authoritative native value is available for dataOriginDescription.",
+      "resolution": "Supply the corresponding governed native value before validation and release."
+    },
+    {
+      "code": "USDM_REQUIRED_SOURCE_VALUE_MISSING",
+      "sourcePath": "study-branch-arms/Branch_1",
+      "targetPath": "StudyArm/dataOriginType",
+      "message": "No authoritative native value is available for dataOriginType.",
+      "resolution": "Supply the corresponding governed native value before validation and release."
+    },
+    {
+      "code": "USDM_ENROLLMENT_SCOPE_REVIEW_REQUIRED",
+      "sourcePath": "study-cohorts/number_of_subjects",
+      "targetPath": "StudyDesignPopulation/plannedEnrollmentNumber",
+      "message": "Native population and cohort counts are both present. DDF00133 requires one canonical count scope.",
+      "resolution": "Review the count scope. The population count is projected and every cohort count remains in its typed source metadata."
+    }
+  ]
+}

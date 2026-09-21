@@ -904,7 +904,11 @@ class StudyVisitListingModel(BaseModel):
             epoch_uid=study_visit_vo.epoch_uid,
             epoch_name=study_visit_vo.epoch.epoch.sponsor_preferred_name,
             visit_type=study_visit_vo.visit_type.sponsor_preferred_name,
-            contact_model=study_visit_vo.visit_contact_mode.sponsor_preferred_name,
+            contact_model=(
+                study_visit_vo.visit_contact_mode.sponsor_preferred_name
+                if study_visit_vo.visit_contact_mode is not None
+                else None
+            ),
             visit_no=str(study_visit_vo.unique_visit_number),
             name=study_visit_vo.derive_visit_name(),
             short_name=study_visit_vo.visit_short_name,

@@ -818,11 +818,22 @@ return *
         has_study_activity: bool | None = None,
         has_study_activity_instruction: bool | None = None,
         deleted: bool = False,
+        *,
+        study_uids: tuple[str, ...] | None = None,
     ) -> list[dict[str, Any]]:
         """
-        Public method to retrieve a list of all studies in the repository.
-        Returns a list of dictionaries.
+        Retrieve the legacy list shape within an optional exact study scope.
+        None is the non-delegated catalogue; an empty assignment returns no rows.
         """
+        self._check_not_closed()
+        if study_uids is not None and not study_uids:
+            return []
+        root_match = (
+            "UNWIND $study_uids AS scoped_uid MATCH (sr:StudyRoot {uid: scoped_uid})"
+            if study_uids is not None
+            else "MATCH (sr:StudyRoot)"
+        )
+        parameters = {"study_uids": list(study_uids)} if study_uids is not None else {}
 
         def where_stmt():
             conditions = []
@@ -854,11 +865,9 @@ return *
 
             return f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
-        self._check_not_closed()
-
         if minimal_response:
             query = f"""
-                MATCH (sr:StudyRoot)-[:LATEST]->(sv:StudyValue)
+                {root_match}-[:LATEST]->(sv:StudyValue)
                 {where_stmt()}
 
                 RETURN sr.uid AS uid,
@@ -867,7 +876,7 @@ return *
                     sv.study_subpart_acronym
                 ORDER BY uid
             """
-            rs = db.cypher_query(query)
+            rs = db.cypher_query(query, parameters)
             return [
                 {
                     "uid": row[0],
@@ -879,7 +888,7 @@ return *
             ]
 
         query = f"""
-            MATCH (sr:StudyRoot)-[:LATEST]->(sv:StudyValue)-[:HAS_PROJECT]-(:StudyProjectField)<-[:HAS_FIELD]-(p:Project)<-[:HOLDS_PROJECT]-(cp:ClinicalProgramme)
+            {root_match}-[:LATEST]->(sv:StudyValue)-[:HAS_PROJECT]-(:StudyProjectField)<-[:HAS_FIELD]-(p:Project)<-[:HOLDS_PROJECT]-(cp:ClinicalProgramme)
             {where_stmt()}
 
             WITH sr,sv,p,cp
@@ -925,7 +934,7 @@ return *
                 sv.description
             ORDER BY uid
         """
-        rs = db.cypher_query(query)
+        rs = db.cypher_query(query, parameters)
         return [
             {
                 "uid": row[0],

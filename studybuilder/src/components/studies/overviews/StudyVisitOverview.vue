@@ -61,7 +61,13 @@
             {{ $t('StudyVisitForm.contact_mode') }}
           </v-col>
           <v-col cols="2">
-            {{ visit.visit_contact_mode_name }}
+            {{
+              visit.visit_contact_mode?.sponsor_preferred_name ||
+              visit.visit_contact_mode_name ||
+              (isUntimedVisit(visit)
+                ? $t('StudyVisitForm.untimed_contact_unspecified')
+                : '')
+            }}
           </v-col>
         </v-row>
         <v-row>
@@ -93,7 +99,11 @@
             {{ $t('StudyVisitForm.time_dist') }}
           </v-col>
           <v-col cols="2">
-            {{ visit.time_value + ' ' + visit.time_unit_name }}
+            {{
+              isUntimedVisit(visit)
+                ? untimedTimingText(visit, $t)
+                : visit.time_value + ' ' + visit.time_unit_name
+            }}
           </v-col>
         </v-row>
         <v-row>
@@ -117,9 +127,14 @@
             {{ $t('StudyVisitForm.visit_window') }}
           </v-col>
           <v-col cols="2">
-            {{ visit.min_visit_window_value }} /
-            {{ visit.max_visit_window_value }}
-            {{ visit.visit_window_unit_name }}
+            <template v-if="isUntimedVisit(visit)">{{
+              $t('StudyVisitForm.untimed_unknown_window')
+            }}</template>
+            <template v-else>
+              {{ visit.min_visit_window_value }} /
+              {{ visit.max_visit_window_value }}
+              {{ visit.visit_window_unit_name }}
+            </template>
           </v-col>
         </v-row>
         <v-row>
@@ -177,6 +192,7 @@
 
 <script>
 import studyEpochs from '@/api/studyEpochs'
+import { isUntimedVisit, untimedTimingText } from '@/utils/visitTiming'
 import visitConstants from '@/constants/visits'
 import { computed } from 'vue'
 import { useStudiesGeneralStore } from '@/stores/studies-general'
@@ -185,6 +201,8 @@ export default {
   setup() {
     const studiesGeneralStore = useStudiesGeneralStore()
     return {
+      isUntimedVisit,
+      untimedTimingText,
       selectedStudy: computed(() => studiesGeneralStore.selectedStudy),
     }
   },

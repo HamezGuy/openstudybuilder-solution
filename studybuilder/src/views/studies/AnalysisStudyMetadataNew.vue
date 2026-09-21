@@ -92,6 +92,7 @@ const mdVisitHeaders = [
   { title: t('AnalysisMetadataTable.visit_type_name'), key: 'VISTPCD' },
   { title: t('AnalysisMetadataTable.visit_num'), key: 'AVISITN' },
   { title: t('AnalysisMetadataTable.visit_name'), key: 'AVISIT' },
+  { title: 'Protocol visit description', key: 'VISIT_DESCRIPTION' },
   { title: t('AnalysisMetadataTable.visit_short_label'), key: 'VISLABEL' },
   { title: t('AnalysisMetadataTable.day_name'), key: 'AVISIT1' },
   { title: t('AnalysisMetadataTable.day_value'), key: 'AVISIT1N' },
@@ -100,9 +101,11 @@ const mdVisitHeaders = [
 ]
 const mdFlowHeaders = [
   { title: t('AnalysisMetadataTable.study_id'), key: 'STUDYID_FLOWCHART' },
+  { title: 'Source activity', key: 'SOURCE_ACTIVITY_NAME' },
   { title: t('AnalysisMetadataTable.visit_num'), key: 'AVISITN' },
   { title: t('AnalysisMetadataTable.param_code'), key: 'PARAMCD' },
   { title: t('AnalysisMetadataTable.visit_name'), key: 'AVISIT' },
+  { title: 'Protocol visit description', key: 'VISIT_DESCRIPTION' },
   { title: t('AnalysisMetadataTable.param'), key: 'PARAM' },
   { title: t('AnalysisMetadataTable.paramn'), key: 'PARAMN' },
   { title: t('AnalysisMetadataTable.analysis_tpn'), key: 'ATPTN' },

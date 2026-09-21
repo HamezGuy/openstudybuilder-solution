@@ -14,7 +14,7 @@ from clinical_mdr_api.models.controlled_terminologies.ct_term import (
 )
 from common import exceptions
 from common.config import settings
-from common.utils import TimeUnit, VisitClass, VisitSubclass
+from common.utils import TimeUnit, VisitClass, VisitSubclass, VisitTimingMode
 
 
 class VisitGroupFormat(Enum):
@@ -119,6 +119,18 @@ class StudyVisitVO:
     study_id: str | None = None
     study_id_prefix: str | None = None
     study_number: str | None = None
+    timing_mode: VisitTimingMode = VisitTimingMode.STANDARD
+    untimed_timing: dict | None = None
+
+    @property
+    def is_untimed(self) -> bool:
+        return self.timing_mode == VisitTimingMode.UNTIMED
+
+    @property
+    def has_timing(self) -> bool:
+        return not self.is_untimed and self.visit_class not in (
+            VisitClass.NON_VISIT, VisitClass.UNSCHEDULED_VISIT, VisitClass.SPECIAL_VISIT,
+        )
 
     @property
     def visit_name(self):
@@ -323,11 +335,15 @@ class StudyVisitVO:
 
     @property
     def study_week_label(self):
+        if self.is_untimed:
+            return "Not fixed"
         study_week = self.study_week.value if self.study_week else 0
         return f"Week {study_week}"
 
     @property
     def study_duration_weeks_label(self):
+        if self.is_untimed:
+            return "Not fixed"
         study_duration_weeks = (
             self.study_duration_weeks.value if self.study_duration_weeks else 0
         )
@@ -335,16 +351,22 @@ class StudyVisitVO:
 
     @property
     def week_in_study_label(self):
+        if self.is_untimed:
+            return "Not fixed"
         week_in_study = self.week_in_study.value if self.week_in_study else 0
         return f"Week {week_in_study}"
 
     @property
     def study_day_label(self):
+        if self.is_untimed:
+            return "Not fixed"
         study_day = self.study_day.value if self.study_day else 0
         return f"Day {study_day}"
 
     @property
     def study_duration_days_label(self):
+        if self.is_untimed:
+            return "Not fixed"
         study_duration_days = (
             self.study_duration_days.value if self.study_duration_days else 0
         )
@@ -369,6 +391,8 @@ class StudyVisitVO:
         return None
 
     def get_absolute_duration(self, _seen: set[str] | None = None) -> int | None:
+        if self.is_untimed:
+            return None
         # Special visit doesn't have a timing but we want to place it
         # after the anchor visit for the special visit hence we derive timing based on the anchor visit
         if _seen is None:

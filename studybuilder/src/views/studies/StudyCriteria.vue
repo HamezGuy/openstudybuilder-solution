@@ -9,7 +9,7 @@
     <v-tabs v-model="tab" bg-color="white">
       <v-tab
         v-for="type in criteriaTypes"
-        :key="type.term_uid"
+        :key="type.sponsor_preferred_name"
         :value="type.sponsor_preferred_name"
       >
         {{ type.sponsor_preferred_name }}
@@ -18,7 +18,7 @@
     <v-window v-model="tab">
       <v-window-item
         v-for="type in criteriaTypes"
-        :key="type.term_uid"
+        :key="type.sponsor_preferred_name"
         :value="type.sponsor_preferred_name"
       >
         <EligibilityCriteriaTable
@@ -39,6 +39,7 @@ import terms from '@/api/controlledTerminology/terms'
 import { useAppStore } from '@/stores/app'
 import { useStudiesGeneralStore } from '@/stores/studies-general'
 import { useTabKeys } from '@/composables/tabKeys'
+import { criteriaTypeTabs } from '@/utils/criteriaTypeTabs'
 
 const router = useRouter()
 const route = useRoute()
@@ -75,9 +76,9 @@ watch(tab, (newValue) => {
 
 onMounted(() => {
   terms.getTermsByCodelist('criteriaTypes', { unSorted: true }).then((resp) => {
-    criteriaTypes.value = resp.data.items
+    criteriaTypes.value = criteriaTypeTabs(resp.data.items)
     tab.value =
-      route.params.tab || criteriaTypes.value[0].sponsor_preferred_name
+      route.params.tab || criteriaTypes.value[0]?.sponsor_preferred_name || null
   })
 })
 </script>

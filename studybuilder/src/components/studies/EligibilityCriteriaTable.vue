@@ -323,11 +323,16 @@ onMounted(() => {
 })
 
 async function fetchAllCriteriaHistory() {
-  const resp = await study.getStudyCriteriaAllAuditTrail(
-    studiesGeneralStore.selectedStudy.uid,
-    props.criteriaType.term_uid
+  const responses = await Promise.all(
+    (props.criteriaType.term_uids || [props.criteriaType.term_uid]).map(
+      (termUid) =>
+        study.getStudyCriteriaAllAuditTrail(
+          studiesGeneralStore.selectedStudy.uid,
+          termUid
+        )
+    )
   )
-  const auditTrailData = transformItems(resp.data)
+  const auditTrailData = transformItems(responses.flatMap((resp) => resp.data))
   auditTrailData.forEach((item) => {
     if (!item.criteria) {
       item.criteria = item.template

@@ -1,4 +1,4 @@
-"""Verify exact StudyBundleV1 parity across 360i -> OSB -> EDC projection."""
+"""Verify canonical V2 definition/execution preservation and retained source custody."""
 
 import argparse
 import json
@@ -60,14 +60,15 @@ def _diff(expected, actual, path="$"):
 
 
 def _counts(bundle):
-    forms = bundle.get("forms", {}).get("forms", [])
+    execution = bundle.get("execution", bundle)  # read-only historical report support
+    forms = execution.get("forms", {}).get("forms", [])
     return {
-        "visits": len(bundle.get("visits", [])),
-        "assignments": len(bundle.get("visitFormAssignments", [])),
+        "visits": len(execution.get("visits", [])),
+        "assignments": len(execution.get("visitFormAssignments", [])),
         "forms": len(forms),
         "fields": sum(len(form.get("fields", [])) for form in forms),
-        "groupClasses": len(bundle.get("studyGroupClasses", [])),
-        "tasks": len(bundle.get("studyTasks", [])),
+        "groupClasses": len(execution.get("studyGroupClasses", [])),
+        "tasks": len(execution.get("studyTasks", [])),
     }
 
 
@@ -96,14 +97,39 @@ def main():
     response = requests.get(url, timeout=900)
     response.raise_for_status()
     actual = response.json()
-    export_census_document = actual.pop("_exportCensus", {})
+    export_census_document = actual.get("extensions", {}).get("_osbExport", {}).get("census", {})
     export_census = (
         export_census_document.get("rows", [])
         if isinstance(export_census_document, dict)
         else export_census_document
     )
 
-    differences = _diff(expected, actual)
+    if expected.get("formatVersion") != "2.0" or actual.get("formatVersion") != "2.0":
+        raise SystemExit("Current parity requires canonical V2 input and output; historical source requires the private decoder.")
+    differences = _diff(expected["definition"], actual["definition"], "$.definition")
+    differences += _diff(expected["execution"], actual["execution"], "$.execution")
+    actual_extensions = actual.get("extensions", {})
+    for key, value in expected.get("extensions", {}).items():
+        path = "$.extensions." + key
+        if key not in actual_extensions:
+            differences.append({"path": path, "kind": "missing"})
+            continue
+        actual_value = actual_extensions[key]
+        if key == "_osbExport":
+            if not isinstance(actual_value, dict) or "previous" not in actual_value:
+                differences.append({"path": path, "kind": "missing"})
+                continue
+            actual_value = actual_value["previous"]
+        differences += _diff(value, actual_value, path)
+    for collection, identity in (("artifacts", "artifactId"), ("payloads", "sha256")):
+        for source in expected["source"].get(collection, []):
+            path = "$.source." + collection + "." + source[identity]
+            matches = [row for row in actual["source"].get(collection, []) if row[identity] == source[identity]]
+            if len(matches) != 1:
+                differences.append({"path": path, "kind": "missing" if not matches else "duplicate"})
+            else:
+                differences += _diff(source, matches[0], path)
+    differences += _diff(expected["source"]["normalizations"], actual["source"]["normalizations"], "$.source.normalizations")
     report = {
         "studyId": args.study,
         "osbStudyUid": args.osb_study,

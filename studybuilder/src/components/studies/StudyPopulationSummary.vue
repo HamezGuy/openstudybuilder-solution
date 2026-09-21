@@ -1,4 +1,7 @@
 <template>
+  <v-alert type="info" variant="tonal" density="compact" class="mb-4">
+    {{ $t('StudyPopulationForm.number_of_expected_subjects_hint') }}
+  </v-alert>
   <StudyMetadataSummary
     :metadata="metadata"
     :params="params"

@@ -32,7 +32,7 @@ from clinical_mdr_api.domains.versioned_object_aggregate import (
 from clinical_mdr_api.models.concepts.activities.activity import Activity
 from clinical_mdr_api.models.utils import GenericFilteringReturn
 from common.config import settings
-from common.exceptions import BusinessLogicException
+from common.exceptions import BusinessLogicException, NotFoundException
 from common.utils import convert_to_datetime, version_string_to_tuple
 
 
@@ -1268,10 +1268,28 @@ RETURN
             query=query, params={"uid": uid, "version": version}
         )
 
-        BusinessLogicException.raise_if(
-            len(result_array) == 0,
-            msg=f"No data found for activity {uid} version {version}",
-        )
+        if not result_array:
+            # An existing version may legitimately have no groupings. Check
+            # that exact version independently; a malformed existing grouping
+            # must still fail instead of being presented as an empty library.
+            version_rows, _ = db.cypher_query(
+                """
+                MATCH (ar:ActivityRoot {uid: $uid})-[av_rel:HAS_VERSION {version: $version}]->(av:ActivityValue)
+                WITH ar, av_rel, av
+                ORDER BY av_rel.start_date DESC
+                LIMIT 1
+                OPTIONAL MATCH (av)-[:HAS_GROUPING]->(grouping)
+                RETURN ar.uid AS activity_uid, count(grouping) AS grouping_count
+                """,
+                {"uid": uid, "version": version},
+            )
+            NotFoundException.raise_if_not(
+                version_rows, "Activity Version", f"{uid} version {version}"
+            )
+            BusinessLogicException.raise_if(
+                version_rows[0][1] != 0,
+                msg=f"No data found for activity {uid} version {version}",
+            )
 
         # Process the result into a structured format
         activity_groupings = []
@@ -1376,7 +1394,7 @@ RETURN
             "activity_groupings": activity_groupings,
             "activity_instances": activity_instances_list,
         }
-        return GenericFilteringReturn(items=[item], total=1)
+        return GenericFilteringReturn(items=[item], total=1 if activity_groupings else 0)
 
     def get_activity_instances_for_version(
         self,

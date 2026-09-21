@@ -640,7 +640,7 @@ class ActivityOverview(BaseModel):
     def from_repository_input(cls, overview: dict[str, Any]):
         return cls(
             activity=SimpleActivity(
-                uid=overview.get("activity_value").get("uid"),
+                uid=overview["activity_root"]["uid"],
                 nci_concept_id=overview.get("activity_value").get("nci_concept_id"),
                 nci_concept_name=overview.get("activity_value").get("nci_concept_name"),
                 name=overview.get("activity_value").get("name"),

@@ -30,6 +30,16 @@
               />
             </v-radio-group>
             <v-skeleton-loader v-else type="card" />
+            <v-select
+              v-if="
+                form.visit_class === visitConstants.CLASS_MANUALLY_DEFINED_VISIT
+              "
+              v-model="form.timing_mode"
+              :items="timingModes"
+              :label="$t('StudyVisitForm.timing_mode')"
+              :rules="[formRules.required]"
+              data-cy="visit-timing-mode"
+            />
           </v-col>
         </v-row>
       </v-form>
@@ -123,14 +133,23 @@
                   :items="contactModes"
                   item-title="sponsor_preferred_name"
                   item-value="term_uid"
-                  :rules="[formRules.required]"
+                  :rules="isUntimed ? [] : [formRules.required]"
+                  :hint="
+                    isUntimed
+                      ? $t('StudyVisitForm.untimed_contact_unspecified')
+                      : undefined
+                  "
+                  :persistent-hint="
+                    isUntimed && !form.visit_contact_mode.term_uid
+                  "
                   clearable
-                  class="required"
+                  :class="{ required: !isUntimed }"
                   @update:model-value="getVisitPreview"
                 />
               </v-col>
               <v-col
                 v-if="
+                  !isUntimed &&
                   [
                     visitConstants.CLASS_SPECIAL_VISIT,
                     visitConstants.CLASS_NON_VISIT,
@@ -164,6 +183,12 @@
                 :label="$t('StudyVisitForm.soa_milestone')"
               />
             </v-row>
+            <StudyVisitUntimedTiming
+              v-if="isUntimed"
+              v-model="form.untimed_timing"
+              :visits="studyVisits"
+              :current-visit-uid="form.uid"
+            />
             <v-row v-if="showTimingFields">
               <v-col cols="4">
                 <v-autocomplete
@@ -253,9 +278,15 @@
                 form.visit_class === visitConstants.CLASS_MANUALLY_DEFINED_VISIT
               "
               density="compact"
-              type="warning"
+              :type="isUntimed ? 'info' : 'warning'"
               class="text-white mb-2"
-              :text="$t('StudyVisitForm.visit_number_uniqueness_warning')"
+              :text="
+                $t(
+                  isUntimed
+                    ? 'StudyVisitForm.untimed_identity_hint'
+                    : 'StudyVisitForm.visit_number_uniqueness_warning'
+                )
+              "
             />
             <v-row>
               <v-col cols="6">
@@ -311,9 +342,10 @@
 
               <template
                 v-if="
-                  form.visit_class === visitConstants.CLASS_SINGLE_VISIT ||
-                  form.visit_class ===
-                    visitConstants.CLASS_MANUALLY_DEFINED_VISIT
+                  !isUntimed &&
+                  (form.visit_class === visitConstants.CLASS_SINGLE_VISIT ||
+                    form.visit_class ===
+                      visitConstants.CLASS_MANUALLY_DEFINED_VISIT)
                 "
               >
                 <v-col cols="6">
@@ -339,8 +371,10 @@
             </v-row>
             <template
               v-if="
-                form.visit_class === visitConstants.CLASS_SINGLE_VISIT ||
-                form.visit_class === visitConstants.CLASS_MANUALLY_DEFINED_VISIT
+                !isUntimed &&
+                (form.visit_class === visitConstants.CLASS_SINGLE_VISIT ||
+                  form.visit_class ===
+                    visitConstants.CLASS_MANUALLY_DEFINED_VISIT)
               "
             >
               <div class="sub-title">
@@ -480,8 +514,11 @@
                 <v-list>
                   <v-list-item v-for="item in items" :key="item.uid" cols="12">
                     {{ item.raw.visit_name }} -
-                    <template
-                      v-if="['day', 'days'].includes(form.time_unit.name)"
+                    <template v-if="isUntimedVisit(item.raw)">{{
+                      untimedTimingText(item.raw, t, studyVisits)
+                    }}</template
+                    ><template
+                      v-else-if="['day', 'days'].includes(form.time_unit?.name)"
                       >{{ item.raw.study_day_label }}</template
                     ><template v-else>{{ item.raw.study_week_label }}</template>
                   </v-list-item>
@@ -507,6 +544,12 @@ import { useEpochsStore } from '@/stores/studies-epochs'
 import { inject, ref, watch, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { sanitizeHTML } from '@/utils/sanitize'
+import StudyVisitUntimedTiming from '@/components/studies/StudyVisitUntimedTiming.vue'
+import {
+  isUntimedVisit,
+  prepareVisitTimingPayload,
+  untimedTimingText,
+} from '@/utils/visitTiming'
 
 const notificationHub = inject('notificationHub')
 const formRules = inject('formRules')
@@ -533,6 +576,11 @@ const anchorVisitsForSpecialVisit = ref([])
 const currentAnchorVisit = ref(null)
 const disableTimeValue = ref(false)
 const form = ref({})
+const isUntimed = computed(() => isUntimedVisit(form.value))
+const timingModes = computed(() => [
+  { value: 'STANDARD', title: t('StudyVisitForm.timing_standard') },
+  { value: 'UNTIMED', title: t('StudyVisitForm.timing_untimed') },
+])
 const helpItems = ref([
   'StudyVisitForm.vtype_step_label',
   'StudyVisitForm.period',
@@ -695,9 +743,10 @@ const visitUniqueNumberDisabled = computed(() => {
 })
 const showTimingFields = computed(() => {
   return (
-    form.value.visit_class === visitConstants.CLASS_SINGLE_VISIT ||
-    form.value.visit_class === visitConstants.CLASS_SPECIAL_VISIT ||
-    form.value.visit_class === visitConstants.CLASS_MANUALLY_DEFINED_VISIT
+    !isUntimed.value &&
+    (form.value.visit_class === visitConstants.CLASS_SINGLE_VISIT ||
+      form.value.visit_class === visitConstants.CLASS_SPECIAL_VISIT ||
+      form.value.visit_class === visitConstants.CLASS_MANUALLY_DEFINED_VISIT)
   )
 })
 const requiredIfManuallyDefinedVisit = computed(() => {
@@ -716,6 +765,7 @@ const disableWindowUnit = computed(() => {
 const atLeastOneNormalVisit = computed(() => {
   for (let index = studyVisits.value.length - 1; index >= 0; index--) {
     if (
+      !isUntimedVisit(studyVisits.value[index]) &&
       [
         visitConstants.CLASS_NON_VISIT,
         visitConstants.CLASS_UNSCHEDULED_VISIT,
@@ -732,7 +782,7 @@ watch(
   (value) => {
     if (value) {
       epochs.getStudyVisit(selectedStudy.value.uid, value.uid).then((resp) => {
-        form.value = resp.data
+        form.value = getInitialFormContent(resp.data)
         form.value.time_unit = epochsStore.studyTimeUnits.find(
           (unit) => unit.uid === form.value.time_unit_uid
         )
@@ -798,8 +848,30 @@ watch(
   }
 )
 watch(
+  () => form.value.timing_mode,
+  (mode, previous) => {
+    if (mode === 'UNTIMED' && previous !== 'UNTIMED') {
+      const data = prepareVisitTimingPayload(form.value)
+      Object.assign(form.value, data)
+      form.value.time_reference = {}
+      form.value.visit_contact_mode ||= {}
+      form.value.time_unit = undefined
+      form.value.study_day_label = null
+      form.value.study_week_label = null
+    }
+    if (mode === 'STANDARD') form.value.untimed_timing = null
+  }
+)
+watch(
   () => form.value.visit_class,
   (value) => {
+    if (
+      value !== visitConstants.CLASS_MANUALLY_DEFINED_VISIT &&
+      isUntimed.value
+    ) {
+      form.value.timing_mode = 'STANDARD'
+      form.value.untimed_timing = null
+    }
     studyEpoch.value = ''
     if (
       value === visitConstants.CLASS_UNSCHEDULED_VISIT ||
@@ -833,6 +905,7 @@ onMounted(() => {
 })
 
 function validateEpochAllocationRule(value) {
+  if (isUntimed.value) return
   if (form.value.epoch_allocation.term_uid) {
     return
   }
@@ -894,12 +967,21 @@ function close() {
 }
 function getInitialFormContent(item) {
   if (item) {
-    return item
+    return {
+      ...JSON.parse(JSON.stringify(item)),
+      timing_mode: item.timing_mode || 'STANDARD',
+      time_reference: item.time_reference || {},
+      epoch_allocation: item.epoch_allocation || {},
+      visit_contact_mode: item.visit_contact_mode || {},
+      visit_type: item.visit_type || {},
+    }
   }
   studyEpoch.value = ''
   return {
     is_global_anchor_visit: false,
     visit_class: visitConstants.CLASS_SINGLE_VISIT,
+    timing_mode: 'STANDARD',
+    untimed_timing: null,
     show_visit: true,
     min_visit_window_value: 0,
     max_visit_window_value: 0,
@@ -938,8 +1020,8 @@ async function submit() {
 }
 
 async function addObject() {
-  const data = JSON.parse(JSON.stringify(form.value))
-  data.time_unit_uid = data.time_unit.uid
+  const data = prepareVisitTimingPayload(form.value)
+  if (!isUntimedVisit(data)) data.time_unit_uid = data.time_unit.uid
   delete data.time_unit
   if (
     data.visit_class === visitConstants.CLASS_SPECIAL_VISIT ||
@@ -968,7 +1050,7 @@ async function addObject() {
   notificationHub.add({ msg: t('StudyVisitForm.add_success') })
 }
 async function updateObject() {
-  const data = JSON.parse(JSON.stringify(form.value))
+  const data = prepareVisitTimingPayload(form.value)
   if (data.time_unit) {
     data.time_unit_uid = data.time_unit.uid
   }
@@ -983,6 +1065,9 @@ async function updateObject() {
 }
 function getVisitPreview() {
   try {
+    // Names and source rules are explicit in this mode; no derived preview or
+    // incidental simple-concept writes are needed while filling the form.
+    if (isUntimed.value) return
     if (props.studyVisit) {
       return
     }
@@ -1139,7 +1224,7 @@ function callbacks() {
   epochs.getStudyVisits(selectedStudy.value.uid, params).then((resp) => {
     studyVisits.value = resp.data.items
 
-    if (!props.studyVisit) {
+    if (!props.studyVisit && !isUntimed.value) {
       const defaultUnit = epochsStore.studyTimeUnits.find(
         (unit) => unit.name === 'days'
       )
@@ -1150,7 +1235,8 @@ function callbacks() {
             [
               visitConstants.CLASS_NON_VISIT,
               visitConstants.CLASS_UNSCHEDULED_VISIT,
-            ].indexOf(studyVisits.value[index].visit_class) === -1
+            ].indexOf(studyVisits.value[index].visit_class) === -1 &&
+            !isUntimedVisit(studyVisits.value[index])
           ) {
             lockedUnit = epochsStore.studyTimeUnits.find(
               (unit) =>
@@ -1160,16 +1246,16 @@ function callbacks() {
           }
         }
         form.value.time_unit = defaultUnit
-        form.value.visit_window_unit_uid = lockedUnit.uid
+        form.value.visit_window_unit_uid = lockedUnit?.uid
       } else {
         form.value.time_unit = defaultUnit
-        form.value.visit_window_unit_uid = defaultUnit.uid
+        form.value.visit_window_unit_uid = defaultUnit?.uid
       }
     }
   })
 }
 function onTabChange(number) {
-  if (number === 3 && globalAnchorVisit.value === null) {
+  if (number === 3 && globalAnchorVisit.value === null && !isUntimed.value) {
     notificationHub.add({
       msg: t('StudyVisitForm.no_anchor_visit'),
       type: 'warning',

@@ -177,7 +177,7 @@ class Settings(BaseSettings):
         alias="OIDC_ALLOWED_PURPOSES",
     )
     ENV_OAUTH_ALLOWED_CAPABILITIES: str = Field(
-        default="study:read,study:write,candidate:read,candidate:generate,candidate:apply,package:release,native-identity:bind,native-identity:inventory,platform-command:execute",
+        default="study:read,study:write,candidate:read,candidate:generate,candidate:apply,draft:stage,draft:read,package:release,native-identity:bind,native-identity:inventory,platform-command:execute",
         alias="OIDC_ALLOWED_CAPABILITIES",
     )
     ENV_OAUTH_ALLOWED_ROLES: str = Field(
@@ -293,12 +293,24 @@ class Settings(BaseSettings):
     native_identity_inventory_enabled: bool = Field(
         default=False, alias="OSB_NATIVE_IDENTITY_INVENTORY_ENABLED"
     )
+    review_workspace_identity_enabled: bool = Field(
+        default=False, alias="OSB_REVIEW_WORKSPACE_IDENTITY_ENABLED"
+    )
     platform_commands_prototype_enabled: bool = Field(
         default=False, alias="OSB_PLATFORM_COMMANDS_PROTOTYPE_ENABLED"
     )
 
     def assert_native_identity_startup_safe(self) -> None:
         """P1 lands the endpoint while P2 still owns signed publication."""
+        if self.review_workspace_identity_enabled:
+            endpoint = urlparse(os.getenv("OSB_NATIVE_IDENTITY_SIGNING_URL", ""))
+            if (not self.oauth_enabled or not self.delegated_claims_required
+                    or endpoint.scheme != "https" or not endpoint.hostname
+                    or not os.path.isabs(os.getenv("OSB_PLATFORM_SIGNING_TOKEN_FILE", ""))):
+                raise ValueError(
+                    "OSB_REVIEW_IDENTITY_CONFIGURATION_REQUIRED: review workspace identity requires "
+                    "delegated OIDC and authenticated HTTPS signing"
+                )
         if (
             self.deployment_environment.strip().lower() in {"prod", "production"}
             and (

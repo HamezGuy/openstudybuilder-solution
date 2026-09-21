@@ -157,7 +157,7 @@ RUN /neo4j/bin/neo4j-admin dbms set-initial-password "$NEO4J_MDR_AUTH_PASSWORD" 
     && while ! netstat -tna | grep 'LISTEN\>' | grep -q '8000\>'; do sleep 2; done \
     # imports
     && sleep 10 && cd ../studybuilder-import \
-    && pipenv run import_all \
+    && INCLUDE_DUMMY_STUDIES="$INCLUDE_DUMMY_STUDIES" pipenv run import_all \
     && if [ "$INCLUDE_DUMMY_STUDIES" = "true" ]; then pipenv run import_dummydata; fi \
     && pipenv run import_feature_flags \
     # stop the api
@@ -207,7 +207,7 @@ ENV NEO4J_AUTH=neo4j/changeme1234 \
     NEO4J_apoc_export_file_enabled="true" \
     NEO4J_dbms_security_procedures_unrestricted="apoc.*" \
     NEO4J_dbms_databases_seed__from__uri__providers="FileSeedProvider" \
-    NEO4J_apoc_initializer_system_1="CREATE DATABASE mdrdb OPTIONS {existingData: 'use', seedURI:'file:///data/backup/mdrdockerdb.backup'} WAIT 60 SECONDS"
+    NEO4J_apoc_initializer_system_1="CREATE DATABASE mdrdb IF NOT EXISTS OPTIONS {existingData: 'use', seedURI:'file:///data/backup/mdrdockerdb.backup'} WAIT 60 SECONDS"
 
 # Volume attachment point: if an empty volume is mounted, it gets populated with the pre-built database from the image
 VOLUME /data

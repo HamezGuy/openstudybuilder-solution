@@ -74,6 +74,73 @@ class StudyCompoundSelectionHistory:
 
 class StudySelectionCompoundRepository:
 
+    def get_selected_library_references(
+        self, study_uid: str, study_compound_uid: str,
+        study_value_version: str | None = None,
+        *, history_dosing_uid: str | None = None,
+        history_date: datetime.datetime | None = None,
+    ) -> list[dict[str, str]]:
+        """Return exact selected value identities, including pharmaceutical products."""
+        historical = history_dosing_uid is not None or history_date is not None
+        if historical:
+            BusinessLogicException.raise_if(
+                study_value_version is not None
+                or history_dosing_uid is None
+                or history_date is None,
+                msg="STUDY_LIBRARY_HISTORY_SCOPE_REQUIRED",
+            )
+            scope = """
+                MATCH (sr:StudyRoot {uid: $study_uid})-[:AUDIT_TRAIL]->
+                    (dsa:StudyAction {date: $history_date})-[:AFTER]->
+                    (scd:StudyCompoundDosing {uid: $history_dosing_uid})
+                    <-[:STUDY_COMPOUND_HAS_COMPOUND_DOSING]-
+                    (sc:StudyCompound {uid: $study_compound_uid})
+                MATCH (sr)-[:AUDIT_TRAIL]->(:StudyAction)-[:AFTER]->(sc)
+            """
+            scope_identity = "elementId(sc)"
+        elif study_value_version is None:
+            scope = "MATCH (sr:StudyRoot {uid: $study_uid})-[:LATEST]->(sv:StudyValue)"
+        else:
+            scope = (
+                "MATCH (sr:StudyRoot {uid: $study_uid})"
+                "-[:HAS_VERSION {version: $study_value_version}]->(sv:StudyValue)"
+            )
+        if not historical:
+            scope += """
+                MATCH (sv)-[:HAS_STUDY_COMPOUND]->(sc:StudyCompound {uid: $study_compound_uid})
+            """
+            scope_identity = "elementId(sv)"
+        query = scope + f" RETURN DISTINCT {scope_identity} AS scope_identity," + """
+                elementId(sc) AS selection_identity,
+                [(sc)-[:HAS_SELECTED_COMPOUND]->(value:CompoundAliasValue)
+                    <-[:HAS_VERSION]-(root:CompoundAliasRoot)
+                    | {kind: 'compoundAlias', uid: root.uid, valueIdentity: elementId(value)}] AS aliases,
+                [(sc)-[:HAS_MEDICINAL_PRODUCT]->(value:MedicinalProductValue)
+                    <-[:HAS_VERSION]-(root:MedicinalProductRoot)
+                    | {kind: 'medicinalProduct', uid: root.uid, valueIdentity: elementId(value)}] AS products,
+                [(sc)-[:HAS_PHARMACEUTICAL_PRODUCT]->(value:PharmaceuticalProductValue)
+                    <-[:HAS_VERSION]-(root:PharmaceuticalProductRoot)
+                    | {kind: 'pharmaceuticalProduct', uid: root.uid, valueIdentity: elementId(value)}] AS pharmaceuticals
+        """
+        rows = utils.db_result_to_list(db.cypher_query(query, {
+            "study_uid": study_uid, "study_compound_uid": study_compound_uid,
+            "study_value_version": study_value_version,
+            "history_dosing_uid": history_dosing_uid, "history_date": history_date,
+        }))
+        if len(rows) != 1:
+            raise BusinessLogicException(
+                msg="STUDY_LIBRARY_SELECTION_SCOPE_UNRESOLVED: "
+                f"{study_uid}/{study_compound_uid}; expected one exact native selection."
+            )
+        references = {}
+        for field in ("aliases", "products", "pharmaceuticals"):
+            for reference in rows[0][field]:
+                key = reference["kind"], reference["uid"], reference["valueIdentity"]
+                if not all(isinstance(value, str) and value for value in key):
+                    raise BusinessLogicException(msg="STUDY_LIBRARY_SELECTION_IDENTITY_REQUIRED")
+                references[key] = reference
+        return [references[key] for key in sorted(references)]
+
     def _retrieves_all_data(
         self,
         study_uid: str | None = None,
@@ -253,13 +320,13 @@ class StudySelectionCompoundRepository:
             "study_compound_uid": study_compound_uid,
         }
         if study_value_version:
-            query = "MATCH (sr:StudyRoot {uid: $study_uid})-[l:HAS_VERSION {status:'RELEASED', version: $version}]->(sv:StudyValue)"
+            query = "MATCH (sr:StudyRoot {uid: $study_uid})-[l:HAS_VERSION {version: $version}]->(sv:StudyValue)"
             query_parameters["version"] = study_value_version
         else:
             query = "MATCH (sr:StudyRoot {uid: $study_uid})-[l:LATEST]->(sv:StudyValue)"
         query += """
         -[:HAS_STUDY_COMPOUND]->(sc:StudyCompound {uid: $study_compound_uid})
-        OPTIONAL MATCH (sc)-[:HAS_SELECTED_COMPOUND]->(:CompoundAliasValue)<-[:LATEST]-(car:CompoundAliasRoot)
+        OPTIONAL MATCH (sc)-[:HAS_SELECTED_COMPOUND]->(:CompoundAliasValue)<-[:HAS_VERSION]-(car:CompoundAliasRoot)
         OPTIONAL MATCH (sc)-[:HAS_SELECTED_COMPOUND]->(:CompoundAliasValue)-[:IS_COMPOUND]->(cr:CompoundRoot)
         OPTIONAL MATCH (sc)-[:HAS_MEDICINAL_PRODUCT]->(:MedicinalProductValue)<-[:HAS_VERSION]-(mpr:MedicinalProductRoot)
         WITH DISTINCT sr, sv, sc, car, cr, mpr
@@ -333,18 +400,25 @@ class StudySelectionCompoundRepository:
         study_uid: str,
         study_compound_uid: str,
         study_compound_dosing_uid: str,
+        history_date: datetime.datetime,
     ) -> tuple[StudySelectionCompoundVO, int]:
         """Find a study compound by its UID and linked study compound dosing UID.
-        Both of these UIDs are needed as a deleted study compound is not linked to any study value.
+        The study audit action and date bind an exact historical dosing node;
+        a deleted study compound need not be linked to a current study value.
         """
         query_parameters = {
             "study_uid": study_uid,
             "study_compound_uid": study_compound_uid,
             "study_compound_dosing_uid": study_compound_dosing_uid,
+            "history_date": history_date,
         }
         query = """
-        MATCH (sa:StudyAction)-[:AFTER]->(sc:StudyCompound {uid: $study_compound_uid})-[:STUDY_COMPOUND_HAS_COMPOUND_DOSING]->(scd:StudyCompoundDosing {uid: $study_compound_dosing_uid})
-        OPTIONAL MATCH (sc)-[:HAS_SELECTED_COMPOUND]->(:CompoundAliasValue)<-[:LATEST]-(car:CompoundAliasRoot)
+        MATCH (sr:StudyRoot {uid: $study_uid})-[:AUDIT_TRAIL]->
+            (dsa:StudyAction {date: $history_date})-[:AFTER]->
+            (scd:StudyCompoundDosing {uid: $study_compound_dosing_uid})
+            <-[:STUDY_COMPOUND_HAS_COMPOUND_DOSING]-(sc:StudyCompound {uid: $study_compound_uid})
+        MATCH (sr)-[:AUDIT_TRAIL]->(sa:StudyAction)-[:AFTER]->(sc)
+        OPTIONAL MATCH (sc)-[:HAS_SELECTED_COMPOUND]->(:CompoundAliasValue)<-[:HAS_VERSION]-(car:CompoundAliasRoot)
         OPTIONAL MATCH (sc)-[:HAS_SELECTED_COMPOUND]->(:CompoundAliasValue)-[:IS_COMPOUND]->(cr:CompoundRoot)
         OPTIONAL MATCH (sc)-[:HAS_MEDICINAL_PRODUCT]->(:MedicinalProductValue)<-[:HAS_VERSION]-(mpr:MedicinalProductRoot)
         WITH DISTINCT sc, sa, scd, car, cr, mpr

@@ -44,7 +44,7 @@
               {{ $t('StudyStructureOverview.planned_subjects') }}
             </div>
             <div class="text-headline-small font-weight-bold mt-1">
-              {{ plannedNumberOfSubjects }}
+              {{ populationLoading ? 'Loading…' : populationError ? 'Unavailable' : plannedNumberOfSubjects ?? 'Not configured' }}
             </div>
           </v-col>
           <v-col>
@@ -210,6 +210,8 @@ import { useEpochsStore } from '@/stores/studies-epochs'
 import { onMounted, ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import cohortConstants from '@/constants/cohorts'
+import studyApi from '@/api/study'
+import { studyPopulationTarget } from '@/utils/studyPopulationTarget'
 
 const { t } = useI18n()
 const studiesGeneralStore = useStudiesGeneralStore()
@@ -223,17 +225,16 @@ const cellsLoading = ref(false)
 const cohorts = ref([])
 const designClass = ref('')
 const sourceVariable = ref({})
+const population = ref(null)
+const populationLoading = ref(true)
+const populationError = ref(false)
 
 const studyEpochs = computed(() => {
   return epochsStore.studyEpochs
 })
-const plannedNumberOfSubjects = computed(() => {
-  let result = 0
-  for (const arm of arms.value) {
-    result += arm.number_of_subjects
-  }
-  return result
-})
+const plannedNumberOfSubjects = computed(() =>
+  studyPopulationTarget(population.value, arms.value)
+)
 const visibleStudyEpochs = computed(() => {
   return studyEpochs.value.filter(
     (studyEpoch) => studyEpoch.epoch_name !== visitConstants.EPOCH_BASIC
@@ -241,6 +242,17 @@ const visibleStudyEpochs = computed(() => {
 })
 
 onMounted(() => {
+  studyApi
+    .getStudyPopulationMetadata(studiesGeneralStore.selectedStudy.uid)
+    .then((response) => {
+      population.value = response.data.current_metadata.study_population
+    })
+    .catch(() => {
+      populationError.value = true
+    })
+    .finally(() => {
+      populationLoading.value = false
+    })
   try {
     epochsStore.fetchStudyEpochs({
       studyUid: studiesGeneralStore.selectedStudy.uid,

@@ -157,6 +157,29 @@ def test_stated_epochs_pass_through_without_scaffolding():
     assert all(not p["scaffolding"] for p in plans)
 
 
+def test_explicit_withdrawal_criterion_preserves_wording_type_and_evidence():
+    text = "Withdrawal of consent. Further observation stops from consent withdrawal."
+    evidence = [{"documentId": "protocol", "page": 14, "section": "8.3"}]
+    purpose = {
+        "objectives": [], "endpoints": [],
+        "criteria": [{
+            "refKey": "withdrawal-consent", "text": text, "type": "WITHDRAWAL",
+            "sourceAssertionIds": ["source-withdrawal"], "evidence": evidence,
+        }],
+        "blockers": [],
+        "reconciliation": {
+            "balanced": True, "sourceAssertions": 1, "mappedAssertions": 1,
+            "blockedAssertions": 0, "objectives": 0, "endpoints": 0, "criteria": 1,
+        },
+    }
+    plan = mapping.study_purpose_plan(_payload(studyPurpose=purpose))
+    assert plan["criteria"] == [{
+        "ref": "withdrawal-consent", "text": text, "type": "WITHDRAWAL",
+        "type_name": "Withdrawal Criteria", "category": None,
+        "source_assertion_ids": ["source-withdrawal"], "evidence": evidence,
+    }]
+
+
 def test_no_epochs_preserves_missing_structure_without_inventing_carrier():
     plans, scaffolded = mapping.epochs_plan(_payload(epochs=[]))
     assert not scaffolded

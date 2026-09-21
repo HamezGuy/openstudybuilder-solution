@@ -133,6 +133,7 @@ from clinical_mdr_api.models.concepts.compound import Compound
 from clinical_mdr_api.models.concepts.compound_alias import CompoundAlias
 from clinical_mdr_api.models.concepts.concept import Concept, SimpleNumericValueWithUnit
 from clinical_mdr_api.models.concepts.medicinal_product import MedicinalProduct
+from clinical_mdr_api.models.concepts.pharmaceutical_product import PharmaceuticalProduct
 from clinical_mdr_api.models.controlled_terminologies.ct_term import (
     SimpleCodelistTermModel,
 )
@@ -1173,6 +1174,8 @@ class StudySelectionCompound(StudySelection):
         find_project_by_study_uid: Callable,
         terms_at_specific_datetime: datetime | None,
         study_value_version: str | None = None,
+        pharmaceutical_products: list[PharmaceuticalProduct] | None = None,
+        native_library_bindings: list[dict[str, Any]] | None = None,
     ):
         project = find_project_by_study_uid(study_uid)
         return cls(
@@ -1223,6 +1226,8 @@ class StudySelectionCompound(StudySelection):
             project_name=project.name,
             project_number=project.project_number,
             study_compound_dosing_count=selection.study_compound_dosing_count,
+            pharmaceutical_products=pharmaceutical_products or [],
+            native_library_bindings=native_library_bindings or [],
         )
 
     study_compound_uid: Annotated[str, Field(json_schema_extra={"source": "uid"})]
@@ -1249,6 +1254,14 @@ class StudySelectionCompound(StudySelection):
             json_schema_extra={"nullable": True},
         ),
     ]
+    pharmaceutical_products: list[PharmaceuticalProduct] = Field(
+        default_factory=list,
+        description="Complete pharmaceutical-product readings bound to the native study selection.",
+    )
+    native_library_bindings: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Native selected-value or historical as-of evidence; this is not release authority.",
+    )
 
     type_of_treatment: Annotated[
         SimpleCodelistTermModel | None,
@@ -1261,7 +1274,7 @@ class StudySelectionCompound(StudySelection):
     dispenser: Annotated[
         SimpleCodelistTermModel | None,
         Field(
-            description="route of administration defined for the study selection",
+            description="native dispensed-in term defined for the study selection",
             json_schema_extra={"nullable": True},
         ),
     ] = None
@@ -5392,6 +5405,10 @@ class StudySelectionCohortBatchOutput(BaseModel):
 
 
 class StudyCompoundDosing(StudySelection):
+    native_library_bindings: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Exact historical dose/unit readings for the native study scope.",
+    )
     study_compound_dosing_uid: Annotated[
         str | None,
         Field(

@@ -1,0 +1,8 @@
+{
+  "network": "osb-empty-groupings-062231-net",
+  "networkId": "f86f8f81c697a682d046fa5cd4e55a9743758f7d4df31cc214df61426aa5a634",
+  "database": "osb-empty-groupings-062231-db",
+  "databaseId": "c77ffd8367d3b6f60a42967a195beebc2058e5dde7592fdf3beb5496ba44d475",
+  "runner": "osb-empty-groupings-062231-test",
+  "source": "C:/Projects/OpenSourceBuilder/clinical-mdr-api"
+}

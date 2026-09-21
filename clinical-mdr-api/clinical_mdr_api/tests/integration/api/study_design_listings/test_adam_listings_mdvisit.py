@@ -47,6 +47,19 @@ reason_for_unlock_term_uid: str
 log = logging.getLogger(__name__)
 
 
+def native_visit_context(api_client, uid, number=100):
+    response = api_client.get(f"/studies/{uid}/study-visits?page_size=0")
+    assert_response_status_code(response, 200)
+    visits = response.json()
+    visits = visits["items"] if isinstance(visits, dict) else visits
+    visit = next(item for item in visits if int(item["unique_visit_number"]) == number)
+    return {
+        "SOURCE_VISIT_UID": visit["uid"],
+        "TIMING_MODE": visit["timing_mode"],
+        "VISIT_DESCRIPTION": visit["description"],
+    }
+
+
 @pytest.fixture(scope="module")
 def test_data():
     """Initialize test data"""
@@ -83,6 +96,7 @@ def test_adam_listing_mdvisit(api_client, test_data):
     res_visits = response.json()["items"]
 
     expected_output = StudyVisitAdamListing(
+        **native_visit_context(api_client, study_uid),
         STUDYID="SOME_ID-0",
         VISTPCD="BASELINE",
         AVISITN=100,
@@ -228,6 +242,7 @@ def test_adam_with_protocol_soa_html_with_time_units(api_client):
     assert res is not None
 
     expected_output = StudyVisitAdamListing(
+        **native_visit_context(api_client, study_for_export.uid),
         STUDYID="",
         VISTPCD="Visit Type2",
         AVISITN=100,
@@ -256,6 +271,7 @@ def test_adam_with_protocol_soa_html_with_time_units(api_client):
     res = response.json()["items"]
     assert res is not None
     expected_output = StudyVisitAdamListing(
+        **native_visit_context(api_client, study_for_export.uid),
         STUDYID="",
         VISTPCD="Visit Type2",
         AVISITN=100,

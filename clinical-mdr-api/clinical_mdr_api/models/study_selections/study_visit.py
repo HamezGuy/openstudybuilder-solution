@@ -17,11 +17,15 @@ from clinical_mdr_api.models.utils import (
     PostInputModel,
     get_latest_on_datetime_str,
 )
+from clinical_mdr_api.models.study_selections.visit_timing import (
+    UntimedVisitTiming,
+    VisitTimingInput,
+)
 from common.config import settings
-from common.utils import VisitClass, VisitSubclass
+from common.utils import VisitClass, VisitSubclass, VisitTimingMode
 
 
-class StudyVisitCreateInput(PostInputModel):
+class StudyVisitCreateInput(VisitTimingInput, PostInputModel):
     study_epoch_uid: Annotated[str, Field()]
     visit_type: Annotated[
         CTTermUidInput, Field(json_schema_extra={"source": "has_visit_type.uid"})
@@ -66,7 +70,7 @@ class StudyVisitCreateInput(PostInputModel):
     description: Annotated[str | None, Field()] = None
     start_rule: Annotated[str | None, Field()] = None
     end_rule: Annotated[str | None, Field()] = None
-    visit_contact_mode: Annotated[CTTermUidInput, Field()]
+    visit_contact_mode: Annotated[CTTermUidInput | None, Field()]
     epoch_allocation: Annotated[CTTermUidInput | None, Field()] = None
     visit_class: Annotated[VisitClass, Field()]
     visit_subclass: Annotated[VisitSubclass | None, Field()] = None
@@ -88,7 +92,8 @@ class StudyVisitCreateInput(PostInputModel):
     ] = None
 
 
-class StudyVisitEditInput(PatchInputModel):
+class StudyVisitEditInput(VisitTimingInput, PatchInputModel):
+    timing_mode: VisitTimingMode | None = None
     uid: Annotated[str, Field(description="Uid of the Visit")]
     study_epoch_uid: Annotated[str, Field()]
     visit_type: Annotated[
@@ -134,7 +139,7 @@ class StudyVisitEditInput(PatchInputModel):
     description: Annotated[str | None, Field()] = None
     start_rule: Annotated[str | None, Field()] = None
     end_rule: Annotated[str | None, Field()] = None
-    visit_contact_mode: Annotated[CTTermUidInput, Field()]
+    visit_contact_mode: Annotated[CTTermUidInput | None, Field()]
     epoch_allocation: Annotated[CTTermUidInput | None, Field()] = None
     visit_class: Annotated[VisitClass | None, Field()] = None
     visit_subclass: Annotated[VisitSubclass | None, Field()] = None
@@ -182,6 +187,8 @@ class SimpleStudyVisit(BaseModel):
 
 class StudyVisitLite(BaseModel):
     model_config = ConfigDict(populate_by_name=True, from_attributes=True)
+    timing_mode: VisitTimingMode = VisitTimingMode.STANDARD
+    untimed_timing: UntimedVisitTiming | None = None
 
     uid: Annotated[str, Field(description="Uid of the Visit")]
     consecutive_visit_group: Annotated[
@@ -428,6 +435,8 @@ class StudyVisitDetailed(StudyVisitLite):
             author_username=visit.author_username or visit.author_id,
             possible_actions=visit.possible_actions,
             visit_class=visit.visit_class,  # type: ignore[arg-type]
+            timing_mode=visit.timing_mode,
+            untimed_timing=visit.untimed_timing,
             visit_subclass=visit.visit_subclass if visit.visit_subclass else None,
             is_global_anchor_visit=visit.is_global_anchor_visit,
             is_soa_milestone=visit.is_soa_milestone,

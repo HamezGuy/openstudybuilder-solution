@@ -57,11 +57,40 @@ from clinical_mdr_api.tests.unit.services.soa_test_data import (
     TINY_SOA_TABLE,
 )
 from common.config import settings
+from common.utils import VisitTimingMode
 
 
 class MockStudyEpoch(BaseModel):
     uid: str
     epoch_ctterm: CTTermName
+
+
+@pytest.mark.parametrize(
+    "layout", [SoALayout.DETAILED, SoALayout.PROTOCOL, SoALayout.OPERATIONAL]
+)
+def test_untimed_soa_headers_preserve_unknown_timing_without_none_unit(layout):
+    visit = STUDY_VISITS[0].model_copy(
+        update={
+            "timing_mode": VisitTimingMode.UNTIMED,
+            "visit_window_unit_name": None,
+            "min_visit_window_value": None,
+            "max_visit_window_value": None,
+            "study_day_number": None,
+            "study_week_number": None,
+            "study_duration_days": None,
+            "study_duration_weeks": None,
+        }
+    )
+    rows = StudyFlowchartService._get_header_rows(
+        {visit.study_epoch_uid: {"manual": [visit]}},
+        time_unit="day",
+        soa_preferences=StudySoaPreferencesInput(),
+        layout=layout,
+    )
+    assert rows[-1].cells[0].text == "Visit window"
+    assert rows[-1].cells[-1].text == "Not fixed"
+    assert rows[-2].cells[-1].text == "Not fixed"
+    assert not any("None" in cell.text for row in rows for cell in row.cells)
 
 
 class MockStudyFlowchartService(StudyFlowchartService):

@@ -371,12 +371,11 @@ class StudyEndpointSelectionService(StudySelectionMixin):
                 units = None
                 separator = None
 
-            # get order from the Objective level CT term
+            # get order from the endpoint level CT term
             if selection_create_input.endpoint_level_uid is not None:
-                endpoint_level_order = (
-                    self._repos.ct_term_name_repository.term_specific_order_by_uid(
-                        uid=selection_create_input.endpoint_level_uid
-                    )
+                endpoint_level_order = self._repos.ct_term_name_repository.term_specific_order_by_uid_and_cl_submval(
+                    uid=selection_create_input.endpoint_level_uid,
+                    cl_submval=settings.study_endpoint_level_cl_submval,
                 )
             else:
                 endpoint_level_order = None
@@ -1023,10 +1022,9 @@ class StudyEndpointSelectionService(StudySelectionMixin):
 
         # get order from the endpoint level CT term
         if request_study_endpoint.endpoint_level_uid is not None:
-            endpoint_level_order = (
-                self._repos.ct_term_name_repository.term_specific_order_by_uid(
-                    uid=request_study_endpoint.endpoint_level_uid
-                )
+            endpoint_level_order = self._repos.ct_term_name_repository.term_specific_order_by_uid_and_cl_submval(
+                uid=request_study_endpoint.endpoint_level_uid,
+                cl_submval=settings.study_endpoint_level_cl_submval,
             )
         else:
             endpoint_level_order = None

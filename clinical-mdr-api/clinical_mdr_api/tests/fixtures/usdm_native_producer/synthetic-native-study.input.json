@@ -1,0 +1,2297 @@
+{
+  "formatVersion": "synthetic-native-osb-study/1",
+  "studyUid": "Study_semantic_fixture",
+  "studyValueVersion": "2.0",
+  "exportedAt": "2026-09-09T12:00:00+00:00",
+  "graph": {
+    "study": {
+      "uid": "Study_semantic_fixture",
+      "study_parent_part": null,
+      "study_subpart_uids": [],
+      "possible_actions": [],
+      "current_metadata": {
+        "identification_metadata": {
+          "study_number": null,
+          "subpart_id": null,
+          "study_acronym": "OSB-S",
+          "study_subpart_acronym": null,
+          "project_number": null,
+          "project_name": null,
+          "description": "",
+          "clinical_programme_name": null,
+          "study_id": "OSB-SEMANTIC",
+          "registry_identifiers": {
+            "ct_gov_id": null,
+            "ct_gov_id_null_value_code": null,
+            "eudract_id": null,
+            "eudract_id_null_value_code": null,
+            "universal_trial_number_utn": null,
+            "universal_trial_number_utn_null_value_code": null,
+            "japanese_trial_registry_id_japic": null,
+            "japanese_trial_registry_id_japic_null_value_code": null,
+            "investigational_new_drug_application_number_ind": null,
+            "investigational_new_drug_application_number_ind_null_value_code": null,
+            "eu_trial_number": null,
+            "eu_trial_number_null_value_code": null,
+            "civ_id_sin_number": null,
+            "civ_id_sin_number_null_value_code": null,
+            "national_clinical_trial_number": null,
+            "national_clinical_trial_number_null_value_code": null,
+            "japanese_trial_registry_number_jrct": null,
+            "japanese_trial_registry_number_jrct_null_value_code": null,
+            "national_medical_products_administration_nmpa_number": null,
+            "national_medical_products_administration_nmpa_number_null_value_code": null,
+            "eudamed_srn_number": null,
+            "eudamed_srn_number_null_value_code": null,
+            "investigational_device_exemption_ide_number": null,
+            "investigational_device_exemption_ide_number_null_value_code": null,
+            "eu_pas_number": null,
+            "eu_pas_number_null_value_code": null
+          }
+        },
+        "version_metadata": {
+          "study_status": "LOCKED",
+          "version_number": "2.0",
+          "version_timestamp": "2026-09-08T10:00:00Z",
+          "version_author": "synthetic-author",
+          "version_description": "Native snapshot two"
+        },
+        "high_level_study_design": {
+          "study_type_code": {
+            "term_uid": "C98388",
+            "sponsor_preferred_name": "Renamed sponsor display label",
+            "queried_effective_date": null,
+            "date_conflict": null
+          },
+          "observational_model_code": null,
+          "observational_time_perspective_code": null,
+          "study_type_null_value_code": null,
+          "trial_type_codes": null,
+          "trial_type_null_value_code": null,
+          "trial_phase_code": null,
+          "trial_phase_null_value_code": null,
+          "development_stage_code": null,
+          "is_extension_trial": true,
+          "is_extension_trial_null_value_code": null,
+          "is_adaptive_design": false,
+          "is_adaptive_design_null_value_code": null,
+          "study_stop_rules": null,
+          "study_stop_rules_null_value_code": null,
+          "confirmed_response_minimum_duration": null,
+          "confirmed_response_minimum_duration_null_value_code": null,
+          "post_auth_indicator": null,
+          "post_auth_indicator_null_value_code": null
+        },
+        "study_population": {
+          "therapeutic_area_codes": null,
+          "therapeutic_area_null_value_code": null,
+          "disease_condition_or_indication_codes": [
+            {
+              "term_uid": "Dictionary_1",
+              "name": "Synthetic disease"
+            }
+          ],
+          "disease_condition_or_indication_null_value_code": null,
+          "diagnosis_group_codes": null,
+          "diagnosis_group_null_value_code": null,
+          "sex_of_participants_code": {
+            "term_uid": "C49636",
+            "sponsor_preferred_name": "Renamed BOTH display",
+            "queried_effective_date": null,
+            "date_conflict": null
+          },
+          "sex_of_participants_null_value_code": null,
+          "rare_disease_indicator": false,
+          "rare_disease_indicator_null_value_code": null,
+          "healthy_subject_indicator": false,
+          "healthy_subject_indicator_null_value_code": null,
+          "planned_minimum_age_of_subjects": {
+            "duration_value": 18,
+            "duration_unit_code": {
+              "uid": "Unit_years",
+              "name": "years",
+              "dimension_name": null
+            }
+          },
+          "planned_minimum_age_of_subjects_null_value_code": null,
+          "planned_maximum_age_of_subjects": {
+            "duration_value": 75,
+            "duration_unit_code": {
+              "uid": "Unit_years",
+              "name": "years",
+              "dimension_name": null
+            }
+          },
+          "planned_maximum_age_of_subjects_null_value_code": null,
+          "stable_disease_minimum_duration": null,
+          "stable_disease_minimum_duration_null_value_code": null,
+          "pediatric_study_indicator": null,
+          "pediatric_study_indicator_null_value_code": null,
+          "pediatric_postmarket_study_indicator": null,
+          "pediatric_postmarket_study_indicator_null_value_code": null,
+          "pediatric_investigation_plan_indicator": null,
+          "pediatric_investigation_plan_indicator_null_value_code": null,
+          "relapse_criteria": null,
+          "relapse_criteria_null_value_code": null,
+          "number_of_expected_subjects": 30,
+          "number_of_expected_subjects_null_value_code": null
+        },
+        "study_intervention": {
+          "intervention_type_code": null,
+          "intervention_type_null_value_code": null,
+          "add_on_to_existing_treatments": null,
+          "add_on_to_existing_treatments_null_value_code": null,
+          "control_type_code": null,
+          "control_type_null_value_code": null,
+          "intervention_model_code": {
+            "term_uid": "C82639",
+            "sponsor_preferred_name": "Parallel",
+            "queried_effective_date": null,
+            "date_conflict": null
+          },
+          "intervention_model_null_value_code": null,
+          "is_trial_randomised": false,
+          "is_trial_randomised_null_value_code": null,
+          "stratification_factor": null,
+          "stratification_factor_null_value_code": null,
+          "trial_blinding_schema_code": {
+            "term_uid": "C49659",
+            "sponsor_preferred_name": "Open label",
+            "queried_effective_date": null,
+            "date_conflict": null
+          },
+          "trial_blinding_schema_null_value_code": null,
+          "planned_study_length": null,
+          "planned_study_length_null_value_code": null,
+          "trial_intent_types_codes": [
+            {
+              "term_uid": "C49656",
+              "sponsor_preferred_name": "Treatment",
+              "queried_effective_date": null,
+              "date_conflict": null
+            }
+          ],
+          "trial_intent_types_null_value_code": null
+        },
+        "study_description": {
+          "study_title": "Synthetic native semantics study",
+          "study_short_title": "Native semantics"
+        }
+      }
+    },
+    "arms": [
+      {
+        "study_uid": "Study_semantic_fixture",
+        "study_version": "2.0",
+        "order": 1,
+        "project_number": null,
+        "project_name": null,
+        "arm_uid": "Arm_1",
+        "name": "Native arm",
+        "short_name": "A",
+        "label": null,
+        "code": null,
+        "description": "",
+        "randomization_group": null,
+        "number_of_subjects": 30,
+        "arm_type": {
+          "term_uid": "C174266",
+          "term_name": "Experimental Arm",
+          "preferred_term": null,
+          "codelist_uid": null,
+          "codelist_name": null,
+          "codelist_submission_value": null,
+          "order": null,
+          "submission_value": null,
+          "queried_effective_date": null,
+          "date_conflict": null
+        },
+        "start_date": "2026-09-08T10:00:00Z",
+        "author_username": null,
+        "end_date": null,
+        "status": null,
+        "change_type": null,
+        "accepted_version": null,
+        "merge_branch_for_this_arm_for_sdtm_adam": false
+      }
+    ],
+    "branches": [
+      {
+        "study_uid": "Study_semantic_fixture",
+        "study_version": "2.0",
+        "order": 1,
+        "project_number": null,
+        "project_name": null,
+        "branch_arm_uid": "Branch_1",
+        "name": "Native branch",
+        "short_name": "B",
+        "code": null,
+        "description": null,
+        "randomization_group": null,
+        "number_of_subjects": 0,
+        "start_date": "2026-09-08T10:00:00Z",
+        "author_username": null,
+        "end_date": null,
+        "status": null,
+        "change_type": null,
+        "accepted_version": null,
+        "arm_root": {
+          "study_uid": "Study_semantic_fixture",
+          "study_version": "2.0",
+          "order": 1,
+          "project_number": null,
+          "project_name": null,
+          "arm_uid": "Arm_1",
+          "name": "Native arm",
+          "short_name": "A",
+          "label": null,
+          "code": null,
+          "description": "",
+          "randomization_group": null,
+          "number_of_subjects": 30,
+          "arm_type": {
+            "term_uid": "C174266",
+            "term_name": "Experimental Arm",
+            "preferred_term": null,
+            "codelist_uid": null,
+            "codelist_name": null,
+            "codelist_submission_value": null,
+            "order": null,
+            "submission_value": null,
+            "queried_effective_date": null,
+            "date_conflict": null
+          },
+          "start_date": "2026-09-08T10:00:00Z",
+          "author_username": null,
+          "end_date": null,
+          "status": null,
+          "change_type": null,
+          "accepted_version": null,
+          "merge_branch_for_this_arm_for_sdtm_adam": false
+        },
+        "study_cohorts": null
+      }
+    ],
+    "cohorts": [
+      {
+        "study_uid": "Study_semantic_fixture",
+        "study_version": "2.0",
+        "order": 1,
+        "project_number": null,
+        "project_name": null,
+        "cohort_uid": "Cohort_1",
+        "name": "Cohort one",
+        "short_name": "C1",
+        "code": null,
+        "description": "",
+        "number_of_subjects": 0,
+        "start_date": "2026-09-08T10:00:00Z",
+        "author_username": null,
+        "end_date": null,
+        "status": null,
+        "change_type": null,
+        "accepted_version": null,
+        "branch_arm_roots": [
+          {
+            "study_uid": "Study_semantic_fixture",
+            "study_version": "2.0",
+            "order": 1,
+            "project_number": null,
+            "project_name": null,
+            "branch_arm_uid": "Branch_1",
+            "name": "Native branch",
+            "short_name": "B",
+            "code": null,
+            "description": null,
+            "randomization_group": null,
+            "number_of_subjects": 0,
+            "start_date": "2026-09-08T10:00:00Z",
+            "author_username": null,
+            "end_date": null,
+            "status": null,
+            "change_type": null,
+            "accepted_version": null,
+            "arm_root": {
+              "study_uid": "Study_semantic_fixture",
+              "study_version": "2.0",
+              "order": 1,
+              "project_number": null,
+              "project_name": null,
+              "arm_uid": "Arm_1",
+              "name": "Native arm",
+              "short_name": "A",
+              "label": null,
+              "code": null,
+              "description": "",
+              "randomization_group": null,
+              "number_of_subjects": 30,
+              "arm_type": {
+                "term_uid": "C174266",
+                "term_name": "Experimental Arm",
+                "preferred_term": null,
+                "codelist_uid": null,
+                "codelist_name": null,
+                "codelist_submission_value": null,
+                "order": null,
+                "submission_value": null,
+                "queried_effective_date": null,
+                "date_conflict": null
+              },
+              "start_date": "2026-09-08T10:00:00Z",
+              "author_username": null,
+              "end_date": null,
+              "status": null,
+              "change_type": null,
+              "accepted_version": null,
+              "merge_branch_for_this_arm_for_sdtm_adam": false
+            },
+            "study_cohorts": null
+          }
+        ],
+        "arm_roots": [
+          {
+            "study_uid": "Study_semantic_fixture",
+            "study_version": "2.0",
+            "order": 1,
+            "project_number": null,
+            "project_name": null,
+            "arm_uid": "Arm_1",
+            "name": "Native arm",
+            "short_name": "A",
+            "label": null,
+            "code": null,
+            "description": "",
+            "randomization_group": null,
+            "number_of_subjects": 30,
+            "arm_type": {
+              "term_uid": "C174266",
+              "term_name": "Experimental Arm",
+              "preferred_term": null,
+              "codelist_uid": null,
+              "codelist_name": null,
+              "codelist_submission_value": null,
+              "order": null,
+              "submission_value": null,
+              "queried_effective_date": null,
+              "date_conflict": null
+            },
+            "start_date": "2026-09-08T10:00:00Z",
+            "author_username": null,
+            "end_date": null,
+            "status": null,
+            "change_type": null,
+            "accepted_version": null,
+            "merge_branch_for_this_arm_for_sdtm_adam": false
+          }
+        ]
+      },
+      {
+        "study_uid": "Study_semantic_fixture",
+        "study_version": "2.0",
+        "order": 2,
+        "project_number": null,
+        "project_name": null,
+        "cohort_uid": "Cohort_2",
+        "name": "Cohort two",
+        "short_name": "C2",
+        "code": null,
+        "description": null,
+        "number_of_subjects": 20,
+        "start_date": "2026-09-08T10:00:00Z",
+        "author_username": null,
+        "end_date": null,
+        "status": null,
+        "change_type": null,
+        "accepted_version": null,
+        "branch_arm_roots": null,
+        "arm_roots": [
+          {
+            "study_uid": "Study_semantic_fixture",
+            "study_version": "2.0",
+            "order": 1,
+            "project_number": null,
+            "project_name": null,
+            "arm_uid": "Arm_1",
+            "name": "Native arm",
+            "short_name": "A",
+            "label": null,
+            "code": null,
+            "description": "",
+            "randomization_group": null,
+            "number_of_subjects": 30,
+            "arm_type": {
+              "term_uid": "C174266",
+              "term_name": "Experimental Arm",
+              "preferred_term": null,
+              "codelist_uid": null,
+              "codelist_name": null,
+              "codelist_submission_value": null,
+              "order": null,
+              "submission_value": null,
+              "queried_effective_date": null,
+              "date_conflict": null
+            },
+            "start_date": "2026-09-08T10:00:00Z",
+            "author_username": null,
+            "end_date": null,
+            "status": null,
+            "change_type": null,
+            "accepted_version": null,
+            "merge_branch_for_this_arm_for_sdtm_adam": false
+          }
+        ]
+      }
+    ],
+    "elements": [
+      {
+        "study_uid": "Study_semantic_fixture",
+        "study_version": "2.0",
+        "order": 1,
+        "project_number": null,
+        "project_name": null,
+        "element_uid": "Element_1",
+        "name": "Treatment element",
+        "short_name": "Tx",
+        "code": "T",
+        "description": "Source element",
+        "planned_duration": null,
+        "start_rule": "Begin assigned treatment",
+        "end_rule": "Treatment completed",
+        "element_colour": null,
+        "element_subtype": null,
+        "element_type": null,
+        "study_compound_dosing_count": null,
+        "start_date": "2026-09-08T10:00:00Z",
+        "author_username": null,
+        "end_date": null,
+        "status": null,
+        "change_type": null,
+        "accepted_version": null
+      }
+    ],
+    "epochs": [
+      {
+        "study_uid": "Study_semantic_fixture",
+        "start_rule": null,
+        "end_rule": null,
+        "epoch": null,
+        "duration_unit": null,
+        "order": 1,
+        "description": null,
+        "duration": null,
+        "color_hash": "#FFFFFF",
+        "epoch_name": "Treatment",
+        "epoch_subtype_name": null,
+        "epoch_type_name": "Treatment",
+        "epoch_subtype": null,
+        "uid": "Epoch_1",
+        "study_version": "2.0",
+        "epoch_ctterm": {
+          "term_uid": "C101526",
+          "sponsor_preferred_name": "Treatment",
+          "queried_effective_date": null,
+          "date_conflict": null
+        },
+        "epoch_subtype_ctterm": {
+          "term_uid": "C101526",
+          "sponsor_preferred_name": "Treatment",
+          "queried_effective_date": null,
+          "date_conflict": null
+        },
+        "epoch_type_ctterm": {
+          "term_uid": "C101526",
+          "sponsor_preferred_name": "Treatment",
+          "queried_effective_date": null,
+          "date_conflict": null
+        },
+        "start_day": null,
+        "end_day": null,
+        "start_week": null,
+        "end_week": null,
+        "start_date": "2026-09-08T10:00:00+00:00",
+        "end_date": null,
+        "status": "LOCKED",
+        "author_username": null,
+        "possible_actions": [],
+        "change_description": "",
+        "study_visit_count": 3,
+        "change_type": null
+      }
+    ],
+    "cells": [
+      {
+        "study_uid": "Study_semantic_fixture",
+        "study_version": "2.0",
+        "design_cell_uid": "Cell_1",
+        "study_arm_uid": "Arm_1",
+        "study_arm_name": null,
+        "study_branch_arm_uid": "Branch_1",
+        "study_branch_arm_name": null,
+        "study_epoch_uid": "Epoch_1",
+        "study_epoch_name": "Treatment",
+        "study_element_uid": "Element_1",
+        "study_element_name": "Treatment element",
+        "transition_rule": "Only participants assigned to this branch",
+        "start_date": "2026-09-08T10:00:00Z",
+        "author_username": null,
+        "end_date": null,
+        "order": 1
+      }
+    ],
+    "activities": [
+      {
+        "study_uid": "Study_semantic_fixture",
+        "study_version": "2.0",
+        "order": 1,
+        "project_number": null,
+        "project_name": null,
+        "show_activity_in_protocol_flowchart": null,
+        "show_activity_subgroup_in_protocol_flowchart": null,
+        "show_activity_group_in_protocol_flowchart": null,
+        "show_soa_group_in_protocol_flowchart": false,
+        "keep_old_version": false,
+        "study_activity_uid": "Activity_1",
+        "study_activity_subgroup": null,
+        "study_activity_group": null,
+        "study_soa_group": {
+          "study_soa_group_uid": "SoAGroup_1",
+          "soa_group_term_uid": "SoATerm_1",
+          "soa_group_term_name": "Study assessments",
+          "order": null
+        },
+        "activity": {
+          "start_date": null,
+          "end_date": null,
+          "status": null,
+          "version": "1.0",
+          "change_description": null,
+          "author_username": null,
+          "uid": "LibraryActivity_1",
+          "name": "Haematology",
+          "name_sentence_case": null,
+          "definition": null,
+          "abbreviation": null,
+          "library_name": "Synthetic library",
+          "possible_actions": [],
+          "nci_concept_id": null,
+          "nci_concept_name": null,
+          "activity_groupings": null,
+          "activity_instances": [],
+          "synonyms": null,
+          "request_rationale": null,
+          "is_request_final": false,
+          "is_request_rejected": false,
+          "contact_person": null,
+          "reason_for_rejecting": null,
+          "used_by_studies": [],
+          "replaced_by_activity": null,
+          "is_data_collected": true,
+          "is_multiple_selection_allowed": true,
+          "is_finalized": false,
+          "is_used_by_legacy_instances": false
+        },
+        "start_date": null,
+        "author_username": null,
+        "end_date": null,
+        "status": null,
+        "change_type": null,
+        "latest_activity": null,
+        "accepted_version": null,
+        "is_activity_updated": false
+      }
+    ],
+    "instances": [
+      {
+        "study_uid": "Study_semantic_fixture",
+        "show_activity_instance_in_protocol_flowchart": false,
+        "keep_old_version": false,
+        "is_important": false,
+        "study_activity_instance_uid": "InstanceSelection_1",
+        "study_activity_uid": "Activity_1",
+        "study_version": "2.0",
+        "activity": {
+          "uid": "LibraryActivity_1",
+          "name": "Haematology",
+          "library_name": "Synthetic library",
+          "is_data_collected": true,
+          "is_request_final": false
+        },
+        "activity_instance": {
+          "uid": "LibraryInstance_1",
+          "name": "Platelets at selected version",
+          "topic_code": "PLAT",
+          "adam_param_code": null,
+          "activity_instance_class": {
+            "uid": "Class_1",
+            "name": "Laboratory"
+          },
+          "specimen": null,
+          "test_name_code": null,
+          "standard_unit": "10^9/L",
+          "version": "1.0",
+          "status": null,
+          "is_default_selected_for_activity": false,
+          "is_required_for_activity": false
+        },
+        "latest_activity_instance": {
+          "uid": "LibraryInstance_1",
+          "name": "UNSELECTED LATEST",
+          "topic_code": null,
+          "adam_param_code": null,
+          "activity_instance_class": {
+            "uid": "Class_1",
+            "name": "Laboratory"
+          },
+          "specimen": null,
+          "test_name_code": null,
+          "standard_unit": null,
+          "version": "2.0",
+          "status": null,
+          "is_default_selected_for_activity": false,
+          "is_required_for_activity": false
+        },
+        "is_activity_instance_updated": false,
+        "start_date": null,
+        "author_username": null,
+        "end_date": null,
+        "status": null,
+        "change_type": null,
+        "state": null,
+        "is_reviewed": false,
+        "study_activity_subgroup": null,
+        "study_activity_group": null,
+        "study_soa_group": null,
+        "baseline_visits": null,
+        "order": null,
+        "study_data_supplier_uid": null,
+        "study_data_supplier_name": null,
+        "origin_type": null,
+        "origin_source": null
+      }
+    ],
+    "instructions": [
+      {
+        "study_activity_instruction_uid": "InstructionSelection_1",
+        "study_uid": "Study_semantic_fixture",
+        "study_version": "2.0",
+        "study_activity_uid": "Activity_1",
+        "activity_instruction_uid": "Instruction_1",
+        "activity_instruction_name": "Collect before dosing; preserve <b>fasting</b> text.",
+        "start_date": "2026-09-08T10:00:00Z",
+        "author_username": null,
+        "end_date": null
+      }
+    ],
+    "visits": [
+      {
+        "uid": "Visit_1",
+        "consecutive_visit_group": null,
+        "consecutive_visit_group_uid": null,
+        "show_visit": true,
+        "min_visit_window_value": 0,
+        "max_visit_window_value": 0,
+        "visit_window_unit_uid": null,
+        "study_epoch_uid": "Epoch_1",
+        "study_epoch": {
+          "term_uid": "C101526",
+          "sponsor_preferred_name": "Treatment",
+          "queried_effective_date": null,
+          "date_conflict": null
+        },
+        "study_day_number": null,
+        "study_duration_days": null,
+        "study_week_number": null,
+        "study_duration_weeks": null,
+        "visit_number": 1.0,
+        "unique_visit_number": 1,
+        "visit_short_name": "V1",
+        "visit_window_unit_name": "days",
+        "visit_class": "SINGLE_VISIT",
+        "visit_subclass": null,
+        "is_global_anchor_visit": true,
+        "is_soa_milestone": false,
+        "visit_type": {
+          "term_uid": "C25716",
+          "sponsor_preferred_name": "Visit",
+          "queried_effective_date": null,
+          "date_conflict": null
+        },
+        "visit_sublabel_reference": null,
+        "description": null,
+        "start_rule": "",
+        "end_rule": null,
+        "study_uid": "Study_semantic_fixture",
+        "study_id": null,
+        "study_version": "2.0",
+        "time_reference": null,
+        "time_value": 0,
+        "time_unit_uid": "Unit_days",
+        "time_unit_name": "days",
+        "time_unit": null,
+        "visit_contact_mode": null,
+        "epoch_allocation": null,
+        "repeating_frequency_uid": null,
+        "repeating_frequency": null,
+        "duration_time": null,
+        "duration_time_unit": null,
+        "study_duration_days_label": null,
+        "study_day_label": null,
+        "study_duration_weeks_label": null,
+        "study_week_label": null,
+        "week_in_study_label": null,
+        "visit_subnumber": 0,
+        "order": 1,
+        "visit_subname": "Visit 1",
+        "visit_name": "Visit 1",
+        "status": "LOCKED",
+        "start_date": "2026-09-08T10:00:00Z",
+        "end_date": null,
+        "author_username": null,
+        "possible_actions": [],
+        "change_type": null,
+        "resolved_anchor_visit_uid": "Visit_1"
+      },
+      {
+        "uid": "Visit_2",
+        "consecutive_visit_group": null,
+        "consecutive_visit_group_uid": null,
+        "show_visit": true,
+        "min_visit_window_value": -2,
+        "max_visit_window_value": 3,
+        "visit_window_unit_uid": null,
+        "study_epoch_uid": "Epoch_1",
+        "study_epoch": {
+          "term_uid": "C101526",
+          "sponsor_preferred_name": "Treatment",
+          "queried_effective_date": null,
+          "date_conflict": null
+        },
+        "study_day_number": null,
+        "study_duration_days": null,
+        "study_week_number": null,
+        "study_duration_weeks": null,
+        "visit_number": 2.0,
+        "unique_visit_number": 2,
+        "visit_short_name": "V2",
+        "visit_window_unit_name": "days",
+        "visit_class": "SINGLE_VISIT",
+        "visit_subclass": null,
+        "is_global_anchor_visit": false,
+        "is_soa_milestone": false,
+        "visit_type": {
+          "term_uid": "C25716",
+          "sponsor_preferred_name": "Visit",
+          "queried_effective_date": null,
+          "date_conflict": null
+        },
+        "visit_sublabel_reference": null,
+        "description": null,
+        "start_rule": "",
+        "end_rule": null,
+        "study_uid": "Study_semantic_fixture",
+        "study_id": null,
+        "study_version": "2.0",
+        "time_reference": null,
+        "time_value": 14,
+        "time_unit_uid": "Unit_days",
+        "time_unit_name": "days",
+        "time_unit": null,
+        "visit_contact_mode": null,
+        "epoch_allocation": null,
+        "repeating_frequency_uid": null,
+        "repeating_frequency": null,
+        "duration_time": null,
+        "duration_time_unit": null,
+        "study_duration_days_label": null,
+        "study_day_label": null,
+        "study_duration_weeks_label": null,
+        "study_week_label": null,
+        "week_in_study_label": null,
+        "visit_subnumber": 0,
+        "order": 2,
+        "visit_subname": "Visit 2",
+        "visit_name": "Visit 2",
+        "status": "LOCKED",
+        "start_date": "2026-09-08T10:00:00Z",
+        "end_date": null,
+        "author_username": null,
+        "possible_actions": [],
+        "change_type": null,
+        "resolved_anchor_visit_uid": "Visit_1"
+      },
+      {
+        "uid": "Visit_3",
+        "consecutive_visit_group": null,
+        "consecutive_visit_group_uid": null,
+        "show_visit": true,
+        "min_visit_window_value": -2,
+        "max_visit_window_value": 3,
+        "visit_window_unit_uid": null,
+        "study_epoch_uid": "Epoch_1",
+        "study_epoch": {
+          "term_uid": "C101526",
+          "sponsor_preferred_name": "Treatment",
+          "queried_effective_date": null,
+          "date_conflict": null
+        },
+        "study_day_number": null,
+        "study_duration_days": null,
+        "study_week_number": null,
+        "study_duration_weeks": null,
+        "visit_number": 3.0,
+        "unique_visit_number": 3,
+        "visit_short_name": "V3",
+        "visit_window_unit_name": "days",
+        "visit_class": "SINGLE_VISIT",
+        "visit_subclass": null,
+        "is_global_anchor_visit": false,
+        "is_soa_milestone": false,
+        "visit_type": {
+          "term_uid": "C25716",
+          "sponsor_preferred_name": "Visit",
+          "queried_effective_date": null,
+          "date_conflict": null
+        },
+        "visit_sublabel_reference": null,
+        "description": null,
+        "start_rule": "",
+        "end_rule": null,
+        "study_uid": "Study_semantic_fixture",
+        "study_id": null,
+        "study_version": "2.0",
+        "time_reference": null,
+        "time_value": 2,
+        "time_unit_uid": "Unit_days",
+        "time_unit_name": "days",
+        "time_unit": null,
+        "visit_contact_mode": null,
+        "epoch_allocation": null,
+        "repeating_frequency_uid": null,
+        "repeating_frequency": null,
+        "duration_time": null,
+        "duration_time_unit": null,
+        "study_duration_days_label": null,
+        "study_day_label": null,
+        "study_duration_weeks_label": null,
+        "study_week_label": null,
+        "week_in_study_label": null,
+        "visit_subnumber": 0,
+        "order": 3,
+        "visit_subname": "Visit 3",
+        "visit_name": "Visit 3",
+        "status": "LOCKED",
+        "start_date": "2026-09-08T10:00:00Z",
+        "end_date": null,
+        "author_username": null,
+        "possible_actions": [],
+        "change_type": null,
+        "resolved_anchor_visit_uid": "Visit_2"
+      }
+    ],
+    "planning": [
+      {
+        "study_activity_schedule_uid": "Plan_1",
+        "study_activity_uid": "Activity_1",
+        "study_activity_instance_uid": null,
+        "study_visit_uid": "Visit_2"
+      }
+    ],
+    "operational": [
+      {
+        "study_activity_schedule_uid": "Operation_1",
+        "study_activity_uid": "Activity_1",
+        "study_activity_instance_uid": "InstanceSelection_1",
+        "study_visit_uid": "Visit_2"
+      }
+    ],
+    "footnotes": [
+      {
+        "uid": "FootnoteSelection_1",
+        "study_uid": "Study_semantic_fixture",
+        "study_version": "2.0",
+        "order": 1,
+        "modified": null,
+        "referenced_items": [
+          {
+            "item_uid": "InstanceSelection_1",
+            "item_name": null,
+            "item_type": "StudyActivityInstance",
+            "visible_in_protocol_soa": false
+          },
+          {
+            "item_uid": "Visit_2",
+            "item_name": null,
+            "item_type": "StudyVisit",
+            "visible_in_protocol_soa": null
+          },
+          {
+            "item_uid": "Operation_1",
+            "item_name": null,
+            "item_type": "StudyActivitySchedule",
+            "visible_in_protocol_soa": null
+          }
+        ],
+        "footnote": {
+          "uid": "Footnote_1",
+          "name_plain": null,
+          "name": "Use <i>local</i> sample handling.",
+          "version": "1.0",
+          "library_name": null,
+          "status": null,
+          "template_uid": null,
+          "template_name": null
+        },
+        "template": null,
+        "accepted_version": null,
+        "latest_footnote": {
+          "uid": "Footnote_1",
+          "name_plain": null,
+          "name": "UNSELECTED FOOTNOTE",
+          "version": "2.0",
+          "library_name": null,
+          "status": null,
+          "template_uid": null,
+          "template_name": null
+        },
+        "author_username": null
+      }
+    ],
+    "milestones": [
+      {
+        "disease_milestone_type": "DIAGNOSIS",
+        "repetition_indicator": false,
+        "order": 1,
+        "study_uid": "Study_semantic_fixture",
+        "uid": "Milestone_1",
+        "study_version": "2.0",
+        "disease_milestone_type_name": "Diagnosis",
+        "disease_milestone_type_definition": "Diagnosis of the study condition",
+        "start_date": "2026-09-08T10:00:00Z",
+        "end_date": null,
+        "status": "LOCKED",
+        "author_username": null,
+        "change_type": null
+      }
+    ],
+    "standards": [
+      {
+        "uid": "Standard_DDF",
+        "study_uid": "Study_semantic_fixture",
+        "study_version": "2.0",
+        "ct_package": {
+          "uid": "DDF CT 2025-09-26",
+          "catalogue_name": "DDF CT",
+          "name": "DDF CT 2025-09-26",
+          "label": null,
+          "description": null,
+          "href": null,
+          "registration_status": "Final",
+          "source": null,
+          "extends_package": null,
+          "import_date": "2026-09-08T10:00:00Z",
+          "effective_date": "2025-09-26",
+          "author_username": null
+        },
+        "description": null,
+        "automatically_created": false,
+        "start_date": "2026-09-08T10:00:00Z",
+        "end_date": null,
+        "study_status": "LOCKED",
+        "author_username": null,
+        "change_type": null
+      },
+      {
+        "uid": "Standard_SDTM",
+        "study_uid": "Study_semantic_fixture",
+        "study_version": "2.0",
+        "ct_package": {
+          "uid": "SDTM CT 2025-09-26",
+          "catalogue_name": "SDTM CT",
+          "name": "SDTM CT 2025-09-26",
+          "label": null,
+          "description": null,
+          "href": null,
+          "registration_status": "Final",
+          "source": null,
+          "extends_package": null,
+          "import_date": "2026-09-08T10:00:00Z",
+          "effective_date": "2025-09-26",
+          "author_username": null
+        },
+        "description": null,
+        "automatically_created": false,
+        "start_date": "2026-09-08T10:00:00Z",
+        "end_date": null,
+        "study_status": "LOCKED",
+        "author_username": null,
+        "change_type": null
+      },
+      {
+        "uid": "Standard_PROTOCOL",
+        "study_uid": "Study_semantic_fixture",
+        "study_version": "2.0",
+        "ct_package": {
+          "uid": "PROTOCOL CT 2025-09-26",
+          "catalogue_name": "PROTOCOL CT",
+          "name": "PROTOCOL CT 2025-09-26",
+          "label": null,
+          "description": null,
+          "href": null,
+          "registration_status": "Final",
+          "source": null,
+          "extends_package": null,
+          "import_date": "2026-09-08T10:00:00Z",
+          "effective_date": "2025-09-26",
+          "author_username": null
+        },
+        "description": null,
+        "automatically_created": false,
+        "start_date": "2026-09-08T10:00:00Z",
+        "end_date": null,
+        "study_status": "LOCKED",
+        "author_username": null,
+        "change_type": null
+      }
+    ],
+    "groups": [
+      {
+        "show_activity_group_in_protocol_flowchart": false,
+        "study_uid": "Study_semantic_fixture",
+        "study_soa_group_uid": "SoAGroup_1",
+        "study_activity_subgroup_uids": [
+          "Subgroup_1"
+        ],
+        "study_activity_group_uid": "Group_1",
+        "activity_group_uid": "LibraryGroup_1",
+        "activity_group_name": "Assessments",
+        "order": null
+      }
+    ],
+    "subgroups": [
+      {
+        "show_activity_subgroup_in_protocol_flowchart": false,
+        "study_uid": "Study_semantic_fixture",
+        "study_activity_subgroup_uid": "Subgroup_1",
+        "activity_subgroup_uid": "LibrarySubgroup_1",
+        "activity_subgroup_name": "Laboratory",
+        "study_activity_group_uid": "Group_1",
+        "study_activity_uids": [
+          "Activity_1"
+        ],
+        "order": null
+      }
+    ],
+    "soa_groups": [
+      {
+        "show_soa_group_in_protocol_flowchart": false,
+        "study_uid": "Study_semantic_fixture",
+        "study_soa_group_uid": "SoAGroup_1",
+        "soa_group_term_uid": "SoATerm_1",
+        "soa_group_term_name": "Study assessments",
+        "study_activity_group_uids": [
+          "Group_1"
+        ],
+        "order": null
+      }
+    ],
+    "definition": {
+      "start_date": null,
+      "end_date": null,
+      "status": null,
+      "version": "1.0",
+      "change_description": null,
+      "author_username": null,
+      "uid": "LibraryInstance_1",
+      "name": "Platelets at selected version",
+      "name_sentence_case": null,
+      "definition": null,
+      "abbreviation": null,
+      "library_name": "Synthetic library",
+      "possible_actions": null,
+      "nci_concept_id": null,
+      "nci_concept_name": null,
+      "topic_code": null,
+      "adam_param_code": null,
+      "is_research_lab": false,
+      "molecular_weight": 0.0,
+      "is_required_for_activity": false,
+      "is_default_selected_for_activity": false,
+      "is_data_sharing": false,
+      "is_legacy_usage": false,
+      "is_derived": false,
+      "legacy_description": null,
+      "activity_instance_class": {
+        "uid": "Class_1",
+        "name": "Laboratory"
+      },
+      "activity_items": [
+        {
+          "activity_item_class": {
+            "uid": "ItemClass_1",
+            "name": "Result"
+          },
+          "ct_codelist": null,
+          "ct_terms": [],
+          "unit_definitions": [
+            {
+              "uid": "Unit_1",
+              "name": "10^9/L",
+              "dimension_name": null
+            }
+          ],
+          "is_adam_param_specific": false,
+          "is_activity_instance_id_specific": null,
+          "text_value": ""
+        }
+      ]
+    },
+    "history": [
+      {
+        "study_status": [
+          "LOCKED"
+        ],
+        "reason_for_lock_name": null,
+        "reason_for_unlock_name": null,
+        "metadata_version": "1.0",
+        "original_metadata_version": null,
+        "protocol_header_major_version": 1,
+        "protocol_header_minor_version": 0,
+        "description": "Source history 1.0",
+        "other_reason_for_unlocking": null,
+        "other_reason_for_locking_releasing": null,
+        "modified_date": "2026-08-01T00:00:00Z",
+        "modified_by": "synthetic-author"
+      },
+      {
+        "study_status": [
+          "LOCKED"
+        ],
+        "reason_for_lock_name": null,
+        "reason_for_unlock_name": null,
+        "metadata_version": "2.0",
+        "original_metadata_version": null,
+        "protocol_header_major_version": 1,
+        "protocol_header_minor_version": 1,
+        "description": "Source history 2.0",
+        "other_reason_for_unlocking": null,
+        "other_reason_for_locking_releasing": null,
+        "modified_date": "2026-09-08T10:00:00Z",
+        "modified_by": "synthetic-author"
+      },
+      {
+        "study_status": [
+          "LOCKED"
+        ],
+        "reason_for_lock_name": null,
+        "reason_for_unlock_name": null,
+        "metadata_version": "3.0",
+        "original_metadata_version": null,
+        "protocol_header_major_version": 1,
+        "protocol_header_minor_version": 2,
+        "description": "Source history 3.0",
+        "other_reason_for_unlocking": null,
+        "other_reason_for_locking_releasing": null,
+        "modified_date": "2026-09-09T00:00:00Z",
+        "modified_by": "synthetic-author"
+      }
+    ],
+    "unit_definitions": [
+      {
+        "start_date": "2026-09-08T10:00:00Z",
+        "end_date": null,
+        "status": "Final",
+        "version": "1.0",
+        "author_username": null,
+        "change_description": "Explicit synthetic unit definition",
+        "uid": "Unit_1",
+        "name": "10^9/L",
+        "library_name": "Synthetic native units",
+        "convertible_unit": false,
+        "display_unit": true,
+        "master_unit": false,
+        "si_unit": false,
+        "us_conventional_unit": false,
+        "use_complex_unit_conversion": false,
+        "ct_units": [],
+        "unit_subsets": [],
+        "ucum": null,
+        "unit_dimension": null,
+        "legacy_code": null,
+        "use_molecular_weight": false,
+        "conversion_factor_to_master": null,
+        "comment": "",
+        "order": 0,
+        "definition": "Billions of entities per litre.",
+        "template_parameter": false
+      }
+    ],
+    "header": {
+      "protocol_header_version": "1.1",
+      "has_final_protocol_locked_version": true
+    }
+  },
+  "odm": {
+    "events": [
+      {
+        "uid": "OdmStudyEvent_visit2",
+        "name": "Visit 2",
+        "library_name": "Synthetic native ODM",
+        "start_date": "2026-09-08T10:00:00Z",
+        "end_date": null,
+        "status": "Final",
+        "version": "1.0",
+        "author_username": null,
+        "change_description": "Synthetic native definition",
+        "oid": "NATIVE_VISIT_2",
+        "effective_date": null,
+        "retired_date": null,
+        "description": null,
+        "display_in_tree": true,
+        "forms": [
+          {
+            "uid": "OdmForm_lab",
+            "oid": null,
+            "name": null,
+            "version": "1.0",
+            "order_number": 1,
+            "mandatory": "Yes",
+            "locked": null,
+            "collection_exception_condition_oid": null
+          }
+        ],
+        "possible_actions": []
+      }
+    ],
+    "forms": [
+      {
+        "uid": "OdmForm_lab",
+        "name": "Native laboratory form",
+        "library_name": "Synthetic native ODM",
+        "start_date": "2026-09-08T10:00:00Z",
+        "end_date": null,
+        "status": "Final",
+        "version": "1.0",
+        "author_username": null,
+        "change_description": "Synthetic native definition",
+        "oid": "NATIVE_LAB",
+        "repeating": "No",
+        "sdtm_version": null,
+        "translated_texts": [],
+        "aliases": [],
+        "item_groups": [
+          {
+            "uid": "OdmItemGroup_lab",
+            "oid": null,
+            "name": null,
+            "version": "1.0",
+            "order_number": 1,
+            "mandatory": "Yes",
+            "collection_exception_condition_oid": null,
+            "vendor": {
+              "attributes": []
+            }
+          }
+        ],
+        "vendor_elements": [],
+        "vendor_attributes": [],
+        "vendor_element_attributes": [],
+        "possible_actions": []
+      }
+    ],
+    "groups": [
+      {
+        "uid": "OdmItemGroup_lab",
+        "name": "Laboratory",
+        "library_name": "Synthetic native ODM",
+        "start_date": "2026-09-08T10:00:00Z",
+        "end_date": null,
+        "status": "Final",
+        "version": "1.0",
+        "author_username": null,
+        "change_description": "Synthetic native definition",
+        "oid": "NATIVE_LAB_GROUP",
+        "repeating": "No",
+        "is_reference_data": null,
+        "sas_dataset_name": null,
+        "origin": null,
+        "purpose": null,
+        "comment": null,
+        "translated_texts": [],
+        "aliases": [],
+        "sdtm_domains": [],
+        "items": [
+          {
+            "uid": "OdmItem_platelets",
+            "oid": null,
+            "name": null,
+            "version": "1.0",
+            "order_number": 1,
+            "mandatory": "Yes",
+            "key_sequence": null,
+            "method_oid": null,
+            "imputation_method_oid": null,
+            "role": null,
+            "role_codelist_oid": null,
+            "collection_exception_condition_oid": null,
+            "vendor": {
+              "attributes": []
+            }
+          },
+          {
+            "uid": "OdmItem_collection_date",
+            "oid": null,
+            "name": null,
+            "version": "1.0",
+            "order_number": 2,
+            "mandatory": "Yes",
+            "key_sequence": null,
+            "method_oid": null,
+            "imputation_method_oid": null,
+            "role": null,
+            "role_codelist_oid": null,
+            "collection_exception_condition_oid": null,
+            "vendor": {
+              "attributes": []
+            }
+          },
+          {
+            "uid": "OdmItem_comment",
+            "oid": null,
+            "name": null,
+            "version": "1.0",
+            "order_number": 3,
+            "mandatory": "No",
+            "key_sequence": null,
+            "method_oid": null,
+            "imputation_method_oid": null,
+            "role": null,
+            "role_codelist_oid": null,
+            "collection_exception_condition_oid": null,
+            "vendor": {
+              "attributes": []
+            }
+          }
+        ],
+        "vendor_elements": [],
+        "vendor_attributes": [],
+        "vendor_element_attributes": [],
+        "possible_actions": []
+      }
+    ],
+    "items": [
+      {
+        "uid": "OdmItem_platelets",
+        "name": "Platelet count",
+        "library_name": "Synthetic native ODM",
+        "start_date": "2026-09-08T10:00:00Z",
+        "end_date": null,
+        "status": "Final",
+        "version": "1.0",
+        "author_username": null,
+        "change_description": "Synthetic native definition",
+        "oid": "PLATELETS",
+        "prompt": "Platelet count",
+        "datatype": "float",
+        "length": null,
+        "significant_digits": null,
+        "sas_field_name": null,
+        "sds_var_name": "LBORRES",
+        "origin": null,
+        "comment": "Preserve exact laboratory units.",
+        "odm_item_group": null,
+        "translated_texts": [],
+        "aliases": [],
+        "unit_definitions": [
+          {
+            "uid": "Unit_1",
+            "name": "10^9/L",
+            "version": "1.0",
+            "mandatory": false,
+            "order": null,
+            "ucum": null,
+            "ct_units": []
+          }
+        ],
+        "codelist": null,
+        "terms": [],
+        "activity_instances": [],
+        "vendor_elements": [],
+        "vendor_attributes": [],
+        "vendor_element_attributes": [],
+        "possible_actions": []
+      },
+      {
+        "uid": "OdmItem_collection_date",
+        "name": "Collection date",
+        "library_name": "Synthetic native ODM",
+        "start_date": "2026-09-08T10:00:00Z",
+        "end_date": null,
+        "status": "Final",
+        "version": "1.0",
+        "author_username": null,
+        "change_description": "Synthetic native definition",
+        "oid": "COLLECTION_DATE",
+        "prompt": "Date of sample collection",
+        "datatype": "date",
+        "length": null,
+        "significant_digits": null,
+        "sas_field_name": null,
+        "sds_var_name": null,
+        "origin": null,
+        "comment": null,
+        "odm_item_group": null,
+        "translated_texts": [],
+        "aliases": [],
+        "unit_definitions": [],
+        "codelist": null,
+        "terms": [],
+        "activity_instances": [],
+        "vendor_elements": [],
+        "vendor_attributes": [],
+        "vendor_element_attributes": [],
+        "possible_actions": []
+      },
+      {
+        "uid": "OdmItem_comment",
+        "name": "Sample comment",
+        "library_name": "Synthetic native ODM",
+        "start_date": "2026-09-08T10:00:00Z",
+        "end_date": null,
+        "status": "Final",
+        "version": "1.0",
+        "author_username": null,
+        "change_description": "Synthetic native definition",
+        "oid": "SAMPLE_COMMENT",
+        "prompt": "Sample handling comment",
+        "datatype": "text",
+        "length": 512,
+        "significant_digits": null,
+        "sas_field_name": null,
+        "sds_var_name": null,
+        "origin": null,
+        "comment": "Trailing spaces retained in native metadata.  ",
+        "odm_item_group": null,
+        "translated_texts": [],
+        "aliases": [
+          {
+            "name": "NATIVE_COMMENT",
+            "context": "synthetic-fixture"
+          }
+        ],
+        "unit_definitions": [],
+        "codelist": null,
+        "terms": [],
+        "activity_instances": [],
+        "vendor_elements": [],
+        "vendor_attributes": [],
+        "vendor_element_attributes": [],
+        "possible_actions": []
+      }
+    ],
+    "activityItemLinks": [
+      {
+        "studyActivityInstanceUid": "InstanceSelection_1",
+        "activityInstanceUid": "LibraryInstance_1",
+        "activityInstanceVersion": "1.0",
+        "activityItemIndex": 0,
+        "odmItemUid": "OdmItem_platelets",
+        "odmItemVersion": "1.0",
+        "relationship": {
+          "order": 1,
+          "primary": true,
+          "presetResponseValue": null,
+          "valueCondition": null,
+          "valueDependentMap": null
+        }
+      }
+    ]
+  },
+  "terminologyReadings": {
+    "formatVersion": "synthetic-native-ct-readings/1",
+    "scope": "Exact primary CDISC term subsets used as isolated native package/name readings; not a complete terminology package or CORE validation report.",
+    "packages": [
+      {
+        "uid": "DDF CT 2025-09-26",
+        "sourceFile": "ddfct-2025-09-26.json",
+        "sourceSha256": "986d01ce424d40cbc69c2e8eba65e75e26b46fcb79cd22064a236b512ba0bf1f",
+        "package": "ddfct-2025-09-26",
+        "terms": [
+          {
+            "codelist": {
+              "conceptId": "C188728",
+              "name": "Encounter Type Value Set Terminology",
+              "submissionValue": "Encounter Type Value Set Terminology"
+            },
+            "term": {
+              "conceptId": "C25716",
+              "definition": "The act of going to see some person or place or thing; it can cover a short or long period but refers to a non-permanent arrangement.",
+              "preferredTerm": "Visit",
+              "submissionValue": "Visit",
+              "synonyms": []
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C188724",
+              "name": "Organization Type Value Set Terminology",
+              "submissionValue": "Organization Type Value Set Terminology"
+            },
+            "term": {
+              "conceptId": "C93453",
+              "definition": "An organization (typically a government agency) that administers the registration of studies. (BRIDG)",
+              "preferredTerm": "Study Registry",
+              "submissionValue": "Clinical Study Registry",
+              "synonyms": []
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C188724",
+              "name": "Organization Type Value Set Terminology",
+              "submissionValue": "Organization Type Value Set Terminology"
+            },
+            "term": {
+              "conceptId": "C188863",
+              "definition": "An organization (typically a government agency) that is responsible for implementing and enforcing laws, licensing and regulating products and services, promoting the use of standards, and ensuring safety and consumer protections.",
+              "preferredTerm": "Regulatory Agency",
+              "submissionValue": "Regulatory Agency",
+              "synonyms": [
+                "Regulator",
+                "Regulatory Body"
+              ]
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C215477",
+              "name": "Study Definition Document Type Value Set Terminology",
+              "submissionValue": "Study Definition Document Type Value Set Terminology"
+            },
+            "term": {
+              "conceptId": "C70817",
+              "definition": "The formal plan of an experiment or research activity, including the objective, rationale, design, materials and methods for the conduct of the study, intervention description, and method of data analysis.",
+              "preferredTerm": "Study Protocol",
+              "submissionValue": "Protocol",
+              "synonyms": []
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C188723",
+              "name": "Study Definition Document Version Value Set Terminology",
+              "submissionValue": "Study Definition Document Version Value Set Terminology"
+            },
+            "term": {
+              "conceptId": "C85255",
+              "definition": "A preliminary version of a written work, design, or picture.",
+              "preferredTerm": "Draft",
+              "submissionValue": "Draft",
+              "synonyms": []
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C188723",
+              "name": "Study Definition Document Version Value Set Terminology",
+              "submissionValue": "Study Definition Document Version Value Set Terminology"
+            },
+            "term": {
+              "conceptId": "C25508",
+              "definition": "Conclusive in a process or progression.",
+              "preferredTerm": "Final",
+              "submissionValue": "Final",
+              "synonyms": []
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C207416",
+              "name": "Study Design Characteristics Value Set Terminology",
+              "submissionValue": "Study Design Characteristics Value Set Terminology"
+            },
+            "term": {
+              "conceptId": "C98704",
+              "definition": "A study design that allows for prospectively planned modifications to one or more aspects of the design based on accumulating data from subjects in the trial. (FDA)",
+              "preferredTerm": "Adaptive Design",
+              "submissionValue": "Adaptive",
+              "synonyms": []
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C207416",
+              "name": "Study Design Characteristics Value Set Terminology",
+              "submissionValue": "Study Design Characteristics Value Set Terminology"
+            },
+            "term": {
+              "conceptId": "C207613",
+              "definition": "A study design in which subjects enrolled in one study are subsequently continued into a related study for longer term safety, tolerability, and/or effectiveness monitoring.",
+              "preferredTerm": "Extension Study Design",
+              "submissionValue": "Extension",
+              "synonyms": [
+                "Roll-over Study"
+              ]
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C207416",
+              "name": "Study Design Characteristics Value Set Terminology",
+              "submissionValue": "Study Design Characteristics Value Set Terminology"
+            },
+            "term": {
+              "conceptId": "C46079",
+              "definition": "A study design in which interventions are assigned to subjects according to randomization principles.",
+              "preferredTerm": "Randomized Controlled Clinical Trial",
+              "submissionValue": "Randomized",
+              "synonyms": []
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C215480",
+              "name": "Study Role Code Value Set Terminology",
+              "submissionValue": "Study Role Code Value Set Terminology"
+            },
+            "term": {
+              "conceptId": "C188863",
+              "definition": "An organization (typically a government agency) that is responsible for implementing and enforcing laws, licensing and regulating products and services, promoting the use of standards, and ensuring safety and consumer protections.",
+              "preferredTerm": "Regulatory Agency",
+              "submissionValue": "Regulatory Agency",
+              "synonyms": [
+                "Regulator",
+                "Regulatory Body"
+              ]
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C207419",
+              "name": "Study Title Type Value Set Terminology",
+              "submissionValue": "Study Title Type Value Set Terminology"
+            },
+            "term": {
+              "conceptId": "C207615",
+              "definition": "The short descriptive name for the study.",
+              "preferredTerm": "Brief Study Title",
+              "submissionValue": "Brief Study Title",
+              "synonyms": [
+                "Abbreviated Protocol Title"
+              ]
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C207419",
+              "name": "Study Title Type Value Set Terminology",
+              "submissionValue": "Study Title Type Value Set Terminology"
+            },
+            "term": {
+              "conceptId": "C207616",
+              "definition": "The formal descriptive name for the study.",
+              "preferredTerm": "Official Study Title",
+              "submissionValue": "Official Study Title",
+              "synonyms": []
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C207419",
+              "name": "Study Title Type Value Set Terminology",
+              "submissionValue": "Study Title Type Value Set Terminology"
+            },
+            "term": {
+              "conceptId": "C207646",
+              "definition": "A word or words formed from the beginning letters or a combination of syllables and letters of a compound term, which identifies a clinical study.",
+              "preferredTerm": "Study Acronym",
+              "submissionValue": "Study Acronym",
+              "synonyms": [
+                "Trial Acronym"
+              ]
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C201265",
+              "name": "Timing Relative To From Value Set Terminology",
+              "submissionValue": "Timing Relative To From Value Set Terminology"
+            },
+            "term": {
+              "conceptId": "C201355",
+              "definition": "A timing relationship defined as the start of one event to the start of another event.",
+              "preferredTerm": "Start to Start",
+              "submissionValue": "Start to Start",
+              "synonyms": []
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C201264",
+              "name": "Timing Type Value Set Terminology",
+              "submissionValue": "Timing Type Value Set Terminology"
+            },
+            "term": {
+              "conceptId": "C201356",
+              "definition": "A type of time point relationship that follows a point or period of time within a timeline.",
+              "preferredTerm": "After Timing Type",
+              "submissionValue": "After",
+              "synonyms": []
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C201264",
+              "name": "Timing Type Value Set Terminology",
+              "submissionValue": "Timing Type Value Set Terminology"
+            },
+            "term": {
+              "conceptId": "C201357",
+              "definition": "A type of time point relationship that comes before a point or period of time within a timeline.",
+              "preferredTerm": "Before Timing Type",
+              "submissionValue": "Before",
+              "synonyms": []
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C201264",
+              "name": "Timing Type Value Set Terminology",
+              "submissionValue": "Timing Type Value Set Terminology"
+            },
+            "term": {
+              "conceptId": "C201358",
+              "definition": "A type of time point relationship that is fixed with respect to a timeline.",
+              "preferredTerm": "Fixed Reference Timing Type",
+              "submissionValue": "Fixed Reference",
+              "synonyms": []
+            }
+          }
+        ]
+      },
+      {
+        "uid": "SDTM CT 2025-09-26",
+        "sourceFile": "sdtmct-2025-09-26.json",
+        "sourceSha256": "671937e2383b44e6165e0dc9f3eb9dd73388671647c60c9dca0c93e39b98bf42",
+        "package": "sdtmct-2025-09-26",
+        "terms": [
+          {
+            "codelist": {
+              "conceptId": "C66781",
+              "name": "Age Unit",
+              "submissionValue": "AGEU"
+            },
+            "term": {
+              "conceptId": "C25301",
+              "definition": "A unit of measurement of time equal to 24 hours.",
+              "preferredTerm": "Day",
+              "submissionValue": "DAYS",
+              "synonyms": []
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C66781",
+              "name": "Age Unit",
+              "submissionValue": "AGEU"
+            },
+            "term": {
+              "conceptId": "C29846",
+              "definition": "One of the 12 divisions of a year as determined by a calendar. It corresponds to the unit of time of approximately to one cycle of the moon's phases, about 30 days or 4 weeks. (NCI)",
+              "preferredTerm": "Month",
+              "submissionValue": "MONTHS",
+              "synonyms": [
+                "Month"
+              ]
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C66781",
+              "name": "Age Unit",
+              "submissionValue": "AGEU"
+            },
+            "term": {
+              "conceptId": "C29844",
+              "definition": "Any period of seven consecutive days. (NCI)",
+              "preferredTerm": "Week",
+              "submissionValue": "WEEKS",
+              "synonyms": [
+                "Week"
+              ]
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C66781",
+              "name": "Age Unit",
+              "submissionValue": "AGEU"
+            },
+            "term": {
+              "conceptId": "C29848",
+              "definition": "The period of time that it takes for Earth to make a complete revolution around the sun, approximately 365 days; a specific one year period. (NCI)",
+              "preferredTerm": "Year",
+              "submissionValue": "YEARS",
+              "synonyms": [
+                "Year"
+              ]
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C99079",
+              "name": "Epoch",
+              "submissionValue": "EPOCH"
+            },
+            "term": {
+              "conceptId": "C101526",
+              "definition": "A period in a study during which subjects are receiving investigational therapy or treatment.",
+              "preferredTerm": "Treatment Epoch",
+              "submissionValue": "TREATMENT",
+              "synonyms": []
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C99076",
+              "name": "Intervention Model Response",
+              "submissionValue": "INTMODEL"
+            },
+            "term": {
+              "conceptId": "C82639",
+              "definition": "A trial design in which subjects are randomised to one of two or more arms, with each arm being allocated a different intervention for the duration of the study.",
+              "preferredTerm": "Parallel Study",
+              "submissionValue": "PARALLEL",
+              "synonyms": []
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C85494",
+              "name": "PK Units of Measure",
+              "submissionValue": "PKUNIT"
+            },
+            "term": {
+              "conceptId": "C25301",
+              "definition": "A unit of measurement of time equal to 24 hours.",
+              "preferredTerm": "Day",
+              "submissionValue": "day",
+              "synonyms": []
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C66731",
+              "name": "Sex",
+              "submissionValue": "SEX"
+            },
+            "term": {
+              "conceptId": "C16576",
+              "definition": "A person who belongs to the sex that normally produces ova. The term is used to indicate biological sex distinctions, or cultural gender role distinctions, or both. [The NCI Thesaurus contains biomedical terminologies that NCI does not own or control. This concept contains gender-related content that does not comply with Executive Order 14168.]",
+              "preferredTerm": "Female",
+              "submissionValue": "F",
+              "synonyms": [
+                "Female"
+              ]
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C66731",
+              "name": "Sex",
+              "submissionValue": "SEX"
+            },
+            "term": {
+              "conceptId": "C20197",
+              "definition": "A person who belongs to the sex that normally produces sperm. The term is used to indicate biological sex distinctions, cultural gender role distinctions, or both. [The NCI Thesaurus contains biomedical terminologies that NCI does not own or control. This concept contains gender-related content that does not comply with Executive Order 14168.]",
+              "preferredTerm": "Male",
+              "submissionValue": "M",
+              "synonyms": [
+                "Male"
+              ]
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C209287",
+              "name": "Sex Assigned At Birth Response",
+              "submissionValue": "SEXABRTH"
+            },
+            "term": {
+              "conceptId": "C16576",
+              "definition": "A person who belongs to the sex that normally produces ova. The term is used to indicate biological sex distinctions, or cultural gender role distinctions, or both. [The NCI Thesaurus contains biomedical terminologies that NCI does not own or control. This concept contains gender-related content that does not comply with Executive Order 14168.]",
+              "preferredTerm": "Female",
+              "submissionValue": "FEMALE",
+              "synonyms": [
+                "Female"
+              ]
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C209287",
+              "name": "Sex Assigned At Birth Response",
+              "submissionValue": "SEXABRTH"
+            },
+            "term": {
+              "conceptId": "C20197",
+              "definition": "A person who belongs to the sex that normally produces sperm. The term is used to indicate biological sex distinctions, cultural gender role distinctions, or both. [The NCI Thesaurus contains biomedical terminologies that NCI does not own or control. This concept contains gender-related content that does not comply with Executive Order 14168.]",
+              "preferredTerm": "Male",
+              "submissionValue": "MALE",
+              "synonyms": [
+                "Male"
+              ]
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C66732",
+              "name": "Sex of Participants Response",
+              "submissionValue": "SEXPOP"
+            },
+            "term": {
+              "conceptId": "C49636",
+              "definition": "One and the other; relating to or being two in conjunction. (NCI)",
+              "preferredTerm": "Both",
+              "submissionValue": "BOTH",
+              "synonyms": []
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C66732",
+              "name": "Sex of Participants Response",
+              "submissionValue": "SEXPOP"
+            },
+            "term": {
+              "conceptId": "C16576",
+              "definition": "A person who belongs to the sex that normally produces ova. The term is used to indicate biological sex distinctions, or cultural gender role distinctions, or both. [The NCI Thesaurus contains biomedical terminologies that NCI does not own or control. This concept contains gender-related content that does not comply with Executive Order 14168.]",
+              "preferredTerm": "Female",
+              "submissionValue": "F",
+              "synonyms": [
+                "Female"
+              ]
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C66732",
+              "name": "Sex of Participants Response",
+              "submissionValue": "SEXPOP"
+            },
+            "term": {
+              "conceptId": "C20197",
+              "definition": "A person who belongs to the sex that normally produces sperm. The term is used to indicate biological sex distinctions, cultural gender role distinctions, or both. [The NCI Thesaurus contains biomedical terminologies that NCI does not own or control. This concept contains gender-related content that does not comply with Executive Order 14168.]",
+              "preferredTerm": "Male",
+              "submissionValue": "M",
+              "synonyms": [
+                "Male"
+              ]
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C99077",
+              "name": "Study Type Response",
+              "submissionValue": "STYPE"
+            },
+            "term": {
+              "conceptId": "C98388",
+              "definition": "Studies in which individuals are assigned by an investigator based on a protocol to receive specific interventions. Subjects may receive diagnostic, therapeutic or other types of interventions. The assignment of the intervention may or may not be random. The individuals are then followed and biomedical and/or health outcomes are assessed.",
+              "preferredTerm": "Interventional Study",
+              "submissionValue": "INTERVENTIONAL",
+              "synonyms": []
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C99077",
+              "name": "Study Type Response",
+              "submissionValue": "STYPE"
+            },
+            "term": {
+              "conceptId": "C16084",
+              "definition": "Study in which the researchers observe the effect of a risk factor (e.g., exposure), diagnostic test, treatment or other covariate within a study population, and where the investigator does not assign specific interventions. (CDISC Glossary)",
+              "preferredTerm": "Observational Study",
+              "submissionValue": "OBSERVATIONAL",
+              "synonyms": []
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C66735",
+              "name": "Trial Blinding Schema Response",
+              "submissionValue": "TBLIND"
+            },
+            "term": {
+              "conceptId": "C49659",
+              "definition": "A study in which subjects and study personnel know which intervention each subject is receiving.",
+              "preferredTerm": "Open Label Study",
+              "submissionValue": "OPEN LABEL",
+              "synonyms": []
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C66736",
+              "name": "Trial Intent Type Response",
+              "submissionValue": "TINDTP"
+            },
+            "term": {
+              "conceptId": "C49656",
+              "definition": "A type of study designed to evaluate intervention(s) for treatment of disease, syndrome or condition.",
+              "preferredTerm": "Treatment Study",
+              "submissionValue": "TREATMENT",
+              "synonyms": [
+                "Therapy Trial"
+              ]
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C66739",
+              "name": "Trial Type Response",
+              "submissionValue": "TTYPE"
+            },
+            "term": {
+              "conceptId": "C49656",
+              "definition": "A type of study designed to evaluate intervention(s) for treatment of disease, syndrome or condition.",
+              "preferredTerm": "Treatment Study",
+              "submissionValue": "TREATMENT",
+              "synonyms": [
+                "Therapy Trial"
+              ]
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C71620",
+              "name": "Unit",
+              "submissionValue": "UNIT"
+            },
+            "term": {
+              "conceptId": "C25301",
+              "definition": "A unit of measurement of time equal to 24 hours.",
+              "preferredTerm": "Day",
+              "submissionValue": "DAYS",
+              "synonyms": []
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C71620",
+              "name": "Unit",
+              "submissionValue": "UNIT"
+            },
+            "term": {
+              "conceptId": "C29846",
+              "definition": "One of the 12 divisions of a year as determined by a calendar. It corresponds to the unit of time of approximately to one cycle of the moon's phases, about 30 days or 4 weeks. (NCI)",
+              "preferredTerm": "Month",
+              "submissionValue": "MONTHS",
+              "synonyms": [
+                "Month"
+              ]
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C71620",
+              "name": "Unit",
+              "submissionValue": "UNIT"
+            },
+            "term": {
+              "conceptId": "C44278",
+              "definition": "A single undivided thing occurring in the composition of something else; a unit representing equivalence with a reference measurement.",
+              "preferredTerm": "Unit",
+              "submissionValue": "U",
+              "synonyms": [
+                "Unit"
+              ]
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C71620",
+              "name": "Unit",
+              "submissionValue": "UNIT"
+            },
+            "term": {
+              "conceptId": "C29844",
+              "definition": "Any period of seven consecutive days. (NCI)",
+              "preferredTerm": "Week",
+              "submissionValue": "WEEKS",
+              "synonyms": [
+                "Week"
+              ]
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C71620",
+              "name": "Unit",
+              "submissionValue": "UNIT"
+            },
+            "term": {
+              "conceptId": "C29848",
+              "definition": "The period of time that it takes for Earth to make a complete revolution around the sun, approximately 365 days; a specific one year period. (NCI)",
+              "preferredTerm": "Year",
+              "submissionValue": "YEARS",
+              "synonyms": [
+                "Year"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "uid": "PROTOCOL CT 2025-09-26",
+        "sourceFile": "protocolct-2025-09-26.json",
+        "sourceSha256": "818688d9046612e3b3b1f422cac52cbb1c2a7c8e9e92131dfd76baf5bc9560cb",
+        "package": "protocolct-2025-09-26",
+        "terms": [
+          {
+            "codelist": {
+              "conceptId": "C99076",
+              "name": "Intervention Model Response",
+              "submissionValue": "INTMODEL"
+            },
+            "term": {
+              "conceptId": "C82639",
+              "definition": "A trial design in which subjects are randomised to one of two or more arms, with each arm being allocated a different intervention for the duration of the study.",
+              "preferredTerm": "Parallel Study",
+              "submissionValue": "PARALLEL",
+              "synonyms": []
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C132310",
+              "name": "Protocol Entity Terminology",
+              "submissionValue": "Protocol Entity Terminology"
+            },
+            "term": {
+              "conceptId": "C70817",
+              "definition": "The formal plan of an experiment or research activity, including the objective, rationale, design, materials and methods for the conduct of the study, intervention description, and method of data analysis.",
+              "preferredTerm": "Study Protocol",
+              "submissionValue": "Study Protocol",
+              "synonyms": []
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C174222",
+              "name": "Study Arm Type Value Set Terminology",
+              "submissionValue": "Study Arm Type Value Set Terminology"
+            },
+            "term": {
+              "conceptId": "C174266",
+              "definition": "An arm describing the intervention or treatment plan for a group of participants in the study receiving test product(s).",
+              "preferredTerm": "Investigational Arm",
+              "submissionValue": "Experimental Arm",
+              "synonyms": [
+                "Investigational Arm"
+              ]
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C132309",
+              "name": "Study Protocol Attribute Terminology",
+              "submissionValue": "Study Protocol Attribute Terminology"
+            },
+            "term": {
+              "conceptId": "C207646",
+              "definition": "A word or words formed from the beginning letters or a combination of syllables and letters of a compound term, which identifies a clinical study.",
+              "preferredTerm": "Study Acronym",
+              "submissionValue": "Study Acronym",
+              "synonyms": [
+                "Trial Acronym"
+              ]
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C99077",
+              "name": "Study Type Response",
+              "submissionValue": "STYPE"
+            },
+            "term": {
+              "conceptId": "C98388",
+              "definition": "Studies in which individuals are assigned by an investigator based on a protocol to receive specific interventions. Subjects may receive diagnostic, therapeutic or other types of interventions. The assignment of the intervention may or may not be random. The individuals are then followed and biomedical and/or health outcomes are assessed.",
+              "preferredTerm": "Interventional Study",
+              "submissionValue": "INTERVENTIONAL",
+              "synonyms": []
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C99077",
+              "name": "Study Type Response",
+              "submissionValue": "STYPE"
+            },
+            "term": {
+              "conceptId": "C16084",
+              "definition": "Study in which the researchers observe the effect of a risk factor (e.g., exposure), diagnostic test, treatment or other covariate within a study population, and where the investigator does not assign specific interventions. (CDISC Glossary)",
+              "preferredTerm": "Observational Study",
+              "submissionValue": "OBSERVATIONAL",
+              "synonyms": []
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C66735",
+              "name": "Trial Blinding Schema Response",
+              "submissionValue": "TBLIND"
+            },
+            "term": {
+              "conceptId": "C49659",
+              "definition": "A study in which subjects and study personnel know which intervention each subject is receiving.",
+              "preferredTerm": "Open Label Study",
+              "submissionValue": "OPEN LABEL",
+              "synonyms": []
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C66736",
+              "name": "Trial Intent Type Response",
+              "submissionValue": "TINDTP"
+            },
+            "term": {
+              "conceptId": "C49656",
+              "definition": "A type of study designed to evaluate intervention(s) for treatment of disease, syndrome or condition.",
+              "preferredTerm": "Treatment Study",
+              "submissionValue": "TREATMENT",
+              "synonyms": [
+                "Therapy Trial"
+              ]
+            }
+          },
+          {
+            "codelist": {
+              "conceptId": "C66739",
+              "name": "Trial Type Response",
+              "submissionValue": "TTYPE"
+            },
+            "term": {
+              "conceptId": "C49656",
+              "definition": "A type of study designed to evaluate intervention(s) for treatment of disease, syndrome or condition.",
+              "preferredTerm": "Treatment Study",
+              "submissionValue": "TREATMENT",
+              "synonyms": [
+                "Therapy Trial"
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scope": {
+    "nativeModels": true,
+    "repositoryReads": "isolated synthetic fixtures",
+    "databaseAccess": false,
+    "coreValidation": false,
+    "inputUsdmDocument": false,
+    "importedSourceCarrier": false
+  }
+}

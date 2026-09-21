@@ -113,7 +113,7 @@ from common.exceptions import (
     VisitsAreNotEqualException,
 )
 from common.telemetry import trace_calls
-from common.utils import TimeUnit, VisitClass, VisitSubclass, convert_to_datetime
+from common.utils import TimeUnit, VisitClass, VisitSubclass, VisitTimingMode, convert_to_datetime
 
 
 class StudyVisitService(StudySelectionMixin):
@@ -433,6 +433,9 @@ class StudyVisitService(StudySelectionMixin):
         visit_vo: StudyVisitVO,
         ordered_visits: list[StudyVisitVO],
     ):
+        if visit_vo.is_untimed:
+            return {}
+        ordered_visits = [visit for visit in ordered_visits if not visit.is_untimed]
         chronological_order_dict = {}
         for idx, visit in enumerate(ordered_visits[:-1]):
             if VisitClass.SPECIAL_VISIT not in (
@@ -531,6 +534,28 @@ class StudyVisitService(StudySelectionMixin):
                     error_msg += " as a manually defined value exists. Change the manually defined value before this visit can be defined."
                 raise exceptions.ValidationException(msg=error_msg)
 
+    def _validate_untimed_anchors(self, visit_vo: StudyVisitVO, timeline: TimelineAR):
+        """Resolve explicit source anchors only within the locked parent study."""
+        if not visit_vo.is_untimed:
+            return
+        visits = {visit.uid: visit for visit in timeline._visits}
+        visits[visit_vo.uid] = visit_vo
+        seen = {visit_vo.uid}
+        current = visit_vo
+        while current.is_untimed:
+            anchor_uid = (current.untimed_timing or {}).get("anchor_visit_uid")
+            if anchor_uid is None:
+                break
+            ValidationException.raise_if(
+                anchor_uid in seen,
+                msg="Circular untimed visit anchor reference.",
+            )
+            NotFoundException.raise_if_not(
+                anchor_uid in visits, "Study Visit anchor in this study", anchor_uid
+            )
+            seen.add(anchor_uid)
+            current = visits[anchor_uid]
+
     def _validate_visit(
         self,
         visit_input: StudyVisitCreateInput | StudyVisitEditInput,
@@ -546,19 +571,10 @@ class StudyVisitService(StudySelectionMixin):
             not create and visit_vo.study_visit_group is not None,
             msg=f"The study visit can't be edited as it is part of visit group {visit_group_name}. The visit group should be uncollapsed first.",
         )
-        visit_classes_without_timing = (
-            VisitClass.NON_VISIT,
-            VisitClass.UNSCHEDULED_VISIT,
-            VisitClass.SPECIAL_VISIT,
-        )
+        self._validate_untimed_anchors(visit_vo, timeline)
         is_time_reference_visit = False
         if (
-            visit_vo.visit_class
-            not in (
-                VisitClass.NON_VISIT,
-                VisitClass.UNSCHEDULED_VISIT,
-                VisitClass.SPECIAL_VISIT,
-            )
+            visit_vo.has_timing
             and visit_vo.visit_type.sponsor_preferred_name
             == visit_vo.timepoint.visit_timereference.sponsor_preferred_name
         ):
@@ -581,7 +597,7 @@ class StudyVisitService(StudySelectionMixin):
 
         if (
             is_first_reference_visit
-            and visit_vo.visit_class not in visit_classes_without_timing
+            and visit_vo.has_timing
         ):
             ValidationException.raise_if(
                 visit_vo.timepoint.visit_value != 0
@@ -598,12 +614,12 @@ class StudyVisitService(StudySelectionMixin):
 
         if (
             is_reference_visit
-            and visit_vo.visit_class not in visit_classes_without_timing
+            and visit_vo.has_timing
         ):
             for visit in [
                 vis
                 for vis in timeline._visits
-                if vis.visit_class not in visit_classes_without_timing
+                if vis.has_timing
             ]:
                 ValidationException.raise_if(
                     # if we found another visit with the same visit type
@@ -648,14 +664,15 @@ class StudyVisitService(StudySelectionMixin):
         if (
             not is_first_reference_visit
             and not is_time_reference_visit
-            and visit_vo.visit_class not in visit_classes_without_timing
+            and visit_vo.has_timing
         ):
             reference_name = self.study_visit_time_references_by_uid[
                 visit_input.time_reference.term_uid
             ]
             for visit in timeline._visits:
                 if (
-                    visit.visit_type.sponsor_preferred_name
+                    not visit.is_untimed
+                    and visit.visit_type.sponsor_preferred_name
                     == reference_name.sponsor_preferred_name
                 ):
                     reference_found = True
@@ -673,7 +690,7 @@ class StudyVisitService(StudySelectionMixin):
         visit_window_units = {
             visit.window_unit_uid
             for visit in timeline._visits
-            if visit.visit_class not in visit_classes_without_timing
+            if visit.has_timing
             and visit.window_unit_uid
         }
 
@@ -685,7 +702,7 @@ class StudyVisitService(StudySelectionMixin):
             len(visit_window_units) == 1
             and visit_vo.window_unit_uid
             and visit_vo.window_unit_uid != visit_window_units.pop()
-            and visit_vo.visit_class not in visit_classes_without_timing,
+            and visit_vo.has_timing,
             msg="The StudyVisit which is being created has selected different window unit than other StudyVisits in a Study",
         )
 
@@ -749,7 +766,7 @@ class StudyVisitService(StudySelectionMixin):
 
             # Perform check for timing uniqueness excluding Special Visits.
             # There can exist 2 visits with the same timing unless timing is 0, then there can exist only one such visit
-            if visit_vo.visit_class != VisitClass.SPECIAL_VISIT:
+            if visit_vo.visit_class != VisitClass.SPECIAL_VISIT and not visit_vo.is_untimed:
                 all_visit_timings = [
                     visit.get_absolute_duration()
                     for visit in ordered_visits
@@ -819,11 +836,12 @@ class StudyVisitService(StudySelectionMixin):
             if create:
                 timeline.remove_visit(visit_vo)
 
-        ValidationException.raise_if(
-            visit_input.visit_contact_mode.term_uid
-            not in self.study_visit_contact_modes_by_uid,
-            msg=f"CT Term with UID '{visit_input.visit_contact_mode.term_uid}' is not a valid Visit Contact Mode term.",
-        )
+        if visit_input.visit_contact_mode is not None:
+            ValidationException.raise_if(
+                visit_input.visit_contact_mode.term_uid
+                not in self.study_visit_contact_modes_by_uid,
+                msg=f"CT Term with UID '{visit_input.visit_contact_mode.term_uid}' is not a valid Visit Contact Mode term.",
+            )
 
         visits_classes = [
             visit.visit_class for visit in timeline._visits if visit.uid != visit_vo.uid
@@ -979,6 +997,7 @@ class StudyVisitService(StudySelectionMixin):
         self,
         create_input: StudyVisitCreateInput | StudyVisitEditInput,
         epoch: StudyEpochVO,
+        preview: bool = False,
     ):
         unit_repository = self._repos.unit_definition_repository
         if create_input.time_unit_uid:
@@ -1037,20 +1056,26 @@ class StudyVisitService(StudySelectionMixin):
             name="Week",
             conversion_factor_to_master=self._week_unit.concept_vo.conversion_factor_to_master,
         )
-        visit_contact_mode = self.study_visit_contact_modes_by_uid.get(
-            create_input.visit_contact_mode.term_uid
-        )
-        exceptions.ValidationException.raise_if_not(
-            visit_contact_mode,
-            msg=f"Visit contact mode '{create_input.visit_contact_mode.term_uid}' is invalid.",
-        )
+        visit_contact_mode = None
+        if create_input.visit_contact_mode is not None:
+            visit_contact_mode = self.study_visit_contact_modes_by_uid.get(
+                create_input.visit_contact_mode.term_uid
+            )
+            exceptions.ValidationException.raise_if_not(
+                visit_contact_mode,
+                msg=f"Visit contact mode '{create_input.visit_contact_mode.term_uid}' is invalid.",
+            )
         visit_type = self.study_visit_types_by_uid.get(create_input.visit_type.term_uid)
         exceptions.ValidationException.raise_if_not(
             visit_type,
             msg=f"Visit type with UID '{create_input.visit_type.term_uid}' is not valid.",
         )
         study_visit_vo = StudyVisitVO(
-            uid=self.repo.generate_uid(),
+            uid=(
+                "preview"
+                if preview and create_input.timing_mode == VisitTimingMode.UNTIMED
+                else self.repo.generate_uid()
+            ),
             visit_sublabel_reference=create_input.visit_sublabel_reference,
             show_visit=create_input.show_visit,
             visit_window_min=create_input.min_visit_window_value,
@@ -1096,12 +1121,13 @@ class StudyVisitService(StudySelectionMixin):
                 if create_input.repeating_frequency_uid
                 else None
             ),
+            timing_mode=create_input.timing_mode or VisitTimingMode.STANDARD,
+            untimed_timing=(
+                create_input.untimed_timing.model_dump(mode="json")
+                if create_input.untimed_timing is not None else None
+            ),
         )
-        if study_visit_vo.visit_class not in [
-            VisitClass.NON_VISIT,
-            VisitClass.UNSCHEDULED_VISIT,
-            VisitClass.SPECIAL_VISIT,
-        ]:
+        if study_visit_vo.has_timing:
             missing_fields = []
             if create_input.time_unit_uid is None:
                 missing_fields.append("time_unit_uid")
@@ -1117,36 +1143,31 @@ class StudyVisitService(StudySelectionMixin):
                 study_visit_input=create_input
             )
 
-            if study_visit_vo.visit_class == VisitClass.MANUALLY_DEFINED_VISIT:
-                # A manually defined visit is the one class whose identity the
-                # caller states rather than the service deriving it; a missing
-                # name previously reached visit_name.lower() and answered 500.
-                # The refusal belongs to validation, named, at 400.
-                ValidationException.raise_if(
-                    create_input.visit_name is None
-                    or not str(create_input.visit_name).strip(),
-                    msg="visit_name is required for a Manually defined visit.",
-                )
-                study_visit_vo.visit_number = create_input.visit_number  # type: ignore[assignment]
-                study_visit_vo.vis_unique_number = create_input.unique_visit_number
-                study_visit_vo.vis_short_name = create_input.visit_short_name
-                study_visit_vo.visit_name_sc = self._create_visit_name_simple_concept(
-                    visit_name=create_input.visit_name
-                )
-            elif (
-                study_visit_vo.visit_class != VisitClass.MANUALLY_DEFINED_VISIT
-                and any(
-                    [
-                        create_input.visit_number,
-                        create_input.unique_visit_number,
-                        create_input.visit_short_name,
-                        create_input.visit_name,
-                    ]
-                )
-            ):
-                raise exceptions.ValidationException(
-                    msg="Only Manually defined visit can specify visit_number, unique_visit_number, visit_short_name or visit_name properties."
-                )
+        if study_visit_vo.visit_class == VisitClass.MANUALLY_DEFINED_VISIT:
+            ValidationException.raise_if(
+                create_input.visit_name is None
+                or not str(create_input.visit_name).strip(),
+                msg="visit_name is required for a Manually defined visit.",
+            )
+            study_visit_vo.visit_number = create_input.visit_number
+            study_visit_vo.vis_unique_number = create_input.unique_visit_number
+            study_visit_vo.vis_short_name = create_input.visit_short_name
+            study_visit_vo.visit_name_sc = (
+                TextValue(uid="", name=create_input.visit_name)
+                if preview and study_visit_vo.is_untimed
+                else self._create_visit_name_simple_concept(visit_name=create_input.visit_name)
+            )
+        elif study_visit_vo.has_timing and any(
+            [
+                create_input.visit_number,
+                create_input.unique_visit_number,
+                create_input.visit_short_name,
+                create_input.visit_name,
+            ]
+        ):
+            raise exceptions.ValidationException(
+                msg="Only Manually defined visit can specify visit_number, unique_visit_number, visit_short_name or visit_name properties."
+            )
         return study_visit_vo
 
     def synchronize_visit_numbers(
@@ -1223,11 +1244,7 @@ class StudyVisitService(StudySelectionMixin):
         Assigns some properties of StudyVisitVO that are derived by the absolute timing of a given StudyVisit.
         The absolute timing can be known after Visits are set in the schedule and we assign Anchor Visits if given Visit anchors the other one.
         """
-        if study_visit_vo.visit_class not in [
-            VisitClass.NON_VISIT,
-            VisitClass.UNSCHEDULED_VISIT,
-            VisitClass.SPECIAL_VISIT,
-        ]:
+        if study_visit_vo.has_timing:
             if (value := study_visit_vo.derive_study_day_number()) is not None:
                 study_visit_vo.study_day = self._create_numeric_value_simple_concept(
                     value=value,
@@ -1328,7 +1345,7 @@ class StudyVisitService(StudySelectionMixin):
             visit.visit_type = visit_type
 
         visit_contact_mode = self.study_visit_contact_modes_by_uid.get(
-            visit.visit_contact_mode.term_uid
+            getattr(visit.visit_contact_mode, "term_uid", None)
         )
         if visit_contact_mode is not None:
             visit.visit_contact_mode = visit_contact_mode
@@ -1358,7 +1375,7 @@ class StudyVisitService(StudySelectionMixin):
         epoch = self._repos.study_epoch_repository.find_by_uid(
             uid=study_visit_input.study_epoch_uid, study_uid=study_uid
         )
-        study_visit = self._from_input_values(study_visit_input, epoch)
+        study_visit = self._from_input_values(study_visit_input, epoch, preview=True)
         timeline = TimelineAR(study_uid=study_uid, _visits=study_visits)
         self._validate_visit(
             study_visit_input, study_visit, timeline, create=True, preview=True
@@ -1367,7 +1384,8 @@ class StudyVisitService(StudySelectionMixin):
         study_visit.uid = "preview"
         timeline.add_visit(study_visit)
         self.assign_props_derived_from_visit_absolute_timing(study_visit_vo=study_visit)
-        self.assign_props_derived_from_visit_number(study_visit=study_visit)
+        if not study_visit.is_untimed:
+            self.assign_props_derived_from_visit_number(study_visit=study_visit)
         return StudyVisit.transform_to_response_model(study_visit)
 
     @ensure_transaction(db)
@@ -1377,15 +1395,23 @@ class StudyVisitService(StudySelectionMixin):
         study_visit_uid: str,
         study_visit_input: StudyVisitEditInput,
     ):
+        acquire_write_lock_study_value(uid=study_uid)
         study_visits = self.repo.find_all_visits_by_study_uid(study_uid)
         timeline = TimelineAR(study_uid=study_uid, _visits=study_visits)
-        acquire_write_lock_study_value(uid=study_uid)
         study_visit: StudyVisitVO | None = next(
             (sv for sv in timeline.ordered_study_visits if sv.uid == study_visit_uid),
             None,
         )
         if study_visit is None:
             raise exceptions.NotFoundException("Study Visit", study_visit_uid)
+
+        if study_visit_input.timing_mode is None and study_visit.is_untimed:
+            # Old PATCH callers must not silently turn a manual-date visit into
+            # fixed timing or discard its source-relative/calendar contract.
+            values = study_visit_input.model_dump(exclude_unset=True)
+            values["timing_mode"] = VisitTimingMode.UNTIMED
+            values.setdefault("untimed_timing", study_visit.untimed_timing)
+            study_visit_input = StudyVisitEditInput(**values)
 
         epoch = self._repos.study_epoch_repository.find_by_uid(
             uid=study_visit_input.study_epoch_uid, study_uid=study_uid
@@ -1480,6 +1506,15 @@ class StudyVisitService(StudySelectionMixin):
 
         subvisits_references = self.repo.find_all_visits_referencing_study_visit(
             study_visit_uid=study_visit_uid
+        )
+
+        ValidationException.raise_if(
+            any(
+                visit.is_untimed
+                and (visit.untimed_timing or {}).get("anchor_visit_uid") == study_visit_uid
+                for visit in study_visits
+            ),
+            msg="The visit is an explicit anchor for another untimed visit in this study.",
         )
 
         BusinessLogicException.raise_if(

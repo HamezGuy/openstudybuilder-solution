@@ -1178,6 +1178,12 @@
 
             {{ render_design_notes(form_in.translated_texts) }}
 
+            {% if not form_in.item_groups %}
+            <p role="status" class="bg-gray-50 p-4">
+                No questions are configured for this form version.
+            </p>
+            {% endif %}
+
             {% for item_group_ref in form_in.item_groups %}
             {{ render_item_group(item_group_ref, form_in.uid, integrations) }}
             {% endfor %}

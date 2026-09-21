@@ -64,12 +64,13 @@ from clinical_mdr_api.domains.study_selections.study_visit import (
 from clinical_mdr_api.models.controlled_terminologies.ct_term import (
     SimpleCTTermNameWithConflictFlag,
 )
+from clinical_mdr_api.models.study_selections.visit_timing import parse_untimed_timing
 from common import exceptions, queries
 from common.auth.user import user
 from common.config import settings
 from common.exceptions import ValidationException
 from common.telemetry import trace_calls
-from common.utils import convert_to_datetime
+from common.utils import VisitTimingMode, convert_to_datetime
 
 
 def get_valid_time_references_for_study(
@@ -226,6 +227,8 @@ class StudyVisitRepository:
             week_unit_object=study_visit_vo.week_unit_object,
             epoch_connector=study_visit_vo.epoch_connector,
             visit_class=study_visit_vo.visit_class,
+            timing_mode=study_visit_vo.timing_mode,
+            untimed_timing=study_visit_vo.untimed_timing,
             visit_subclass=study_visit_vo.visit_subclass,
             is_global_anchor_visit=study_visit_vo.is_global_anchor_visit,
             is_soa_milestone=study_visit_vo.is_soa_milestone,
@@ -386,6 +389,11 @@ class StudyVisitRepository:
             week_unit_object=week_unit_object,
             epoch_connector=simple_study_epoch,
             visit_class=VisitClass[study_visit.get("visit_class")],
+            timing_mode=VisitTimingMode(study_visit.get("timing_mode") or "STANDARD"),
+            untimed_timing=(
+                parse_untimed_timing(study_visit["untimed_timing"]).model_dump(mode="json")
+                if study_visit.get("untimed_timing") is not None else None
+            ),
             visit_subclass=(
                 VisitSubclass[study_visit["visit_subclass"]]
                 if study_visit.get("visit_subclass")
@@ -499,7 +507,7 @@ class StudyVisitRepository:
 
         query.append(dedent("""
             MATCH (study_visit)-[:HAS_VISIT_TYPE]->(:CTTermContext)-[:HAS_SELECTED_TERM]->(visit_type_term:CTTermRoot)
-            MATCH (study_visit)-[:HAS_VISIT_CONTACT_MODE]->(:CTTermContext)-[:HAS_SELECTED_TERM]->(visit_contact_mode_term:CTTermRoot)
+            OPTIONAL MATCH (study_visit)-[:HAS_VISIT_CONTACT_MODE]->(:CTTermContext)-[:HAS_SELECTED_TERM]->(visit_contact_mode_term:CTTermRoot)
             OPTIONAL MATCH (study_visit)-[:HAS_REPEATING_FREQUENCY]->(:CTTermContext)-[:HAS_SELECTED_TERM]->(repeating_frequency_term:CTTermRoot)
             OPTIONAL MATCH (study_visit)-[:HAS_EPOCH_ALLOCATION]->(:CTTermContext)-[:HAS_SELECTED_TERM]->(epoch_allocation_term:CTTermRoot)
             OPTIONAL MATCH (study_visit)-[:HAS_WINDOW_UNIT]->(window_unit_root:UnitDefinitionRoot)-[:LATEST]->(window_unit_value:UnitDefinitionValue) 
@@ -514,7 +522,7 @@ class StudyVisitRepository:
             WITH *,
                 {term_uid: epoch_term_root.uid} AS epoch_term,
                 {term_uid: visit_type_term.uid} AS visit_type,
-                {term_uid: visit_contact_mode_term.uid} AS visit_contact_mode,
+                CASE WHEN visit_contact_mode_term.uid IS NULL THEN NULL ELSE {term_uid: visit_contact_mode_term.uid} END AS visit_contact_mode,
                 CASE WHEN repeating_frequency_term.uid IS NULL THEN NULL ELSE {term_uid: repeating_frequency_term.uid} END AS repeating_frequency,
                 CASE WHEN epoch_allocation_term.uid IS NULL THEN NULL ELSE {term_uid: epoch_allocation_term.uid} END AS epoch_allocation,
                 CASE WHEN time_reference_term.uid IS NULL THEN NULL ELSE {term_uid: time_reference_term.uid} END AS time_reference
@@ -736,6 +744,9 @@ class StudyVisitRepository:
                     visit_number: study_visit.visit_number,
                     unique_visit_number: toInteger(study_visit.unique_visit_number),
                     visit_class: study_visit.visit_class,
+                    timing_mode: coalesce(study_visit.timing_mode, 'STANDARD'),
+                    untimed_timing: CASE WHEN study_visit.untimed_timing IS NULL THEN null
+                        ELSE apoc.convert.fromJsonMap(study_visit.untimed_timing) END,
                     visit_subclass: study_visit.visit_subclass,
                     short_visit_label: study_visit.short_visit_label,
                     visit_name_label: study_visit.visit_name_label,
@@ -842,14 +853,12 @@ class StudyVisitRepository:
             "MATCH (study_root:StudyRoot {uid: $study_uid})-[:LATEST]->(latest_value:StudyValue)",
             "MATCH (latest_value)-[:HAS_STUDY_EPOCH]->(study_epoch:StudyEpoch {uid: $study_epoch_uid}) WHERE NOT (study_epoch)-[:BEFORE]-()",
             "MATCH (visit_type:CTTermRoot {uid: $visit_type_uid})",
-            "MATCH (visit_contact_mode:CTTermRoot {uid: $visit_contact_mode_uid})",
             "MATCH (visit_name:VisitNameRoot {uid: $visit_name_uid})",
         ]
         params = {
             "study_uid": study_visit.study_uid,
             "study_epoch_uid": study_visit.epoch_uid,
             "visit_type_uid": study_visit.visit_type.term_uid,
-            "visit_contact_mode_uid": study_visit.visit_contact_mode.term_uid,
             "visit_name_uid": study_visit.visit_name_sc.uid,
         }
         returns = [
@@ -857,9 +866,15 @@ class StudyVisitRepository:
             "latest_value",
             "study_epoch",
             "visit_type",
-            "visit_contact_mode",
             "visit_name",
         ]
+
+        if study_visit.visit_contact_mode is not None:
+            query.append(
+                "MATCH (visit_contact_mode:CTTermRoot {uid: $visit_contact_mode_uid})"
+            )
+            params["visit_contact_mode_uid"] = study_visit.visit_contact_mode.term_uid
+            returns.append("visit_contact_mode")
 
         if study_visit.repeating_frequency:
             query.append(
@@ -936,7 +951,7 @@ class StudyVisitRepository:
         study_value: StudyValue = nodes["latest_value"]
         study_epoch: StudyEpoch = nodes["study_epoch"]
         visit_type: CTTermRoot = nodes["visit_type"]
-        visit_contact_mode: CTTermRoot = nodes["visit_contact_mode"]
+        visit_contact_mode: CTTermRoot | None = nodes.get("visit_contact_mode")
         repeating_frequency: CTTermRoot | None = nodes.get("repeating_frequency")
         epoch_allocation: CTTermRoot | None = nodes.get("epoch_allocation")
         timepoint: TimePointRoot | None = nodes.get("timepoint")
@@ -968,6 +983,8 @@ class StudyVisitRepository:
             end_rule=study_visit.end_rule,
             status=study_visit.status.name,
             visit_class=study_visit.visit_class.name,
+            timing_mode=study_visit.timing_mode.value,
+            untimed_timing=study_visit.untimed_timing,
             visit_subclass=(
                 study_visit.visit_subclass.name if study_visit.visit_subclass else None
             ),
@@ -991,14 +1008,15 @@ class StudyVisitRepository:
         new_visit.has_visit_type.connect(selected_visit_type_node)
 
         # Visit contact mode
-        selected_contact_mode_node = (
-            CTCodelistAttributesRepository().get_or_create_selected_term(
-                visit_contact_mode,
-                codelist_submission_value=settings.study_visit_contact_mode_cl_submval,
-                catalogue_name=settings.sdtm_ct_catalogue_name,
+        if visit_contact_mode is not None:
+            selected_contact_mode_node = (
+                CTCodelistAttributesRepository().get_or_create_selected_term(
+                    visit_contact_mode,
+                    codelist_submission_value=settings.study_visit_contact_mode_cl_submval,
+                    catalogue_name=settings.sdtm_ct_catalogue_name,
+                )
             )
-        )
-        new_visit.has_visit_contact_mode.connect(selected_contact_mode_node)
+            new_visit.has_visit_contact_mode.connect(selected_contact_mode_node)
 
         # Repeating visit frequency
         if study_visit.repeating_frequency:

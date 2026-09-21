@@ -1,23 +1,24 @@
 <template>
-  <span :class="{ 'text-error': term.date_conflict }" :title="title">
-    {{ term.sponsor_preferred_name }}
+  <span :class="{ 'text-error': term?.date_conflict }" :title="title">
+    {{ termDisplayName(term) }}
   </span>
 </template>
 
 <script setup>
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { termDisplayName } from '@/utils/termDisplay'
 
 const { t } = useI18n()
 
 const props = defineProps({
   term: {
     type: Object,
-    default: () => {},
+    default: null,
   },
 })
 
 const title = computed(() => {
-  return props.term.date_conflict ? t('CTTermDisplay.conflict_title') : ''
+  return props.term?.date_conflict ? t('CTTermDisplay.conflict_title') : ''
 })
 </script>

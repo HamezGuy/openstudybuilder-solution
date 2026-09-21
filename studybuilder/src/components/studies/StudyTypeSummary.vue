@@ -39,6 +39,11 @@ const params = [
     valuesDisplay: 'term',
   },
   {
+    label: 'Observational time perspective',
+    name: 'observational_time_perspective_code',
+    valuesDisplay: 'term',
+  },
+  {
     label: t('StudyDefineForm.trialtype'),
     name: 'trial_type_codes',
     valuesDisplay: 'terms',

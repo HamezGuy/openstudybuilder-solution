@@ -67,6 +67,41 @@ class StudyDiseaseMilestoneRepository:
     def create_ctlist_definition(self, code_list_name: str):
         return get_ctlist_terms_by_name_and_definition(code_list_name)
 
+    def find_snapshot_selections(
+        self, study_uid: str, study_value_version: str
+    ) -> list[dict[str, Any]]:
+        """Read exact selection identities without joining mutable CT values.
+
+        Optional matches retain broken selections for explicit refusal instead
+        of making them disappear when a term no longer has LATEST_FINAL.
+        """
+        query = """
+            MATCH (study:StudyRoot {uid: $study_uid})-[version:HAS_VERSION]->
+                  (value:StudyValue)
+            WHERE version.version = $study_value_version
+              AND version.status IN ['LOCKED', 'RELEASED']
+            OPTIONAL MATCH (value)-[:HAS_STUDY_DISEASE_MILESTONE]->
+                           (milestone:StudyDiseaseMilestone)
+            OPTIONAL MATCH (study)-[:AUDIT_TRAIL]->(action:StudyAction)-[:AFTER]->(milestone)
+            OPTIONAL MATCH (milestone)-[:HAS_DISEASE_MILESTONE_TYPE]->
+                           (context:CTTermContext)
+            OPTIONAL MATCH (context)-[:HAS_SELECTED_TERM]->(term:CTTermRoot)
+            OPTIONAL MATCH (context)-[:HAS_SELECTED_CODELIST]->(codelist:CTCodelistRoot)
+            RETURN DISTINCT elementId(value) AS study_value_identity,
+                   properties(version) AS study_version,
+                   elementId(milestone) AS selection_identity,
+                   properties(milestone) AS selection,
+                   elementId(action) AS action_identity,
+                   properties(action) AS action,
+                   elementId(context) AS context_identity,
+                   term.uid AS term_uid, codelist.uid AS codelist_uid
+            ORDER BY selection_identity
+        """
+        rows, columns = db.cypher_query(query, {
+            "study_uid": study_uid, "study_value_version": study_value_version,
+        })
+        return [dict(zip(columns, row)) for row in rows]
+
     def find_all_disease_milestone(
         self,
         study_uid: str | None = None,

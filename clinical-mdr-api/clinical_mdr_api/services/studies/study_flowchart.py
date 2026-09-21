@@ -77,7 +77,7 @@ from common.auth.user import user
 from common.config import settings
 from common.exceptions import BusinessLogicException, NotFoundException
 from common.telemetry import trace_calls
-from common.utils import VisitClass, insert_space_after_commas
+from common.utils import VisitClass, VisitTimingMode, insert_space_after_commas
 
 NUM_OPERATIONAL_CODE_COLS = 2
 SOA_CHECK_MARK = "X"
@@ -96,6 +96,8 @@ _T = {
     "study_week": "Study week",
     "study_day": "Study day",
     "visit_window": "Visit window ({unit_name})",
+    "visit_window_unspecified": "Visit window",
+    "timing_not_fixed": "Not fixed",
     "protocol_flowchart": "Protocol Flowchart",
     "protocol_lab_table": "Protocol - Lab table",
     "operational_soa": "Operational SoA",
@@ -1617,13 +1619,18 @@ class StudyFlowchartService:
                 group[0].visit_window_unit_name
                 for visit_groups in grouped_visits.values()
                 for group in visit_groups.values()
+                if group[0].visit_window_unit_name
             ),
             "",
         )
         # Append window unit used for all StudyVisits
         window_row.cells.append(
             TableCell(
-                text=_T("visit_window").format(unit_name=visit_window_unit),
+                text=(
+                    _T("visit_window").format(unit_name=visit_window_unit)
+                    if visit_window_unit
+                    else _T("visit_window_unspecified")
+                ),
                 style="header4",
             )
         )
@@ -1777,13 +1784,18 @@ class StudyFlowchartService:
                     group[0].visit_window_unit_name
                     for visit_groups in grouped_visits.values()
                     for group in visit_groups.values()
+                    if group[0].visit_window_unit_name
                 ),
                 "",
             )
             # Append window unit used for all StudyVisits
             window_row.cells.append(
                 TableCell(
-                    text=_T("visit_window").format(unit_name=visit_window_unit),
+                    text=(
+                        _T("visit_window").format(unit_name=visit_window_unit)
+                        if visit_window_unit
+                        else _T("visit_window_unspecified")
+                    ),
                     style="header4",
                 )
             )
@@ -1853,6 +1865,8 @@ class StudyFlowchartService:
     ) -> str:
         visit: StudyVisitLite = visits[0]
         num_visits_in_group = len(visits)
+        if all(item.timing_mode == VisitTimingMode.UNTIMED for item in visits):
+            return _T("timing_not_fixed")
 
         # Single Visit
         if num_visits_in_group == 1:
@@ -1896,6 +1910,8 @@ class StudyFlowchartService:
 
     @staticmethod
     def _get_visit_window(visit: StudyVisitLite) -> str:
+        if visit.timing_mode == VisitTimingMode.UNTIMED:
+            return _T("timing_not_fixed")
         if None not in (
             visit.min_visit_window_value,
             visit.max_visit_window_value,
@@ -3256,12 +3272,20 @@ class StudyFlowchartService:
                 study_visits_by_uid[ref.referenced_item.item_uid].visit_window_unit_name
                 for refs in visit_references.values()
                 for ref in refs
+                if study_visits_by_uid[
+                    ref.referenced_item.item_uid
+                ].visit_window_unit_name
             ),
             "",
         )
         # Append window unit used by all StudyVisits
         window_row.cells[0] = TableCell(
-            text=_T("visit_window").format(unit_name=visit_window_unit), style="header4"
+            text=(
+                _T("visit_window").format(unit_name=visit_window_unit)
+                if visit_window_unit
+                else _T("visit_window_unspecified")
+            ),
+            style="header4",
         )
 
         prev_visit_type_uid = None

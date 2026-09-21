@@ -1,6 +1,8 @@
 """Native arm export requires explicit origin and the selected DDF package."""
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
+import json
+from urllib.parse import quote, unquote
 import unittest
 from unittest.mock import patch
 
@@ -19,6 +21,7 @@ from clinical_mdr_api.models.study_selections.study_selection import (
     StudySelectionArmInput,
 )
 from clinical_mdr_api.services.ddf.usdm_mapper import USDMMapper, USDMMappingAuthorityRequired
+from clinical_mdr_api.services.ddf.usdm_mapping_context import MappingContext
 from common.exceptions import ValidationException
 from common.models.error import ErrorResponse
 
@@ -46,6 +49,68 @@ def _native_arm(description=None, origin_uid=None, origin_description=None):
 
 
 class NativeArmOriginGeneralityTests(unittest.TestCase):
+    def _read_native_extension(self, root):
+        """Decode the public typed extension and require an unambiguous full tree."""
+        identities = set()
+
+        def require_identity(node, expected_type):
+            self.assertEqual(node.instanceType, expected_type)
+            self.assertIsInstance(node.id, str)
+            self.assertTrue(node.id)
+            self.assertNotIn(node.id, identities)
+            identities.add(node.id)
+
+        def read(node):
+            require_identity(node, "ExtensionAttribute")
+            values = {
+                key: getattr(node, key) for key in type(node).model_fields
+                if key.startswith("value") and getattr(node, key) is not None
+            }
+            children = node.extensionAttributes
+            if children:
+                self.assertEqual(values, {})
+                shapes = [child for child in children if child.url ==
+                          "https://openstudybuilder.org/usdm/extensions/native-value-shape"]
+                self.assertEqual(len(shapes), 1)
+                shape_node = shapes[0]
+                shape = read(shape_node)
+                self.assertIn(shape, ("null", "array", "object"))
+                payload = [child for child in children if child is not shape_node]
+                if shape == "null":
+                    self.assertEqual(payload, [])
+                    return None
+                entries = []
+                for child in payload:
+                    prefix = node.url + "/"
+                    self.assertTrue(child.url.startswith(prefix))
+                    encoded = child.url[len(prefix):]
+                    self.assertTrue(encoded)
+                    self.assertNotIn("/", encoded)
+                    key = unquote(encoded)
+                    self.assertEqual(quote(key, safe=""), encoded)
+                    entries.append((key, read(child)))
+                keys = [key for key, _value in entries]
+                self.assertEqual(len(set(keys)), len(keys))
+                if shape == "array":
+                    self.assertEqual(keys, [str(index) for index in range(len(entries))])
+                    return [value for _key, value in entries]
+                return dict(entries)
+            self.assertEqual(len(values), 1)
+            key, value = next(iter(values.items()))
+            if key == "valueQuantity":
+                require_identity(value, "Quantity")
+                self.assertIsNone(value.unit)
+                self.assertEqual(value.extensionAttributes, [])
+                self.assertIs(type(value.value), float)
+                return value.value
+            primitive_types = {"valueString": str, "valueBoolean": bool, "valueInteger": int}
+            self.assertIn(key, primitive_types)
+            self.assertIs(type(value), primitive_types[key])
+            return value
+
+        self.assertEqual(root.url, "https://openstudybuilder.org/usdm/extensions/native/studyArm")
+        return read(root)
+
     def test_create_patch_response_expose_the_same_raw_native_fields(self):
         for model in (StudySelectionArmCreateInput, StudySelectionArmInput, StudySelectionArm):
             for field in ("data_origin_type_uid", "data_origin_description"):
@@ -80,6 +145,10 @@ class NativeArmOriginGeneralityTests(unittest.TestCase):
                 description = "  Source-specific origin rationale.\nRetain this evidence.  "
                 row = _native_arm(origin_uid=uid, origin_description=description)
                 row.arm_type = SimpleCodelistTermModel(term_uid="C174266", term_name="Control Arm")
+                row.label = "Explicit cohort label Ω" if code == "C188864" else None
+                row.code = ""
+                row.randomization_group = ""
+                row.number_of_subjects = 0
                 mapper = _mapper()
                 mapper._get_osb_study_arms = lambda *_args, **_kwargs: [row]
                 mapper._ct_packages = {"DDF CT": {"uid": "ddfct-2024-09-27", "effective_date": "2024-09-27"}}
@@ -100,6 +169,15 @@ class NativeArmOriginGeneralityTests(unittest.TestCase):
                 self.assertEqual(result[0].dataOriginType.decode, decode)
                 self.assertEqual(result[0].dataOriginType.codeSystemVersion, "ddfct-2024-09-27")
                 self.assertEqual(result[0].dataOriginDescription, description)
+                self.assertEqual(result[0].label, before["label"] if before["label"] is not None else before["short_name"])
+                self.assertEqual(len(result[0].extensionAttributes), 1)
+                source = self._read_native_extension(result[0].extensionAttributes[0])
+                # JSON comparison also distinguishes false from zero and keeps
+                # the complete source keys, null/empty values and collection order.
+                self.assertEqual(
+                    json.dumps(source, ensure_ascii=False, separators=(",", ":")),
+                    json.dumps(before, ensure_ascii=False, separators=(",", ":")),
+                )
                 self.assertEqual(row.model_dump(mode="json"), before)
 
     def test_missing_origin_description_is_a_hold_even_with_an_explicit_uid(self):
@@ -178,9 +256,14 @@ class NativeArmOriginGeneralityTests(unittest.TestCase):
             "instanceType": "Code",
         }
         del values[missing_attribute]
-        # This is a real native Code instance, as returned by an incomplete
-        # projection using Pydantic model_construct, not an attribute stub.
-        partial_code = Code.model_construct(**values)
+        # Exercise the actual preserved WIP builder. The separately publishable
+        # c26 regression uses Code.model_construct and imports no WIP module.
+        context = MappingContext(allow_incomplete=True)
+        partial_code = context.build(Code, "study-arms/Arm_synthetic/type", **values)
+        self.assertEqual([
+            (issue["code"], issue["sourcePath"], issue["targetPath"])
+            for issue in context.issues
+        ], [("USDM_REQUIRED_SOURCE_VALUE_MISSING", "study-arms/Arm_synthetic/type", "Code/" + missing_attribute)])
         self.assertFalse(hasattr(partial_code, missing_attribute))
         before_code = partial_code.model_dump(mode="json")
         row = _native_arm(
@@ -228,17 +311,30 @@ class NativeArmOriginGeneralityTests(unittest.TestCase):
     def test_selected_package_is_read_from_the_requested_study_version(self):
         mapper = _mapper()
         calls = []
+        source_metadata = {"enabled": False, "optional": None, "empty": "", "rows": [0, "", None]}
+        source_package = SimpleNamespace(
+            catalogue_name="DDF CT", uid="ddfct-2024-09-27",
+            effective_date=date(2024, 9, 27), source_metadata=source_metadata,
+        )
         def selected(**kwargs):
             calls.append(kwargs)
-            return [SimpleNamespace(ct_package=SimpleNamespace(
-                catalogue_name="DDF CT", uid="ddfct-2024-09-27", effective_date=date(2024, 9, 27)
-            ))]
+            return [SimpleNamespace(ct_package=source_package)]
         mapper._get_osb_study_standard_versions = selected
         mapper._study_value_version = "3"
         mapper._load_selected_ct_packages("Study_synthetic")
-        self.assertEqual(calls, [{"study_uid": "Study_synthetic", "study_value_version": "3"}])
-        self.assertEqual(mapper._ct_packages["DDF CT"], {
-            "uid": "ddfct-2024-09-27", "effective_date": "2024-09-27"
+        self.assertEqual(calls, [{"study_uid": "Study_synthetic", "study_value_version": "3", "page_size": 0}])
+        selected_package = mapper._ct_packages["DDF CT"]
+        self.assertEqual(selected_package["uid"], "ddfct-2024-09-27")
+        self.assertEqual(selected_package["effective_date"], "2024-09-27")
+        self.assertEqual(selected_package["source"], {
+            "catalogue_name": "DDF CT", "uid": "ddfct-2024-09-27",
+            "effective_date": "2024-09-27",
+            "source_metadata": {"enabled": False, "optional": None, "empty": "", "rows": [0, "", None]},
+        })
+        self.assertEqual(vars(source_package), {
+            "catalogue_name": "DDF CT", "uid": "ddfct-2024-09-27",
+            "effective_date": date(2024, 9, 27),
+            "source_metadata": {"enabled": False, "optional": None, "empty": "", "rows": [0, "", None]},
         })
 
     def test_duplicate_catalogue_selection_is_not_resolved_by_taking_the_latest(self):

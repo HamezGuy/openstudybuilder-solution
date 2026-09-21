@@ -4,6 +4,12 @@
       {{ $t('StudyManageView.title') }}
       <HelpButton :help-text="$t('_help.SelectOrAddStudyTable.general')" />
     </div>
+    <v-alert v-if="loadError" type="error" class="mb-4" role="alert">
+      {{ loadError }}
+      <v-btn variant="text" :disabled="studiesLoading" @click="reloadStudies">
+        Retry
+      </v-btn>
+    </v-alert>
     <NavigationTabs
       ref="navigationTabs"
       :tabs="tabs"
@@ -17,6 +23,7 @@
             v-bind="$attrs"
             :items="paginatedStudies"
             :items-length="totalActiveStudies"
+            :loading-watcher="studiesLoading"
             @filter="fetchActiveStudies"
             @refresh-studies="reloadStudies"
             @enable-filtering="openFiltering = !openFiltering"
@@ -104,6 +111,7 @@
             ref="deletedStudiesTable"
             :items="paginatedStudies"
             :items-length="totalDeletedStudies"
+            :loading-watcher="studiesLoading"
             read-only
             @filter="fetchDeletedStudies"
             @refresh-studies="reloadStudies"
@@ -214,6 +222,8 @@ const paginatedStudies = ref([])
 const columnFilters = ref({})
 const openFiltering = ref(false)
 const fullRefresh = ref(false)
+const studiesLoading = ref(true)
+const loadError = ref('')
 
 const headers = [
   {
@@ -297,7 +307,7 @@ watch(searchString, () => {
 
 function reloadStudies() {
   fullRefresh.value = true
-  activeStudiesTable.value.filter()
+  filterTable()
 }
 
 function sort(data) {
@@ -330,6 +340,8 @@ async function fetchActiveStudies(filters, options, filtersUpdated) {
     savedFilters.value,
     filtersUpdated
   )
+  studiesLoading.value = true
+  loadError.value = ''
   try {
     if (activeStudies.value.length === 0 || fullRefresh.value) {
       await api.getAllList().then((resp) => {
@@ -349,7 +361,13 @@ async function fetchActiveStudies(filters, options, filtersUpdated) {
     filteredStudies.value = activeStudies.value
     handleFiltering(params)
   } catch (error) {
-    console.error(error)
+    activeStudies.value = []
+    paginatedStudies.value = []
+    totalActiveStudies.value = 0
+    loadError.value =
+      error.response?.data?.message || 'Unable to load studies. Please retry.'
+  } finally {
+    studiesLoading.value = false
   }
 }
 
@@ -458,6 +476,8 @@ async function fetchDeletedStudies(filters, options, filtersUpdated) {
     savedFilters.value,
     filtersUpdated
   )
+  studiesLoading.value = true
+  loadError.value = ''
   try {
     if (deletedStudies.value.length === 0 || fullRefresh.value) {
       await api.getAllList({ deleted: true }).then((resp) => {
@@ -469,7 +489,13 @@ async function fetchDeletedStudies(filters, options, filtersUpdated) {
     filteredStudies.value = deletedStudies.value
     handleFiltering(params)
   } catch (error) {
-    console.error(error)
+    deletedStudies.value = []
+    paginatedStudies.value = []
+    totalDeletedStudies.value = 0
+    loadError.value =
+      error.response?.data?.message || 'Unable to load studies. Please retry.'
+  } finally {
+    studiesLoading.value = false
   }
 }
 

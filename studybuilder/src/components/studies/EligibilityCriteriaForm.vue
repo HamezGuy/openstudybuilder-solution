@@ -540,7 +540,7 @@ export default {
       } else {
         Object.assign(params.filters, {
           template_type_uid: {
-            v: [this.criteriaType.term_uid],
+            v: this.criteriaType.term_uids || [this.criteriaType.term_uid],
           },
         })
       }
@@ -560,7 +560,7 @@ export default {
         }
       } else {
         jsonFilter.template_type_uid = {
-          v: [this.criteriaType.term_uid],
+          v: this.criteriaType.term_uids || [this.criteriaType.term_uid],
         }
       }
       jsonFilter['library.name'] = { v: [libraries.LIBRARY_SPONSOR] }

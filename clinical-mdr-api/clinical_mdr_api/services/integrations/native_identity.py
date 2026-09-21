@@ -20,11 +20,12 @@ from clinical_mdr_api.services.integrations.canonical_json import canonical_hash
 from clinical_mdr_api.services.integrations.nested_transaction import (
     call_in_ambient_transaction,
 )
+from clinical_mdr_api.services.integrations.native_study_head import read_current_study_head
+from clinical_mdr_api.services.integrations.review_workspace_migration import assert_review_workspace_claim
 from clinical_mdr_api.services.studies.study import StudyService
 from clinical_mdr_api.services.studies.study_standard_version_selection import (
     StudyStandardVersionService,
 )
-from clinical_mdr_api.services.integrations.native_study_head import read_current_study_head
 
 # The catalogues a governed mapping context REQUIRES. MappingContextService
 # demands "DDF CT" for every request and adds "SDTM CT"/"CDASH CT" as soon as a
@@ -293,6 +294,9 @@ class Neo4jOsbNativeIdentityTransactionV1:
     def apply_intent(self, intent: ExternalIdentityCreateIntentV1) -> dict[str, Any]:
         self.actor_subject = intent["actorSubject"]
         initial = _state(intent)
+        review_migration = initial.get("reviewOnly") is True or "reviewWorkspaceMigrationId" in initial
+        if review_migration:
+            assert_review_workspace_claim(intent, self.tenant_id, self.platform_study_id, db.cypher_query)
         operation = str(initial.get("operation") or ("create" if intent["expectedAbsence"] else "claim_existing"))
         active = self._active_binding()
         if operation == "version_rollover":
@@ -327,6 +331,10 @@ class Neo4jOsbNativeIdentityTransactionV1:
         self._assert_tenant_scope(native_identity)
         self._assert_native_available(native_identity)
         native_version, native_status = self._native_checkpoint(native_identity)
+        if review_migration and native_status != "draft":
+            raise NativeIdentityCommandError(
+                "REVIEW_WORKSPACE_MIGRATION_ROOT_NOT_DRAFT", "A migrated review root must remain draft.", 403,
+            )
         requested_version = _text(initial.get("nativeVersion"), "nativeVersion", required=False)
         if requested_version and requested_version != native_version:
             raise NativeIdentityCommandError(

@@ -13,6 +13,11 @@ from clinical_mdr_api.domains.study_definition_aggregates.study_metadata import 
     StudyStatus,
 )
 from clinical_mdr_api.models.complexity_score import ComplexityScoreDetails
+from clinical_mdr_api.models.study_selections.null_adjudication import (
+    StudyNullAdjudicationCapability,
+    StudyNullAdjudicationReceipt,
+    StudyNullAdjudicationRequest,
+)
 from clinical_mdr_api.models.study_selections.study import (
     CompactStudy,
     LockReleaseInput,
@@ -53,6 +58,10 @@ from clinical_mdr_api.routers._generic_descriptions import (
     study_section_description,
 )
 from clinical_mdr_api.services.studies.complexity_score import ComplexityScoreService
+from clinical_mdr_api.services.studies.null_adjudication import (
+    null_adjudication_capability,
+    null_adjudication_receipt,
+)
 from clinical_mdr_api.services.studies.study import (
     StudyService,
     validate_if_study_is_not_locked,
@@ -895,6 +904,41 @@ def get_pharma_cm_xml_representation(
         },
     )
     return response
+
+
+@router.get(
+    "/{study_uid}/null-adjudications",
+    dependencies=[security, rbac.STUDY_READ],
+    summary="Returns the supported atomic null-adjudication contract and metadata paths.",
+)
+def get_null_adjudication_capability(
+    study_uid: Annotated[str, StudyUID],
+) -> StudyNullAdjudicationCapability:
+    return null_adjudication_capability(study_uid)
+
+
+@router.patch(
+    "/{study_uid}/null-adjudications",
+    dependencies=[security, rbac.STUDY_WRITE],
+    summary="Atomically signs empty study metadata slots after checking both observed values.",
+    responses={
+        400: {
+            "model": ErrorResponse,
+            "description": "The closed guarded request failed native input validation or contains an unsupported value/companion pair.",
+        },
+        403: _generic_descriptions.ERROR_403,
+        404: _generic_descriptions.ERROR_404,
+        412: {"model": ErrorResponse, "description": "An expected value or null companion changed, or the slot is not empty."},
+    },
+)
+def patch_null_adjudications(
+    study_uid: Annotated[str, StudyUID],
+    request: StudyNullAdjudicationRequest,
+) -> StudyNullAdjudicationReceipt:
+    StudyService().patch(
+        study_uid, False, StudyPatchRequestJsonModel(), null_adjudication=request
+    )
+    return null_adjudication_receipt(study_uid, request)
 
 
 @router.patch(

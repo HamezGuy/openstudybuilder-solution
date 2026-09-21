@@ -1,5 +1,5 @@
 <template>
-  <div v-resize="onResize" class="pa-4 bg-white" style="overflow-x: auto">
+  <div class="pa-4 bg-white" style="overflow-x: auto">
     <v-row>
       <v-col cols="4">
         <v-autocomplete
@@ -12,6 +12,7 @@
           :item-title="(elm) => `${elm.name} (V ${elm.version})`"
           item-value="uid"
           return-object
+          :disabled="loading"
           :class="{
             shake: isShaking && _isEmpty(selectedForms),
           }"
@@ -56,7 +57,7 @@
           :items="data.stylesheet"
           class="mt-2"
           :label="$t('OdmViewer.stylesheet')"
-          :disabled="_isEmpty(selectedForms)"
+          :disabled="_isEmpty(selectedForms) || loading"
         />
       </v-col>
       <v-col cols="3" @click="() => activateShake(_isEmpty(selectedForms))">
@@ -66,7 +67,7 @@
           variant="flat"
           rounded="xl"
           class="mt-2"
-          :disabled="_isEmpty(selectedForms)"
+          :disabled="_isEmpty(selectedForms) || loading"
           block
           @click="loadXml"
         >
@@ -120,6 +121,9 @@
         </v-menu>
       </v-col>
     </v-row>
+    <v-alert v-if="loadError" type="error" class="mt-4">
+      {{ $t('_errors.general') }}
+    </v-alert>
     <v-row
       v-show="loading"
       class="align-center justify-center"
@@ -140,7 +144,7 @@
     <v-row>
       <v-col>
         <div v-show="doc && !showOdmXml" class="mt-4">
-          <iframe />
+          <iframe class="frame" :srcdoc="doc" :title="$t('OdmViewer.html')" />
         </div>
         <div v-show="doc && showOdmXml" class="mt-4">
           <v-card color="primary" style="overflow-x: auto">
@@ -198,6 +202,7 @@ const data = ref({
   selectedStylesheet: 'html',
 })
 const loading = ref(false)
+const loadError = ref(false)
 const exportLoading = ref(false)
 
 onMounted(() => {
@@ -228,49 +233,38 @@ function getStudyCrfForms() {
 
 async function loadXml() {
   doc.value = ''
+  xmlString.value = ''
   loading.value = true
+  loadError.value = false
   data.value.allowed_namespaces = '&allowed_namespaces=*'
   data.value.targets = ''
   for (const form of selectedForms.value) {
     data.value.targets += `targets=${form.uid},${form.version}&`
   }
-  if (data.value.selectedStylesheet === 'html') {
-    crfs.getReport(data.value).then((resp) => {
+  try {
+    if (data.value.selectedStylesheet === 'html') {
+      const resp = await crfs.getReport(data.value)
       doc.value = resp.data
       xmlString.value = resp.data
-
-      let iframe = document.createElement('iframe')
-      iframe.classList.add('frame')
-      document.querySelector('iframe').replaceWith(iframe)
-      let iframeDoc = iframe.contentDocument
-      iframeDoc.write(doc.value)
-      iframeDoc.close()
-
-      loading.value = false
-    })
-  } else {
-    crfs.getXml(data.value).then((resp) => {
+    } else {
+      const resp = await crfs.getXml(data.value)
       const parser = new DOMParser()
       xmlString.value = resp.data
       xml = parser.parseFromString(resp.data, 'application/xml')
       const xsltProcessor = new XSLTProcessor()
-      crfs.getXsl(data.value.selectedStylesheet).then((resp) => {
-        const xmlDoc = parser.parseFromString(resp.data, 'text/xml')
-        xsltProcessor.importStylesheet(xmlDoc)
-        doc.value = new XMLSerializer().serializeToString(
-          xsltProcessor.transformToDocument(xml)
-        )
-
-        let iframe = document.createElement('iframe')
-        iframe.classList.add('frame')
-        document.querySelector('iframe').replaceWith(iframe)
-        let iframeDoc = iframe.contentDocument
-        iframeDoc.write(doc.value)
-        iframeDoc.close()
-
-        loading.value = false
-      })
-    })
+      const stylesheet = await crfs.getXsl(data.value.selectedStylesheet)
+      const xmlDoc = parser.parseFromString(stylesheet.data, 'text/xml')
+      xsltProcessor.importStylesheet(xmlDoc)
+      doc.value = new XMLSerializer().serializeToString(
+        xsltProcessor.transformToDocument(xml)
+      )
+    }
+  } catch {
+    doc.value = ''
+    xmlString.value = ''
+    loadError.value = true
+  } finally {
+    loading.value = false
   }
 }
 

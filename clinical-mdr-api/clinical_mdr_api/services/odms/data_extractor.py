@@ -397,7 +397,13 @@ class OdmDataExtractor:
             self.ct_term_attributes_service.get_term_name_and_attributes_by_codelist_uids(
                 [codelist.codelist_uid for codelist in codelists]
             ),
-            key=lambda elm: elm["nci_preferred_name"],
+            # Sponsor response options need not have an NCI preferred name.
+            # Keep their source values intact and use the native name/UID only
+            # as the ordering fallback for this exported view.
+            key=lambda elm: (
+                elm["nci_preferred_name"] or elm["name"] or elm["term_uid"],
+                elm["term_uid"],
+            ),
         )
 
     def get_items_by_codelist_uid(self, codelist_uid: str):

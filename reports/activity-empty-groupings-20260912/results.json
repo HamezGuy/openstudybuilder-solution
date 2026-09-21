@@ -1,0 +1,23 @@
+{
+  "status": "passed",
+  "passed": 9,
+  "failed": 0,
+  "durationSeconds": 5.25,
+  "command": "/home/appuser/.local/share/virtualenvs/app-4PlAip0Q/bin/python -m pytest -p no:cacheprovider --no-cov clinical_mdr_api/tests/integration/api/concepts/activities/test_activity_version_empty_groupings.py -q",
+  "runtimeImage": "sha256:6e87e356ced645bd2196374ccaf6b90d1f47650ec2ebdbc970e3a0822d049719",
+  "databaseImage": "sha256:34d8b0805d0c9af9a7b94b08a3bac99e296a1cf26b4b592923e9ec7407650f3a",
+  "runtimeSourceMount": "/app: read-only bind of C:/Projects/OpenSourceBuilder/clinical-mdr-api",
+  "sourceBaselineSha256": "19a69c5e9615461b0de7e14a6a3215dc3d50992138ca423a7ef7839b509535df",
+  "sourceBaselinePath": "C:/Projects/OpenSourceBuilder/reports/activity-empty-groupings-20260912/activity_repository.before.py",
+  "files": [
+    {
+      "path": "C:\\Projects\\OpenSourceBuilder\\clinical-mdr-api\\clinical_mdr_api\\domain_repositories\\concepts\\activities\\activity_repository.py",
+      "sha256": "d0611b222b6154ac50e2b8c911b87c25eb770f363dd8c929774c5b318732b0ec"
+    },
+    {
+      "path": "C:\\Projects\\OpenSourceBuilder\\clinical-mdr-api\\clinical_mdr_api\\tests\\integration\\api\\concepts\\activities\\test_activity_version_empty_groupings.py",
+      "sha256": "494a4f0327fc2acaf8f575fa1578e504415c8e7f7d11288e24cd0cdbc6b38fe5"
+    }
+  ],
+  "log": "C:/Projects/OpenSourceBuilder/reports/activity-empty-groupings-20260912/integration-tests.log"
+}

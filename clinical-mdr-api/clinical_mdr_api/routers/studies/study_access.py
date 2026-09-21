@@ -13,13 +13,19 @@ from clinical_mdr_api.services.studies.study_visibility import (
 from common.auth.dependencies import security
 
 
+# These are the study-root parameters used by the registered study routers.
+# Child IDs such as study_standard_version_uid and study_visit_uid belong to
+# objects inside that study and must not be looked up as StudyRoot identities.
+# Each child service still resolves its object inside the authorized parent.
+STUDY_ROOT_PATH_PARAMETERS = frozenset({"study_uid", "target_study_uid"})
+
+
 def enforce_visible_study(request: Request, _auth=security) -> None:
     require_write = request.method.upper() not in {"GET", "HEAD", "OPTIONS"}
     study_path_values = {
         str(value).strip()
         for key, value in request.path_params.items()
-        if "study" in key.lower()
-        and (key.lower().endswith("uid") or key.lower().endswith("id"))
+        if key in STUDY_ROOT_PATH_PARAMETERS
         and str(value).strip()
     }
     if study_path_values:
@@ -36,8 +42,10 @@ def enforce_visible_study(request: Request, _auth=security) -> None:
             assert_collection_scope,
         )
 
-        route = request.scope.get("route")
-        route_path = getattr(route, "path", None) or request.url.path
+        # Included routers may expose the local route template ("/list") in
+        # scope["route"], without the "/studies" mount prefix. Authorize the
+        # concrete path that FastAPI matched, including its application prefix.
+        route_path = request.url.path
         assert_collection_scope(
             require_write=require_write,
             route_path=route_path,

@@ -247,42 +247,61 @@ class MedicinalProductRepository(ConceptGenericRepository):
         value: VersionValue,
         **_kwargs,
     ) -> MedicinalProductAR:
-        pharmaceutical_products = [
-            MedicinalProductVO.PharmaceuticalProductInfo(
-                uid=pp.uid,
-                external_id=pp.has_latest_value.get().external_id,
+        snapshot = _kwargs.get("native_snapshot_reader")
+        if snapshot is not None:
+            pharmaceutical_products = [
+                MedicinalProductVO.PharmaceuticalProductInfo(
+                    uid=pp.uid,
+                    external_id=snapshot.read("pharmaceuticalProduct", pp.uid).concept_vo.external_id,
+                )
+                for pp in value.has_pharmaceutical_product.all()
+            ]
+            dose_values = []
+            for root_dose in value.has_dose_value.all():
+                dose = snapshot.read("numericValueWithUnit", root_dose.uid)
+                unit = snapshot.read("unitDefinition", dose.concept_vo.unit_definition_uid)
+                dose_values.append(MedicinalProductVO.DoseValueInfo(
+                    uid=dose.uid, value=dose.concept_vo.value,
+                    unit_definition_uid=unit.uid, unit_label=unit.concept_vo.name,
+                ))
+            dose_frequency = snapshot.term_info(value.has_dose_frequency.get_or_none())
+            delivery_device = snapshot.term_info(value.has_delivery_device.get_or_none())
+            dispenser = snapshot.term_info(value.has_dispenser.get_or_none())
+            selected_compound = snapshot.read("compound", value.is_compound.get().uid)
+            compound = MedicinalProductVO.CompoundInfo(
+                uid=selected_compound.uid, name=selected_compound.concept_vo.name,
             )
-            for pp in value.has_pharmaceutical_product.all()
-        ]
-
-        dose_values = [
-            MedicinalProductVO.DoseValueInfo(
-                uid=dv.uid,
-                value=dv_val.value,
-                unit_definition_uid=unit.uid,
-                unit_label=unit_val.name,
+        else:
+            pharmaceutical_products = [
+                MedicinalProductVO.PharmaceuticalProductInfo(
+                    uid=pp.uid,
+                    external_id=pp.has_latest_value.get().external_id,
+                )
+                for pp in value.has_pharmaceutical_product.all()
+            ]
+            dose_values = [
+                MedicinalProductVO.DoseValueInfo(
+                    uid=dv.uid, value=dv_val.value,
+                    unit_definition_uid=unit.uid, unit_label=unit_val.name,
+                )
+                for dv in value.has_dose_value.all()
+                if (dv_val := dv.has_latest_value.get_or_none()) is not None
+                and (unit := dv_val.has_unit_definition.get_or_none()) is not None
+                and (unit_val := unit.has_latest_value.get_or_none()) is not None
+            ]
+            dose_frequency = CtTermInfo.extract_ct_term_info(
+                ct_term_context=value.has_dose_frequency.get_or_none()
             )
-            for dv in value.has_dose_value.all()
-            if (dv_val := dv.has_latest_value.get_or_none()) is not None
-            and (unit := dv_val.has_unit_definition.get_or_none()) is not None
-            and (unit_val := unit.has_latest_value.get_or_none()) is not None
-        ]
-
-        dose_frequency = CtTermInfo.extract_ct_term_info(
-            ct_term_context=value.has_dose_frequency.get_or_none()
-        )
-
-        delivery_device = CtTermInfo.extract_ct_term_info(
-            ct_term_context=value.has_delivery_device.get_or_none()
-        )
-        dispenser = CtTermInfo.extract_ct_term_info(
-            ct_term_context=value.has_dispenser.get_or_none()
-        )
-
-        compound = MedicinalProductVO.CompoundInfo(
-            uid=value.is_compound.get().uid,
-            name=value.is_compound.get().has_latest_value.get().name,
-        )
+            delivery_device = CtTermInfo.extract_ct_term_info(
+                ct_term_context=value.has_delivery_device.get_or_none()
+            )
+            dispenser = CtTermInfo.extract_ct_term_info(
+                ct_term_context=value.has_dispenser.get_or_none()
+            )
+            compound = MedicinalProductVO.CompoundInfo(
+                uid=value.is_compound.get().uid,
+                name=value.is_compound.get().has_latest_value.get().name,
+            )
 
         ar = MedicinalProductAR.from_repository_values(
             uid=root.uid,

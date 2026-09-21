@@ -67,8 +67,15 @@
         :items-per-page-options="itemsPerPageOptions"
       >
         <template #[`item.values`]="{ item }">
+          <span
+            v-if="!hasMetadataValue(metadata[item.key])"
+            class="text-medium-emphasis"
+          >
+            {{ Object.keys(metadata).length === 0 ? 'Loading…' :
+              metadata[item.null_value_key] ? 'Not provided' : 'Not configured' }}
+          </span>
           <CTTermDisplay
-            v-if="getParamDisplayType(item.key) === 'term'"
+            v-else-if="getParamDisplayType(item.key) === 'term'"
             :term="metadata[item.key]"
           />
           <template v-else-if="getParamDisplayType(item.key) === 'terms'">
@@ -143,6 +150,7 @@ import study from '@/api/study'
 import tablesConstants from '@/constants/tables'
 import { useAccessGuard } from '@/composables/accessGuard'
 import { useStudiesGeneralStore } from '@/stores/studies-general'
+import { hasMetadataValue } from '@/utils/termDisplay'
 
 export default {
   components: {
@@ -195,6 +203,7 @@ export default {
 
     return {
       studiesGeneralStore,
+      hasMetadataValue,
       ...accessGuard,
     }
   },
