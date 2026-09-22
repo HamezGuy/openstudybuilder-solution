@@ -32,7 +32,7 @@ class NativeOperationPreconditionV1(TypedDict):
     nativeVersion: str | None
     candidateSetVersionId: str | None
 
-NativeTargetIdentityV1 = NativeTargetIdentityV1
+NativeTargetIdentityV1 = dict[str, Any]
 
 class PlatformHashRefV1(TypedDict):
     algorithm: Literal["sha-256"]

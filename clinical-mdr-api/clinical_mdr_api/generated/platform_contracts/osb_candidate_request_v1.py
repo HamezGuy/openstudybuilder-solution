@@ -132,14 +132,14 @@ class OsbCandidateUpstreamExclusionsV1(TypedDict):
     excludedSigned: int
     quarantined: int
 
+class OsbCreateOptionV1(TypedDict):
+    allowed: Literal[True]
+    requestedNativeType: str | None
+
 class OsbCslEntityReferenceV1(TypedDict):
     entityId: str
     entityType: str
     revisionId: str
-
-class OsbCreateOptionV1(TypedDict):
-    allowed: Literal[True]
-    requestedNativeType: str | None
 
 class OsbExternalIdentityEvidenceV1(TypedDict):
     receiptId: str

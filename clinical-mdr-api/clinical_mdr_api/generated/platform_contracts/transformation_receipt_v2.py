@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Literal, NotRequired, TypedDict
 
-NativeTargetIdentityV1 = NativeTargetIdentityV1
+NativeTargetIdentityV1 = dict[str, Any]
 
 class PlatformHashRefV1(TypedDict):
     algorithm: Literal["sha-256"]
