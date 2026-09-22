@@ -5,6 +5,7 @@ from common.exceptions import NotFoundException
 from clinical_mdr_api.services.integrations.native_observation import (
     NativeObservationError, canonical_hash, collect_native_observation, comparison_record,
 )
+from clinical_mdr_api.services.integrations import native_observation as native_observation_module
 
 
 class NativeObservationTests(unittest.TestCase):
@@ -136,3 +137,47 @@ class NativeObservationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NativeObservationUserProjectionTests(unittest.TestCase):
+    def test_user_projection_is_verified_sorted_and_inside_the_observation_hash(self):
+        row = {"study_uid": "S1", "arm_uid": "A1", "description": "arm"}
+        audit = {**row, "change_type": "Edit", "start_date": "2026-09-06T00:00:00Z", "author_username": "james", "author_id": "edc:2"}
+        projection = [
+            {"userId": "service:command-center", "username": "command-center", "oid": "service:command-center", "subjectType": "service",
+             "issuer": "https://cc.local", "humanSubject": None, "serviceActor": "service:command-center"},
+            {"userId": "edc:2", "username": "james", "oid": "edc:2", "subjectType": "human", "issuer": "accuratrials-edc-compat",
+             "humanSubject": "edc:2", "serviceActor": "", "extra": "ignored"},
+        ]
+        result = collect_native_observation("S1", native_study={"uid": "S1"}, study_audit=[],
+            readers={"study_arms": (lambda **_: [row], lambda **_: [audit])}, user_projection=projection)
+        self.assertEqual([entry["userId"] for entry in result["users"]], ["edc:2", "service:command-center"])
+        self.assertEqual(result["users"][0], {"userId": "edc:2", "username": "james", "oid": "edc:2", "subjectType": "human",
+                                              "issuer": "accuratrials-edc-compat", "humanSubject": "edc:2", "serviceActor": None})
+        content = {key: value for key, value in result.items() if key != "contentHash"}
+        self.assertEqual(result["contentHash"], canonical_hash(content))
+        self.assertNotEqual(result["contentHash"], canonical_hash({key: value for key, value in content.items() if key != "users"}))
+        without = collect_native_observation("S1", native_study={"uid": "S1"}, study_audit=[],
+            readers={"study_arms": (lambda **_: [row], lambda **_: [audit])})
+        self.assertNotIn("users", without)
+        for invalid in ([{"userId": ""}], [{"userId": "edc:2"}, {"userId": "edc:2"}], [{"userId": "edc:2", "issuer": 7}], ["edc:2"]):
+            with self.assertRaises(NativeObservationError):
+                collect_native_observation("S1", native_study={"uid": "S1"}, study_audit=[],
+                    readers={"study_arms": (lambda **_: [row], lambda **_: [audit])}, user_projection=invalid)
+
+    def test_user_projection_reads_exactly_the_editors_the_history_names(self):
+        captured = {}
+
+        def fake_cypher(query, params):
+            captured["query"] = query
+            captured["params"] = params
+            return ([["edc:2", "james", "edc:2", "human", "accuratrials-edc-compat", "edc:2", None]],
+                    ["userId", "username", "oid", "subjectType", "issuer", "humanSubject", "serviceActor"])
+
+        with unittest.mock.patch("neomodel.db.cypher_query", fake_cypher):
+            rows = native_observation_module.collect_user_projection({"edc:2"}, {"james", "other"})
+        self.assertEqual(captured["params"], {"ids": ["edc:2"], "names": ["james", "other"]})
+        self.assertIn("u.user_id IN $ids OR u.username IN $names", captured["query"])
+        self.assertEqual(rows, [{"userId": "edc:2", "username": "james", "oid": "edc:2", "subjectType": "human",
+                                 "issuer": "accuratrials-edc-compat", "humanSubject": "edc:2", "serviceActor": None}])
+        self.assertEqual(native_observation_module.collect_user_projection(set(), set()), [])

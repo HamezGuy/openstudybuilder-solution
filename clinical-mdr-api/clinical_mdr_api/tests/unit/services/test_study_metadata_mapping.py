@@ -514,3 +514,17 @@ def test_locked_native_study_is_rejected():
     with pytest.raises(OsbCandidateSetError) as error:
         prepared(port, intent("count", COUNT, 30000))
     assert error.value.code == "OSB_STUDY_METADATA_DRAFT_REQUIRED"
+
+
+def test_the_pre_write_version_is_the_study_version_read_under_the_lock_before_the_patch():
+    port = NativePort()
+    sources = [intent("title", TITLE, "A source-stated study"), intent("allocation", RANDOMISED, False)]
+    pre_versions = {}
+    observations = mapping.apply_metadata_selections(
+        prepared(port, *sources), UID, port=port, result_pre_versions=pre_versions
+    )
+    assert set(pre_versions) == set(observations)
+    assert set(pre_versions.values()) == {"2026-09-10T10:00:00Z"}
+    assert {item["version"] for item in observations.values()} == {"2026-09-10T11:00:00Z"}
+    # The read-back envelope itself is unchanged: the pre-version rides beside it, never inside its hash.
+    assert set(observations[key(sources[0])]) == {"resourceFamily", "resourceType", "uid", "version", "label", "metadataPath", "metadataValue"}

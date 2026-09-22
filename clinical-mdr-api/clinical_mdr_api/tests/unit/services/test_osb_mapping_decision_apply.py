@@ -46,9 +46,17 @@ class FakeQuery:
         self.managed = {}
         self.openapi_hash = openapi_hash
         self.binding = ("bind-1", "Study_990001", "0.1")
+        self.links = []
+        self.evidence_nodes = []
 
     def cypher_query(self, query, params=None):
         params = params or {}
+        if any(edge in query for edge in ("PLATFORM_OPERATION_EVIDENCE", "HAS_PLATFORM_MAPPING_DECISION")):
+            self.links.append({"query": query, "params": params})
+            return ([[1]], None)
+        if "CREATE (evidence:NativeOperationEvidenceV1" in query:
+            self.evidence_nodes.append(params)
+            return ([], None)
         if "PlatformNativeStudyBinding" in query:
             return ([list(self.binding)], None)
         if "OsbInboundArtifact" in query and "study-mapping-decision" in query:
@@ -544,3 +552,91 @@ def test_original_scalar_evidence_replay_preserves_exact_retained_bytes(monkeypa
     assert canonical_json(replay["payload"]) == retained[0]
     assert canonical_json(replay["artifactRef"]) == retained[2]
     assert tuple(store.evidence) == retained
+
+
+def test_applied_evidence_is_linked_from_the_study_and_the_native_target_and_states_both_versions(monkeypatch):
+    request_payload, candidate_set, payload, artifact = _decision_pair("select")
+    store = FakeQuery()
+    store.request_json = canonical_json(request_payload)
+    store.candidate_json = canonical_json(candidate_set)
+    store.decision_json = canonical_json(payload)
+    monkeypatch.setattr(
+        "clinical_mdr_api.services.integrations.mapping_decision_v1.db.cypher_query",
+        store.cypher_query,
+    )
+    applied = apply_mapping_decision(
+        tenant_id=TENANT, platform_study_id=STUDY, decision_artifact=artifact,
+        actor="reviewer@example.com", osb_openapi_hash=OPENAPI,
+    )
+    evidence = applied["payload"]["evidenceRecords"][0]["evidence"]
+    # A selection writes nothing, so the version before equals the version read back.
+    assert evidence["preTargetVersion"] == "1.0"
+    assert evidence["postTargetVersion"] == "1.0"
+    node = store.evidence_nodes[0]
+    assert node["native_resource_type"] == "CriteriaTemplate"
+    assert node["native_uid"] == "CriteriaTemplate_1"
+    assert node["native_version_before"] == "1.0"
+    assert node["native_version_after"] == "1.0"
+    assert node["disposition"] == "native"
+    assert node["selection_action"] == "select"
+    assert node["selection_rationale"] == "exact template"
+    assert node["decision_reason"] == "vertical slice"
+    assert node["signature_meaning"] == "study-mapping-decision"
+    assert node["signed_at"] == "2026-08-21T08:45:00Z"
+    assert node["requesting_actor"] == "reviewer@example.com"
+    assert (node["fact_id"], node["fact_revision"], node["target_key"]) == ("fact-1", 1, "primary")
+    study_links = [link for link in store.links if "HAS_PLATFORM_OPERATION_EVIDENCE" in link["query"]]
+    target_links = [link for link in store.links if "MERGE (target)-[:PLATFORM_OPERATION_EVIDENCE]" in link["query"]]
+    decision_links = [link for link in store.links if "HAS_PLATFORM_MAPPING_DECISION" in link["query"]]
+    assert [link["params"]["study_uid"] for link in study_links] == ["Study_990001"]
+    assert len(target_links) == 1
+    assert "MATCH (target:CriteriaTemplateRoot)" in target_links[0]["query"]
+    assert target_links[0]["params"]["uid"] == "CriteriaTemplate_1"
+    assert target_links[0]["params"]["evidence_id"] == evidence["evidenceId"]
+    assert [link["params"]["decision_id"] for link in decision_links] == [payload["statement"]["decisionId"]]
+
+
+def test_an_unreadable_native_target_fails_the_decision_instead_of_leaving_evidence_unlinked(monkeypatch):
+    request_payload, candidate_set, payload, artifact = _decision_pair("select")
+    store = FakeQuery()
+    store.request_json = canonical_json(request_payload)
+    store.candidate_json = canonical_json(candidate_set)
+    store.decision_json = canonical_json(payload)
+    original = store.cypher_query
+
+    def unlinked(query, params=None):
+        if "MERGE (target)-[:PLATFORM_OPERATION_EVIDENCE]" in query:
+            return ([[0]], None)
+        return original(query, params)
+
+    monkeypatch.setattr("clinical_mdr_api.services.integrations.mapping_decision_v1.db.cypher_query", unlinked)
+    with pytest.raises(OsbCandidateSetError) as failure:
+        apply_mapping_decision(tenant_id=TENANT, platform_study_id=STUDY, decision_artifact=artifact,
+                               actor="reviewer@example.com", osb_openapi_hash=OPENAPI)
+    assert failure.value.code == "OSB_NATIVE_EVIDENCE_TARGET_UNLINKED"
+    assert store.evidence is None
+
+
+def test_managed_concept_creation_has_no_prior_version_and_links_from_the_side_car(monkeypatch):
+    request_payload, candidate_set, payload, artifact = _decision_pair("create", family="compound_product_relationships")
+    store = FakeQuery()
+    store.request_json = canonical_json(request_payload)
+    store.candidate_json = canonical_json(candidate_set)
+    store.decision_json = canonical_json(payload)
+    monkeypatch.setattr(
+        "clinical_mdr_api.services.integrations.mapping_decision_v1.db.cypher_query",
+        store.cypher_query,
+    )
+    applied = apply_mapping_decision(
+        tenant_id=TENANT, platform_study_id=STUDY, decision_artifact=artifact,
+        actor="reviewer@example.com", osb_openapi_hash=OPENAPI,
+    )
+    evidence = applied["payload"]["evidenceRecords"][0]["evidence"]
+    assert evidence["preTargetVersion"] is None
+    assert evidence["postTargetVersion"] == "1"
+    target_links = [link for link in store.links if "MERGE (target)-[:PLATFORM_OPERATION_EVIDENCE]" in link["query"]]
+    assert len(target_links) == 1
+    assert "PlatformManagedStudyConcept {managed_key:$key}" in target_links[0]["query"]
+    assert target_links[0]["params"]["key"] == evidence["nativeTargetIdentity"]["managedKey"]
+    assert store.evidence_nodes[0]["native_version_before"] is None
+    assert store.evidence_nodes[0]["native_uid"] == evidence["nativeTargetIdentity"]["managedKey"]

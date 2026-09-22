@@ -672,13 +672,18 @@ def compose_metadata_values(grouped: dict[str, list[dict[str, Any]]]):
 
 
 def apply_metadata_selections(
-    items: list[dict[str, Any]], uid: str, *, context=None, port=None
+    items: list[dict[str, Any]], uid: str, *, context=None, port=None,
+    result_pre_versions: dict[str, str | None] | None = None,
 ):
     """Apply all selected metadata contributors in one native PATCH.
 
     Caller owns the signed-decision transaction. Every precondition is checked
     under the native study lock before that PATCH; any readback mismatch raises
     into the same transaction rather than creating successful evidence.
+
+    `result_pre_versions`, when given, receives per selection key the study's
+    version timestamp read under the lock BEFORE the PATCH, so the evidence can
+    state the target version the write started from rather than null.
     """
     if not items:
         return {}
@@ -686,6 +691,8 @@ def apply_metadata_selections(
     port.lock(uid)
     study = port.read(uid)
     _assert_draft(study, uid)
+    pre_version = _get(study, "current_metadata.version_metadata.version_timestamp")
+    pre_version = pre_version if isinstance(pre_version, str) and pre_version else None
     grouped: dict[str, list[dict[str, Any]]] = {}
     offers = {}
     for item in items:
@@ -755,4 +762,6 @@ def apply_metadata_selections(
                 "The native property does not match the reviewed value.",
             )
         observed[key] = target
+        if result_pre_versions is not None:
+            result_pre_versions[key] = pre_version
     return observed

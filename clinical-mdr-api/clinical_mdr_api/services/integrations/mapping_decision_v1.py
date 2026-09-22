@@ -339,11 +339,13 @@ def apply_mapping_decision(
         for selection in selections
     ], tenant_id=tenant_id, platform_study_id=platform_study_id, native_study_id=native_study_id,
         observe_selected=candidate_request.get("contractVersion") in SELECTED_CAPTURE_REQUEST_CONTRACT_VERSIONS)
+    metadata_pre_versions: dict[str, str | None] = {}
     metadata_observations = apply_metadata_selections([
         {"intent": intents[_key(selection)], "candidate": records[_key(selection)]}
         for selection in selections
         if records[_key(selection)]["resourceFamily"] == "study_metadata" and selection["action"] == "create"
-    ], native_study_id, context=candidate_set.get("mappingContext"))
+    ], native_study_id, context=candidate_set.get("mappingContext"), result_pre_versions=metadata_pre_versions)
+    human_signature = _record(payload.get("humanSignature"), "OSB_MAPPING_DECISION_SIGNATURE_REQUIRED")
     evidence_records: list[dict[str, Any]] = []
     managed_keys: list[str] = []
     operation_time = datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
@@ -434,6 +436,10 @@ def apply_mapping_decision(
             observed_payload, observed_hash, post_version = None, None, None
             native_target_identity = None
             disposition = "deferred_blocking" if action == "defer" else "excluded_signed"
+        # The target's version before this operation: a selection writes nothing,
+        # so it is the version read back; a metadata write reads the study under
+        # its lock first; a creation has no prior version. Never inferred later.
+        pre_target_version = post_version if action == "select" else metadata_pre_versions.get(key)
         evidence_id = str(uuid5(NAMESPACE_URL, f"accuratrials:osb-native-evidence:v1:{operation_id}"))
         evidence = {
             "contractVersion": "NativeOperationEvidenceV1@1.0.0",
@@ -449,20 +455,38 @@ def apply_mapping_decision(
             "expectedTargetPrecondition": {"nativeStudyId": native_study_id, "nativeVersion": native_version,
                                            "candidateSetVersionId": candidate_set_version_id},
             "sourceInputHash": source_hash, "nativeTargetIdentity": native_target_identity,
-            "preTargetVersion": None, "postTargetVersion": post_version,
+            "preTargetVersion": pre_target_version, "postTargetVersion": post_version,
             "normalizedReadBack": observed_payload, "normalizedReadBackHash": observed_hash,
             "disposition": disposition, "operationTime": operation_time,
         }
         evidence_hash = canonical_json_hash_ref(evidence, schema_version="NativeOperationEvidenceV1@1.0.0")
+        # The why and the where as node properties a graph reader can see without
+        # opening payload_json: which native object, from which version to which,
+        # under which signed decision, with the reviewer's stated reason.
         db.cypher_query(
             """CREATE (evidence:NativeOperationEvidenceV1 {evidence_id:$evidence_id,
                  tenant_id:$tenant_id,platform_study_id:$platform_study_id,
                  operation_id:$operation_id,decision_id:$decision_id,payload_hash:$payload_hash,
-                 payload_json:$payload_json,created_at:datetime()})""",
+                 payload_json:$payload_json,created_at:datetime(),
+                 native_study_id:$native_study_id,native_resource_type:$native_resource_type,native_uid:$native_uid,
+                 native_version_before:$native_version_before,native_version_after:$native_version_after,
+                 disposition:$disposition,selection_action:$selection_action,selection_rationale:$selection_rationale,
+                 decision_reason:$decision_reason,signature_meaning:$signature_meaning,signed_at:$signed_at,
+                 requesting_actor:$requesting_actor,fact_id:$fact_id,fact_revision:$fact_revision,target_key:$target_key})""",
             {"evidence_id": evidence_id, "tenant_id": tenant_id, "platform_study_id": platform_study_id,
              "operation_id": operation_id, "decision_id": statement["decisionId"],
-             "payload_hash": evidence_hash["value"], "payload_json": canonical_json(evidence)},
+             "payload_hash": evidence_hash["value"], "payload_json": canonical_json(evidence),
+             "native_study_id": native_study_id,
+             "native_resource_type": (native_target_identity or {}).get("resourceType"),
+             "native_uid": (native_target_identity or {}).get("uid") or (native_target_identity or {}).get("managedKey"),
+             "native_version_before": pre_target_version, "native_version_after": post_version,
+             "disposition": disposition, "selection_action": action,
+             "selection_rationale": selection.get("rationale"),
+             "decision_reason": statement.get("reason"), "signature_meaning": statement.get("signatureMeaning"),
+             "signed_at": human_signature.get("signedAt"), "requesting_actor": actor,
+             "fact_id": selection["factId"], "fact_revision": selection["revision"], "target_key": selection["targetKey"]},
         )
+        _link_operation_evidence(evidence_id, native_study_id, native_target_identity, family=str(candidate["resourceFamily"]))
         evidence_records.append({"evidence": evidence, "payloadHash": evidence_hash})
     checkpoint = {"nativeStudyId": native_study_id, "nativeVersion": native_version,
                   "managedKeys": sorted(managed_keys), "operationCount": len(evidence_records)}
@@ -508,9 +532,70 @@ def apply_mapping_decision(
          "payload_hash": result_hash["value"], "payload_json": canonical_json(result_payload),
          "artifact_ref_json": canonical_json(artifact_ref)},
     )
+    _link_mapping_decision(statement["decisionId"], tenant_id, native_study_id)
     return {"payload": result_payload, "payloadHash": result_hash, "artifactRef": artifact_ref,
             "evidenceSetId": evidence_set_id, "evidenceSetVersionId": evidence_set_version_id,
             "nativeIdentity": native_study_id, "nativeVersion": native_version, "replay": False}
+
+
+def _link_mapping_decision(decision_id: str, tenant_id: str, native_study_id: str) -> None:
+    """The study lists the signed decisions applied to it: (StudyRoot)-[:HAS_PLATFORM_MAPPING_DECISION]->(decision)."""
+    rows, _ = db.cypher_query(
+        """MATCH (study:StudyRoot {uid:$study_uid})
+           MATCH (decision:StudyMappingDecisionV1 {decision_id:$decision_id,tenant_id:$tenant_id})
+           MERGE (study)-[:HAS_PLATFORM_MAPPING_DECISION]->(decision)
+           RETURN count(study)""",
+        {"study_uid": native_study_id, "decision_id": decision_id, "tenant_id": tenant_id},
+    )
+    if not rows or int(rows[0][0]) != 1:
+        raise OsbCandidateSetError("OSB_NATIVE_EVIDENCE_STUDY_UNLINKED", "The native study for this decision is not readable.")
+
+
+def _link_operation_evidence(evidence_id: str, native_study_id: str, target: dict[str, Any] | None, *, family: str) -> None:
+    """Edges from the study, and from the touched native node, to the operation evidence.
+
+    Until now the only way from a native arm, term, unit or study to the decision
+    that wrote it was a string join on uid@version inside payload_json. The study
+    edge lists every applied operation for a study; the target edge names the
+    decision from the object itself. A target that cannot be matched is a
+    failure inside the decision transaction, never a silent skip.
+    """
+    rows, _ = db.cypher_query(
+        """MATCH (study:StudyRoot {uid:$study_uid})
+           MATCH (evidence:NativeOperationEvidenceV1 {evidence_id:$evidence_id})
+           MERGE (study)-[:HAS_PLATFORM_OPERATION_EVIDENCE]->(evidence)
+           RETURN count(study)""",
+        {"study_uid": native_study_id, "evidence_id": evidence_id},
+    )
+    if not rows or int(rows[0][0]) != 1:
+        raise OsbCandidateSetError("OSB_NATIVE_EVIDENCE_STUDY_UNLINKED", "The native study for this evidence is not readable.")
+    if not target:
+        return
+    resource_type = str(target.get("resourceType") or "")
+    if resource_type == "PlatformManagedStudyConcept":
+        match = "MATCH (target:PlatformManagedStudyConcept {managed_key:$key})"
+        params: dict[str, Any] = {"key": target.get("managedKey")}
+    elif resource_type == "StudyMetadata":
+        match = "MATCH (target:StudyRoot {uid:$uid})"
+        params = {"uid": native_study_id}
+    else:
+        model = NATIVE_READ_MODELS.get(canonicalize_family(family))
+        if not model:
+            raise OsbCandidateSetError("OSB_NATIVE_EVIDENCE_TARGET_UNLINKED", f"Resource family {family} has no native node model.")
+        match = f"MATCH (target:{model[0]}) WHERE target.uid = $uid OR (target.uid IS NULL AND target.name = $uid)"
+        params = {"uid": target.get("uid")}
+    rows, _ = db.cypher_query(
+        f"""{match}
+            MATCH (evidence:NativeOperationEvidenceV1 {{evidence_id:$evidence_id}})
+            MERGE (target)-[:PLATFORM_OPERATION_EVIDENCE]->(evidence)
+            RETURN count(target)""",
+        {**params, "evidence_id": evidence_id},
+    )
+    if not rows or int(rows[0][0]) < 1:
+        raise OsbCandidateSetError(
+            "OSB_NATIVE_EVIDENCE_TARGET_UNLINKED",
+            f"Native target {resource_type} {target.get('uid') or target.get('managedKey')} is not readable.",
+        )
 
 
 def _key(value: dict[str, Any]) -> str:

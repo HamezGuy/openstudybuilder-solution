@@ -150,7 +150,47 @@ def collect_study_actions(study_uid: str) -> list[dict]:
     return result
 
 
-def collect_native_observation(study_uid: str, *, readers: dict[str, tuple[Callable, Callable | None]] | None = None, native_study: dict | None = None, study_audit: list | None = None, raw_actions: list | None = None, raw_history_readers: dict[str, Callable] | None = None) -> dict:
+USER_PROJECTION_FIELDS = ("username", "oid", "subjectType", "issuer", "humanSubject", "serviceActor")
+
+
+def collect_user_projection(user_ids: set[str], usernames: set[str]) -> list[dict]:
+    """The User projection rows for the editors an observation names.
+
+    persist_user writes, for every verified token, the platform identity the
+    Command Center carried: the issuer-qualified subject (oid), subject type,
+    issuer, human subject and service actor. This reads those rows back exactly,
+    by author id or by username, so the semantic layer can attribute a native
+    edit to a platform subject without guessing from a display name.
+    """
+    if not user_ids and not usernames:
+        return []
+    from neomodel import db
+    rows, columns = db.cypher_query("""
+        MATCH (u:User) WHERE u.user_id IN $ids OR u.username IN $names
+        RETURN u.user_id AS userId, u.username AS username, u.oid AS oid, u.subject_type AS subjectType,
+               u.issuer AS issuer, u.human_subject AS humanSubject, u.service_actor AS serviceActor
+        ORDER BY u.user_id
+    """, {"ids": sorted(user_ids), "names": sorted(usernames)})
+    return [dict(zip(columns, values)) for values in rows]
+
+
+def _verified_user_projection(rows: list) -> list[dict]:
+    result, seen = [], set()
+    for row in rows:
+        if not isinstance(row, dict) or not isinstance(row.get("userId"), str) or not row["userId"] or row["userId"] in seen:
+            raise NativeObservationError("NATIVE_OBSERVATION_USER_PROJECTION_INVALID")
+        entry = {"userId": row["userId"]}
+        for field in USER_PROJECTION_FIELDS:
+            value = row.get(field)
+            if value is not None and not isinstance(value, str):
+                raise NativeObservationError("NATIVE_OBSERVATION_USER_PROJECTION_INVALID")
+            entry[field] = value if value else None
+        seen.add(entry["userId"])
+        result.append(entry)
+    return sorted(result, key=lambda entry: entry["userId"])
+
+
+def collect_native_observation(study_uid: str, *, readers: dict[str, tuple[Callable, Callable | None]] | None = None, native_study: dict | None = None, study_audit: list | None = None, raw_actions: list | None = None, raw_history_readers: dict[str, Callable] | None = None, user_projection: list | None = None) -> dict:
     if not isinstance(study_uid, str) or not study_uid.strip():
         raise NativeObservationError("NATIVE_OBSERVATION_STUDY_REQUIRED")
     if readers is not None and set(readers) - {row.collection for row in COLLECTIONS}:
@@ -255,12 +295,25 @@ def collect_native_observation(study_uid: str, *, readers: dict[str, tuple[Calla
         coverage.append({"collection": "native_study_actions", "complete": True, "recordCount": 0,
                          "auditStatus": "available", "auditCount": len(raw_actions),
                          "scope": "StudyRoot AUDIT_TRAIL actions and directly linked BEFORE/AFTER values"})
+    editor_ids, editor_names = set(), set()
+    for entry in history:
+        record = entry.get("record") if isinstance(entry.get("record"), dict) else {}
+        for field in ("author_id", "user_id"):
+            if isinstance(record.get(field), str) and record[field]:
+                editor_ids.add(record[field])
+        for field in ("author_username", "version_author"):
+            if isinstance(record.get(field), str) and record[field]:
+                editor_names.add(record[field])
+    if readers is None and user_projection is None:
+        user_projection = collect_user_projection(editor_ids, editor_names)
+    users = _verified_user_projection(user_projection) if user_projection is not None else None
     records.sort(key=lambda row: (row["collection"], row["nativeUid"]))
     # Generated read labels must not reshuffle otherwise identical audit rows
     # between observations. The original label remains in each retained row.
     history.sort(key=lambda row: (row["collection"], row["nativeUid"], canonical_hash(comparison_record(row["record"], row["collection"])[0])))
     content = {"schemaVersion": "osb-native-observation/1.0", "nativeStudyId": study_uid, "capturedAt": datetime.now(timezone.utc).isoformat(),
                "comparisonProfile": "osb-native-read/1.1", "records": records, "auditRecords": history,
+               **({"users": users} if users is not None else {}),
                "coverage": {"collections": coverage, "releaseAuthority": False,
                             "excludedSurfaces": ["USDM projection", "unlinked global library records", "clinical participant data",
                                 "ODM and library definition edit histories outside StudyRoot AUDIT_TRAIL; retained source export remains a separate surface"]}}
