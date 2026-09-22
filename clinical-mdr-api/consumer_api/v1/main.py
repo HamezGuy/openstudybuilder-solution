@@ -4,7 +4,7 @@
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Path, Query, Request, Response
+from fastapi import APIRouter, Depends, Path, Query, Request, Response
 
 from common.auth import rbac
 from common.auth.dependencies import security
@@ -12,6 +12,11 @@ from common.config import settings
 from common.models.error import ErrorResponse
 from common.utils import BaseTimelineAR
 from consumer_api.shared.common import PAGE_NUMBER_QUERY, PAGE_SIZE_QUERY
+from consumer_api.shared.visibility import (
+    enforce_consumer_collection_scope,
+    enforce_visible_consumer_study,
+    visible_consumer_studies,
+)
 from consumer_api.shared.responses import (
     PaginatedResponse,
     PaginatedResponseWithStudyVersion,
@@ -26,7 +31,7 @@ router = APIRouter()
 @router.get(
     "/studies",
     tags=["[V1] Studies"],
-    dependencies=[security, rbac.STUDY_READ],
+    dependencies=[security, rbac.STUDY_READ, Depends(enforce_consumer_collection_scope)],
     status_code=200,
 )
 def get_studies(
@@ -63,6 +68,8 @@ def get_studies(
         page_number=page_number,
         id=id,
     )
+    # Delegated scope: only the caller's assigned studies are listed (plan W2.3).
+    studies = visible_consumer_studies(studies)
 
     return PaginatedResponse.from_input(
         request=request,
@@ -79,7 +86,7 @@ def get_studies(
 @router.get(
     "/studies/{uid}/study-visits",
     tags=["[V1] Studies"],
-    dependencies=[security, rbac.STUDY_READ],
+    dependencies=[security, rbac.STUDY_READ, Depends(enforce_visible_consumer_study)],
     status_code=200,
     responses={
         404: {
@@ -151,7 +158,7 @@ def get_study_visits(
 @router.get(
     "/studies/{uid}/study-activities",
     tags=["[V1] Studies"],
-    dependencies=[security, rbac.STUDY_READ],
+    dependencies=[security, rbac.STUDY_READ, Depends(enforce_visible_consumer_study)],
     status_code=200,
     responses={
         404: {
@@ -217,7 +224,7 @@ def get_study_activities(
 @router.get(
     "/studies/{uid}/study-activity-instances",
     tags=["[V1] Studies"],
-    dependencies=[security, rbac.STUDY_READ],
+    dependencies=[security, rbac.STUDY_READ, Depends(enforce_visible_consumer_study)],
     status_code=200,
     responses={
         404: {
@@ -283,7 +290,7 @@ def get_study_activity_instances(
 @router.get(
     "/studies/{uid}/detailed-soa",
     tags=["[V1] Studies"],
-    dependencies=[security, rbac.STUDY_READ],
+    dependencies=[security, rbac.STUDY_READ, Depends(enforce_visible_consumer_study)],
     status_code=200,
     responses={
         404: {
@@ -350,7 +357,7 @@ def get_study_detailed_soa(
 @router.get(
     "/studies/{uid}/operational-soa",
     tags=["[V1] Studies"],
-    dependencies=[security, rbac.STUDY_READ],
+    dependencies=[security, rbac.STUDY_READ, Depends(enforce_visible_consumer_study)],
     status_code=200,
     responses={
         404: {
@@ -534,7 +541,7 @@ def get_library_activity_instances(
 @router.get(
     "/papillons/soa",
     tags=["[V1] Papillons"],
-    dependencies=[security, rbac.STUDY_READ],
+    dependencies=[security, rbac.STUDY_READ, Depends(enforce_consumer_collection_scope)],
     status_code=200,
     responses={
         404: {
@@ -579,7 +586,7 @@ def get_papillons_soa(
 @router.get(
     "/studies/audit-trail",
     tags=["[V1] Audit trail"],
-    dependencies=[security, rbac.STUDY_READ],
+    dependencies=[security, rbac.STUDY_READ, Depends(enforce_consumer_collection_scope)],
     status_code=200,
     responses={
         200: {

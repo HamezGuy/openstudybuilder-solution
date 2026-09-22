@@ -5,6 +5,9 @@ from clinical_mdr_api.domains.study_selections.study_epoch import TimelineAR
 from clinical_mdr_api.models.listings.listings_study import StudyMetadataListingModel
 from clinical_mdr_api.services._meta_repository import MetaRepository
 from clinical_mdr_api.services.studies.study_epoch import StudyEpochService
+from clinical_mdr_api.services.studies.study_visibility import (
+    assert_study_uid_visible,
+)
 from common.exceptions import NotFoundException, ValidationException
 
 
@@ -115,6 +118,9 @@ class StudyMetadataListingService:
                 study_uid is None,
                 msg=f"Study id {project_id}-{study_number}{subpart_acronym if subpart_acronym else None} not found.",
             )
+            # A study number resolves a uid for anyone; whether the caller may read
+            # that study is the delegated scope's answer (plan W2.3, 2026-09-21).
+            assert_study_uid_visible(study_uid, require_write=False)
 
             if datetime:
                 version = self._repos.study_definition_repository.get_latest_released_version_from_specific_datetime(
