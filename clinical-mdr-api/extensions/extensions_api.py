@@ -7,12 +7,20 @@ from typing import Any
 
 from opencensus.trace.print_exporter import PrintExporter
 
+from common.config import settings
 from common.logger import default_logging_config
 from common.telemetry.request_metrics import patch_neomodel_database
 from common.telemetry.tracing_middleware import TracingMiddleware
 from extensions.common import get_api_version
 
 default_logging_config()
+
+# The production posture is asserted before any route is registered, in every API process (plan W2.3, 2026-09-22):
+# production requires delegated OIDC claims (strict study visibility), an explicit mapping authority mode, and no
+# prototype identity surfaces.
+settings.assert_mapping_authority_startup_safe()
+settings.assert_delegated_auth_startup_safe()
+settings.assert_native_identity_startup_safe()
 
 # pylint: disable=wrong-import-position,wrong-import-order,ungrouped-imports
 import logging
@@ -32,7 +40,6 @@ from starlette_context.middleware import RawContextMiddleware
 
 from common.auth.dependencies import security
 from common.auth.discovery import reconfigure_with_openid_discovery
-from common.config import settings
 from common.exception_handlers import register_exception_handlers
 from common.telemetry.traceback_middleware import ExceptionTracebackMiddleware
 

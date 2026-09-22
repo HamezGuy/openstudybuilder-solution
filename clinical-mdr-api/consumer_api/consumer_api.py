@@ -13,6 +13,13 @@ from common.telemetry.tracing_middleware import TracingMiddleware
 
 default_logging_config()
 
+# The production posture is asserted before any route is registered, in every API process (plan W2.3, 2026-09-22):
+# production requires delegated OIDC claims (strict study visibility), an explicit mapping authority mode, and no
+# prototype identity surfaces.
+settings.assert_mapping_authority_startup_safe()
+settings.assert_delegated_auth_startup_safe()
+settings.assert_native_identity_startup_safe()
+
 configure_database(
     settings.neo4j_dsn,
     max_connection_lifetime=settings.neo4j_connection_lifetime,
