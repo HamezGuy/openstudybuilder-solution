@@ -1,42 +1,43 @@
-"""Canonical Phase 4 OSB family map. Study and capture sections share one vocabulary."""
+"""Canonical Phase 4 OSB family map. Study and capture sections share one vocabulary.
+
+Derived from the OSB vocabulary registry (osb_vocabulary_registry.py) since 2026-09-21. The tables kept by hand here
+before, plus the family node models, blocker codes and collection-mode families that mapping_context.py kept as a
+second copy, all come from the registry's `families` block now.
+"""
 
 from __future__ import annotations
 
-FAMILY_ALIASES = {
-    "edit_checks": "odm_methods",
-    "conditions": "odm_conditions",
-    "branching": "odm_aliases",
-    "assignments": "activity_schedules",
+from clinical_mdr_api.services.integrations.osb_vocabulary_registry import FAMILIES
+
+FAMILY_ALIASES: dict[str, str] = {
+    alias: family for family, entry in FAMILIES.items() for alias in entry["aliases"]
 }
 
-STUDY_SECTION_FAMILIES: dict[str, tuple[str, ...]] = {
-    "metadata": ("study_metadata",),
-    "standards": ("controlled_terminology", "controlled_terminology_codelists", "units"),
-    "compounds": ("compound_product_relationships",),
-    "dosing": ("study_compound_dosing_relationships",),
-    "instructions": ("activity_instruction_templates",),
-    "criteria": ("criteria_templates",),
-    "objectives": ("objective_templates",),
-    "endpoints": ("endpoint_templates",),
-    "timeframes": ("timeframe_templates", "timeframes"),
-    "activities": ("activities",),
+
+def _section_families(plane: str) -> dict[str, tuple[str, ...]]:
+    sections: dict[str, list[str]] = {}
+    for family, entry in FAMILIES.items():
+        if entry["plane"] == plane:
+            sections.setdefault(entry["section"], []).append(family)
+    return {section: tuple(families) for section, families in sections.items()}
+
+
+STUDY_SECTION_FAMILIES: dict[str, tuple[str, ...]] = _section_families("study")
+
+CAPTURE_SECTION_FAMILIES: dict[str, tuple[str, ...]] = _section_families("capture")
+
+BLOCKER_ONLY_FAMILIES = frozenset(family for family, entry in FAMILIES.items() if entry["blockerOnly"])
+
+# The release blocker a blocker-only family raises in the mapping context.
+BLOCKER_ONLY_FAMILY_CODES: dict[str, str] = {
+    family: entry["blockerCode"] for family, entry in FAMILIES.items() if entry["blockerCode"]
 }
 
-CAPTURE_SECTION_FAMILIES: dict[str, tuple[str, ...]] = {
-    "forms": ("odm_forms",),
-    "sections_groups": ("odm_item_groups",),
-    "items": ("odm_items",),
-    "checks": ("odm_methods",),
-    "conditions": ("odm_conditions",),
-    "branching": ("odm_aliases",),
-    "assignments": ("activity_schedules",),
-    "collection_standards": ("cdash_variables",),
-}
-
-BLOCKER_ONLY_FAMILIES = frozenset({
-    "compound_product_relationships",
-    "study_compound_dosing_relationships",
-})
+# Families whose retrieval consults the SDTM/CDASH data models and IGs. Their
+# prerequisites are prerequisites of THESE searches, not of the whole request.
+COLLECTION_MODE_FAMILIES = frozenset(
+    family for family, entry in FAMILIES.items() if entry["collectionModelPrerequisite"]
+)
 
 STUDY_FAMILIES = frozenset(
     family for families in STUDY_SECTION_FAMILIES.values() for family in families
@@ -47,26 +48,14 @@ CAPTURE_FAMILIES = frozenset(
 SUPPORTED_RESOURCE_FAMILIES = STUDY_FAMILIES | CAPTURE_FAMILIES | frozenset(FAMILY_ALIASES)
 
 NATIVE_READ_MODELS: dict[str, tuple[str, str | None]] = {
-    "objective_templates": ("ObjectiveTemplateRoot", "ObjectiveTemplateValue"),
-    "endpoint_templates": ("EndpointTemplateRoot", "EndpointTemplateValue"),
-    "criteria_templates": ("CriteriaTemplateRoot", "CriteriaTemplateValue"),
-    "activity_instruction_templates": (
-        "ActivityInstructionTemplateRoot", "ActivityInstructionTemplateValue",
-    ),
-    "timeframe_templates": ("TimeframeTemplateRoot", "TimeframeTemplateValue"),
-    "timeframes": ("TimeframeRoot", "TimeframeValue"),
-    "activities": ("ActivityRoot", "ActivityValue"),
-    "units": ("UnitDefinitionRoot", "UnitDefinitionValue"),
-    "odm_forms": ("OdmFormRoot", "OdmFormValue"),
-    "odm_item_groups": ("OdmItemGroupRoot", "OdmItemGroupValue"),
-    "odm_items": ("OdmItemRoot", "OdmItemValue"),
-    "odm_conditions": ("OdmConditionRoot", "OdmConditionValue"),
-    "odm_methods": ("OdmMethodRoot", "OdmMethodValue"),
-    "odm_aliases": ("OdmAlias", None),
-    "activity_schedules": ("StudyActivitySchedule", None),
-    "controlled_terminology": ("CTTermRoot", None),
-    "controlled_terminology_codelists": ("CTCodelistRoot", None),
-    "cdash_variables": ("DatasetVariable", None),
+    family: (entry["readModel"]["root"], entry["readModel"]["value"])
+    for family, entry in FAMILIES.items() if entry["readModel"]
+}
+
+# Root label, value label and the model class the versioned library search reports as resourceType.
+FAMILY_NODE_MODELS: dict[str, tuple[str, str, str]] = {
+    family: (entry["readModel"]["root"], entry["readModel"]["value"], entry["model"])
+    for family, entry in FAMILIES.items() if entry["model"]
 }
 
 NATIVE_CREATE_FAMILIES = frozenset(

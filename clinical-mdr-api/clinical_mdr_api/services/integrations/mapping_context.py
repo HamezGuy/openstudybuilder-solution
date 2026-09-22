@@ -17,6 +17,11 @@ from clinical_mdr_api.models.integrations.mapping_context import (
     MappingContextV2Response,
 )
 from clinical_mdr_api.services.integrations.canonical_json import canonical_hash
+from clinical_mdr_api.services.integrations.osb_family_map import (
+    BLOCKER_ONLY_FAMILY_CODES,
+    COLLECTION_MODE_FAMILIES,
+    FAMILY_NODE_MODELS,
+)
 from clinical_mdr_api.services.integrations.nested_transaction import (
     call_in_ambient_transaction,
 )
@@ -27,61 +32,8 @@ from clinical_mdr_api.services.studies.study_standard_version_selection import (
     StudyStandardVersionService,
 )
 
-_FAMILY_NODE_MODELS = {
-    "objective_templates": (
-        "ObjectiveTemplateRoot",
-        "ObjectiveTemplateValue",
-        "ObjectiveTemplate",
-    ),
-    "endpoint_templates": (
-        "EndpointTemplateRoot",
-        "EndpointTemplateValue",
-        "EndpointTemplate",
-    ),
-    "criteria_templates": (
-        "CriteriaTemplateRoot",
-        "CriteriaTemplateValue",
-        "CriteriaTemplate",
-    ),
-    "activity_instruction_templates": (
-        "ActivityInstructionTemplateRoot",
-        "ActivityInstructionTemplateValue",
-        "ActivityInstructionTemplate",
-    ),
-    "timeframe_templates": (
-        "TimeframeTemplateRoot",
-        "TimeframeTemplateValue",
-        "TimeframeTemplate",
-    ),
-    # StudyEndpoint.timeframe_uid references an approved Timeframe INSTANCE,
-    # never its template. Keeping instances as their own governed family stops a
-    # TimeframeTemplate UID from passing review and then failing the native DTO.
-    "timeframes": ("TimeframeRoot", "TimeframeValue", "Timeframe"),
-    "activities": ("ActivityRoot", "ActivityValue", "Activity"),
-    "odm_forms": ("OdmFormRoot", "OdmFormValue", "OdmForm"),
-    "odm_item_groups": ("OdmItemGroupRoot", "OdmItemGroupValue", "OdmItemGroup"),
-    "odm_items": ("OdmItemRoot", "OdmItemValue", "OdmItem"),
-    "odm_conditions": ("OdmConditionRoot", "OdmConditionValue", "OdmCondition"),
-    "odm_methods": ("OdmMethodRoot", "OdmMethodValue", "OdmMethod"),
-}
-
-_BLOCKER_ONLY_FAMILY_CODES = {
-    "compound_product_relationships": (
-        "MAPPING_CONTEXT_COMPOUND_PRODUCT_RELATIONSHIP_UNAVAILABLE"
-    ),
-    "study_compound_dosing_relationships": (
-        "MAPPING_CONTEXT_STUDY_COMPOUND_DOSING_RELATIONSHIP_UNAVAILABLE"
-    ),
-}
-
-# Families whose retrieval consults the SDTM/CDASH data models and IGs.
-# Their prerequisites (SDTM CT + CDASH CT packages, SDTM + CDASH model/IG
-# selections) are prerequisites of THESE searches, not of the request: riding
-# them on every group let one collection-standard intent zero the native
-# resolution of every library family in the same request. Measured on a real
-# protocol: 96 cdash_variables intents out of 2,700 blocked all 2,604 others,
-# including 1,233 in families that had resolved natively one ruleset earlier.
-_COLLECTION_MODE_FAMILIES = frozenset({"cdash_variables"})
+# The family node models, blocker-only codes and collection-mode families are derived from the OSB
+# vocabulary registry in osb_family_map (they were a second copy here until 2026-09-21).
 
 
 def _canonical_hash(value: Any) -> str:
@@ -176,9 +128,9 @@ class MappingContextService:
                 if family == "study_metadata":
                     rows = []
                     release_blockers.append("MAPPING_CONTEXT_STUDY_METADATA_REQUIRES_GOVERNED_REQUEST")
-                elif family in _BLOCKER_ONLY_FAMILY_CODES:
+                elif family in BLOCKER_ONLY_FAMILY_CODES:
                     rows = []
-                    release_blockers.append(_BLOCKER_ONLY_FAMILY_CODES[family])
+                    release_blockers.append(BLOCKER_ONLY_FAMILY_CODES[family])
                 elif family == "controlled_terminology":
                     rows = self._controlled_terminology(
                         searches,
@@ -282,7 +234,7 @@ class MappingContextService:
             group.resource_family for group in request.candidate_groups
         }
         collection_mapping_requested = bool(
-            requested_families & _COLLECTION_MODE_FAMILIES
+            requested_families & COLLECTION_MODE_FAMILIES
         )
         selected_catalogues = {package.catalogue_name for package in packages}
         for catalogue in sorted({"DDF CT"} - selected_catalogues):
@@ -331,9 +283,9 @@ class MappingContextService:
                 # candidate_set resolves the property plan and binds the
                 # resulting native offer; no library name search is needed.
                 pass
-            elif requested.resource_family in _BLOCKER_ONLY_FAMILY_CODES:
+            elif requested.resource_family in BLOCKER_ONLY_FAMILY_CODES:
                 group_blockers.append(
-                    _BLOCKER_ONLY_FAMILY_CODES[requested.resource_family]
+                    BLOCKER_ONLY_FAMILY_CODES[requested.resource_family]
                 )
             elif not searches and not codes:
                 group_blockers.append("MAPPING_CONTEXT_GROUP_SEARCH_EMPTY")
@@ -358,7 +310,7 @@ class MappingContextService:
                 # prerequisites now ride on every group they silenced.
                 group_blockers.extend(prerequisite_blockers)
             elif (
-                requested.resource_family in _COLLECTION_MODE_FAMILIES
+                requested.resource_family in COLLECTION_MODE_FAMILIES
                 and collection_prerequisite_blockers
             ):
                 # The same discipline, scoped: a collection-standard search that
@@ -1379,7 +1331,7 @@ class MappingContextService:
 
     @staticmethod
     def _versioned_library_family(family, searches, codes, limit):
-        root_label, value_label, resource_type = _FAMILY_NODE_MODELS[family]
+        root_label, value_label, resource_type = FAMILY_NODE_MODELS[family]
         query = f"""
             MATCH (root:{root_label})-[version:HAS_VERSION]->(value:{value_label})
             WHERE version.status = 'Final'
@@ -1419,7 +1371,7 @@ class MappingContextService:
 
     @staticmethod
     def _versioned_library_family_v2(family, searches, codes, limit, as_of):
-        root_label, value_label, resource_type = _FAMILY_NODE_MODELS[family]
+        root_label, value_label, resource_type = FAMILY_NODE_MODELS[family]
         if as_of is None:
             relationship = """
                 MATCH (root:{root_label})-[:LATEST_FINAL]->(value:{value_label})

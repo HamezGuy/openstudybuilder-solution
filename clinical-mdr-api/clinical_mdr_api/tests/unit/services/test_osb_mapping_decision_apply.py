@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 
 import pytest
@@ -81,6 +82,7 @@ class FakeQuery:
             return ([[params.get("uid", "CriteriaTemplate_1"), params.get("version", "1.0"), "Age >= 18"]], None)
         if "PlatformManagedStudyConcept" in query:
             key = params["managed_key"]
+            self.managed_params = params
             stored = self.managed.setdefault(key, [params["payload_json"], params["content_hash"], 1])
             return ([stored], None)
         if "NativeOperationEvidenceV1" in query:
@@ -461,6 +463,60 @@ def test_create_compound_relationship_is_governed_extension(monkeypatch):
         "resourceType": "PlatformManagedStudyConcept", "resourceFamily": "compound_product_relationships",
         "managedKey": f"{TENANT}|{STUDY}|fact-1@1:primary", "nativeStudyId": "Study_990001", "version": "1"}
     assert store.managed
+
+
+def test_create_managed_concept_carries_the_csl_entity_reference(monkeypatch):
+    """A5: a 1.4.0 typed intent names the CSL entity its fact materialised; the managed side-car stores it as
+    node properties (outside payload_json, so the hashed managed read-back is unchanged)."""
+    reference = {"entityId": "dddddddd-dddd-4ddd-8ddd-dddddddddddd", "entityType": "StudyIntervention",
+                 "revisionId": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1"}
+    source = {
+        "factId": "fact-1", "revision": 1, "targetKey": "primary",
+        "resourceFamily": "compound_product_relationships", "semanticRole": "protocol concept",
+        "source": {"label": "Age at least 18 years"}, "cslEntity": reference,
+    }
+    request_payload, candidate_set, payload, artifact = _decision_pair(
+        "create", family="compound_product_relationships", source=source,
+    )
+    request_payload["contractVersion"] = "OsbCandidateRequestV1@1.4.0"
+    store = FakeQuery()
+    store.request_json = canonical_json(request_payload)
+    store.candidate_json = canonical_json(candidate_set)
+    store.decision_json = canonical_json(payload)
+    monkeypatch.setattr(
+        "clinical_mdr_api.services.integrations.mapping_decision_v1.db.cypher_query",
+        store.cypher_query,
+    )
+    applied = apply_mapping_decision(
+        tenant_id=TENANT, platform_study_id=STUDY, decision_artifact=artifact,
+        actor="reviewer@example.com", osb_openapi_hash=OPENAPI,
+    )
+    assert applied["payload"]["evidenceRecords"][0]["evidence"]["disposition"] == "governed_extension"
+    assert store.managed_params["csl_entity_id"] == reference["entityId"]
+    assert store.managed_params["csl_entity_type"] == "StudyIntervention"
+    assert store.managed_params["csl_revision_id"] == reference["revisionId"]
+    # The managed read-back payload is unchanged by the reference: it is a node property, not hashed content.
+    assert "cslEntity" not in json.loads(store.managed_params["payload_json"])
+
+
+def test_managed_concept_without_a_csl_reference_stores_none(monkeypatch):
+    request_payload, candidate_set, payload, artifact = _decision_pair(
+        "create", family="compound_product_relationships",
+    )
+    store = FakeQuery()
+    store.request_json = canonical_json(request_payload)
+    store.candidate_json = canonical_json(candidate_set)
+    store.decision_json = canonical_json(payload)
+    monkeypatch.setattr(
+        "clinical_mdr_api.services.integrations.mapping_decision_v1.db.cypher_query",
+        store.cypher_query,
+    )
+    apply_mapping_decision(
+        tenant_id=TENANT, platform_study_id=STUDY, decision_artifact=artifact,
+        actor="reviewer@example.com", osb_openapi_hash=OPENAPI,
+    )
+    assert store.managed_params["csl_entity_id"] is None
+    assert store.managed_params["csl_entity_type"] is None
 
 
 def test_original_scalar_evidence_replay_preserves_exact_retained_bytes(monkeypatch):

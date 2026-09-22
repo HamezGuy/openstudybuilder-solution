@@ -286,7 +286,7 @@ def _set_contract_version(values: list[dict], minor: str) -> None:
     _refresh(values)
 
 
-@pytest.mark.parametrize("version", ["1.1.0", "1.2.0", "1.3.0"])
+@pytest.mark.parametrize("version", ["1.1.0", "1.2.0", "1.3.0", "1.4.0"])
 def test_incremented_minor_contract_version_is_accepted(version) -> None:
     """CSL's change-window bump inside the V1 major must not 422."""
     values = list(_fixture())
@@ -296,7 +296,8 @@ def test_incremented_minor_contract_version_is_accepted(version) -> None:
 
 def test_unknown_contract_version_is_rejected() -> None:
     values = list(_fixture())
-    _set_contract_version(values, "1.4.0")
+    # 1.4.0 became an accepted version on 2026-09-21 (plan item A5); 1.5.0 is the next unknown one.
+    _set_contract_version(values, "1.5.0")
     assert _code(tuple(values)) == "OSB_CANDIDATE_REQUEST_ARTIFACT_INVALID"
 
 

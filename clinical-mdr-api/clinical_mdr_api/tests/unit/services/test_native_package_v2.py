@@ -65,7 +65,12 @@ def definitions(path, names=None, dependencies=None):
 
 
 HASHING = definitions(API / "generated" / "platform_contracts" / "hash_signing_v1.py")
-FAMILIES = definitions(SERVICES / "osb_family_map.py")
+# The vocabulary registry loader needs __file__ to find the registry copy; every derived table comes from it.
+VOCABULARY = definitions(
+    SERVICES / "osb_vocabulary_registry.py",
+    dependencies={"__file__": str(SERVICES / "osb_vocabulary_registry.py")},
+)
+FAMILIES = definitions(SERVICES / "osb_family_map.py", dependencies=VOCABULARY)
 REQUEST_VERSIONS = definitions(SERVICES / "osb_candidate_request_versions.py")
 STUDY_HEADS = definitions(SERVICES / "native_study_head.py")
 DB = SimpleNamespace()
@@ -101,7 +106,7 @@ METADATA = definitions(
     },
 )
 CAPTURE_PROJECTION = definitions(
-    SERVICES / "native_capture_projection.py", dependencies=HASHING
+    SERVICES / "native_capture_projection.py", dependencies={**HASHING, **VOCABULARY}
 )
 CAPTURE_MAPPING = definitions(
     SERVICES / "native_capture_mapping.py",

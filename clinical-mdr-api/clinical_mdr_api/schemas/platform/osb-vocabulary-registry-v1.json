@@ -1,23 +1,54 @@
 {
-  "contractVersion": "OsbVocabularyRegistryV1@1.0.0",
-  "version": "1.0.0",
+  "contractVersion": "OsbVocabularyRegistryV1@1.1.0",
+  "version": "1.1.0",
   "owner": "ClinicalSemanticLayer",
-  "canonicalNames": "OpenStudyBuilder clinical_mdr_api/services/integrations/proposal_target_capabilities.py TARGET_CAPABILITIES",
+  "canonicalNames": "OpenStudyBuilder resource type names, as its proposal target taxonomy names them; the IL ruleset uses the same names from 1.17.0 (formerNames records what 1.16.0 and earlier called three of them)",
   "sources": {
     "ruleset": {
       "path": "packages/mappings/il-to-usdm-v4.rules.json",
-      "version": "1.16.0"
+      "version": "1.17.0"
     },
-    "cslMirror": "packages/semantic-core/src/osb-target-rules-v1.ts",
-    "cslCapabilityCopy": "packages/semantic-core/src/osb-target-capabilities.ts",
-    "osbCapabilities": "clinical_mdr_api/services/integrations/proposal_target_capabilities.py",
-    "osbFamilyMap": "clinical_mdr_api/services/integrations/osb_family_map.py",
-    "osbFamilyAliases": {
-      "edit_checks": "odm_methods",
-      "conditions": "odm_conditions",
-      "branching": "odm_aliases",
-      "assignments": "activity_schedules"
-    }
+    "generatedModule": "packages/semantic-core/src/generated/osb-vocabulary-registry.ts (scripts/generate-osb-vocabulary.mjs, part of contracts:generate and contracts:check)",
+    "osbCopy": "clinical_mdr_api/schemas/platform/osb-vocabulary-registry-v1.json (registry:export-osb-vocabulary; byte identical)",
+    "osbLoader": "clinical_mdr_api/services/integrations/osb_vocabulary_registry.py",
+    "derivedTables": {
+      "csl": [
+        "RULESET_ASSERTION_OSB_TARGETS",
+        "OSB_CANDIDATE_RULESET_MIRROR",
+        "OSB_PLANNER_RESOURCE_FAMILY",
+        "OSB_LIBRARY_RESOURCE_FAMILY",
+        "OSB_RESOURCE_TYPE_CANDIDATE_FAMILY",
+        "OSB_NATIVE_ROUTES",
+        "OSB_TARGET_CAPABILITIES",
+        "CAPTURE_FAMILY_TYPES",
+        "OSB_SUPPORTED_RESOURCE_FAMILIES",
+        "OSB_COLLECTION_MODEL_PREREQUISITE_FAMILIES",
+        "OSB_RESOURCE_TYPE_FORMER_NAMES"
+      ],
+      "osb": [
+        "TARGET_CAPABILITIES",
+        "NATIVE_EXECUTOR_RESOURCE_TYPES",
+        "NATIVE_SELECTION_RESOURCE_TYPES",
+        "NATIVE_DUAL_MODE_RESOURCE_TYPES",
+        "NATIVE_CREATE_REQUEST_RESOURCE_TYPES",
+        "NATIVE_DECLINABLE_RESOURCE_TYPES",
+        "FAMILY_ALIASES",
+        "STUDY_SECTION_FAMILIES",
+        "CAPTURE_SECTION_FAMILIES",
+        "BLOCKER_ONLY_FAMILIES",
+        "BLOCKER_ONLY_FAMILY_CODES",
+        "NATIVE_READ_MODELS",
+        "FAMILY_NODE_MODELS",
+        "COLLECTION_MODE_FAMILIES",
+        "CAPTURE_FAMILY_TYPES"
+      ]
+    },
+    "retired": [
+      "packages/semantic-core/src/osb-target-rules-v1.ts",
+      "packages/semantic-core/src/osb-target-capabilities.ts",
+      "hand-kept planner, router and read-back tables in CSL",
+      "hand-kept capability, family, mapping-context and capture-projection tables in OSB"
+    ]
   },
   "correspondenceVocabulary": {
     "exact": "the CSL type and the OSB resource type name the same kind of object",
@@ -27,10 +58,309 @@
     "property": "the OSB resource type is a property of a CSL object, not an object",
     "none": "no CSL object corresponds; the content is an extension, narrative, pin or unresolved work item"
   },
+  "routingVocabulary": {
+    "study-mutation": "a routable study mutation: the claim is searched in its candidate family and executed through cslNativeRoute",
+    "library": "a capture-plane library type: the claim defers until a candidate set resolves it against the OSB library"
+  },
+  "families": {
+    "study_metadata": {
+      "plane": "study",
+      "section": "metadata",
+      "readModel": null,
+      "model": null,
+      "blockerOnly": false,
+      "blockerCode": null,
+      "collectionModelPrerequisite": false,
+      "aliases": [],
+      "note": "Typed StudyField nodes on the StudyValue; searched through the metadata planner, never a library."
+    },
+    "controlled_terminology": {
+      "plane": "study",
+      "section": "standards",
+      "readModel": {
+        "root": "CTTermRoot",
+        "value": null
+      },
+      "model": null,
+      "blockerOnly": false,
+      "blockerCode": null,
+      "collectionModelPrerequisite": false,
+      "aliases": [],
+      "note": "CTTermRoot with name and attributes versions; candidates are CTTerm contexts inside a codelist."
+    },
+    "controlled_terminology_codelists": {
+      "plane": "study",
+      "section": "standards",
+      "readModel": {
+        "root": "CTCodelistRoot",
+        "value": null
+      },
+      "model": null,
+      "blockerOnly": false,
+      "blockerCode": null,
+      "collectionModelPrerequisite": false,
+      "aliases": [],
+      "note": "CTCodelistRoot with name and attributes versions."
+    },
+    "units": {
+      "plane": "study",
+      "section": "standards",
+      "readModel": {
+        "root": "UnitDefinitionRoot",
+        "value": "UnitDefinitionValue"
+      },
+      "model": null,
+      "blockerOnly": false,
+      "blockerCode": null,
+      "collectionModelPrerequisite": false,
+      "aliases": [],
+      "note": "UnitDefinitionRoot/Value with UCUM and CT dimension links."
+    },
+    "compound_product_relationships": {
+      "plane": "study",
+      "section": "compounds",
+      "readModel": null,
+      "model": null,
+      "blockerOnly": true,
+      "blockerCode": "MAPPING_CONTEXT_COMPOUND_PRODUCT_RELATIONSHIP_UNAVAILABLE",
+      "collectionModelPrerequisite": false,
+      "aliases": [],
+      "note": "Blocker-only: OSB cannot offer a StudyCompound without a compound alias and medicinal product relationship."
+    },
+    "study_compound_dosing_relationships": {
+      "plane": "study",
+      "section": "dosing",
+      "readModel": null,
+      "model": null,
+      "blockerOnly": true,
+      "blockerCode": "MAPPING_CONTEXT_STUDY_COMPOUND_DOSING_RELATIONSHIP_UNAVAILABLE",
+      "collectionModelPrerequisite": false,
+      "aliases": [],
+      "note": "Blocker-only: OSB cannot offer a StudyCompoundDosing without the study compound and element."
+    },
+    "activity_instruction_templates": {
+      "plane": "study",
+      "section": "instructions",
+      "readModel": {
+        "root": "ActivityInstructionTemplateRoot",
+        "value": "ActivityInstructionTemplateValue"
+      },
+      "model": "ActivityInstructionTemplate",
+      "blockerOnly": false,
+      "blockerCode": null,
+      "collectionModelPrerequisite": false,
+      "aliases": [],
+      "note": "Syntax templates instantiated into activity instructions."
+    },
+    "criteria_templates": {
+      "plane": "study",
+      "section": "criteria",
+      "readModel": {
+        "root": "CriteriaTemplateRoot",
+        "value": "CriteriaTemplateValue"
+      },
+      "model": "CriteriaTemplate",
+      "blockerOnly": false,
+      "blockerCode": null,
+      "collectionModelPrerequisite": false,
+      "aliases": [],
+      "note": "Syntax templates instantiated into study criteria."
+    },
+    "objective_templates": {
+      "plane": "study",
+      "section": "objectives",
+      "readModel": {
+        "root": "ObjectiveTemplateRoot",
+        "value": "ObjectiveTemplateValue"
+      },
+      "model": "ObjectiveTemplate",
+      "blockerOnly": false,
+      "blockerCode": null,
+      "collectionModelPrerequisite": false,
+      "aliases": [],
+      "note": "Syntax templates instantiated into study objectives."
+    },
+    "endpoint_templates": {
+      "plane": "study",
+      "section": "endpoints",
+      "readModel": {
+        "root": "EndpointTemplateRoot",
+        "value": "EndpointTemplateValue"
+      },
+      "model": "EndpointTemplate",
+      "blockerOnly": false,
+      "blockerCode": null,
+      "collectionModelPrerequisite": false,
+      "aliases": [],
+      "note": "Syntax templates instantiated into study endpoints."
+    },
+    "timeframe_templates": {
+      "plane": "study",
+      "section": "timeframes",
+      "readModel": {
+        "root": "TimeframeTemplateRoot",
+        "value": "TimeframeTemplateValue"
+      },
+      "model": "TimeframeTemplate",
+      "blockerOnly": false,
+      "blockerCode": null,
+      "collectionModelPrerequisite": false,
+      "aliases": [],
+      "note": "Syntax templates for timeframes."
+    },
+    "timeframes": {
+      "plane": "study",
+      "section": "timeframes",
+      "readModel": {
+        "root": "TimeframeRoot",
+        "value": "TimeframeValue"
+      },
+      "model": "Timeframe",
+      "blockerOnly": false,
+      "blockerCode": null,
+      "collectionModelPrerequisite": false,
+      "aliases": [],
+      "note": "Approved timeframe instances a StudyEndpoint references (never the template)."
+    },
+    "activities": {
+      "plane": "study",
+      "section": "activities",
+      "readModel": {
+        "root": "ActivityRoot",
+        "value": "ActivityValue"
+      },
+      "model": "Activity",
+      "blockerOnly": false,
+      "blockerCode": null,
+      "collectionModelPrerequisite": false,
+      "aliases": [],
+      "note": "ActivityRoot/Value with groupings; selected into StudyActivity."
+    },
+    "odm_forms": {
+      "plane": "capture",
+      "section": "forms",
+      "readModel": {
+        "root": "OdmFormRoot",
+        "value": "OdmFormValue"
+      },
+      "model": "OdmForm",
+      "blockerOnly": false,
+      "blockerCode": null,
+      "collectionModelPrerequisite": false,
+      "aliases": [],
+      "note": "ODM form definitions; native capture read-back profile."
+    },
+    "odm_item_groups": {
+      "plane": "capture",
+      "section": "sections_groups",
+      "readModel": {
+        "root": "OdmItemGroupRoot",
+        "value": "OdmItemGroupValue"
+      },
+      "model": "OdmItemGroup",
+      "blockerOnly": false,
+      "blockerCode": null,
+      "collectionModelPrerequisite": false,
+      "aliases": [],
+      "note": "ODM item group definitions; native capture read-back profile."
+    },
+    "odm_items": {
+      "plane": "capture",
+      "section": "items",
+      "readModel": {
+        "root": "OdmItemRoot",
+        "value": "OdmItemValue"
+      },
+      "model": "OdmItem",
+      "blockerOnly": false,
+      "blockerCode": null,
+      "collectionModelPrerequisite": false,
+      "aliases": [],
+      "note": "ODM item definitions; native capture read-back profile."
+    },
+    "odm_methods": {
+      "plane": "capture",
+      "section": "checks",
+      "readModel": {
+        "root": "OdmMethodRoot",
+        "value": "OdmMethodValue"
+      },
+      "model": "OdmMethod",
+      "blockerOnly": false,
+      "blockerCode": null,
+      "collectionModelPrerequisite": false,
+      "aliases": [
+        "edit_checks"
+      ],
+      "note": "ODM methods: the nearest OSB home for edit checks (semantic mismatch recorded on the OdmMethod row)."
+    },
+    "odm_conditions": {
+      "plane": "capture",
+      "section": "conditions",
+      "readModel": {
+        "root": "OdmConditionRoot",
+        "value": "OdmConditionValue"
+      },
+      "model": "OdmCondition",
+      "blockerOnly": false,
+      "blockerCode": null,
+      "collectionModelPrerequisite": false,
+      "aliases": [
+        "conditions"
+      ],
+      "note": "ODM conditions: field conditions and branching predicates."
+    },
+    "odm_aliases": {
+      "plane": "capture",
+      "section": "branching",
+      "readModel": {
+        "root": "OdmAlias",
+        "value": null
+      },
+      "model": null,
+      "blockerOnly": false,
+      "blockerCode": null,
+      "collectionModelPrerequisite": false,
+      "aliases": [
+        "branching"
+      ],
+      "note": "Unversioned OdmAlias nodes searched by name."
+    },
+    "activity_schedules": {
+      "plane": "capture",
+      "section": "assignments",
+      "readModel": {
+        "root": "StudyActivitySchedule",
+        "value": null
+      },
+      "model": null,
+      "blockerOnly": false,
+      "blockerCode": null,
+      "collectionModelPrerequisite": false,
+      "aliases": [
+        "assignments"
+      ],
+      "note": "StudyActivitySchedule cells (study activity at study visit), unversioned."
+    },
+    "cdash_variables": {
+      "plane": "capture",
+      "section": "collection_standards",
+      "readModel": {
+        "root": "DatasetVariable",
+        "value": null
+      },
+      "model": null,
+      "blockerOnly": false,
+      "blockerCode": null,
+      "collectionModelPrerequisite": true,
+      "aliases": [],
+      "note": "DatasetVariable of the CDASH model; requires SDTM and CDASH model/IG selections (collection-model prerequisite)."
+    }
+  },
   "rows": [
     {
       "osbResourceType": "StudyMetadata",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": "Study",
       "correspondence": "broader",
       "cslAssertionTypes": [
@@ -60,11 +390,19 @@
       ],
       "apiPath": "/studies/{studyUid}",
       "semanticMismatch": false,
-      "note": "Study metadata fields are properties of Study, StudyDesign and StudyVersion in CSL (STUDY_DESIGN_ATTRIBUTE, STOPPING_RULE and STUDY_ADMINISTRATION_FACT route here); OSB stores one typed StudyField node per configured field."
+      "note": "Study metadata fields are properties of Study, StudyDesign and StudyVersion in CSL (STUDY_DESIGN_ATTRIBUTE, STOPPING_RULE and STUDY_ADMINISTRATION_FACT route here); OSB stores one typed StudyField node per configured field.",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": null,
+      "cslNativeRoute": {
+        "route": "/studies/{study_uid}",
+        "method": "PATCH"
+      },
+      "uiSurface": "Study metadata tabs",
+      "dependencies": []
     },
     {
       "osbResourceType": "StudyStandardVersion",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": null,
       "correspondence": "none",
       "cslAssertionTypes": [],
@@ -85,11 +423,19 @@
       ],
       "apiPath": "/studies/{studyUid}/study-standard-versions",
       "semanticMismatch": false,
-      "note": "The CT package pinned for a study; CSL pins terminology per binding (terminology_binding.version) and per release, not as an object."
+      "note": "The CT package pinned for a study; CSL pins terminology per binding (terminology_binding.version) and per release, not as an object.",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": null,
+      "cslNativeRoute": {
+        "route": "/studies/{study_uid}/study-standard-versions",
+        "method": "POST"
+      },
+      "uiSurface": "Study standards",
+      "dependencies": []
     },
     {
       "osbResourceType": "StudySelectionObjective",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": "Objective",
       "correspondence": "exact",
       "cslAssertionTypes": [
@@ -116,11 +462,21 @@
       ],
       "apiPath": "/studies/{studyUid}/study-objectives",
       "semanticMismatch": false,
-      "note": ""
+      "note": "",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": "study-mutation",
+      "cslNativeRoute": {
+        "route": "/studies/{study_uid}/study-objectives",
+        "method": "POST"
+      },
+      "uiSurface": "Objectives",
+      "dependencies": [
+        "objective-level"
+      ]
     },
     {
       "osbResourceType": "StudySelectionEndpoint",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": "Endpoint",
       "correspondence": "exact",
       "cslAssertionTypes": [
@@ -147,11 +503,22 @@
       ],
       "apiPath": "/studies/{studyUid}/study-endpoints",
       "semanticMismatch": false,
-      "note": ""
+      "note": "",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": "study-mutation",
+      "cslNativeRoute": {
+        "route": "/studies/{study_uid}/study-endpoints",
+        "method": "POST"
+      },
+      "uiSurface": "Endpoints",
+      "dependencies": [
+        "endpoint-level",
+        "objective-selection"
+      ]
     },
     {
       "osbResourceType": "StudySelectionCriteria",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": "EligibilityCriterion",
       "correspondence": "exact",
       "cslAssertionTypes": [
@@ -179,11 +546,21 @@
       ],
       "apiPath": "/studies/{studyUid}/study-criteria",
       "semanticMismatch": false,
-      "note": ""
+      "note": "",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": "study-mutation",
+      "cslNativeRoute": {
+        "route": "/studies/{study_uid}/study-criteria",
+        "method": "POST"
+      },
+      "uiSurface": "Eligibility criteria",
+      "dependencies": [
+        "criteria-type"
+      ]
     },
     {
       "osbResourceType": "StudySelectionCompound",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": "StudyIntervention",
       "correspondence": "broader",
       "cslAssertionTypes": [
@@ -208,11 +585,22 @@
       ],
       "apiPath": "/studies/{studyUid}/study-compounds",
       "semanticMismatch": false,
-      "note": "Blocker-only family: the compound-product relationship must resolve in the library before a native write."
+      "note": "Blocker-only family: the compound-product relationship must resolve in the library before a native write.",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": "study-mutation",
+      "cslNativeRoute": {
+        "route": "/studies/{study_uid}/study-compounds",
+        "method": "POST"
+      },
+      "uiSurface": "Compounds",
+      "dependencies": [
+        "compound-alias",
+        "medicinal-product"
+      ]
     },
     {
       "osbResourceType": "StudyCompoundDosing",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": "DosingRegimen",
       "correspondence": "exact",
       "cslAssertionTypes": [
@@ -234,11 +622,23 @@
       ],
       "apiPath": "/studies/{studyUid}/study-compound-dosings",
       "semanticMismatch": false,
-      "note": "Blocker-only family (USDM dosing normalization required)."
+      "note": "Blocker-only family (USDM dosing normalization required).",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": "study-mutation",
+      "cslNativeRoute": {
+        "route": "/studies/{study_uid}/study-compound-dosings",
+        "method": "POST"
+      },
+      "uiSurface": "Compound dosing",
+      "dependencies": [
+        "study-compound",
+        "study-element",
+        "dose-value"
+      ]
     },
     {
       "osbResourceType": "StudySelectionArm",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": "StudyArm",
       "correspondence": "exact",
       "cslAssertionTypes": [
@@ -260,11 +660,19 @@
       ],
       "apiPath": "/studies/{studyUid}/study-arms",
       "semanticMismatch": false,
-      "note": "Executed by resource type through the study executor, not through a section family."
+      "note": "Executed by resource type through the study executor, not through a section family.",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": null,
+      "cslNativeRoute": {
+        "route": "/studies/{study_uid}/study-arms",
+        "method": "POST"
+      },
+      "uiSurface": "Arms",
+      "dependencies": []
     },
     {
       "osbResourceType": "StudySelectionElement",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": "StudyElement",
       "correspondence": "exact",
       "cslAssertionTypes": [
@@ -286,11 +694,19 @@
       ],
       "apiPath": "/studies/{studyUid}/study-elements",
       "semanticMismatch": false,
-      "note": ""
+      "note": "",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": null,
+      "cslNativeRoute": {
+        "route": "/studies/{study_uid}/study-elements",
+        "method": "POST"
+      },
+      "uiSurface": "Elements",
+      "dependencies": []
     },
     {
       "osbResourceType": "StudyEpoch",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": "StudyEpoch",
       "correspondence": "exact",
       "cslAssertionTypes": [
@@ -312,11 +728,21 @@
       ],
       "apiPath": "/studies/{studyUid}/study-epochs",
       "semanticMismatch": false,
-      "note": ""
+      "note": "",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": null,
+      "cslNativeRoute": {
+        "route": "/studies/{study_uid}/study-epochs",
+        "method": "POST"
+      },
+      "uiSurface": "Epochs",
+      "dependencies": [
+        "epoch-subtype"
+      ]
     },
     {
       "osbResourceType": "StudyDesignCell",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": "StudyCell",
       "correspondence": "exact",
       "cslAssertionTypes": [
@@ -338,11 +764,23 @@
       ],
       "apiPath": "/studies/{studyUid}/study-design-cells",
       "semanticMismatch": false,
-      "note": ""
+      "note": "",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": null,
+      "cslNativeRoute": {
+        "route": "/studies/{study_uid}/study-design-cells",
+        "method": "POST"
+      },
+      "uiSurface": "Design matrix",
+      "dependencies": [
+        "study-arm",
+        "study-epoch",
+        "study-element"
+      ]
     },
     {
       "osbResourceType": "StudyVisit",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": "Encounter",
       "correspondence": "exact",
       "cslAssertionTypes": [
@@ -368,11 +806,25 @@
       ],
       "apiPath": "/studies/{studyUid}/study-visits",
       "semanticMismatch": false,
-      "note": "Timing and window travel as the simple-concept chain on the visit; CSL keeps Timing as an object of its own."
+      "note": "Timing and window travel as the simple-concept chain on the visit; CSL keeps Timing as an object of its own.",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": null,
+      "cslNativeRoute": {
+        "route": "/studies/{study_uid}/study-visits",
+        "method": "POST"
+      },
+      "uiSurface": "Visits",
+      "dependencies": [
+        "study-epoch",
+        "visit-type",
+        "visit-contact-mode",
+        "visit-time-reference",
+        "visit-time-unit"
+      ]
     },
     {
       "osbResourceType": "StudySelectionActivity",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": "Activity",
       "correspondence": "exact",
       "cslAssertionTypes": [
@@ -406,11 +858,21 @@
       ],
       "apiPath": "/studies/{studyUid}/study-activities",
       "semanticMismatch": false,
-      "note": ""
+      "note": "",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": "study-mutation",
+      "cslNativeRoute": {
+        "route": "/studies/{study_uid}/study-activities",
+        "method": "POST"
+      },
+      "uiSurface": "Activities / Schedule of Activities",
+      "dependencies": [
+        "flowchart-group"
+      ]
     },
     {
       "osbResourceType": "StudyActivitySchedule",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": "ScheduleOccurrence",
       "correspondence": "exact",
       "cslAssertionTypes": [
@@ -435,11 +897,22 @@
       ],
       "apiPath": "/studies/{studyUid}/study-activity-schedules",
       "semanticMismatch": false,
-      "note": "ScheduledActivityInstance (USDM-native) is a second CSL representation of the same schedule cell (R9)."
+      "note": "ScheduledActivityInstance (USDM-native) is a second CSL representation of the same schedule cell (R9).",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": "study-mutation",
+      "cslNativeRoute": {
+        "route": "/studies/{study_uid}/study-activity-schedules",
+        "method": "POST"
+      },
+      "uiSurface": "Schedule of Activities",
+      "dependencies": [
+        "study-activity",
+        "study-visit"
+      ]
     },
     {
       "osbResourceType": "StudyActivityInstruction",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": null,
       "correspondence": "none",
       "cslAssertionTypes": [
@@ -466,11 +939,22 @@
       ],
       "apiPath": "/studies/{studyUid}/study-activity-instructions/batch",
       "semanticMismatch": false,
-      "note": "CONDITIONAL_PROCEDURE routes here as a governed extension of Activity; CSL has no instruction object."
+      "note": "CONDITIONAL_PROCEDURE routes here as a governed extension of Activity; CSL has no instruction object.",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": "study-mutation",
+      "cslNativeRoute": {
+        "route": "/studies/{study_uid}/study-activity-instructions/batch",
+        "method": "POST"
+      },
+      "uiSurface": "Activity instructions",
+      "dependencies": [
+        "study-activity",
+        "activity-instruction"
+      ]
     },
     {
       "osbResourceType": "CTTerm",
-      "rulesetAliases": [
+      "formerNames": [
         "CtTerm"
       ],
       "cslObjectType": "Code",
@@ -500,11 +984,16 @@
       ],
       "apiPath": "/ct/terms",
       "semanticMismatch": false,
-      "note": ""
+      "note": "",
+      "captureReadbackResourceType": "CtTerm",
+      "cslCandidateRouting": "library",
+      "cslNativeRoute": null,
+      "uiSurface": "Controlled terminology library",
+      "dependencies": []
     },
     {
       "osbResourceType": "CTCodelist",
-      "rulesetAliases": [
+      "formerNames": [
         "CtCodelist"
       ],
       "cslObjectType": "CodeList",
@@ -533,11 +1022,16 @@
       ],
       "apiPath": "/ct/codelists",
       "semanticMismatch": false,
-      "note": ""
+      "note": "",
+      "captureReadbackResourceType": "CtCodelist",
+      "cslCandidateRouting": "library",
+      "cslNativeRoute": null,
+      "uiSurface": "Controlled terminology library",
+      "dependencies": []
     },
     {
       "osbResourceType": "UnitDefinition",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": "Unit",
       "correspondence": "exact",
       "cslAssertionTypes": [
@@ -563,11 +1057,16 @@
       ],
       "apiPath": "/concepts/unit-definitions",
       "semanticMismatch": false,
-      "note": ""
+      "note": "",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": "library",
+      "cslNativeRoute": null,
+      "uiSurface": "Units library",
+      "dependencies": []
     },
     {
       "osbResourceType": "DatasetVariable",
-      "rulesetAliases": [
+      "formerNames": [
         "CdashVariable"
       ],
       "cslObjectType": null,
@@ -595,11 +1094,16 @@
       ],
       "apiPath": "/standards/dataset-variables",
       "semanticMismatch": false,
-      "note": "A CDASH or SDTM variable is the cdashVariable / sdtmVariable property of a CSL Item and of claim revisions, never an object."
+      "note": "A CDASH or SDTM variable is the cdashVariable / sdtmVariable property of a CSL Item and of claim revisions, never an object.",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": "library",
+      "cslNativeRoute": null,
+      "uiSurface": "Data model variables",
+      "dependencies": []
     },
     {
       "osbResourceType": "Activity",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": "Activity",
       "correspondence": "exact",
       "cslAssertionTypes": [],
@@ -623,11 +1127,16 @@
       ],
       "apiPath": "/concepts/activities/activities",
       "semanticMismatch": false,
-      "note": "The library item behind StudySelectionActivity."
+      "note": "The library item behind StudySelectionActivity.",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": null,
+      "cslNativeRoute": null,
+      "uiSurface": "Activities library",
+      "dependencies": []
     },
     {
       "osbResourceType": "ActivityInstance",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": "BiomedicalConcept",
       "correspondence": "exact",
       "cslAssertionTypes": [],
@@ -649,11 +1158,16 @@
       ],
       "apiPath": "/concepts/activities/activity-instances",
       "semanticMismatch": false,
-      "note": "The concept bridge (plan items A3, A4): derived implements and measures edges keyed by scoped external identifiers; no signed truth."
+      "note": "The concept bridge (plan items A3, A4): derived implements and measures edges keyed by scoped external identifiers; no signed truth.",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": null,
+      "cslNativeRoute": null,
+      "uiSurface": "Activity instances library",
+      "dependencies": []
     },
     {
       "osbResourceType": "Timeframe",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": null,
       "correspondence": "property",
       "cslAssertionTypes": [
@@ -680,11 +1194,16 @@
       ],
       "apiPath": "/timeframes",
       "semanticMismatch": false,
-      "note": "ENDPOINT_TIMEFRAME is a governed extension of the Endpoint; the timeframe is a property, not an object, in CSL."
+      "note": "ENDPOINT_TIMEFRAME is a governed extension of the Endpoint; the timeframe is a property, not an object, in CSL.",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": "library",
+      "cslNativeRoute": null,
+      "uiSurface": "Timeframes library",
+      "dependencies": []
     },
     {
       "osbResourceType": "MedicinalProduct",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": "MedicinalProduct",
       "correspondence": "exact",
       "cslAssertionTypes": [],
@@ -705,11 +1224,16 @@
       ],
       "apiPath": "/concepts/medicinal-products",
       "semanticMismatch": false,
-      "note": ""
+      "note": "",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": null,
+      "cslNativeRoute": null,
+      "uiSurface": "Medicinal products library",
+      "dependencies": []
     },
     {
       "osbResourceType": "PharmaceuticalProduct",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": "AdministrableProduct",
       "correspondence": "exact",
       "cslAssertionTypes": [],
@@ -730,11 +1254,16 @@
       ],
       "apiPath": "/concepts/pharmaceutical-products",
       "semanticMismatch": false,
-      "note": ""
+      "note": "",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": null,
+      "cslNativeRoute": null,
+      "uiSurface": "Pharmaceutical products library",
+      "dependencies": []
     },
     {
       "osbResourceType": "OdmForm",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": "Form",
       "correspondence": "exact",
       "cslAssertionTypes": [
@@ -760,11 +1289,16 @@
       ],
       "apiPath": "/odms/forms",
       "semanticMismatch": false,
-      "note": ""
+      "note": "",
+      "captureReadbackResourceType": "OdmForm",
+      "cslCandidateRouting": "library",
+      "cslNativeRoute": null,
+      "uiSurface": "CRF forms library",
+      "dependencies": []
     },
     {
       "osbResourceType": "OdmItemGroup",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": "ItemGroup",
       "correspondence": "exact",
       "cslAssertionTypes": [
@@ -790,11 +1324,16 @@
       ],
       "apiPath": "/odms/item-groups",
       "semanticMismatch": false,
-      "note": ""
+      "note": "",
+      "captureReadbackResourceType": "OdmItemGroup",
+      "cslCandidateRouting": "library",
+      "cslNativeRoute": null,
+      "uiSurface": "CRF item groups library",
+      "dependencies": []
     },
     {
       "osbResourceType": "OdmItem",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": "Item",
       "correspondence": "exact",
       "cslAssertionTypes": [
@@ -820,11 +1359,16 @@
       ],
       "apiPath": "/odms/items",
       "semanticMismatch": false,
-      "note": ""
+      "note": "",
+      "captureReadbackResourceType": "OdmItem",
+      "cslCandidateRouting": "library",
+      "cslNativeRoute": null,
+      "uiSurface": "CRF items library",
+      "dependencies": []
     },
     {
       "osbResourceType": "OdmMethod",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": "OdmMethod",
       "correspondence": "exact",
       "cslAssertionTypes": [
@@ -850,11 +1394,16 @@
       ],
       "apiPath": null,
       "semanticMismatch": true,
-      "note": "EDIT_CHECK routes here and OSB aliases edit_checks to odm_methods, but an ODM Method is a derivation and a CSL ValidationRule is a constraint (F11, R7); ValidationRule has no OSB counterpart."
+      "note": "EDIT_CHECK routes here and OSB aliases edit_checks to odm_methods, but an ODM Method is a derivation and a CSL ValidationRule is a constraint (F11, R7); ValidationRule has no OSB counterpart.",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": "library",
+      "cslNativeRoute": null,
+      "uiSurface": "CRF methods library (integration routes only)",
+      "dependencies": []
     },
     {
       "osbResourceType": "OdmCondition",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": "OdmCondition",
       "correspondence": "exact",
       "cslAssertionTypes": [
@@ -880,11 +1429,16 @@
       ],
       "apiPath": null,
       "semanticMismatch": false,
-      "note": ""
+      "note": "",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": "library",
+      "cslNativeRoute": null,
+      "uiSurface": "CRF conditions library (integration routes only)",
+      "dependencies": []
     },
     {
       "osbResourceType": "OdmItemActivityBinding",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": null,
       "correspondence": "edge",
       "cslAssertionTypes": [],
@@ -904,11 +1458,19 @@
       ],
       "apiPath": null,
       "semanticMismatch": false,
-      "note": "An OSB relationship between OdmItem and ActivityItem; in CSL the edge is Item measures BiomedicalConcept (and implements)."
+      "note": "An OSB relationship between OdmItem and ActivityItem; in CSL the edge is Item measures BiomedicalConcept (and implements).",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": null,
+      "cslNativeRoute": null,
+      "uiSurface": "CRF item to activity binding (integration routes only)",
+      "dependencies": [
+        "odm-item",
+        "activity-item"
+      ]
     },
     {
       "osbResourceType": "OdmFormItemGroupLink",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": null,
       "correspondence": "edge",
       "cslAssertionTypes": [],
@@ -928,11 +1490,19 @@
       ],
       "apiPath": null,
       "semanticMismatch": false,
-      "note": "CSL link containsGroup (Form to ItemGroup)."
+      "note": "CSL link containsGroup (Form to ItemGroup).",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": null,
+      "cslNativeRoute": null,
+      "uiSurface": "CRF structure: form to item group (integration routes only)",
+      "dependencies": [
+        "odm-form",
+        "odm-item-group"
+      ]
     },
     {
       "osbResourceType": "OdmItemGroupItemLink",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": null,
       "correspondence": "edge",
       "cslAssertionTypes": [],
@@ -952,11 +1522,19 @@
       ],
       "apiPath": null,
       "semanticMismatch": false,
-      "note": "CSL link containsItem (ItemGroup to Item)."
+      "note": "CSL link containsItem (ItemGroup to Item).",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": null,
+      "cslNativeRoute": null,
+      "uiSurface": "CRF structure: item group to item (integration routes only)",
+      "dependencies": [
+        "odm-item-group",
+        "odm-item"
+      ]
     },
     {
       "osbResourceType": "ActivityItemClass",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": "BiomedicalConceptBinding",
       "correspondence": "narrower",
       "cslAssertionTypes": [],
@@ -977,11 +1555,16 @@
       ],
       "apiPath": null,
       "semanticMismatch": false,
-      "note": "MAPS_VARIABLE_CLASS and HAS_VALID_CODELIST_FOR_ITEMS are the dataset-specialization half of a CSL concept binding."
+      "note": "MAPS_VARIABLE_CLASS and HAS_VALID_CODELIST_FOR_ITEMS are the dataset-specialization half of a CSL concept binding.",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": null,
+      "cslNativeRoute": null,
+      "uiSurface": "Activity item classes library",
+      "dependencies": []
     },
     {
       "osbResourceType": "StudySelectionActivityInstance",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": "BiomedicalConcept",
       "correspondence": "broader",
       "cslAssertionTypes": [],
@@ -1001,11 +1584,19 @@
       ],
       "apiPath": null,
       "semanticMismatch": false,
-      "note": "The study's selection of a library ActivityInstance; CSL scopes a concept to the study by identity, not by a selection object."
+      "note": "The study's selection of a library ActivityInstance; CSL scopes a concept to the study by identity, not by a selection object.",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": null,
+      "cslNativeRoute": null,
+      "uiSurface": "Activity instances (study)",
+      "dependencies": [
+        "study-activity",
+        "activity-instance"
+      ]
     },
     {
       "osbResourceType": "IntegrationExtension",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": null,
       "correspondence": "none",
       "cslAssertionTypes": [
@@ -1040,11 +1631,16 @@
       ],
       "apiPath": null,
       "semanticMismatch": false,
-      "note": "Governed extension payloads (14 rules); they stay properties of the CSL object they extend."
+      "note": "Governed extension payloads (14 rules); they stay properties of the CSL object they extend.",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": null,
+      "cslNativeRoute": null,
+      "uiSurface": "Proposal review only",
+      "dependencies": []
     },
     {
       "osbResourceType": "RetainedNarrative",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": "NarrativeContent",
       "correspondence": "broader",
       "cslAssertionTypes": [
@@ -1068,11 +1664,16 @@
       ],
       "apiPath": null,
       "semanticMismatch": false,
-      "note": "Verbatim sentences are retained as claims in CSL; NarrativeContent only when a definition must reference a text as a whole."
+      "note": "Verbatim sentences are retained as claims in CSL; NarrativeContent only when a definition must reference a text as a whole.",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": null,
+      "cslNativeRoute": null,
+      "uiSurface": "Proposal review only",
+      "dependencies": []
     },
     {
       "osbResourceType": "Unresolved",
-      "rulesetAliases": [],
+      "formerNames": [],
       "cslObjectType": null,
       "correspondence": "none",
       "cslAssertionTypes": [],
@@ -1090,8 +1691,13 @@
       "osbNodeLabels": [],
       "apiPath": null,
       "semanticMismatch": false,
-      "note": "Content OSB could not route; a retained work item in CSL."
+      "note": "Content OSB could not route; a retained work item in CSL.",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": null,
+      "cslNativeRoute": null,
+      "uiSurface": "Proposal review only",
+      "dependencies": []
     }
   ],
-  "registryHash": "sha256:3b0e931cede719b3c1a8a438823ef925ea5f4782b16a3eadb441255aa279d3be"
+  "registryHash": "sha256:e80ceb3a92ebe67c93693ce60f6df2ba39266796a5d1d992d0001be85158c747"
 }

@@ -13,15 +13,16 @@ from clinical_mdr_api.generated.platform_contracts.hash_signing_v1 import (
     canonical_json,
     canonical_json_hash_ref,
 )
+from clinical_mdr_api.services.integrations.osb_vocabulary_registry import ROWS
 
 CAPTURE_READBACK_SCHEMA = "OsbNativeCaptureReadBackV1@1.0.0"
 CAPTURE_BINDING_SCHEMA = "OsbNativeCaptureSourceBindingV1@1.0.0"
-CAPTURE_FAMILY_TYPES = {
-    "odm_forms": "OdmForm",
-    "odm_item_groups": "OdmItemGroup",
-    "odm_items": "OdmItem",
-    "controlled_terminology_codelists": "CtCodelist",
-    "controlled_terminology": "CtTerm",
+# Family -> the resourceType string this read-back profile carries. It is a hashed evidence contract, so the two CT
+# spellings (CtTerm, CtCodelist) stay as they were written; the registry states them per row as
+# captureReadbackResourceType and the CSL read-back validator derives the same table from the same rows.
+CAPTURE_FAMILY_TYPES: dict[str, str] = {
+    row["osbFamily"]: row["captureReadbackResourceType"]
+    for row in ROWS.values() if row["captureReadbackResourceType"]
 }
 # These fields describe origin, not a clinical control or a terminology approval.
 SOURCE_ANNOTATION_FIELDS = frozenset({

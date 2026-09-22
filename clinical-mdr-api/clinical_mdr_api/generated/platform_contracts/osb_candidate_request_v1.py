@@ -1,5 +1,5 @@
 """AUTO-GENERATED from OSB-owned OsbCandidateRequestV1.
-Schema sha256:45d262d24358599e752a7a177d6b4fa523670a9b6d89c1eb298f6b76d0d9769e
+Schema sha256:0147b1cdb5573654812e42bc5b51d3e19f3a09d2b17b5533d523f4db8f2b5639
 Do not edit by hand. Run generate-p4-request-contracts.mjs.
 """
 
@@ -98,7 +98,7 @@ class OsbCandidateHashRefV1(TypedDict):
     excludedPaths: list[str]
 
 class OsbCandidateRequestV1(TypedDict):
-    contractVersion: Literal["OsbCandidateRequestV1@1.0.0", "OsbCandidateRequestV1@1.1.0", "OsbCandidateRequestV1@1.2.0", "OsbCandidateRequestV1@1.3.0"]
+    contractVersion: Literal["OsbCandidateRequestV1@1.0.0", "OsbCandidateRequestV1@1.1.0", "OsbCandidateRequestV1@1.2.0", "OsbCandidateRequestV1@1.3.0", "OsbCandidateRequestV1@1.4.0"]
     requestId: str
     requestVersionId: str
     tenantId: str
@@ -131,6 +131,11 @@ class OsbCandidateUpstreamExclusionsV1(TypedDict):
     sourcePackageCensusHash: str | None
     excludedSigned: int
     quarantined: int
+
+class OsbCslEntityReferenceV1(TypedDict):
+    entityId: str
+    entityType: str
+    revisionId: str
 
 class OsbCreateOptionV1(TypedDict):
     allowed: Literal[True]
@@ -278,6 +283,7 @@ class OsbTypedSourceIntentV1(TypedDict):
     searchStringsOmitted: NotRequired[int]
     searchCodesOmitted: NotRequired[int]
     createOption: OsbCreateOptionV1
+    cslEntity: NotRequired[OsbCslEntityReferenceV1]
 
 class OsbTypedSourceValueV1(TypedDict):
     name: str

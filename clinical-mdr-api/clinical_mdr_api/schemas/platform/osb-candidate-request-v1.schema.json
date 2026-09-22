@@ -26,55 +26,184 @@
     "createdBy"
   ],
   "properties": {
-    "contractVersion": { "enum": ["OsbCandidateRequestV1@1.0.0", "OsbCandidateRequestV1@1.1.0", "OsbCandidateRequestV1@1.2.0", "OsbCandidateRequestV1@1.3.0"] },
-    "requestId": { "type": "string", "format": "uuid" },
-    "requestVersionId": { "type": "string", "format": "uuid" },
-    "tenantId": { "type": "string", "format": "uuid" },
-    "platformStudyId": { "type": "string", "format": "uuid" },
-    "osbStudyIdentity": { "$ref": "#/$defs/osbStudyIdentity" },
-    "sourceFactPackage": { "$ref": "#/$defs/sourcePackageRef" },
-    "semanticSnapshot": { "$ref": "#/$defs/snapshotRef" },
+    "contractVersion": {
+      "enum": [
+        "OsbCandidateRequestV1@1.0.0",
+        "OsbCandidateRequestV1@1.1.0",
+        "OsbCandidateRequestV1@1.2.0",
+        "OsbCandidateRequestV1@1.3.0",
+        "OsbCandidateRequestV1@1.4.0"
+      ]
+    },
+    "requestId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "requestVersionId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tenantId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "platformStudyId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "osbStudyIdentity": {
+      "$ref": "#/$defs/osbStudyIdentity"
+    },
+    "sourceFactPackage": {
+      "$ref": "#/$defs/sourcePackageRef"
+    },
+    "semanticSnapshot": {
+      "$ref": "#/$defs/snapshotRef"
+    },
     "activeClaimRevisions": {
       "type": "array",
       "maxItems": 1000000,
-      "items": { "$ref": "#/$defs/activeClaimRevision" }
+      "items": {
+        "$ref": "#/$defs/activeClaimRevision"
+      }
     },
     "requestedObjectFamilies": {
       "type": "array",
       "minItems": 1,
       "maxItems": 32,
       "uniqueItems": true,
-      "items": { "$ref": "#/$defs/resourceFamily" }
+      "items": {
+        "$ref": "#/$defs/resourceFamily"
+      }
     },
     "typedSourceIntents": {
       "type": "array",
       "maxItems": 1000000,
-      "items": { "$ref": "#/$defs/typedSourceIntent" }
+      "items": {
+        "$ref": "#/$defs/typedSourceIntent"
+      }
     },
     "evidenceArtifactRefs": {
       "type": "array",
       "minItems": 1,
       "maxItems": 1,
-      "items": { "$ref": "#/$defs/artifactRef" }
+      "items": {
+        "$ref": "#/$defs/artifactRef"
+      }
     },
-    "projectionRuleset": { "$ref": "#/$defs/projectionRuleset" },
-    "inputConservation": { "$ref": "#/$defs/requestCensus" },
-    "checkpointPreconditions": { "$ref": "#/$defs/checkpoint" },
-    "expiresAt": { "type": "string", "format": "date-time" },
-    "createdAt": { "type": "string", "format": "date-time" },
-    "createdBy": { "type": "string", "minLength": 1, "maxLength": 1024 }
+    "projectionRuleset": {
+      "$ref": "#/$defs/projectionRuleset"
+    },
+    "inputConservation": {
+      "$ref": "#/$defs/requestCensus"
+    },
+    "checkpointPreconditions": {
+      "$ref": "#/$defs/checkpoint"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "createdBy": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    }
   },
-  "allOf": [{
-    "if": { "properties": { "contractVersion": { "enum": ["OsbCandidateRequestV1@1.0.0", "OsbCandidateRequestV1@1.1.0"] } } },
-    "then": { "properties": { "typedSourceIntents": { "type": "array", "items": {
-      "type": "object", "properties": { "resourceFamily": { "not": { "const": "study_metadata" } }, "nativeStudyOperation": false }
-    } } } }
-  }, {
-    "if": { "properties": { "contractVersion": { "enum": ["OsbCandidateRequestV1@1.0.0", "OsbCandidateRequestV1@1.1.0", "OsbCandidateRequestV1@1.2.0"] } } },
-    "then": { "properties": { "typedSourceIntents": { "type": "array", "items": {
-      "type": "object", "properties": { "source": { "type": "object", "properties": { "context": false } } }
-    } } } }
-  }],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "contractVersion": {
+            "enum": [
+              "OsbCandidateRequestV1@1.0.0",
+              "OsbCandidateRequestV1@1.1.0"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "typedSourceIntents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "resourceFamily": {
+                  "not": {
+                    "const": "study_metadata"
+                  }
+                },
+                "nativeStudyOperation": false
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "contractVersion": {
+            "enum": [
+              "OsbCandidateRequestV1@1.0.0",
+              "OsbCandidateRequestV1@1.1.0",
+              "OsbCandidateRequestV1@1.2.0"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "typedSourceIntents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "object",
+                  "properties": {
+                    "context": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "contractVersion": {
+            "enum": [
+              "OsbCandidateRequestV1@1.0.0",
+              "OsbCandidateRequestV1@1.1.0",
+              "OsbCandidateRequestV1@1.2.0",
+              "OsbCandidateRequestV1@1.3.0"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "typedSourceIntents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "cslEntity": false
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "legacyOsbStudyIdentity": {
       "title": "OsbLegacyStudyIdentityV1",
@@ -375,14 +504,45 @@
       "title": "OsbCandidateHashRefV1",
       "type": "object",
       "additionalProperties": false,
-      "required": ["algorithm", "canonicalizationVersion", "value", "mediaType", "schemaVersion", "excludedPaths"],
+      "required": [
+        "algorithm",
+        "canonicalizationVersion",
+        "value",
+        "mediaType",
+        "schemaVersion",
+        "excludedPaths"
+      ],
       "properties": {
-        "algorithm": { "const": "sha-256" },
-        "canonicalizationVersion": { "enum": ["canonical-json/1.0", "raw-bytes/1.0"] },
-        "value": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
-        "mediaType": { "type": "string", "minLength": 1, "maxLength": 256 },
-        "schemaVersion": { "type": "string", "minLength": 1, "maxLength": 256 },
-        "excludedPaths": { "type": "array", "maxItems": 0, "items": { "type": "string" } }
+        "algorithm": {
+          "const": "sha-256"
+        },
+        "canonicalizationVersion": {
+          "enum": [
+            "canonical-json/1.0",
+            "raw-bytes/1.0"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "mediaType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "schemaVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "excludedPaths": {
+          "type": "array",
+          "maxItems": 0,
+          "items": {
+            "type": "string"
+          }
+        }
       }
     },
     "resourceFamily": {
@@ -431,45 +591,102 @@
       "title": "OsbCandidateSourcePackageRefV1",
       "type": "object",
       "additionalProperties": false,
-      "required": ["packageVersionId", "payloadHash", "factSetHash"],
+      "required": [
+        "packageVersionId",
+        "payloadHash",
+        "factSetHash"
+      ],
       "properties": {
-        "packageVersionId": { "type": "string", "format": "uuid" },
-        "payloadHash": { "$ref": "#/$defs/hashRef" },
-        "factSetHash": { "$ref": "#/$defs/hashRef" }
+        "packageVersionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "payloadHash": {
+          "$ref": "#/$defs/hashRef"
+        },
+        "factSetHash": {
+          "$ref": "#/$defs/hashRef"
+        }
       }
     },
     "snapshotRef": {
       "title": "OsbCandidateSnapshotRefV1",
       "type": "object",
       "additionalProperties": false,
-      "required": ["snapshotVersionId", "payloadHash", "memberSetHash"],
+      "required": [
+        "snapshotVersionId",
+        "payloadHash",
+        "memberSetHash"
+      ],
       "properties": {
-        "snapshotVersionId": { "type": "string", "format": "uuid" },
-        "payloadHash": { "$ref": "#/$defs/hashRef" },
-        "memberSetHash": { "$ref": "#/$defs/hashRef" }
+        "snapshotVersionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "payloadHash": {
+          "$ref": "#/$defs/hashRef"
+        },
+        "memberSetHash": {
+          "$ref": "#/$defs/hashRef"
+        }
       }
     },
     "activeClaimRevision": {
       "title": "OsbCandidateActiveClaimRevisionV1",
       "type": "object",
       "additionalProperties": false,
-      "required": ["sourceFactId", "revision", "lifecycle", "valueHash"],
+      "required": [
+        "sourceFactId",
+        "revision",
+        "lifecycle",
+        "valueHash"
+      ],
       "properties": {
-        "sourceFactId": { "type": "string", "minLength": 1, "maxLength": 256 },
-        "revision": { "type": "integer", "minimum": 1 },
-        "lifecycle": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "valueHash": { "$ref": "#/$defs/hashRef" }
+        "sourceFactId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "lifecycle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "valueHash": {
+          "$ref": "#/$defs/hashRef"
+        }
       }
     },
     "typedValue": {
       "title": "OsbTypedSourceValueV1",
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "sourcePath", "valueType", "value"],
+      "required": [
+        "name",
+        "sourcePath",
+        "valueType",
+        "value"
+      ],
       "properties": {
-        "name": { "type": "string", "minLength": 1, "maxLength": 256 },
-        "sourcePath": { "type": "string", "minLength": 1, "maxLength": 1024 },
-        "valueType": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "sourcePath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "valueType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
         "value": true
       }
     },
@@ -478,13 +695,26 @@
       "description": "Exact Build-owned FactDto.downstream.encounterProjection. An absent projection is unknown; an explicit empty encounter array records the establishing Build's empty result. It grants no native execution or approval authority.",
       "type": "object",
       "additionalProperties": true,
-      "required": ["contract", "buildHash", "encounters"],
+      "required": [
+        "contract",
+        "buildHash",
+        "encounters"
+      ],
       "properties": {
-        "contract": { "const": "study-build-encounter-projection/1" },
-        "buildHash": { "type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[a-f0-9]{64}$" },
+        "contract": {
+          "const": "study-build-encounter-projection/1"
+        },
+        "buildHash": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[a-f0-9]{64}$"
+        },
         "encounters": {
           "type": "array",
-          "items": { "$ref": "#/$defs/encounterRef" }
+          "items": {
+            "$ref": "#/$defs/encounterRef"
+          }
         }
       }
     },
@@ -493,17 +723,59 @@
       "description": "A complete occurrence-specific visit binding, including retained form, timing, conditions and evidence metadata.",
       "type": "object",
       "additionalProperties": true,
-      "required": ["visitId", "visitLabel", "timepoint", "required", "derivedFrom", "evidenceRef"],
+      "required": [
+        "visitId",
+        "visitLabel",
+        "timepoint",
+        "required",
+        "derivedFrom",
+        "evidenceRef"
+      ],
       "properties": {
-        "visitId": { "type": "string", "minLength": 1 },
-        "visitLabel": { "type": ["string", "null"] },
-        "timepoint": { "type": ["string", "null"] },
-        "required": { "type": ["boolean", "null"] },
-        "derivedFrom": { "type": ["string", "null"] },
-        "evidenceRef": { "type": "string", "minLength": 1 },
-        "formObjectId": { "type": "string", "minLength": 1 },
-        "objectMetadata": { "type": "object", "additionalProperties": true },
-        "properties": { "type": "object", "additionalProperties": true }
+        "visitId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "visitLabel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timepoint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "required": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "derivedFrom": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "evidenceRef": {
+          "type": "string",
+          "minLength": 1
+        },
+        "formObjectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "objectMetadata": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": true
+        }
       }
     },
     "typedSourceIntent": {
@@ -511,39 +783,121 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "factId", "revision", "conceptId", "targetKey", "semanticRole",
-        "resourceFamily", "source", "evidence", "searchStrings", "searchCodes", "createOption"
+        "factId",
+        "revision",
+        "conceptId",
+        "targetKey",
+        "semanticRole",
+        "resourceFamily",
+        "source",
+        "evidence",
+        "searchStrings",
+        "searchCodes",
+        "createOption"
       ],
-      "allOf": [{
-        "if": { "properties": { "resourceFamily": { "const": "study_metadata" } } },
-        "then": {
-          "required": ["nativeStudyOperation"],
-          "properties": { "nativeStudyOperation": { "$ref": "#/$defs/studyMetadataPlan" } }
-        },
-        "else": { "properties": { "nativeStudyOperation": false } }
-      }],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "resourceFamily": {
+                "const": "study_metadata"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "nativeStudyOperation"
+            ],
+            "properties": {
+              "nativeStudyOperation": {
+                "$ref": "#/$defs/studyMetadataPlan"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "nativeStudyOperation": false
+            }
+          }
+        }
+      ],
       "properties": {
-        "factId": { "type": "string", "minLength": 1, "maxLength": 256 },
-        "revision": { "type": "integer", "minimum": 1 },
-        "conceptId": { "type": "string", "format": "uuid" },
-        "targetKey": { "const": "primary" },
-        "semanticRole": { "type": "string", "minLength": 1, "maxLength": 256 },
-        "resourceFamily": { "$ref": "#/$defs/resourceFamily" },
-        "nativeStudyOperation": { "$ref": "#/$defs/studyMetadataPlan" },
+        "factId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "conceptId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "targetKey": {
+          "const": "primary"
+        },
+        "semanticRole": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "resourceFamily": {
+          "$ref": "#/$defs/resourceFamily"
+        },
+        "nativeStudyOperation": {
+          "$ref": "#/$defs/studyMetadataPlan"
+        },
         "source": {
           "title": "OsbTypedSourceIntentSourceV1",
           "type": "object",
           "additionalProperties": false,
-          "required": ["assertionType", "clinicalDomain", "candidateType", "exactQuote", "label", "values"],
+          "required": [
+            "assertionType",
+            "clinicalDomain",
+            "candidateType",
+            "exactQuote",
+            "label",
+            "values"
+          ],
           "properties": {
-            "assertionType": { "type": ["string", "null"] },
-            "clinicalDomain": { "type": ["string", "null"] },
-            "candidateType": { "type": ["string", "null"] },
-            "exactQuote": { "type": ["string", "null"] },
-            "label": { "type": ["string", "null"] },
+            "assertionType": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "clinicalDomain": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "candidateType": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "exactQuote": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "classification": {
               "description": "1.1.0: the claim's classification object carried VERBATIM (already inside the hash-pinned fact). Deliberately open — its shape is the IL fact's, not this contract's.",
-              "type": ["object", "null"]
+              "type": [
+                "object",
+                "null"
+              ]
             },
             "context": {
               "title": "OsbTypedSourceContextV1",
@@ -553,23 +907,37 @@
               "properties": {
                 "encounters": {
                   "description": "Legacy FactDto.encounters retained as source custody. Current Build-derived visit bindings are in encounterProjection.",
-                  "type": ["array", "null"],
+                  "type": [
+                    "array",
+                    "null"
+                  ],
                   "items": true
                 },
-                "encounterProjection": { "$ref": "#/$defs/encounterProjection" },
+                "encounterProjection": {
+                  "$ref": "#/$defs/encounterProjection"
+                },
                 "relationships": {
                   "description": "FactDto.relationships with exact endpoints, evidence and source attribution.",
-                  "type": ["array", "null"],
+                  "type": [
+                    "array",
+                    "null"
+                  ],
                   "items": true
                 },
                 "semanticAssociations": {
                   "description": "FactDto.downstream.semanticAssociations, including unresolved or ambiguous native object references.",
-                  "type": ["array", "null"],
+                  "type": [
+                    "array",
+                    "null"
+                  ],
                   "items": true
                 },
                 "unresolvedRelationships": {
                   "description": "FactDto.extraction.unresolvedRelationships retained with their original evidence.",
-                  "type": ["array", "null"],
+                  "type": [
+                    "array",
+                    "null"
+                  ],
                   "items": true
                 }
               }
@@ -577,7 +945,9 @@
             "values": {
               "type": "array",
               "maxItems": 1000,
-              "items": { "$ref": "#/$defs/typedValue" }
+              "items": {
+                "$ref": "#/$defs/typedValue"
+              }
             }
           }
         },
@@ -585,12 +955,20 @@
         "searchStrings": {
           "type": "array",
           "maxItems": 20,
-          "items": { "type": "string", "minLength": 1, "maxLength": 256 }
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
         },
         "searchCodes": {
           "type": "array",
           "maxItems": 20,
-          "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
         },
         "searchStringsOmitted": {
           "description": "1.1.0: entries the 20-item/256-char caps dropped — truncation is receipted, never silent.",
@@ -606,16 +984,27 @@
           "title": "OsbCreateOptionV1",
           "type": "object",
           "additionalProperties": false,
-          "required": ["allowed", "requestedNativeType"],
+          "required": [
+            "allowed",
+            "requestedNativeType"
+          ],
           "properties": {
-            "allowed": { "const": true },
+            "allowed": {
+              "const": true
+            },
             "requestedNativeType": {
               "description": "1.1.0: null when the claim states no candidate type — the manufactured 'governed-extension' default is gone.",
-              "type": ["string", "null"],
+              "type": [
+                "string",
+                "null"
+              ],
               "minLength": 1,
               "maxLength": 128
             }
           }
+        },
+        "cslEntity": {
+          "$ref": "#/$defs/cslEntityReference"
         }
       }
     },
@@ -624,55 +1013,161 @@
       "description": "Source-pinned CSL metadata proposal. OSB resolves references and supplies a native precondition before a signed decision can apply it.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["contractVersion", "assertionType", "ruled", "osbResourceType", "osbCapability", "kind", "route", "method", "metadataPath", "metadataValue"],
+      "required": [
+        "contractVersion",
+        "assertionType",
+        "ruled",
+        "osbResourceType",
+        "osbCapability",
+        "kind",
+        "route",
+        "method",
+        "metadataPath",
+        "metadataValue"
+      ],
       "properties": {
-        "contractVersion": { "const": "OsbStudyMetadataPlanV1@1.0.0" },
-        "assertionType": { "type": "string", "minLength": 1 },
-        "ruled": { "const": true },
-        "osbResourceType": { "const": "StudyMetadata" },
-        "osbCapability": { "type": "string", "minLength": 1 },
-        "kind": { "const": "native-metadata" },
-        "route": { "const": "/studies/{study_uid}" },
-        "method": { "const": "PATCH" },
-        "metadataPath": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "contractVersion": {
+          "const": "OsbStudyMetadataPlanV1@1.0.0"
+        },
+        "assertionType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ruled": {
+          "const": true
+        },
+        "osbResourceType": {
+          "const": "StudyMetadata"
+        },
+        "osbCapability": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "const": "native-metadata"
+        },
+        "route": {
+          "const": "/studies/{study_uid}"
+        },
+        "method": {
+          "const": "PATCH"
+        },
+        "metadataPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
         "metadataValue": true,
-        "metadataJoinedText": { "type": "boolean" },
-        "metadataMultiValued": { "type": "boolean" },
-        "termRefs": { "type": "object", "additionalProperties": { "$ref": "#/$defs/metadataTermRef" } },
-        "unitRefs": { "type": "object", "additionalProperties": { "$ref": "#/$defs/metadataUnitRef" } },
-        "dictionaryRefs": { "type": "object", "additionalProperties": { "$ref": "#/$defs/metadataDictionaryRef" } },
-        "consumedFields": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
-        "basis": { "type": "object", "additionalProperties": { "type": "string" } }
+        "metadataJoinedText": {
+          "type": "boolean"
+        },
+        "metadataMultiValued": {
+          "type": "boolean"
+        },
+        "termRefs": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/metadataTermRef"
+          }
+        },
+        "unitRefs": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/metadataUnitRef"
+          }
+        },
+        "dictionaryRefs": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/metadataDictionaryRef"
+          }
+        },
+        "consumedFields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "basis": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
       }
     },
     "metadataTermRef": {
       "title": "OsbMetadataTermRefV1",
-      "type": "object", "additionalProperties": false,
-      "required": ["termName", "codelistName", "basis"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "termName",
+        "codelistName",
+        "basis"
+      ],
       "properties": {
-        "termName": { "type": "string", "minLength": 1 },
-        "codelistName": { "type": "string", "minLength": 1 },
-        "basis": { "type": "string", "minLength": 1 }
+        "termName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "codelistName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "basis": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "metadataUnitRef": {
       "title": "OsbMetadataUnitRefV1",
-      "type": "object", "additionalProperties": false,
-      "required": ["unitName", "basis"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unitName",
+        "basis"
+      ],
       "properties": {
-        "unitName": { "type": "string", "minLength": 1 },
-        "basis": { "type": "string", "minLength": 1 }
+        "unitName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "basis": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "metadataDictionaryRef": {
       "title": "OsbMetadataDictionaryRefV1",
-      "type": "object", "additionalProperties": false,
-      "required": ["termName", "libraryName", "dictionaryCodelistName", "basis"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "termName",
+        "libraryName",
+        "dictionaryCodelistName",
+        "basis"
+      ],
       "properties": {
-        "termName": { "type": "string", "minLength": 1 },
-        "libraryName": { "type": "string", "minLength": 1 },
-        "dictionaryCodelistName": { "type": "string", "minLength": 1 },
-        "basis": { "type": "string", "minLength": 1 }
+        "termName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "libraryName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "dictionaryCodelistName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "basis": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "artifactRef": {
@@ -680,41 +1175,126 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "contractVersion", "artifactId", "artifactVersionId", "kind", "stableLocator",
-        "payloadHash", "descriptorHash", "byteSize", "classification", "tenantId", "region",
-        "producerService", "producerEnvironment", "producerVersion", "payloadContract",
-        "payloadContractVersion", "purpose", "createdAt"
+        "contractVersion",
+        "artifactId",
+        "artifactVersionId",
+        "kind",
+        "stableLocator",
+        "payloadHash",
+        "descriptorHash",
+        "byteSize",
+        "classification",
+        "tenantId",
+        "region",
+        "producerService",
+        "producerEnvironment",
+        "producerVersion",
+        "payloadContract",
+        "payloadContractVersion",
+        "purpose",
+        "createdAt"
       ],
       "properties": {
-        "contractVersion": { "const": "ArtifactRefV1@1.0.0" },
-        "artifactId": { "type": "string", "format": "uuid" },
-        "artifactVersionId": { "type": "string", "format": "uuid" },
-        "kind": { "type": "string", "minLength": 3, "maxLength": 128 },
-        "stableLocator": { "type": "string", "minLength": 8, "maxLength": 2048 },
-        "payloadHash": { "$ref": "#/$defs/hashRef" },
-        "descriptorHash": { "$ref": "#/$defs/hashRef" },
-        "byteSize": { "type": "integer", "minimum": 0 },
-        "classification": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "tenantId": { "type": "string", "format": "uuid" },
-        "region": { "type": "string", "minLength": 2, "maxLength": 64 },
-        "producerService": { "type": "string", "minLength": 3, "maxLength": 128 },
-        "producerEnvironment": { "type": "string", "minLength": 2, "maxLength": 64 },
-        "producerVersion": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "payloadContract": { "type": "string", "minLength": 3, "maxLength": 256 },
-        "payloadContractVersion": { "type": "string", "minLength": 1, "maxLength": 32 },
-        "purpose": { "type": "string", "minLength": 3, "maxLength": 128 },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "contractVersion": {
+          "const": "ArtifactRefV1@1.0.0"
+        },
+        "artifactId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "artifactVersionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128
+        },
+        "stableLocator": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 2048
+        },
+        "payloadHash": {
+          "$ref": "#/$defs/hashRef"
+        },
+        "descriptorHash": {
+          "$ref": "#/$defs/hashRef"
+        },
+        "byteSize": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "classification": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "tenantId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "region": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 64
+        },
+        "producerService": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128
+        },
+        "producerEnvironment": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 64
+        },
+        "producerVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "payloadContract": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 256
+        },
+        "payloadContractVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "purpose": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
       }
     },
     "projectionRuleset": {
       "title": "OsbProjectionRulesetV1",
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "version", "hash"],
+      "required": [
+        "id",
+        "version",
+        "hash"
+      ],
       "properties": {
-        "id": { "const": "csl-to-osb-candidate-request" },
-        "version": { "const": "1.0.0" },
-        "hash": { "$ref": "#/$defs/hashRef" }
+        "id": {
+          "const": "csl-to-osb-candidate-request"
+        },
+        "version": {
+          "const": "1.0.0"
+        },
+        "hash": {
+          "$ref": "#/$defs/hashRef"
+        }
       }
     },
     "requestCensus": {
@@ -722,28 +1302,68 @@
       "description": "Value-level source-to-target conservation rows. Aggregate counts alone are not proof.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["contractVersion", "rows", "rowSetHash", "counts"],
+      "required": [
+        "contractVersion",
+        "rows",
+        "rowSetHash",
+        "counts"
+      ],
       "properties": {
-        "contractVersion": { "const": "ConservationCensusV1@1.0.0" },
+        "contractVersion": {
+          "const": "ConservationCensusV1@1.0.0"
+        },
         "rows": {
           "type": "array",
           "maxItems": 1000000,
-          "items": { "$ref": "#/$defs/censusRow" }
+          "items": {
+            "$ref": "#/$defs/censusRow"
+          }
         },
-        "rowSetHash": { "$ref": "#/$defs/hashRef" },
+        "rowSetHash": {
+          "$ref": "#/$defs/hashRef"
+        },
         "counts": {
           "title": "ConservationCensusCountsV1",
           "type": "object",
           "additionalProperties": false,
-          "required": ["rows", "native", "governedExtension", "excludedSigned", "deferredBlocking", "quarantined", "rejected"],
+          "required": [
+            "rows",
+            "native",
+            "governedExtension",
+            "excludedSigned",
+            "deferredBlocking",
+            "quarantined",
+            "rejected"
+          ],
           "properties": {
-            "rows": { "type": "integer", "minimum": 0 },
-            "native": { "type": "integer", "minimum": 0 },
-            "governedExtension": { "type": "integer", "minimum": 0 },
-            "excludedSigned": { "type": "integer", "minimum": 0 },
-            "deferredBlocking": { "type": "integer", "minimum": 0 },
-            "quarantined": { "type": "integer", "minimum": 0 },
-            "rejected": { "type": "integer", "minimum": 0 }
+            "rows": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "native": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "governedExtension": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "excludedSigned": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "deferredBlocking": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "quarantined": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "rejected": {
+              "type": "integer",
+              "minimum": 0
+            }
           }
         },
         "upstreamExclusions": {
@@ -751,14 +1371,27 @@
           "description": "1.1.0: package-boundary exclusions referenced by hash — informational, NOT rows in this census. The counts stay row-derived; this block tells OSB that M facts were suppressed before the request was built.",
           "type": "object",
           "additionalProperties": false,
-          "required": ["sourcePackageCensusHash", "excludedSigned", "quarantined"],
+          "required": [
+            "sourcePackageCensusHash",
+            "excludedSigned",
+            "quarantined"
+          ],
           "properties": {
             "sourcePackageCensusHash": {
-              "type": ["string", "null"],
+              "type": [
+                "string",
+                "null"
+              ],
               "pattern": "^sha256:[0-9a-f]{64}$"
             },
-            "excludedSigned": { "type": "integer", "minimum": 0 },
-            "quarantined": { "type": "integer", "minimum": 0 }
+            "excludedSigned": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "quarantined": {
+              "type": "integer",
+              "minimum": 0
+            }
           }
         }
       }
@@ -767,26 +1400,76 @@
       "title": "ConservationEndpointV1",
       "type": "object",
       "additionalProperties": false,
-      "required": ["artifactId", "contract", "type", "path", "valueHash"],
+      "required": [
+        "artifactId",
+        "contract",
+        "type",
+        "path",
+        "valueHash"
+      ],
       "properties": {
-        "artifactId": { "type": "string", "minLength": 1, "maxLength": 256 },
-        "contract": { "type": "string", "minLength": 1, "maxLength": 256 },
-        "type": { "type": "string", "minLength": 1, "maxLength": 256 },
-        "path": { "type": "string", "pattern": "^#(?:/(?:[^~/]|~[01])*)*$", "maxLength": 4096 },
-        "valueHash": { "$ref": "#/$defs/hashRef" }
+        "artifactId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "contract": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^#(?:/(?:[^~/]|~[01])*)*$",
+          "maxLength": 4096
+        },
+        "valueHash": {
+          "$ref": "#/$defs/hashRef"
+        }
       }
     },
     "censusExclusionPolicy": {
       "title": "ConservationExclusionPolicyV1",
       "type": "object",
       "additionalProperties": false,
-      "required": ["policyId", "policyVersion", "approver", "reason", "sourcePath"],
+      "required": [
+        "policyId",
+        "policyVersion",
+        "approver",
+        "reason",
+        "sourcePath"
+      ],
       "properties": {
-        "policyId": { "type": "string", "minLength": 1, "maxLength": 256 },
-        "policyVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
-        "approver": { "type": "string", "minLength": 1, "maxLength": 3072 },
-        "reason": { "type": "string", "minLength": 1, "maxLength": 2048 },
-        "sourcePath": { "type": "string", "pattern": "^#(?:/(?:[^~/]|~[01])*)*$", "maxLength": 4096 }
+        "policyId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "policyVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "approver": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 3072
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "sourcePath": {
+          "type": "string",
+          "pattern": "^#(?:/(?:[^~/]|~[01])*)*$",
+          "maxLength": 4096
+        }
       }
     },
     "censusRow": {
@@ -794,52 +1477,185 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "unitId", "source", "target", "multiplicity", "splitMergeGroup", "splitMergeRule",
-        "ordering", "disposition", "exclusionPolicy", "evidenceRefs", "receiptRefs"
+        "unitId",
+        "source",
+        "target",
+        "multiplicity",
+        "splitMergeGroup",
+        "splitMergeRule",
+        "ordering",
+        "disposition",
+        "exclusionPolicy",
+        "evidenceRefs",
+        "receiptRefs"
       ],
       "properties": {
-        "unitId": { "type": "string", "minLength": 1, "maxLength": 512 },
-        "source": { "$ref": "#/$defs/censusEndpoint" },
-        "target": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/censusEndpoint" }] },
+        "unitId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "source": {
+          "$ref": "#/$defs/censusEndpoint"
+        },
+        "target": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/censusEndpoint"
+            }
+          ]
+        },
         "multiplicity": {
           "title": "ConservationCensusMultiplicityV1",
           "type": "object",
           "additionalProperties": false,
-          "required": ["source", "target"],
+          "required": [
+            "source",
+            "target"
+          ],
           "properties": {
-            "source": { "type": "integer", "minimum": 1, "maximum": 1000000 },
-            "target": { "type": "integer", "minimum": 0, "maximum": 1000000 }
+            "source": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            },
+            "target": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            }
           }
         },
-        "splitMergeGroup": { "type": ["string", "null"], "maxLength": 512 },
-        "splitMergeRule": { "type": ["string", "null"], "maxLength": 512 },
+        "splitMergeGroup": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 512
+        },
+        "splitMergeRule": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 512
+        },
         "ordering": {
           "title": "ConservationCensusOrderingV1",
           "type": "object",
           "additionalProperties": false,
-          "required": ["significant", "sourceIndex", "targetIndex"],
+          "required": [
+            "significant",
+            "sourceIndex",
+            "targetIndex"
+          ],
           "properties": {
-            "significant": { "type": "boolean" },
-            "sourceIndex": { "type": ["integer", "null"], "minimum": 0 },
-            "targetIndex": { "type": ["integer", "null"], "minimum": 0 }
+            "significant": {
+              "type": "boolean"
+            },
+            "sourceIndex": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "targetIndex": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
           }
         },
         "disposition": {
-          "enum": ["native", "governed_extension", "excluded_signed", "deferred_blocking", "quarantined", "rejected"]
+          "enum": [
+            "native",
+            "governed_extension",
+            "excluded_signed",
+            "deferred_blocking",
+            "quarantined",
+            "rejected"
+          ]
         },
-        "exclusionPolicy": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/censusExclusionPolicy" }] },
-        "evidenceRefs": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 1024 } },
-        "receiptRefs": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 1024 } }
+        "exclusionPolicy": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/censusExclusionPolicy"
+            }
+          ]
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        },
+        "receiptRefs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        }
       }
     },
     "checkpoint": {
       "title": "OsbCandidateCheckpointV1",
       "type": "object",
       "additionalProperties": false,
-      "required": ["osbNativeVersion", "semanticSnapshotHash"],
+      "required": [
+        "osbNativeVersion",
+        "semanticSnapshotHash"
+      ],
       "properties": {
-        "osbNativeVersion": { "type": ["string", "null"] },
-        "semanticSnapshotHash": { "$ref": "#/$defs/hashRef" }
+        "osbNativeVersion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "semanticSnapshotHash": {
+          "$ref": "#/$defs/hashRef"
+        }
+      }
+    },
+    "cslEntityReference": {
+      "title": "OsbCslEntityReferenceV1",
+      "description": "The ClinicalSemanticLayer entity the fact materialised (1.4.0). Stored on the managed side-car so the same object can be named on both sides.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entityId",
+        "entityType",
+        "revisionId"
+      ],
+      "properties": {
+        "entityId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "entityType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "revisionId": {
+          "type": "string",
+          "format": "uuid"
+        }
       }
     }
   }

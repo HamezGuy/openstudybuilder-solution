@@ -119,6 +119,15 @@ def store_mapping_decision_bytes(
             "contentHash": expected_hash, "byteSize": len(bytes_value)}
 
 
+def _csl_entity_field(source_intent: dict[str, Any], field: str) -> str | None:
+    """The typed intent's CSL entity reference (candidate request 1.4.0), or None when the request predates it."""
+    reference = source_intent.get("cslEntity")
+    if not isinstance(reference, dict):
+        return None
+    value = reference.get(field)
+    return value if isinstance(value, str) and value else None
+
+
 def native_readback_envelope_v1(observed: dict[str, Any]) -> dict[str, Any]:
     """Hash an unchanged native observation under its explicit read-back profile."""
     metadata = observed.get("resourceFamily") == "study_metadata"
@@ -395,6 +404,8 @@ def apply_mapping_decision(
                          concept.study_uid=$study_uid,concept.fact_id=$fact_id,concept.revision=$revision,
                          concept.target_key=$target_key,concept.action=$action,concept.resource_family=$resource_family,
                          concept.payload_json=$payload_json,concept.content_hash=$content_hash,
+                         concept.csl_entity_id=$csl_entity_id,concept.csl_entity_type=$csl_entity_type,
+                         concept.csl_revision_id=$csl_revision_id,
                          concept.version=1,concept.created_at=datetime(),concept.created_by=$actor
                        MERGE (study)-[:HAS_PLATFORM_MANAGED_CONCEPT]->(concept)
                        RETURN concept.payload_json,concept.content_hash,concept.version""",
@@ -403,6 +414,10 @@ def apply_mapping_decision(
                      "revision": selection["revision"], "target_key": selection["targetKey"],
                      "action": action, "resource_family": family,
                      "payload_json": canonical_json(target_payload), "content_hash": target_hash["value"],
+                     # A5: the CSL entity the fact materialised (candidate request 1.4.0); absent on older requests.
+                     "csl_entity_id": _csl_entity_field(source_intent, "entityId"),
+                     "csl_entity_type": _csl_entity_field(source_intent, "entityType"),
+                     "csl_revision_id": _csl_entity_field(source_intent, "revisionId"),
                      "actor": actor},
                 )
                 if not created or str(created[0][0]) != canonical_json(target_payload) or str(created[0][1]) != target_hash["value"]:
