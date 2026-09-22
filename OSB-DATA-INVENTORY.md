@@ -735,7 +735,7 @@ A read-only API for downstream systems exposing: `Study` (uid, id, id_prefix, nu
 
 * Every table has CSV / JSON / XML / Excel export (`routers/export.py` and per-router `Accept` headers).
 * `studybuilder-export` dumps the whole database or the study list (`export.py`, `export_study_list.py`) to JSON files for migration or reporting.
-* NeoDash dashboards (`neo4j-mdr-db/neodash/neodash_reports/`): activity instance export, activity library content, activity metadata check, audit trail report, CRF impact analysis, CRF library version, CT codelist term history, data exchange data models, laboratory data specification, pre-define, study metadata compare, syntax template dashboard. In the AccuraTrial deployment NeoDash is a private administrative tool only.
+* NeoDash dashboards (`neo4j-mdr-db/neodash/neodash_reports/`): activity instance export, activity library content, activity metadata check, audit trail report, CRF impact analysis, CRF library version, CT codelist term history, data exchange data models, laboratory data specification, pre-define, study metadata compare, syntax template dashboard. In the AccuraTrial deployment NeoDash is a private administrative tool only: it connects as the Neo4j `neo4j` user, and Neo4j Community has no read-only role, so it bypasses the delegated study scope that the API enforces. Development-only; not deployed to a pilot tenant (sellability plan W2.3, 2026-09-21).
 
 
 ## 15. AccuraTrial fork: additional data collected, stored and exchanged
