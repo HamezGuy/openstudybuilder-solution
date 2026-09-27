@@ -47,6 +47,12 @@ services:
       - type: volume
         source: data
         target: /data
+      # The neo4j image also declares /logs a VOLUME. Left unmounted it became
+      # an anonymous volume that every `docker compose down` (without -v) left
+      # behind on the Docker disk; named, the logs stay with the database.
+      - type: volume
+        source: logs
+        target: /logs
       # For database dumps, you can mount a folder into the container ex.:
       #- ./neo4j-dumps:/data/dumps
 
@@ -256,3 +262,6 @@ volumes:
   # Volume for storing the database on a local development environment
   data:
     name: studybuilder_database
+  # The database's logs (neo4j.log, debug.log, query.log), kept with it
+  logs:
+    name: studybuilder_database_logs

@@ -24,6 +24,18 @@ services:
       - type: bind
         source: ${DB_BACKUP_PATH:-.}
         target: /db_backup
+      # The neo4j image declares /data and /logs VOLUMEs. Left unmounted they
+      # became two anonymous volumes that every `docker compose down` (without
+      # -v) left behind on the Docker disk. Named, the test database survives
+      # `down` (the tests CREATE OR REPLACE their own databases); `docker
+      # compose down -v` starts it empty. Not tmpfs: every test database
+      # preallocates its transaction log, too much memory under `pytest -n auto`.
+      - type: volume
+        source: data
+        target: /data
+      - type: volume
+        source: logs
+        target: /logs
     healthcheck:
       test: wget --quiet --spider --timeout 2 --tries 1 "http://localhost:7474/" || exit 1
       interval: 10s
@@ -139,3 +151,8 @@ services:
       - type: bind
         source: ./reports
         target: /app/reports
+
+volumes:
+  # The test database's store and logs (see the database service)
+  data:
+  logs:

@@ -297,6 +297,12 @@ database for the next start.
 docker compose down --remove-orphans
 ```
 
+The database keeps its store and its logs in two named volumes
+(`studybuilder_database`, `studybuilder_database_logs`), so `down` leaves no
+anonymous volume behind. `node --test scripts/compose-volume-coverage.test.mjs`
+checks that every VOLUME an image declares is covered in every compose file of
+this repository.
+
 
 ## Updating to a new release
 

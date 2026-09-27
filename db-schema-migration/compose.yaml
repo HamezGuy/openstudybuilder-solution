@@ -18,6 +18,17 @@ services:
     ports:
       - "${BIND_ADDRESS:-127.0.0.1}:${NEO4J_BOLT_PORT:-7687}:7687"
       - "${BIND_ADDRESS:-127.0.0.1}:${NEO4J_HTTP_PORT:-7474}:7474"
+    # The neo4j image declares /data and /logs VOLUMEs. Left unmounted they
+    # became two anonymous volumes that every `docker compose down` (without
+    # -v) left behind on the Docker disk. Named, the database survives `down`
+    # (each migration test clears it first); `docker compose down -v` empties it.
+    volumes:
+      - type: volume
+        source: data
+        target: /data
+      - type: volume
+        source: logs
+        target: /logs
     healthcheck:
       test: wget --quiet --spider --timeout 2 --tries 1 http://localhost:${NEO4J_HTTP_PORT:-7474}/ || exit 1
       interval: 10s
@@ -41,3 +52,7 @@ services:
       UVICORN_PATH:
     ports:
       - "${API_HTTP_PORT:-8000}:8000"
+
+volumes:
+  data:
+  logs:
