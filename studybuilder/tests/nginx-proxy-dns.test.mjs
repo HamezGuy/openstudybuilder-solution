@@ -112,7 +112,7 @@ test('proxy starts without backends and preserves API routes after discovery and
     assert.equal(JSON.parse(docker('inspect', frontend))[0].RestartCount, 0);
   } finally {
     for (const name of created.reverse()) {
-      try { docker('rm', '--force', name); } catch { /* Preserve the original test error. */ }
+      try { docker('rm', '--force', '--volumes', name); } catch { /* Preserve the original test error. */ }
     }
     if (networkCreated) {
       try { docker('network', 'rm', network); } catch { /* Preserve the original test error. */ }
