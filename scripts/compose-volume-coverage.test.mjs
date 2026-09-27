@@ -25,7 +25,11 @@ import { fileURLToPath } from 'node:url';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-// Every tracked compose file, in the -f order it is used with.
+// Every tracked compose file, in the -f order it is used with. Options: env
+// (values for variables the files require), contexts (a build context that a
+// pipeline fills from another directory of the repo), partial (the files merge
+// onto a compose file outside the repo: services that name neither an image
+// nor a build only amend services defined there).
 const STACKS = [
   { files: ['compose.yaml'] },
   { files: ['compose.yaml', 'compose.production.yaml'] },
@@ -173,7 +177,7 @@ function mounts(service) {
 }
 
 let envDir;
-function composeConfig(files) {
+function composeConfig({ files, env: values = {}, partial = false }) {
   envDir ??= mkdtempSync(path.join(os.tmpdir(), 'compose-volume-guard-'));
   const emptyEnv = path.join(envDir, 'empty.env');
   writeFileSync(emptyEnv, '');
@@ -184,7 +188,10 @@ function composeConfig(files) {
   for (const name of Object.keys(env)) if (/^COMPOSE_/i.test(name)) delete env[name];
   for (const [, name] of text.matchAll(/\$\{(\w+)/g)) delete env[name];
   for (const [, name] of text.matchAll(/\$\{(\w+):?\?/g)) env[name] = PLACEHOLDER;
-  const result = spawnSync('docker', ['compose', '--env-file', emptyEnv, ...files.flatMap((file) => ['--file', file]), '--profile', '*', 'config', '--format', 'json'], {
+  Object.assign(env, values);
+  const args = ['compose', '--env-file', emptyEnv, ...files.flatMap((file) => ['--file', file]), '--profile', '*', 'config', '--format', 'json'];
+  if (partial) args.push('--no-consistency');
+  const result = spawnSync('docker', args, {
     cwd: REPO, env, encoding: 'utf8', windowsHide: true, timeout: 60000,
   });
   assert.equal(result.status, 0, `${files.join(' + ')}: ${result.stderr}`);
@@ -198,15 +205,21 @@ const serviceImages = new Map(); // image a service runs -> [{ service, covered 
 
 test('the Dockerfile reader follows ARG defaults, build args, stage parents and both VOLUME forms', () => {
   const text = [
-    '# comment', 'ARG BASE_VERSION=1', 'ARG BASE=neo4j:${BASE_VERSION}-enterprise', 'ARG TARGET=dev',
-    'FROM python:3.14-slim AS build', 'VOLUME /not/in/the/image',
+    '# comment', 'ARG BASE_VERSION=1', 'ARG BASE=example/base:${BASE_VERSION}-x', 'ARG TARGET=dev',
+    'FROM example/tool:2 AS build', 'VOLUME /not/in/the/image',
     'FROM $BASE AS common', 'VOLUME ["/extra"]',
     'FROM common AS dev-stage', 'VOLUME /a \\', '  /b',
     'FROM ${TARGET}-stage AS final',
   ].join('\n');
-  assert.deepEqual(dockerfileVolumes(text), { volumes: ['/a', '/b', '/extra', '/data', '/logs'], bases: ['neo4j:1-enterprise'] });
-  assert.deepEqual(dockerfileVolumes(text, { target: 'build' }), { volumes: ['/not/in/the/image'], bases: ['python:3.14-slim'] });
-  assert.deepEqual(dockerfileVolumes('ARG IMAGE=private/thing\nFROM $IMAGE\n'), { unknown: 'private/thing' });
+  IMAGE_VOLUMES.push([/^example\/base(:|$)/, ['/data', '/logs']], [/^example\/tool(:|$)/, []]);
+  try {
+    assert.deepEqual(dockerfileVolumes(text), { volumes: ['/a', '/b', '/extra', '/data', '/logs'], bases: ['example/base:1-x'] });
+    assert.deepEqual(dockerfileVolumes(text, { buildArgs: { BASE_VERSION: '7' }, target: 'common' }), { volumes: ['/extra', '/data', '/logs'], bases: ['example/base:7-x'] });
+    assert.deepEqual(dockerfileVolumes(text, { target: 'build' }), { volumes: ['/not/in/the/image'], bases: ['example/tool:2'] });
+    assert.deepEqual(dockerfileVolumes('ARG IMAGE=private/thing\nFROM $IMAGE\n'), { unknown: 'private/thing' });
+  } finally {
+    IMAGE_VOLUMES.splice(-2);
+  }
 });
 
 test('every tracked compose file belongs to a checked stack', () => {
@@ -219,9 +232,10 @@ test('every tracked compose file belongs to a checked stack', () => {
 
 for (const stack of STACKS) {
   test(`${stack.files.join(' + ')}: every image VOLUME is covered by a named volume, a bind or a tmpfs`, { skip: noCompose }, () => {
-    const definition = composeConfig(stack.files);
+    const definition = composeConfig(stack);
     const problems = [];
     for (const [name, service] of Object.entries(definition.services || {})) {
+      if (stack.partial && !service.image && !service.build) continue;
       const { covered, anonymous } = mounts(service);
       for (const target of anonymous) problems.push(`${name}: ${target} is mounted as an anonymous volume`);
       const ref = service.image || `${definition.name}-${name}`;
