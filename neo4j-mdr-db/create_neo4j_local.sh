@@ -8,7 +8,8 @@ if [ -n "$(docker ps -qa -f name=^/neo4j_local$)" ]; then
 		docker stop neo4j_local
 	fi
 	echo "- Removing container neo4j_local"
-	docker rm neo4j_local
+	# -v: the image's anonymous /logs volume goes with the container (/data is a bind mount)
+	docker rm -v neo4j_local
 fi
 
 # Source env file
