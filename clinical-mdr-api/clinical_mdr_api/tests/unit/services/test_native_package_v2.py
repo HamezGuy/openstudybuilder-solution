@@ -221,10 +221,10 @@ def artifact(payload, kind, schema, media, id_field, version_field):
             "stableLocator": f"artifact://test/{kind}/{payload[version_field]}",
             **(
                 {
-                    "payloadContract": "accuratrials.cc.PreReleaseApprovalV1",
+                    "payloadContract": "accuratrials.cc.PreReleaseApprovalV1" if kind == "pre-release-approval-v1" else "accuratrials.cc.PlatformManifestV1",
                     "payloadContractVersion": schema.rsplit("@", 1)[1],
                 }
-                if kind == "pre-release-approval-v1"
+                if kind in {"pre-release-approval-v1", "platform-manifest-v1"}
                 else {}
             ),
         }

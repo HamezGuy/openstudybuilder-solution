@@ -56,6 +56,27 @@ def _list(value: Any, code: str) -> list[Any]:
     return value
 
 
+def _manifest_schema_version(payload: dict[str, Any], artifact: dict[str, Any] | None = None) -> str:
+    version = payload.get("contractVersion")
+    if version == "PlatformManifestV1@1.1.0":
+        reference = _record(payload.get("studyStandards"), "OSB_STUDY_STANDARDS_REFERENCE_INVALID")
+        ids = {"nativeTenantId", "nativeStudyId", "artifactId", "artifactVersionId"}
+        if set(reference) != ids | {"contractVersion", "contentHash"} \
+                or reference.get("contractVersion") != "StudyStandardsReferenceV1@1.0.0" \
+                or any(not isinstance(reference.get(key), str) or not re.fullmatch(
+                    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", reference[key]) for key in ids) \
+                or not isinstance(reference.get("contentHash"), str) \
+                or not re.fullmatch(r"sha256:[0-9a-f]{64}", reference["contentHash"]):
+            raise OsbCandidateSetError("OSB_STUDY_STANDARDS_REFERENCE_INVALID", "Exact native standards custody reference required.", 422)
+    elif version != "PlatformManifestV1@1.0.0" or "studyStandards" in payload:
+        raise OsbCandidateSetError("OSB_PLATFORM_MANIFEST_VERSION_INVALID", "Unsupported manifest contract.", 422)
+    if artifact is not None and (artifact.get("payloadContract") != "accuratrials.cc.PlatformManifestV1"
+            or artifact.get("payloadContractVersion") != version.split("@")[1]
+            or _record(artifact.get("payloadHash"), "OSB_PLATFORM_MANIFEST_VERSION_INVALID").get("schemaVersion") != version):
+        raise OsbCandidateSetError("OSB_PLATFORM_MANIFEST_VERSION_INVALID", "Manifest descriptor version differs.", 422)
+    return version
+
+
 def _approval_schema_version(artifact: dict[str, Any]) -> str:
     version = artifact.get("payloadContractVersion")
     payload_hash = _record(artifact.get("payloadHash"), "OSB_PRE_RELEASE_APPROVAL_CONTRACT_VERSION_INVALID")
@@ -137,7 +158,8 @@ def store_release_artifact_bytes(
     if sha256_bytes(bytes_value) != expected_hash:
         raise OsbCandidateSetError("OSB_RELEASE_ARTIFACT_TRANSFER_HASH_MISMATCH", "Artifact bytes differ.", 422)
     payload = _parse_canonical(bytes_value, "OSB_RELEASE_ARTIFACT_JSON_INVALID")
-    if payload.get("contractVersion", payload.get("approval_version")) != contract[0]:
+    contract_version = _manifest_schema_version(payload) if kind == "platform-manifest-v1" else contract[0]
+    if payload.get("contractVersion", payload.get("approval_version")) != contract_version:
         raise OsbCandidateSetError("OSB_RELEASE_ARTIFACT_CONTRACT_MISMATCH", "Artifact contract differs.", 422)
     if _artifact_scope(payload, kind) != (tenant_id, platform_study_id):
         raise OsbCandidateSetError("OSB_RELEASE_ARTIFACT_SCOPE_MISMATCH", "Artifact tenant/study scope differs.", 422)
@@ -382,7 +404,7 @@ def generate_native_package_v2(
     _verify_artifact_ref(checkpoint, checkpoint_artifact, kind="transformation-checkpoint", tenant_id=tenant_id,
                          platform_study_id=platform_study_id, schema_version="TransformationCheckpointV1@1.0.0", media_type=CHECKPOINT_MEDIA_TYPE)
     _verify_artifact_ref(manifest, manifest_artifact, kind="platform-manifest-v1", tenant_id=tenant_id,
-                         platform_study_id=platform_study_id, schema_version="PlatformManifestV1@1.0.0", media_type=PLATFORM_MANIFEST_MEDIA_TYPE)
+                         platform_study_id=platform_study_id, schema_version=_manifest_schema_version(manifest, manifest_artifact), media_type=PLATFORM_MANIFEST_MEDIA_TYPE)
     _verify_artifact_ref(approval, approval_artifact, kind="pre-release-approval-v1", tenant_id=tenant_id,
                          platform_study_id=platform_study_id, schema_version=_approval_schema_version(approval_artifact),
                          media_type=PRE_RELEASE_APPROVAL_MEDIA_TYPE)
@@ -430,7 +452,9 @@ def generate_native_package_v2(
     package_id = str(uuid5(NAMESPACE_URL, f"accuratrials:osb-native-package-v2:{seed['value']}"))
     package_version_id = str(uuid5(NAMESPACE_URL, f"{package_id}:{content_index_hash['value']}"))
     created_at = datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
-    package = {"contractVersion": "OsbNativePackageV2@2.0.0",
+    package_version = "2.1.0" if manifest["contractVersion"] == "PlatformManifestV1@1.1.0" else "2.0.0"
+    package_contract = f"OsbNativePackageV2@{package_version}"
+    package = {"contractVersion": package_contract,
                "packageId": package_id, "packageVersionId": package_version_id,
                "tenantId": tenant_id, "platformStudyId": platform_study_id,
                "osbStudyIdentity": {"nativeIdentity": native_study_id,
@@ -443,6 +467,7 @@ def generate_native_package_v2(
                "specialistReviewLockReceipt": review_artifact,
                "preReleaseApproval": approval_artifact,
                "platformManifest": manifest_artifact,
+               **({"studyStandards": manifest["studyStandards"]} if package_version == "2.1.0" else {}),
                "profiles": {"projectionRuleset": request.get("projectionRuleset"),
                             "exclusionPolicy": checkpoint.get("exclusionPolicy"), "nativeState": STATE_SCHEMA},
                **content,
@@ -456,7 +481,7 @@ def generate_native_package_v2(
                "productionEligible": False, "createdAt": created_at, "createdBy": actor}
     package_bytes = canonical_json(package).encode("utf-8")
     package_hash = raw_bytes_hash_ref(package_bytes, media_type=PACKAGE_V2_MEDIA_TYPE,
-                                      schema_version="OsbNativePackageV2@2.0.0")
+                                      schema_version=package_contract)
     artifact = _artifact_ref({"artifactId": package_id, "artifactVersionId": package_version_id,
                               "kind": "osb-native-package-v2",
                               "stableLocator": f"artifact://osb/native-package-v2/{package_version_id}",
@@ -465,7 +490,7 @@ def generate_native_package_v2(
                               "region": "us-central1", "producerService": "osb.clinical-mdr-api",
                               "producerEnvironment": "prototype", "producerVersion": "prototype",
                               "payloadContract": "accuratrials.osb.OsbNativePackageV2",
-                              "payloadContractVersion": "2.0.0", "purpose": "edc-deployment",
+                              "payloadContractVersion": package_version, "purpose": "edc-deployment",
                               "createdAt": created_at})
     prior, _ = db.cypher_query(
         "MATCH (package:OsbNativePackageV2 {tenant_id:$tenant_id,platform_study_id:$platform_study_id,package_version_id:$version_id}) "
@@ -481,7 +506,7 @@ def generate_native_package_v2(
         retained_artifact = _parse_canonical(str(prior[0][1]).encode("utf-8"), "OSB_PACKAGE_REPLAY_INVALID")
         _verify_artifact_ref(retained, retained_artifact, kind="osb-native-package-v2",
                              tenant_id=tenant_id, platform_study_id=platform_study_id,
-                             schema_version="OsbNativePackageV2@2.0.0", media_type=PACKAGE_V2_MEDIA_TYPE)
+                             schema_version=package_contract, media_type=PACKAGE_V2_MEDIA_TYPE)
         if prior[0][2] != package_version_id or prior[0][3] != retained_artifact["payloadHash"]["value"] \
                 or prior[0][4] != len(retained_bytes) \
                 or canonical_json({key: value for key, value in retained.items() if key != "createdAt"}) != \
