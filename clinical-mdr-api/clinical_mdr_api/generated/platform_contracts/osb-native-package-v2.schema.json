@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schemas.accuratrials.com/osb/OsbNativePackageV2/2.1",
+  "$id": "https://schemas.accuratrials.com/osb/OsbNativePackageV2/2.2",
   "title": "OsbNativePackageV2",
   "type": "object",
   "additionalProperties": false,
@@ -37,7 +37,8 @@
     "contractVersion": {
       "enum": [
         "OsbNativePackageV2@2.0.0",
-        "OsbNativePackageV2@2.1.0"
+        "OsbNativePackageV2@2.1.0",
+        "OsbNativePackageV2@2.2.0"
       ]
     },
     "packageId": {
@@ -202,6 +203,98 @@
           "pattern": "^sha256:[0-9a-f]{64}$"
         }
       }
+    },
+    "CanonicalStudyDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "nativeStudyId",
+        "nativeVersion",
+        "document",
+        "selection",
+        "mappingReport",
+        "nativeRecords"
+      ],
+      "properties": {
+        "contractVersion": {
+          "const": "OsbCanonicalStudyDefinitionV1@1.0.0"
+        },
+        "nativeStudyId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nativeVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "document": {
+          "type": "object",
+          "required": [
+            "usdmVersion",
+            "study"
+          ],
+          "properties": {
+            "usdmVersion": {
+              "const": "4.0.0"
+            },
+            "study": {
+              "type": "object"
+            }
+          }
+        },
+        "selection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "versionId",
+            "designId"
+          ],
+          "properties": {
+            "versionId": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "designId": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "mappingReport": {
+          "type": "object",
+          "required": [
+            "state",
+            "studyUid",
+            "studyValueVersion",
+            "issues"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "complete",
+                "incomplete"
+              ]
+            },
+            "studyUid": {
+              "type": "string"
+            },
+            "studyValueVersion": {
+              "type": "string"
+            },
+            "issues": {
+              "type": "array"
+            }
+          }
+        },
+        "nativeRecords": {
+          "type": "array"
+        }
+      }
     }
   },
   "allOf": [
@@ -222,12 +315,68 @@
         }
       },
       "else": {
-        "not": {
-          "required": [
-            "studyStandards"
-          ],
+        "if": {
           "properties": {
-            "studyStandards": {}
+            "contractVersion": {
+              "const": "OsbNativePackageV2@2.0.0"
+            }
+          }
+        },
+        "then": {
+          "not": {
+            "required": [
+              "studyStandards"
+            ],
+            "properties": {
+              "studyStandards": {}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "contractVersion": {
+            "const": "OsbNativePackageV2@2.2.0"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "studyDesign": {
+            "type": "object",
+            "required": [
+              "root",
+              "canonicalDefinition"
+            ],
+            "properties": {
+              "canonicalDefinition": {
+                "$ref": "#/$defs/CanonicalStudyDefinition"
+              }
+            }
+          },
+          "profiles": {
+            "type": "object",
+            "required": [
+              "nativeState"
+            ],
+            "properties": {
+              "nativeState": {
+                "const": "OsbPackageNativeStateV1@1.1.0"
+              }
+            }
+          },
+          "provenancePins": {
+            "type": "object",
+            "required": [
+              "canonicalDefinitionHash"
+            ],
+            "properties": {
+              "canonicalDefinitionHash": {
+                "$ref": "#/$defs/HashRef"
+              }
+            }
           }
         }
       }

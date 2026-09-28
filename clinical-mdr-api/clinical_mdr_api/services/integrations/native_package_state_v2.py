@@ -13,6 +13,7 @@ from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
 from neomodel import db
+from clinical_mdr_api.services.ddf.usdm_service import USDMService
 
 from clinical_mdr_api.generated.platform_contracts.hash_signing_v1 import (
     canonical_json,
@@ -54,7 +55,8 @@ from clinical_mdr_api.services.integrations.study_metadata_mapping import (
 NATIVE_SCHEMA = "OsbNativeTargetReadBackV1@1.0.0"
 METADATA_SCHEMA = "OsbStudyMetadataReadBackV1@1.0.0"
 MANAGED_SCHEMA = "OsbManagedStudyConceptV1@1.0.0"
-STATE_SCHEMA = "OsbPackageNativeStateV1@1.0.0"
+STATE_SCHEMA = "OsbPackageNativeStateV1@1.1.0"
+DEFINITION_SCHEMA = "OsbCanonicalStudyDefinitionV1@1.0.0"
 EVIDENCE_MEDIA = "application/vnd.accuratrials.osb-native-evidence-set-v1+json"
 REQUEST_MEDIA = "application/vnd.accuratrials.osb-candidate-request-v1+json"
 CANDIDATE_MEDIA = "application/vnd.accuratrials.osb-candidate-set-v1+json"
@@ -918,6 +920,35 @@ def load_checkpoint_native_state(
         }
         for item in records
     ]
+    # Use the existing native mapper at the checkpoint's exact study version.
+    # Its report and original native rows are part of the review commitment:
+    # an incomplete source stays an honest draft, never a fabricated design.
+    exported = USDMService().get_by_uid_with_report(
+        root["nativeStudyId"], study_value_version=root["nativeVersion"]
+    )
+    report = _record(exported.get("mappingReport"))
+    document = _record(exported.get("document"))
+    _require(
+        report.get("studyUid") == root["nativeStudyId"]
+        and report.get("studyValueVersion") == root["nativeVersion"]
+        and document.get("usdmVersion") == "4.0.0",
+        "OSB_CANONICAL_DEFINITION_SCOPE_MISMATCH",
+    )
+    versions = _list(_record(document.get("study")).get("versions"))
+    designs = _list(versions[0].get("studyDesigns")) if len(versions) == 1 else []
+    definition = {
+        "contractVersion": DEFINITION_SCHEMA,
+        "nativeStudyId": root["nativeStudyId"],
+        "nativeVersion": root["nativeVersion"],
+        "document": document,
+        "selection": {
+            "versionId": versions[0].get("id") if len(versions) == 1 else None,
+            "designId": designs[0].get("id") if len(designs) == 1 else None,
+        },
+        "mappingReport": report,
+        "nativeRecords": _list(exported.get("nativeRecords")),
+    }
+    definition_hash = _hash(definition, DEFINITION_SCHEMA)
     state = {
         "contractVersion": STATE_SCHEMA,
         "tenantId": tenant_id,
@@ -925,6 +956,7 @@ def load_checkpoint_native_state(
         "root": root,
         "nativeEvidenceSetHash": checkpoint["nativeEvidenceSetHash"],
         "contentIndex": index,
+        "canonicalDefinitionHash": definition_hash,
     }
     return {
         "root": root,
@@ -932,6 +964,8 @@ def load_checkpoint_native_state(
         "contentIndex": index,
         "contentIndexHash": _hash(index, "OsbPackageContentIndexV1@1.0.0"),
         "stateHash": _hash(state, STATE_SCHEMA),
+        "canonicalDefinition": definition,
+        "canonicalDefinitionHash": definition_hash,
         "request": custody["request"],
         "requestHash": custody["requestHash"],
         "decisionHash": custody["decisionHash"],

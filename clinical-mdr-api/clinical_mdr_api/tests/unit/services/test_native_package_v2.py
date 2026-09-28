@@ -738,6 +738,19 @@ def setup(
     store = MemoryStore(producer(spec, request_version, metadata_mode, capture_graph))
     DB.cypher_query = store.cypher_query
     METADATA["NativeStudyMetadataPort"] = lambda: store.metadata
+    # Replace only the native USDM read port, like the other native readers.
+    # This suite exercises package custody, not USDM mapping or conformance.
+    def read_definition(uid, study_value_version=None):
+        return {
+            "document": {"usdmVersion": "4.0.0", "study": {
+                "id": uid, "instanceType": "Study", "name": store.title, "versions": [],
+            }},
+            "mappingReport": {"state": "incomplete", "studyUid": uid,
+                              "studyValueVersion": study_value_version,
+                              "issues": [{"code": "SYNTHETIC_PACKAGE_FIXTURE"}]},
+            "nativeRecords": [],
+        }
+    STATE["USDMService"] = lambda: SimpleNamespace(get_by_uid_with_report=read_definition)
     if store.capture is not None:
         CAPTURE_MAPPING["NativeCapturePort"] = lambda: store.capture
     return store

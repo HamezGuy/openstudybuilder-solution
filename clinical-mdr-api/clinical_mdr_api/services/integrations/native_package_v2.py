@@ -259,6 +259,7 @@ def _package_content(state: dict[str, Any]) -> dict[str, Any]:
     families = sorted({item["resourceFamily"] for item in records})
     return {
         "studyDesign": {"root": state["root"],
+                        "canonicalDefinition": state["canonicalDefinition"],
                         "managedConcepts": [item for item in records if item["kind"] == "managed" and item["resourceFamily"] not in CAPTURE_FAMILIES],
                         "nativeRecords": [item for item in records if item["kind"] == "native" and item["resourceFamily"] not in CAPTURE_FAMILIES]},
         "captureDesign": {"managedConcepts": [item for item in records if item["kind"] == "managed" and item["resourceFamily"] in CAPTURE_FAMILIES],
@@ -328,7 +329,8 @@ def record_specialist_review(
               "osbAuthorityHash": expected_authority,
               "managedConceptCount": sum(item["kind"] == "managed" for item in records),
               "nativeObjectCount": sum(item["kind"] == "native" for item in records),
-              "nativeStateHash": state["stateHash"], "nativeLockEvidence": lock, **reviewed_fields,
+              "nativeStateHash": state["stateHash"], "nativeLockEvidence": lock,
+              "canonicalDefinitionHash": state["canonicalDefinitionHash"], **reviewed_fields,
               "lockState": "checkpoint-locked", "productionEligible": False,
               "reviewedAt": reviewed_at}
     review_hash = canonical_json_hash_ref(review, schema_version="OsbSpecialistReviewEvidenceV1@1.0.0",
@@ -452,7 +454,7 @@ def generate_native_package_v2(
     package_id = str(uuid5(NAMESPACE_URL, f"accuratrials:osb-native-package-v2:{seed['value']}"))
     package_version_id = str(uuid5(NAMESPACE_URL, f"{package_id}:{content_index_hash['value']}"))
     created_at = datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
-    package_version = "2.1.0" if manifest["contractVersion"] == "PlatformManifestV1@1.1.0" else "2.0.0"
+    package_version = "2.2.0"
     package_contract = f"OsbNativePackageV2@{package_version}"
     package = {"contractVersion": package_contract,
                "packageId": package_id, "packageVersionId": package_version_id,
@@ -467,7 +469,7 @@ def generate_native_package_v2(
                "specialistReviewLockReceipt": review_artifact,
                "preReleaseApproval": approval_artifact,
                "platformManifest": manifest_artifact,
-               **({"studyStandards": manifest["studyStandards"]} if package_version == "2.1.0" else {}),
+               **({"studyStandards": manifest["studyStandards"]} if "studyStandards" in manifest else {}),
                "profiles": {"projectionRuleset": request.get("projectionRuleset"),
                             "exclusionPolicy": checkpoint.get("exclusionPolicy"), "nativeState": STATE_SCHEMA},
                **content,
@@ -476,6 +478,7 @@ def generate_native_package_v2(
                                   "candidateRequestHash": state["requestHash"],
                                   "candidateSetHash": state["candidateSetHash"], "decisionHash": state["decisionHash"],
                                   "nativeStateHash": state["stateHash"],
+                                  "canonicalDefinitionHash": state["canonicalDefinitionHash"],
                                   "sourceFactPackageHash": source_fact.get("payloadHash"),
                                   "nativeEvidenceSetHash": checkpoint.get("nativeEvidenceSetHash")},
                "productionEligible": False, "createdAt": created_at, "createdBy": actor}
