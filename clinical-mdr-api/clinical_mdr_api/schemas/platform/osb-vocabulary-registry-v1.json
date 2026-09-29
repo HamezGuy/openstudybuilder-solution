@@ -6,7 +6,7 @@
   "sources": {
     "ruleset": {
       "path": "packages/mappings/il-to-usdm-v4.rules.json",
-      "version": "1.17.0"
+      "version": "1.19.0"
     },
     "generatedModule": "packages/semantic-core/src/generated/osb-vocabulary-registry.ts (scripts/generate-osb-vocabulary.mjs, part of contracts:generate and contracts:check)",
     "osbCopy": "clinical_mdr_api/schemas/platform/osb-vocabulary-registry-v1.json (registry:export-osb-vocabulary; byte identical)",
