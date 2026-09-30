@@ -1,4 +1,14 @@
 # Docker Compose file for preview environment and building docker images in pipelines
+#
+# AccuraTrial fork of the OpenStudyBuilder 2.10 layout. The service topology is
+# the fork's (Command Center is the gateway; named volumes, ports and auth
+# defaults are unchanged from 2.9); only the build contexts follow upstream's
+# renamed component directories (api/, frontend/, db/, documentation_portal/,
+# neodash/). Upstream's single-port `gateway` service is available on demand:
+#   docker compose --profile gateway up -d
+# Building the seeded database image needs a build-only Neo4j password, passed
+# as a BuildKit secret so it never lands in an image layer:
+#   NEO4J_MDR_AUTH_PASSWORD=<any build password> docker compose build database
 
 services:
 
@@ -18,13 +28,18 @@ services:
         NEO4J_server_memory_heap_initial__size: "${NEO4J_BUILD_HEAP_INITIAL:-1G}"
         NEO4J_server_memory_heap_max__size: "${NEO4J_BUILD_HEAP_MAX:-3G}"
         NEO4J_server_memory_pagecache_size: "${NEO4J_BUILD_PAGECACHE:-1G}"
-        CDISC_DATA_DIR: ${CDISC_DATA_DIR:-mdr_standards_import/container_booting/}
-        # Seed with a build-only credential. The production database backup does
-        # not contain the system auth database; runtime auth is set below.
-        NEO4J_MDR_AUTH_PASSWORD: "build-only-not-runtime"
+        # Relative to import_standards/ inside the build (db/Dockerfile).
+        CDISC_DATA_DIR: ${CDISC_DATA_DIR:-src/container_booting}
         UID: ${UID:-1000}
+        EXTRA_CA_CERT: ${EXTRA_CA_CERT:-}
       context: ./
-      dockerfile: database.Dockerfile
+      dockerfile: db/Dockerfile
+      # The seed build's Neo4j password is build-only: the seeded backup holds
+      # only the mdrdb user database, never the system auth database, so the
+      # runtime password below is independent of it. BuildKit secret, never a
+      # build arg, so it cannot land in image layers, history or cache.
+      secrets:
+        - neo4j_mdr_auth_password
     image: ${DATABASE_IMAGE:-}
     environment:
       NEO4J_ACCEPT_LICENSE_AGREEMENT: "yes"
@@ -60,7 +75,7 @@ services:
   api:
     restart: unless-stopped
     build:
-      context: ./clinical-mdr-api
+      context: ./api
       dockerfile: Dockerfile
       args:
         TARGET: ${BUILD_TARGET:-dev}
@@ -135,7 +150,7 @@ services:
   consumerapi:
     restart: unless-stopped
     build:
-      context: ./clinical-mdr-api
+      context: ./api
       dockerfile: Dockerfile
       args:
         TARGET: ${BUILD_TARGET:-dev}
@@ -162,7 +177,7 @@ services:
   extensionsapi:
     restart: unless-stopped
     build:
-      context: ./clinical-mdr-api
+      context: ./api
       dockerfile: Dockerfile
       args:
         TARGET: ${BUILD_TARGET:-dev}
@@ -184,6 +199,8 @@ services:
       UVICORN_PORT: 5009
       UVICORN_ROOT_PATH: "/extensions-api"
       UVICORN_APP: extensions.extensions_api:app
+      # 2.10: the extensions API calls the main API over the compose network.
+      API_BASE_URL: "${API_BASE_URL:-http://api:5003/api}"
 
   # Frontend image for production (see UI service for local development)
   frontend:
@@ -192,7 +209,10 @@ services:
       args:
         NGINX_IMAGE: ${NGINX_IMAGE:-nginx:alpine}
         NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
-      context: ./studybuilder
+        # The frontend container proxies /api, /doc and /neodash itself.
+        NGINX_CONF: standalone
+        PORT: 5005
+      context: ./frontend
       dockerfile: Dockerfile
     image: ${FRONTEND_IMAGE:-}
     extra_hosts:
@@ -223,7 +243,7 @@ services:
       args:
         NGINX_IMAGE: ${NGINX_IMAGE:-nginx:alpine}
         NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
-      context: ./documentation-portal
+      context: ./documentation_portal
       dockerfile: Dockerfile
     image: ${DOCUMENTATION_IMAGE:-}
 
@@ -232,7 +252,7 @@ services:
     restart: unless-stopped
     image: ${NEODASH_IMAGE:-}
     build:
-      context: ./osb-neodash
+      context: ./neodash
       dockerfile: Dockerfile
       args:
         NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
@@ -257,6 +277,29 @@ services:
       - standaloneUsername=neo4j
       - standalonePassword=${NEO4J_PASSWORD:-changeme1234}
 
+  # Upstream 2.10's single-port reverse proxy (frontend, APIs, docs, NeoDash
+  # and the Neo4j browser on one local address). Opt-in only: in the platform
+  # Command Center is the gateway, and this proxy carries no authentication.
+  gateway:
+    profiles: [gateway]
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+      args:
+        NGINX_IMAGE: ${NGINX_IMAGE:-nginx:alpine}
+    image: ${GATEWAY_IMAGE:-}
+    depends_on:
+      frontend:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${GATEWAY_PORT:-8080}:80"
+
+secrets:
+  # Build-only Neo4j password for the seeded database image (see database).
+  neo4j_mdr_auth_password:
+    environment: NEO4J_MDR_AUTH_PASSWORD
 
 volumes:
   # Volume for storing the database on a local development environment

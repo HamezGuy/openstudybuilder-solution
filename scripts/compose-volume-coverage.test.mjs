@@ -7,8 +7,8 @@
 // mounts nothing over becomes an anonymous volume, and `docker compose down`
 // (without -v) leaves it behind, so every down/up cycle strands one more. The
 // neo4j images declare /data and /logs: the root `database` service covered
-// only /data, and the clinical-mdr-api and db-schema-migration databases
-// covered neither.
+// only /data, and the api and db_schema_migration databases covered neither.
+// (Component directories as renamed by OpenStudyBuilder 2.10.)
 //
 // The guard resolves every compose stack exactly as Docker Compose merges it
 // (`docker compose config`) and requires each VOLUME of each service's image
@@ -33,19 +33,18 @@ const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const STACKS = [
   { files: ['compose.yaml'] },
   { files: ['compose.yaml', 'compose.production.yaml'] },
-  { files: ['clinical-mdr-api/compose.yaml'] },
-  { files: ['clinical-mdr-api/compose.yaml', 'clinical-mdr-api/compose.dev.yaml'] },
-  // Its pipeline checks clinical-mdr-api out into ./clinical_mdr_api before building.
-  { files: ['db-schema-migration/compose.yaml'], contexts: { 'db-schema-migration/clinical_mdr_api': 'clinical-mdr-api' } },
-  { files: ['documentation-portal/compose.yaml'] },
-  { files: ['mdr-standards-import/compose.yaml'] },
-  { files: ['neo4j-mdr-db/compose.yaml'] },
-  { files: ['studybuilder/compose.yaml'] },
-  { files: ['studybuilder/compose.dev.yaml'] },
-  { files: ['studybuilder-export/compose.yaml'] },
-  { files: ['studybuilder-import/compose.yaml'] },
-  { files: ['studybuilder-import/compose.yaml', 'studybuilder-import/compose.override.yaml'] },
-  { files: ['system-tests/ui-tests/compose.yaml'] },
+  { files: ['api/compose.yaml'] },
+  { files: ['api/compose.yaml', 'api/compose.dev.yaml'] },
+  { files: ['db_schema_migration/compose.yaml'] },
+  { files: ['documentation_portal/compose.yaml'] },
+  { files: ['import_standards/compose.yaml'] },
+  { files: ['frontend/compose.yaml'] },
+  { files: ['frontend/compose.dev.yaml'] },
+  { files: ['export/compose.yaml'] },
+  { files: ['import_sponsor_data/compose.yaml'] },
+  { files: ['import_sponsor_data/compose.yaml', 'import_sponsor_data/compose.override.yaml'] },
+  { files: ['system_tests/ui-tests/compose.yaml'] },
+  { files: ['system_tests/neodash-test/compose.yaml'] },
 ];
 
 // VOLUMEs declared by images a service runs without building them here:
@@ -59,8 +58,8 @@ const IMAGE_VOLUMES = [
   [/^(python|node|nginx)(:|@|$)/, []],
   [/^cypress\/browsers(:|@|$)/, []],
   [/^openzipkin\/zipkin(:|@|$)/, []],
-  [/^clinical-mdr-api(:|$)/, { dockerfile: 'clinical-mdr-api/Dockerfile' }],
-  [/^osb-import(:|$)/, { dockerfile: 'studybuilder-import/Dockerfile' }],
+  [/^clinical-mdr-api(:|$)/, { dockerfile: 'api/Dockerfile' }],
+  [/^osb-import(:|$)/, { dockerfile: 'import_sponsor_data/Dockerfile' }],
 ];
 
 // Images nobody can inspect from here, with the reason. The Docker-gated test
@@ -120,6 +119,9 @@ export function parseDockerfile(text) {
 // and its base image): { volumes, bases } or { unknown } for an unlisted base.
 export function dockerfileVolumes(text, { buildArgs = {}, target, label = 'Dockerfile' } = {}) {
   const { args, stages } = parseDockerfile(text);
+  // An empty Dockerfile (upstream's placeholder for the NeoDash report
+  // service) builds no image, so it declares no VOLUME.
+  if (!stages.length && !String(text).trim()) return { volumes: [], bases: [] };
   const vars = new Map();
   for (const [name, fallback] of args) {
     vars.set(name, buildArgs[name] != null ? String(buildArgs[name]) : fallback === undefined ? undefined : substitute(fallback, vars));

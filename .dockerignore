@@ -2,7 +2,7 @@
 **/.git
 .env*
 **/.env*
-!studybuilder-import/.env.import
+!import_sponsor_data/.env.import
 **/node_modules
 **/__pycache__
 **/.pytest_cache

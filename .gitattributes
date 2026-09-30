@@ -3,5 +3,5 @@
 *.awk text eol=lf
 
 # Preserve the exact normative bytes used by generated bindings and the CC registry.
-/clinical-mdr-api/clinical_mdr_api/schemas/platform/osb-candidate-request-v1.schema.json text eol=lf
-/clinical-mdr-api/clinical_mdr_api/schemas/platform/osb-candidate-set-v1.schema.json text eol=lf
+/api/clinical_mdr_api/schemas/platform/osb-candidate-request-v1.schema.json text eol=lf
+/api/clinical_mdr_api/schemas/platform/osb-candidate-set-v1.schema.json text eol=lf
