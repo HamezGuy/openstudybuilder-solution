@@ -3,5 +3,10 @@
 *.awk text eol=lf
 
 # Preserve the exact normative bytes used by generated bindings and the CC registry.
-/api/clinical_mdr_api/schemas/platform/osb-candidate-request-v1.schema.json text eol=lf
-/api/clinical_mdr_api/schemas/platform/osb-candidate-set-v1.schema.json text eol=lf
+# Command Center and CSL hash these working-tree files byte for byte; a CRLF
+# checkout (core.autocrlf) would read as a changed contract.
+/api/clinical_mdr_api/schemas/platform/** text eol=lf
+/api/clinical_mdr_api/generated/platform_contracts/** text eol=lf
+/api/clinical_mdr_api/models/integrations/** text eol=lf
+/api/clinical_mdr_api/services/integrations/source_draft_stage.py text eol=lf
+/api/clinical_mdr_api/services/integrations/native_capture_projection.py text eol=lf
