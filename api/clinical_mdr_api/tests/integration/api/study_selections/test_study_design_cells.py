@@ -504,9 +504,10 @@ def test_study_design_cell_with_study_epoch_relationship(api_client):
     )
     for i, _ in enumerate(before_unlock_epochs["items"]):
         before_unlock_epochs["items"][i]["study_version"] = mock.ANY
-    assert (
+    assert TestUtils.without_reading_provenance(
         before_unlock_epochs
-        == api_client.get(
+    ) == TestUtils.without_reading_provenance(
+        api_client.get(
             f"/studies/{study.uid}/study-epochs?study_value_version=2"
         ).json()
     )

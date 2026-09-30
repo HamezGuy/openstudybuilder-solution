@@ -331,6 +331,9 @@ class StudySelectionCompoundsAR:
         compound_exist_callback: Callable[[str], bool] = lambda _: True,
         compound_alias_exist_callback: Callable[[str], bool] = lambda _: True,
         medicinal_product_exist_callback: Callable[[str], bool] = lambda _: True,
+        medicinal_product_callback: Callable[..., MedicinalProductAR | None] = (
+            lambda _: None
+        ),
     ) -> None:
         """
         Used when a study compound is updated
@@ -345,6 +348,7 @@ class StudySelectionCompoundsAR:
             compound_exist_callback=compound_exist_callback,
             compound_alias_exist_callback=compound_alias_exist_callback,
             medicinal_product_exist_callback=medicinal_product_exist_callback,
+            medicinal_product_callback=medicinal_product_callback,
         )
         updated_selection = []
         for selection in self.study_compounds_selection:

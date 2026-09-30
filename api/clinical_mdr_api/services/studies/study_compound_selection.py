@@ -461,6 +461,9 @@ class StudyCompoundSelectionService(
                 compound_exist_callback=repos.compound_repository.final_concept_exists,
                 compound_alias_exist_callback=repos.compound_alias_repository.final_concept_exists,
                 medicinal_product_exist_callback=repos.medicinal_product_repository.final_concept_exists,
+                # An edit must keep the alias and the product on one compound,
+                # exactly as creation does.
+                medicinal_product_callback=repos.medicinal_product_repository.find_by_uid_2,
             )
 
             # sync with DB and save the update

@@ -71,6 +71,28 @@ class StudyCompoundSelectionHistory:
     order: int
 
 
+_EPOCH = datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc)
+
+
+def _history_instant(history_date: datetime.datetime | None) -> dict[str, int | None]:
+    """Identify a historical StudyAction by the instant of its date.
+
+    The date arrives here after a read round trip; matching on epoch seconds and
+    microseconds keeps the lookup independent of how its timezone is represented.
+    """
+    if history_date is None:
+        return {"history_epoch_seconds": None, "history_microsecond": None}
+    aware = (
+        history_date
+        if history_date.tzinfo is not None
+        else history_date.replace(tzinfo=datetime.timezone.utc)
+    )
+    return {
+        "history_epoch_seconds": (aware - _EPOCH) // datetime.timedelta(seconds=1),
+        "history_microsecond": aware.microsecond,
+    }
+
+
 class StudySelectionCompoundRepository:
 
     def get_selected_library_references(
@@ -90,10 +112,12 @@ class StudySelectionCompoundRepository:
             )
             scope = """
                 MATCH (sr:StudyRoot {uid: $study_uid})-[:AUDIT_TRAIL]->
-                    (dsa:StudyAction {date: $history_date})-[:AFTER]->
+                    (dsa:StudyAction)-[:AFTER]->
                     (scd:StudyCompoundDosing {uid: $history_dosing_uid})
                     <-[:STUDY_COMPOUND_HAS_COMPOUND_DOSING]-
                     (sc:StudyCompound {uid: $study_compound_uid})
+                WHERE dsa.date.epochSeconds = $history_epoch_seconds
+                    AND dsa.date.microsecond = $history_microsecond
                 MATCH (sr)-[:AUDIT_TRAIL]->(:StudyAction)-[:AFTER]->(sc)
             """
             scope_identity = "elementId(sc)"
@@ -124,7 +148,8 @@ class StudySelectionCompoundRepository:
         rows = utils.db_result_to_list(db.cypher_query(query, {
             "study_uid": study_uid, "study_compound_uid": study_compound_uid,
             "study_value_version": study_value_version,
-            "history_dosing_uid": history_dosing_uid, "history_date": history_date,
+            "history_dosing_uid": history_dosing_uid,
+            **_history_instant(history_date),
         }))
         if len(rows) != 1:
             raise BusinessLogicException(
@@ -399,13 +424,15 @@ class StudySelectionCompoundRepository:
             "study_uid": study_uid,
             "study_compound_uid": study_compound_uid,
             "study_compound_dosing_uid": study_compound_dosing_uid,
-            "history_date": history_date,
+            **_history_instant(history_date),
         }
         query = """
         MATCH (sr:StudyRoot {uid: $study_uid})-[:AUDIT_TRAIL]->
-            (dsa:StudyAction {date: $history_date})-[:AFTER]->
+            (dsa:StudyAction)-[:AFTER]->
             (scd:StudyCompoundDosing {uid: $study_compound_dosing_uid})
             <-[:STUDY_COMPOUND_HAS_COMPOUND_DOSING]-(sc:StudyCompound {uid: $study_compound_uid})
+        WHERE dsa.date.epochSeconds = $history_epoch_seconds
+            AND dsa.date.microsecond = $history_microsecond
         MATCH (sr)-[:AUDIT_TRAIL]->(sa:StudyAction)-[:AFTER]->(sc)
         OPTIONAL MATCH (sc)-[:HAS_SELECTED_COMPOUND]->(:CompoundAliasValue)<-[:HAS_VERSION]-(car:CompoundAliasRoot)
         OPTIONAL MATCH (sc)-[:HAS_SELECTED_COMPOUND]->(:CompoundAliasValue)-[:IS_COMPOUND]->(cr:CompoundRoot)

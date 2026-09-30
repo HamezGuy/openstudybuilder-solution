@@ -622,11 +622,14 @@ def test_get_history_of_all_selections(api_client):
     assert res[0]["change_type"] == "Create"
     assert res[0]["order"] == 1
     assert res[0]["study_endpoint_uid"] == "StudyEndpoint_000001"
-    assert res[0]["study_objective"]["endpoint_count"] == 1
-    assert res[0]["study_objective"]["accepted_version"] is False
+    # AccuraTrial fork: an audit row carries the objective revision that was
+    # current at that endpoint action, not today's objective, so it has no
+    # present-day endpoint_count, accepted_version or latest_objective.
+    assert res[0]["study_objective"]["study_objective_uid"] == "StudyObjective_000001"
+    assert res[0]["study_objective"]["change_type"] == "Create"
+    assert "endpoint_count" not in res[0]["study_objective"]
     assert res[0]["study_objective"]["start_date"] is not None
     assert res[0]["study_objective"]["author_username"] == "unknown-user@example.com"
-    assert res[0]["study_objective"]["latest_objective"] is None
     assert (
         res[0]["study_objective"]["objective"]["change_description"]
         == "Approved version"

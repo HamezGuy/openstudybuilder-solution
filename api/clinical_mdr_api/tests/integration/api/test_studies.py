@@ -679,9 +679,10 @@ def test_get_protocol_title_for_specific_version(api_client):
     compound_alias = TestUtils.create_compound_alias(
         name="compAlias-AAA", compound_uid=compound.uid, approve=True
     )
-    compound2 = TestUtils.create_compound(name="name-BBB", approve=True)
+    # A second alias of the same compound: the edit after the lock must keep
+    # the selection's alias and medicinal product on one compound.
     compound_alias2 = TestUtils.create_compound_alias(
-        name="compAlias-BBB", compound_uid=compound2.uid, approve=True
+        name="compAlias-BBB", compound_uid=compound.uid, approve=True
     )
     catalogue_name, library_name = get_catalogue_name_library_name(use_test_utils=True)
     type_of_trt_codelist = create_codelist(

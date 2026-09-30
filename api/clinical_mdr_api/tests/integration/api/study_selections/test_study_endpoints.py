@@ -349,7 +349,10 @@ def test_study_endpoint_modify_actions_on_locked_study(api_client):
     assert_response_status_code(response, 200)
     res = response.json()
     for i, _ in enumerate(old_res):
-        old_res[i]["study_objective"]["study_version"] = mock.ANY
+        # AccuraTrial fork: an audit row carries the historical objective
+        # revision, which has no study_version of its own.
+        if "study_version" in old_res[i]["study_objective"]:
+            old_res[i]["study_objective"]["study_version"] = mock.ANY
     assert old_res == res
 
     # test cannot delete

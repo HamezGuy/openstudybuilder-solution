@@ -607,6 +607,9 @@ class TestStudyService(unittest.TestCase):
             _ref_high_level_study_design.trial_type_null_value_code,
         )
 
+    # The tenant binding writes a DomainStudyScope next to the persisted
+    # StudyRoot; this test persists into an in-memory repository instead.
+    @patch(StudyService.__module__ + ".bind_study_to_current_tenant")
     @patch(StudyService.__module__ + ".MetaRepository.unit_definition_repository")
     @patch(StudyService.__module__ + ".MetaRepository.clinical_programme_repository")
     @patch(StudyService.__module__ + ".MetaRepository.project_repository")
@@ -620,6 +623,7 @@ class TestStudyService(unittest.TestCase):
         project_repository_property_mock: PropertyMock,
         clinical_programme_repository_property_mock: PropertyMock,
         unit_definition_repository_property_mock: PropertyMock,
+        bind_study_to_current_tenant_mock,
     ):
         # given
         test_db = StudyDefinitionsDBFake()
@@ -656,6 +660,7 @@ class TestStudyService(unittest.TestCase):
             page_number=1, page_size=settings.max_int_neo4j - 1
         ).items
         self.assertEqual(len(db_content), 1)
+        bind_study_to_current_tenant_mock.assert_called_once_with(db_content[0].uid)
         for study_definition_ar in db_content:
             self.assertEqual(
                 study_definition_ar.current_metadata.ver_metadata.study_status,

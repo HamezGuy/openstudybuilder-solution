@@ -643,6 +643,24 @@ def _resolve_ct_term(
 
 
 class TestUtils:
+    @staticmethod
+    def without_reading_provenance(value: Any) -> Any:
+        """Drop the AccuraTrial fork's per-reading provenance from a response.
+
+        A current reading of a locked study and a reading of that locked version
+        record different modes and cut-off times (terminology_source,
+        queried_effective_date) by design; their content must still match.
+        """
+        if isinstance(value, dict):
+            return {
+                key: TestUtils.without_reading_provenance(item)
+                for key, item in value.items()
+                if key not in ("terminology_source", "queried_effective_date")
+            }
+        if isinstance(value, list):
+            return [TestUtils.without_reading_provenance(item) for item in value]
+        return value
+
     """Class containing methods that create all kinds of entities, e.g. library compounds"""
 
     sequential_study_number: int = 0

@@ -687,9 +687,12 @@ def test_timeframe_audit_trail(api_client):
     # selected Final timeframes (Draft + Final each): the two created by
     # test_create_timeframe (26) and the unit-case test (27), Draft
     # Timeframe_000005, and Timeframe_000004's Draft, Final, Retired and Final
-    # again. The deleted Timeframe_000003 is not listed.
+    # again. The deleted Timeframe_000003 is not listed. Rows are newest first.
     assert res["total"] == 51
     expected_uids = [
+        "Timeframe_000004",
+        "Timeframe_000004",
+        "Timeframe_000004",
         "Timeframe_000027",
         "Timeframe_000026",
         "Timeframe_000025",
@@ -733,9 +736,6 @@ def test_timeframe_audit_trail(api_client):
         "Timeframe_000006",
         "Timeframe_000006",
         "Timeframe_000005",
-        "Timeframe_000004",
-        "Timeframe_000004",
-        "Timeframe_000004",
         "Timeframe_000004",
         "Timeframe_000002",
         "Timeframe_000002",

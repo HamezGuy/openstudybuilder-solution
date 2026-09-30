@@ -295,7 +295,9 @@ def test_study_epoch_with_study_epoch_subtype_relationship(api_client):
     res = response.json()
     assert_response_status_code(response, 200)
     before_unlock["study_version"] = mock.ANY
-    assert res["items"][0] == before_unlock
+    assert TestUtils.without_reading_provenance(
+        res["items"][0]
+    ) == TestUtils.without_reading_provenance(before_unlock)
 
     # get specific study epoch of a specific study version
     response = api_client.get(
@@ -303,7 +305,9 @@ def test_study_epoch_with_study_epoch_subtype_relationship(api_client):
     )
     res = response.json()
     assert_response_status_code(response, 200)
-    assert res == before_unlock
+    assert TestUtils.without_reading_provenance(
+        res
+    ) == TestUtils.without_reading_provenance(before_unlock)
 
     # get study epoch headers of specific study version
     response = api_client.get(
@@ -360,6 +364,9 @@ def test_get_study_epochs_csv_xml_excel(api_client, export_format):
 
 def test_study_epoch_order_when_epoch_get_deleted_or_modified(api_client):
     study_for_tests = TestUtils.create_study()
+    # AccuraTrial fork: epoch term names resolve through the study's selected
+    # SDTM CT package; without one a reading names no epoch term.
+    TestUtils.set_study_standard_version(study_uid=study_for_tests.uid)
     response = api_client.post(
         f"/studies/{study_for_tests.uid}/study-epochs",
         json={

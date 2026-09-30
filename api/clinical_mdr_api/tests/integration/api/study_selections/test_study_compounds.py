@@ -680,23 +680,38 @@ def test_patch_study_compounds_medicinal_product(api_client):
     initial_study_compound = response.json()
     assert_response_status_code(response, 201)
 
+    # AccuraTrial fork: PATCH enforces the same uniqueness as POST, and the study
+    # already pairs compound_alias with every product in medicinal_products_all,
+    # so move to a product of the same compound that the study has not selected.
+    unselected_product = TestUtils.create_medicinal_product(
+        name=f"medicinal_product_{rand}_unselected",
+        external_id=f"external_id_{rand}_unselected",
+        dose_value_uids=[dose_value.uid],
+        dose_frequency_uids=[ct_term_dose_frequency.term_uid],
+        delivery_device_uid=ct_term_delivery_device.term_uid,
+        dispenser_uid=ct_term_dispenser.term_uid,
+        pharmaceutical_product_uids=[pharmaceutical_product1.uid],
+        compound_uid=compound.uid,
+        approve=True,
+    )
+
     # Modify the medicinal product of the just-created study compound
     url = f"{BASE_URL}/{initial_study_compound['study_compound_uid']}"
     response = api_client.patch(
-        url, json={"medicinal_product_uid": medicinal_products_all[1].uid}
+        url, json={"medicinal_product_uid": unselected_product.uid}
     )
 
     res = response.json()
     assert_response_status_code(response, 200)
 
-    assert res["medicinal_product"]["uid"] == medicinal_products_all[1].uid
+    assert res["medicinal_product"]["uid"] == unselected_product.uid
     assert res["study_compound_uid"] == initial_study_compound["study_compound_uid"]
 
     # Get the updated study compound and assert that only the medicinal product has been changed
     response = api_client.get(url)
     res = response.json()
     assert_response_status_code(response, 200)
-    assert res["medicinal_product"]["uid"] == medicinal_products_all[1].uid
+    assert res["medicinal_product"]["uid"] == unselected_product.uid
     assert res["compound"] == initial_study_compound["compound"]
     assert res["compound_alias"] == initial_study_compound["compound_alias"]
     assert res["study_compound_uid"] == initial_study_compound["study_compound_uid"]

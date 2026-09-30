@@ -1429,7 +1429,9 @@ def test_modify_actions_on_locked_study(api_client):
     res = response.json()
     assert_response_status_code(response, 200)
     before_unlock_epoch["study_version"] = mock.ANY
-    assert res == before_unlock_epoch
+    assert TestUtils.without_reading_provenance(
+        res
+    ) == TestUtils.without_reading_provenance(before_unlock_epoch)
 
     response = api_client.get(
         f"/studies/{study.uid}/study-activities/StudyActivity_000001?study_value_version=1",
