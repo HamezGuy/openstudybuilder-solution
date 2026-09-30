@@ -91,6 +91,7 @@ def _settings(tmp_path, environment: str, delegated: str | None):
         "NEO4J_DSN=bolt://neo4j:test@127.0.0.1:7687/mdrdb",
         f"DEPLOYMENT_ENVIRONMENT={environment}",
         "MAPPING_AUTHORITY_MODE=shadow",
+        "OAUTH_ENABLED=true",
     ]
     if delegated is not None:
         lines.append(f"OIDC_DELEGATED_CLAIMS_REQUIRED={delegated}")
@@ -103,6 +104,8 @@ def test_production_requires_delegated_claims_for_strict_visibility(tmp_path, mo
     """Production forces strict study visibility: every API process refuses to start without delegated claims."""
     monkeypatch.delenv("DEPLOYMENT_ENVIRONMENT", raising=False)
     monkeypatch.delenv("OIDC_DELEGATED_CLAIMS_REQUIRED", raising=False)
+    # The posture under test is OAuth on; CI runs the suite with OAuth off.
+    monkeypatch.delenv("OAUTH_ENABLED", raising=False)
     with pytest.raises(ValueError, match="OIDC_DELEGATED_PROFILE_REQUIRED"):
         _settings(tmp_path, "production", None).assert_delegated_auth_startup_safe()
     with pytest.raises(ValueError, match="OIDC_DELEGATED_PROFILE_REQUIRED"):

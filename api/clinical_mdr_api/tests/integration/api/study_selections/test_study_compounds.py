@@ -330,6 +330,9 @@ STUDY_COMPOUND_FIELDS_ALL = [
     "other_info",
     "reason_for_missing_null_value",
     "study_compound_dosing_count",
+    # AccuraTrial fork: native pharmaceutical-product readings and library evidence.
+    "pharmaceutical_products",
+    "native_library_bindings",
 ]
 
 STUDY_COMPOUND_FIELDS_NOT_NULL = [

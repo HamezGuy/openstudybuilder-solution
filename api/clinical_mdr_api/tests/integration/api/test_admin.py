@@ -139,10 +139,9 @@ def test_patch_user_is_rejected_for_authoritative_identity_projection(api_client
 
     response = api_client.get("/admin/users")
     assert_response_status_code(response, 200)
-    for item in response.json():
-        if item["user_id"] == user_id:
-            assert item["username"] == "unknown-user@example.com"
-            break
+    # The rejected patch leaves the projected identity exactly as persisted.
+    projected = [item for item in response.json() if item["user_id"] == user_id]
+    assert [item["username"] for item in projected] == [f"{user_id}@example.com"]
 
 
 def test_complexity_score_post_burdens(api_client):

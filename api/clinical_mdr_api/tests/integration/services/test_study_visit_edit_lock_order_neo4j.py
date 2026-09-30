@@ -20,6 +20,11 @@ from clinical_mdr_api.services.studies import study_visit as visit_module
 from clinical_mdr_api.services.studies.study_visit import StudyVisitService
 from clinical_mdr_api.tests.fixtures.study_visit_lock_neo4j import native_visit_graph
 
+
+# Needs an explicitly owned disposable Neo4j fixture from the evidence harness,
+# not the shared CI compose database; CI deselects it (-m 'not estate_fixture').
+pytestmark = pytest.mark.estate_fixture
+
 SIBLING_UPDATE = {
     "description": "Writer A exact V2 description; preserve during V1 reorder.",
     "min_visit_window_value": -2,

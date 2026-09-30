@@ -155,17 +155,16 @@ def break_sdtm_sponsor_ancestry(source, broken):
 @pytest.mark.parametrize("broken", ["absent-link", "unavailable-parent", "cycle"])
 def test_unresolved_native_ancestry_cannot_fall_back_to_a_current_package(broken):
     source = NativeStudySource()
-    # Both pinned catalogues contain this concept. Keep the PROTOCOL library
-    # available but unselected, so no other selected package can authorize it.
+    # Both pinned catalogues contain this concept. Keep the PROTOCOL CT package
+    # selected (it alone pins the arm type, which USDM requires) but withdraw its
+    # reading of this concept, so no other selected package can authorize it.
     assert {row["selectedCatalogue"] for row in source.ct_package_records
             if row["attributes"]["concept_id"] == "C98388"} == {"SDTM CT", "PROTOCOL CT"}
-    source.graph["standards"] = [
-        row for row in source.graph["standards"]
-        if row.ct_package.catalogue_name != "PROTOCOL CT"
+    source.ct_package_records = [
+        row for row in source.ct_package_records
+        if not (row["selectedCatalogue"] == "PROTOCOL CT"
+                and row["attributes"]["concept_id"] == "C98388")
     ]
-    assert {row.ct_package.catalogue_name for row in source.graph["standards"]} == {
-        "DDF CT", "SDTM CT",
-    }
     break_sdtm_sponsor_ancestry(source, broken)
     odm = native_odm_graph()
     before = source.source_input(odm)

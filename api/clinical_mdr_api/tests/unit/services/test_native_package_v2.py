@@ -23,6 +23,12 @@ import pytest
 API = Path(__file__).resolve().parents[3]
 OSB = API.parents[1]
 CSL = Path(os.environ.get("CSL_REPO_ROOT", str(OSB.parent / "ClinicalSemanticLayer")))
+
+
+def require_csl() -> None:
+    """The checkpoint and attestation builders are CSL's own TypeScript."""
+    if not (CSL / "packages/semantic-core/src").is_dir():
+        pytest.skip(f"CSL checkout not beside this repository: {CSL}")
 SERVICES = API / "services" / "integrations"
 
 
@@ -522,6 +528,7 @@ def wire(
         "producerEnvironment": "test",
         "producerVersion": "package-contract-test",
     }
+    require_csl()
     module_uri = (
         CSL / "packages/semantic-core/src/transformation-checkpoint-v1.ts"
     ).as_uri()
@@ -1222,6 +1229,7 @@ def test_actual_package_bytes_validate_schema_and_csl_approval_consumer(
         "producerEnvironment": "test",
         "producerVersion": "contract-test",
     }
+    require_csl()
     consumer = (
         CSL / "packages/semantic-core/src/governance-attestation-v1.ts"
     ).as_uri()

@@ -28,7 +28,8 @@ class StudyArmActionAuthorTest(TestCase):
     def test_native_version_writer_receives_action_author_and_preserves_full_selection(self):
         selection = SimpleNamespace(study_selection_uid="arm1", author_id="original-editor", name="arm", short_name="A", label="",
                                     code=None, description="Full 文🧪 " * 1500, randomization_group=None, number_of_subjects=0,
-                                    merge_branch_for_this_arm_for_sdtm_adam=False, accepted_version=False, arm_type_uid=None)
+                                    merge_branch_for_this_arm_for_sdtm_adam=False, accepted_version=False, arm_type_uid=None,
+                                    data_origin_type_uid=None, data_origin_description=None)
         with patch.object(module, "StudyArm") as node, patch.object(module, "_manage_versioning_with_relations") as version:
             module.StudySelectionArmRepository._add_new_selection(MagicMock(), MagicMock(), 1, selection, module.Delete(),
                                                                  author_id="deleting-editor", for_deletion=True, before_node=MagicMock())

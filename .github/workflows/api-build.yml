@@ -27,6 +27,12 @@ on:
         description: Commit to test instead of the workflow ref (DB-backed jobs only)
         required: false
         default: ""
+      pytest_args:
+        # AccuraTrial fork: extra pytest arguments for the unit and integration
+        # jobs when triaging (for example -vv -k "epoch").
+        description: Extra pytest arguments for unit and integration jobs
+        required: false
+        default: ""
 
 # Shared image tag for the dev container.
 # Built once by `build-dev-image` and loaded by every test job from the same artifact.
@@ -403,7 +409,7 @@ jobs:
         run: docker compose logs --no-color --no-log-prefix database || true
 
       - name: Run unit tests
-        run: docker compose run --rm dev pipenv run testunit
+        run: docker compose run --rm dev pipenv run testunit ${{ inputs.pytest_args }}
 
       - name: Run extensions tests
         run: docker compose run --rm dev pipenv run extensions-test
@@ -583,9 +589,11 @@ jobs:
       - name: Run integration tests
         # Mirrors the `testint` Pipfile script but targets only this shard's
         # paths, and writes shard-tagged report files so artifacts don't collide.
+        # AccuraTrial fork: estate_fixture tests need an explicitly owned
+        # disposable graph from the evidence harness (see api/pyproject.toml).
         run: >-
           docker compose run --rm dev pipenv run pytest
-          -s -n auto --dist loadfile
+          -s -n auto --dist loadfile -m "not estate_fixture" ${{ inputs.pytest_args }}
           --cov-report xml:reports/coverage-${{ matrix.shard }}.xml
           --cov-append --cov
           --junitxml=reports/int_report-${{ matrix.shard }}.xml

@@ -25,9 +25,17 @@ from clinical_mdr_api.services.studies.study_activity_instance_snapshot import (
     read_study_activity_instance_definition, resolve_candidate_class_history,
 )
 from clinical_mdr_api.services.studies.study_compound_snapshot import StudyCompoundSourceError
+from clinical_mdr_api.tests.fixtures.null_adjudication_neo4j import (  # noqa: F401
+    native_null_graph,
+)
 from clinical_mdr_api.tests.fixtures.usdm_library_snapshot_neo4j import native_library_graph
 from clinical_mdr_api.tests.integration.utils.utils import TestUtils
 from common.config import settings
+
+
+# Needs an explicitly owned disposable Neo4j fixture from the evidence harness,
+# not the shared CI compose database; CI deselects it (-m 'not estate_fixture').
+pytestmark = pytest.mark.estate_fixture
 
 
 @pytest.fixture(scope="module")

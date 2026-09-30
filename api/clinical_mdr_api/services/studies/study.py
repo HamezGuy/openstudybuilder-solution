@@ -444,17 +444,17 @@ class StudyService:
                 StudyComponentEnum.STUDY_POPULATION.value,
                 StudyComponentEnum.STUDY_INTERVENTION.value,
             }:
-                _expected_subset = settings.study_time_unit_subset
-                prefetched_time_units = find_all_study_time_units(
-                    subset=_expected_subset
-                )
+                _default_subset = settings.study_time_unit_subset
+                _fetch_time_units = find_all_study_time_units
+                prefetched_time_units: dict[str, Any] = {}
 
                 def _prefetched_time_units_lookup(*, subset=None, **_kwargs):
-                    assert subset is None or subset == _expected_subset, (
-                        f"Prefetched time units were fetched with subset={_expected_subset!r}, "
-                        f"but caller requested subset={subset!r}"
-                    )
-                    return prefetched_time_units
+                    # Durations fall back from the Study Time subset to Time
+                    # Unit and Age Unit (months, years); fetch each subset once.
+                    key = subset or _default_subset
+                    if key not in prefetched_time_units:
+                        prefetched_time_units[key] = _fetch_time_units(subset=key)
+                    return prefetched_time_units[key]
 
                 find_all_study_time_units = _prefetched_time_units_lookup  # type: ignore[assignment]
 

@@ -15,6 +15,9 @@ build-backend = "setuptools.build_meta:__legacy__"
 homepage = 'https://gitlab.com/Novo-Nordisk/nn-public/openstudybuilder'
 
 [tool.pytest.ini_options]
+markers = [
+    "estate_fixture: needs an explicitly owned disposable Neo4j fixture from the AccuraTrial evidence harness, not the shared CI compose database; upstream CI deselects it with -m 'not estate_fixture'",
+]
 
 # Coverage configuration. Historically this lived in a top-level `.coveragerc`,
 # but that file matches `.coverage*` in .gitignore and was silently dropped when

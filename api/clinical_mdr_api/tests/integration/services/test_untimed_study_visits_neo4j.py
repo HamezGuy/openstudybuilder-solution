@@ -41,6 +41,10 @@ from common.exceptions import (
     ValidationException,
 )
 
+# Needs an explicitly owned disposable Neo4j fixture from the evidence harness,
+# not the shared CI compose database; CI deselects it (-m 'not estate_fixture').
+pytestmark = pytest.mark.estate_fixture
+
 
 @pytest.fixture(scope="module")
 def visit_library():

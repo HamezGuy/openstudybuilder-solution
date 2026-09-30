@@ -21,6 +21,9 @@ from clinical_mdr_api.models.study_selections.study import (
     StudyPatchRequestJsonModel,
 )
 from clinical_mdr_api.services.ddf.usdm_mapper import USDMMapper
+from clinical_mdr_api.services.ddf.usdm_mapping_context import (
+    USDMMappingAuthorityRequired,
+)
 from clinical_mdr_api.services.studies.study import StudyService
 from clinical_mdr_api.services.studies.study_activity_schedule import (
     StudyActivityScheduleService,
@@ -79,10 +82,15 @@ def ddf_mapper(tst_study):
 
 
 def test_ddf_study_arms(ddf_mapper, tst_study, study_arms):
-    ddf_arms = ddf_mapper._get_study_arms(tst_study)
-    for ddf_arm, sb_arm in zip(ddf_arms, study_arms):
-        assert ddf_arm.description == sb_arm.description
-        assert ddf_arm.type.code == sb_arm.arm_type.term_uid
+    # AccuraTrial fork: a USDM arm needs an explicit, CT-pinned data origin. The
+    # shared fixture arms have none, so mapping stops with a named blocker
+    # instead of inventing one. The positive mapping is covered by the native
+    # source suite (tests/unit/services/test_usdm_*).
+    with pytest.raises(USDMMappingAuthorityRequired) as blocked:
+        ddf_mapper._get_study_arms(tst_study)
+    code, _, detail = str(blocked.value).partition(": study-arms/")
+    assert code == "USDM_ARM_DATA_ORIGIN_AUTHORITY_REQUIRED"
+    assert detail.split(";")[0] in {arm.arm_uid for arm in study_arms}
 
 
 def test_ddf_study_cells(ddf_mapper, tst_study, study_design_cells):

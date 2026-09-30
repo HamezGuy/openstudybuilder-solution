@@ -16,6 +16,11 @@ from clinical_mdr_api.domain_repositories.integrations.governed_item_association
 from clinical_mdr_api.services.integrations.native_item_observation import NativeItemObservationError
 
 
+# Needs an explicitly owned disposable Neo4j fixture from the evidence harness,
+# not the shared CI compose database; CI deselects it (-m 'not estate_fixture').
+pytestmark = pytest.mark.estate_fixture
+
+
 @pytest.mark.parametrize("withdraw", [None, "scope", "binding"])
 def test_actual_append_rechecks_native_scope_after_waiting_for_original_review_lock(associated_native, withdraw):
     f = associated_native

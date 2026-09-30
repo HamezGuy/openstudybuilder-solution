@@ -2823,6 +2823,9 @@ MERGE (sv)-[:HAS_STUDY_OBJECTIVE]->(so:StudyObjective:StudySelection)-[:HAS_SELE
 set so.order = 1
 set so.uid = "StudyObjective_000001"
 CREATE (sa:StudyAction:Create)-[:AFTER]->(so)
+// The study's audit trail owns the action, as for any API-created selection;
+// historical endpoint readings resolve the objective revision through it.
+CREATE (sr)-[:AUDIT_TRAIL]->(sa)
 set sa.date = datetime()
 set sa.author_id = "unknown-user"
 

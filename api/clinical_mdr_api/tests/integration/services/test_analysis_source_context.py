@@ -10,6 +10,10 @@ from neomodel import db
 from clinical_mdr_api.services.listings.listings_adam import ADAMListingsService
 from common.config import settings
 
+# Needs an explicitly owned disposable Neo4j fixture from the evidence harness,
+# not the shared CI compose database; CI deselects it (-m 'not estate_fixture').
+pytestmark = pytest.mark.estate_fixture
+
 
 @pytest.fixture
 def source_study():

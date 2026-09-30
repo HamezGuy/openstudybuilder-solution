@@ -49,4 +49,13 @@ def test_ddf_study(api_client):
     response = api_client.get(
         f"/usdm/v4/studyDefinitions/{study.uid}",
     )
-    assert_response_status_code(response, 200)
+    # AccuraTrial fork: USDM is exported only from governed native values. This
+    # bare study has no title, so the export names the missing source value
+    # instead of emitting a placeholder. The positive export is covered by the
+    # native source suite (tests/unit/services/test_usdm_*).
+    assert_response_status_code(response, 422)
+    body = response.json()
+    assert body["type"] == "USDMMappingAuthorityRequired"
+    assert body["message"].startswith(
+        "USDM_REQUIRED_SOURCE_VALUE_MISSING: current_metadata.study_description.study_title"
+    )

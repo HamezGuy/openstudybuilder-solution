@@ -70,26 +70,27 @@ def from_duration_object_to_value_and_unit(
 
     # Months and years can be valid native duration units while belonging to
     # Time Unit/Age Unit instead of the narrower visit-oriented Study Time set.
-    # Match the complete name: an initial "m" must never turn months into minutes.
-    names = {
-        "y": ("year", "years"),
-        "m": ("month", "months"),
-        "w": ("week", "weeks"),
-        "d": ("day", "days"),
-    }.get(duration_code)
-    if names is None:
-        return duration_value, None
-    preferred = names[1] if duration_value > 1 else names[0]
-    for subset in dict.fromkeys(
-        (settings.study_time_unit_subset, "Time Unit", "Age Unit")
-    ):
-        units, _ = find_all_study_time_units(subset=subset)
-        matches = [unit for unit in units if unit.name.strip().lower() in names]
-        matches.sort(key=lambda unit: (
-            unit.name.strip().lower() != preferred, str(unit.uid)
-        ))
-        if matches:
-            return duration_value, matches[0]
+    # Match the complete name. The writer stores the unit name's first letter,
+    # so "M" is ambiguous; it always reads as months and never turns into minutes.
+    candidates = {
+        "y": (("year", "years"),),
+        "m": (("month", "months"),),
+        "w": (("week", "weeks"),),
+        "d": (("day", "days"),),
+        "h": (("hour", "hours"),),
+        "s": (("second", "seconds"),),
+    }.get(duration_code, ())
+    subsets = dict.fromkeys((settings.study_time_unit_subset, "Time Unit", "Age Unit"))
+    for names in candidates:
+        preferred = names[1] if duration_value > 1 else names[0]
+        for subset in subsets:
+            units, _ = find_all_study_time_units(subset=subset)
+            matches = [unit for unit in units if unit.name.strip().lower() in names]
+            matches.sort(key=lambda unit: (
+                unit.name.strip().lower() != preferred, str(unit.uid)
+            ))
+            if matches:
+                return duration_value, matches[0]
     return duration_value, None
 
 

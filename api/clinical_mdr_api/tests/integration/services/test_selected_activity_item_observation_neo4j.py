@@ -19,6 +19,10 @@ from clinical_mdr_api.tests.unit.services.test_selected_activity_item_observatio
     selection_request,
 )
 
+# Needs an explicitly owned disposable Neo4j fixture from the evidence harness,
+# not the shared CI compose database; CI deselects it (-m 'not estate_fixture').
+pytestmark = pytest.mark.estate_fixture
+
 
 @pytest.fixture()
 def selected(native):

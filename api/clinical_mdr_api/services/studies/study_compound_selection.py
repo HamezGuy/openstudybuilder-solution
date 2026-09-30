@@ -421,6 +421,9 @@ class StudyCompoundSelectionService(
             other_info=request_study_compound.other_info,
             reason_for_missing_value_uid=request_study_compound.reason_for_missing_null_value_uid,
             study_compound_dosing_count=current_study_compound.study_compound_dosing_count,
+            # The edited selection stays in its study; the native snapshot reader
+            # refuses a selection whose study it cannot prove.
+            study_uid=current_study_compound.study_uid,
             study_selection_uid=current_study_compound.study_selection_uid,
             author_id=self.author,
         )

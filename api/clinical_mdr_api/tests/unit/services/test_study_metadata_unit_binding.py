@@ -162,11 +162,11 @@ def test_actual_native_roundtrip_uses_proven_canonical_unit(
     )
 
 
-def test_preserves_native_repository_order_even_when_plural_is_first(repository):
+def test_native_readback_is_grammatical_even_when_plural_is_first(repository):
     repository.units.reverse()
     result = resolve("Year", 1)
-    # OSB chooses the first matching unit for 0/1; service sorting would differ.
-    assert result["value"] == {"uid": "Years"}
+    # The native reader chooses the singular for 0/1 whatever the repository order.
+    assert result["value"] == {"uid": "Year"}
     assert result["identity"]["sourceUnitIdentity"]["uid"] == "Year"
 
 
@@ -312,11 +312,16 @@ def test_ambiguous_source_names_are_blocked(repository):
     assert error.value.code == "OSB_STUDY_METADATA_UNIT_UNRESOLVED"
 
 
-def test_missing_canonical_plural_is_blocked(repository):
+def test_missing_plural_reads_back_as_the_native_singular(repository):
+    # The native reader prefers the grammatical form and falls back to the other
+    # form of the same unit; the binding offers exactly what OSB will read back.
     repository.units = [repository.units[0]]
-    with pytest.raises(OsbCandidateSetError) as error:
-        resolve()
-    assert error.value.code == "OSB_STUDY_METADATA_UNIT_NATIVE_READBACK_UNAVAILABLE"
+    result = resolve()
+    assert result["value"] == {"uid": "Year"}
+    assert result["identity"]["correspondence"]["nativeReadBackValue"] == {
+        "duration_value": 18,
+        "duration_unit_code": {"uid": "Year"},
+    }
 
 
 @pytest.mark.parametrize("amount", [None, False, True, -1, 1.5, 18.0, "18"])
@@ -394,10 +399,9 @@ def test_replay_recomputes_exact_hashes_of_source_and_canonical_definitions(repo
     assert third["identity"]["valueHash"] != second["identity"]["valueHash"]
 
 
-def test_native_order_change_changes_binding_instead_of_hiding_stale_offer(repository):
+def test_native_order_change_does_not_change_the_binding(repository):
     first = resolve("Year", 1)
     repository.units.reverse()
     second = resolve("Year", 1)
-    assert first["identity"] != second["identity"]
+    assert first == second
     assert first["value"] == {"uid": "Year"}
-    assert second["value"] == {"uid": "Years"}

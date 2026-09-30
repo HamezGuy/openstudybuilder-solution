@@ -86,6 +86,8 @@ STUDY_COMPOUND_DOSING_FIELDS_ALL = [
     "composition",
     "start_date",
     "author_username",
+    # AccuraTrial fork: native library evidence for the selected dose value.
+    "native_library_bindings",
 ]
 
 STUDY_COMPOUND_DOSING_FIELDS_NOT_NULL = [

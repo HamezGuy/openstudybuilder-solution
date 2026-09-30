@@ -16,9 +16,17 @@ from clinical_mdr_api.domain_repositories.study_selections.study_epoch_repositor
 from clinical_mdr_api.models.controlled_terminologies.ct_term_name import CTTermNameEditInput
 from clinical_mdr_api.services.controlled_terminologies.ct_term_name import CTTermNameService
 from clinical_mdr_api.services.studies.study_epoch import StudyEpochService
+from clinical_mdr_api.tests.fixtures.null_adjudication_neo4j import (  # noqa: F401
+    native_null_graph,
+)
 from clinical_mdr_api.tests.fixtures.usdm_library_snapshot_neo4j import native_library_graph
 from clinical_mdr_api.tests.integration.utils.utils import TestUtils
 from common.auth.user import user
+
+
+# Needs an explicitly owned disposable Neo4j fixture from the evidence harness,
+# not the shared CI compose database; CI deselects it (-m 'not estate_fixture').
+pytestmark = pytest.mark.estate_fixture
 
 
 def epoch_case(graph):

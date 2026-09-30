@@ -72,14 +72,9 @@ def test_existing_activity_version_without_groups_returns_an_empty_page(
     )
     assert response.status_code == 200, response.text
     result = response.json()
-    assert result["items"] == [
-        {
-            "activity_uid": "Activity_empty",
-            "activity_version": "1.0",
-            "activity_groupings": [],
-            "activity_instances": [],
-        }
-    ]
+    # OpenStudyBuilder 2.10 pages the groupings themselves: an existing version
+    # without groupings is an empty page, not an error.
+    assert result["items"] == []
     assert result["total"] == 0
     after, _ = db.cypher_query("MATCH ()-[r:HAS_GROUPING]->() RETURN count(r)")
     assert after == before
@@ -111,8 +106,7 @@ def test_existing_group_with_no_instances_is_preserved(groupings_client):
     assert response.status_code == 200, response.text
     result = response.json()
     assert result["total"] == 1
-    grouping = result["items"][0]["activity_groupings"]
-    assert grouping == [
+    assert result["items"] == [
         {
             "valid_group_uid": "Grouping_fixture",
             "group": {
@@ -137,8 +131,8 @@ def test_empty_historical_version_does_not_inherit_current_groupings(groupings_c
     current = groupings_client.get(grouping_url("Activity_historical", "2.0"))
     assert historical.status_code == 200, historical.text
     assert current.status_code == 200, current.text
-    assert historical.json()["items"][0]["activity_groupings"] == []
+    assert historical.json()["items"] == []
     assert historical.json()["total"] == 0
-    assert current.json()["items"][0]["activity_groupings"][0]["valid_group_uid"] == (
+    assert [item["valid_group_uid"] for item in current.json()["items"]] == [
         "Grouping_fixture"
-    )
+    ]
