@@ -19,6 +19,14 @@ name: Api — build validation
 on:
   workflow_call:
   workflow_dispatch:
+    inputs:
+      source_ref:
+        # AccuraTrial fork: baseline an upstream merge by running only the
+        # DB-backed unit and integration jobs on an older commit (e.g. the
+        # pre-merge fork). A pre-2.10 tree's clinical-mdr-api/ serves as api/.
+        description: Commit to test instead of the workflow ref (DB-backed jobs only)
+        required: false
+        default: ""
 
 # Shared image tag for the dev container.
 # Built once by `build-dev-image` and loaded by every test job from the same artifact.
@@ -40,6 +48,7 @@ defaults:
 jobs:
   check-auto-generated-files:
     runs-on: ubuntu-latest
+    if: ${{ !inputs.source_ref }}
     timeout-minutes: 15
     defaults:
       run:
@@ -138,6 +147,7 @@ jobs:
 
   validate:
     runs-on: ubuntu-latest
+    if: ${{ !inputs.source_ref }}
     timeout-minutes: 60
     defaults:
       run:
@@ -243,6 +253,7 @@ jobs:
 
   audit:
     runs-on: ubuntu-latest
+    if: ${{ !inputs.source_ref }}
     timeout-minutes: 10
     # Independent job: runs in parallel and isn't required by other jobs,
     # so a failure here (e.g. known unfixed vulnerabilities) doesn't block
@@ -275,6 +286,13 @@ jobs:
         working-directory: api
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          ref: ${{ inputs.source_ref }}
+
+      - name: Map a pre-2.10 baseline tree onto api/
+        if: ${{ inputs.source_ref }}
+        working-directory: .
+        run: test -d api || ln -s clinical-mdr-api api
 
       - name: Set UID to runner user (matches the dev container user)
         run: echo "UID=$(id -u)" >> "$GITHUB_ENV"
@@ -319,6 +337,13 @@ jobs:
         working-directory: api
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          ref: ${{ inputs.source_ref }}
+
+      - name: Map a pre-2.10 baseline tree onto api/
+        if: ${{ inputs.source_ref }}
+        working-directory: .
+        run: test -d api || ln -s clinical-mdr-api api
 
       - name: Set UID to runner user (matches Azure pipeline)
         run: echo "UID=$(id -u)" >> "$GITHUB_ENV"
@@ -490,6 +515,13 @@ jobs:
         working-directory: api
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          ref: ${{ inputs.source_ref }}
+
+      - name: Map a pre-2.10 baseline tree onto api/
+        if: ${{ inputs.source_ref }}
+        working-directory: .
+        run: test -d api || ln -s clinical-mdr-api api
 
       - name: Set UID to runner user (matches Azure pipeline)
         run: echo "UID=$(id -u)" >> "$GITHUB_ENV"
@@ -588,6 +620,7 @@ jobs:
   test-consumer-api:
     needs: build-dev-image
     runs-on: ubuntu-latest
+    if: ${{ !inputs.source_ref }}
     timeout-minutes: 90
     env:
       NEO4J_IMAGE: "neo4j:enterprise"
