@@ -24,5 +24,10 @@ max-branches = 25
 [tool.pylint.'BASIC']
 good-names = 'x,i,j,k,ex,rs,Run,_,e'
 
+[tool.black]
+# Command Center hashes this fork migration into its P2 audit verification evidence
+# (scripts/platform-verification/executors.mjs), so its bytes stay as verified.
+extend-exclude = '/migrations/migration_accuratrial_009\.py'
+
 [tool.isort]
 profile = "black"
