@@ -2,6 +2,7 @@
 import copy
 import json
 from pathlib import Path
+import pytest
 from jsonschema import Draft202012Validator, FormatChecker
 from referencing import Registry, Resource
 from clinical_mdr_api.generated.platform_contracts.hash_signing_v1 import canonical_json, canonical_json_hash_ref as hash_ref, descriptor_hash
@@ -68,6 +69,8 @@ def validate_original_wire(f):
     native = Path(__file__).resolve().parents[3] / "schemas/platform"
     csl = Path("C:/Projects/ClinicalSemanticLayer/packages/contracts/schema/platform")
     platform = Path("C:/Projects/CommandCenter/contracts/platform-control-plane/v1")
+    if not (csl.is_dir() and platform.is_dir()):
+        pytest.skip("CSL and Command Center schemas exist on the estate host only")
     resources = [json.loads((platform / name).read_text()) for name in ["artifact-ref-v1.schema.json", "hash-ref-v1.schema.json"]]
     registry = Registry().with_resources((s["$id"], Resource.from_contents(s)) for s in resources)
     for value, path in [(f.blobs[2], native / "osb-candidate-request-v1.schema.json"),

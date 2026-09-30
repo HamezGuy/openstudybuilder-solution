@@ -1,17 +1,26 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from clinical_mdr_api.models.integrations.study_authority import StudyAuthoritySnapshot
 from clinical_mdr_api.services.integrations.study_authority import _canonical_hash
 
 
+_HERE = Path(__file__).resolve()
 FIXTURE_ROOT = (
-    Path(__file__).resolve().parents[6]
+    (_HERE.parents[6] if len(_HERE.parents) > 6 else Path("/nonexistent"))
     / "CommandCenter"
     / "fixtures"
     / "platform-control-plane"
     / "baseline-v1"
 )
+if not FIXTURE_ROOT.is_dir():
+    # The Command Center baseline is a sibling checkout on the estate host only.
+    pytest.skip(
+        f"Command Center baseline not beside this checkout: {FIXTURE_ROOT}",
+        allow_module_level=True,
+    )
 
 
 def load_snapshot() -> dict:

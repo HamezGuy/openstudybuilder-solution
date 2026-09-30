@@ -19,5 +19,5 @@ def platform_signing_authorization(environment: str) -> str | None:
         if len(data) > 4096 or not re.fullmatch(r"[A-Za-z0-9._~+/-]+=*", token):
             raise ValueError()
         return f"Bearer {token}"
-    except (OSError, UnicodeError, ValueError):
+    except OSError, UnicodeError, ValueError:
         raise ValueError("PLATFORM_SIGNING_CREDENTIAL_UNAVAILABLE") from None

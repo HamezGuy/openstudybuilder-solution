@@ -60,9 +60,8 @@ from clinical_mdr_api.tests.unit.services.soa_test_data import (
     TINY_SOA_TABLE,
 )
 from common.config import settings
-from common.utils import VisitTimingMode
 from common.exceptions import ValidationException
-from common.utils import VisitClass
+from common.utils import VisitClass, VisitTimingMode
 
 
 class MockStudyEpoch(BaseModel):

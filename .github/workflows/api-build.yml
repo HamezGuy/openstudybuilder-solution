@@ -24,6 +24,11 @@ on:
 # Built once by `build-dev-image` and loaded by every test job from the same artifact.
 env:
   DEV_IMAGE: "clinical-mdr-dev:ci"
+  # AccuraTrial fork: api/compose.yaml defaults the API to Command Center OAuth.
+  # These suites run as upstream's dummy user (tests/fixtures/auth.py is autouse
+  # only when OAuth is off); the auth suites stay disabled, as upstream.
+  OSB_API_AUTH_ENABLED: "False"
+  OSB_API_RBAC_ENABLED: "False"
 
 permissions:
   contents: read

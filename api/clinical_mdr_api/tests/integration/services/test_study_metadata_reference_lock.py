@@ -154,9 +154,10 @@ def test_reference_dependencies_stay_locked_until_the_mapping_transaction_commit
                 key=key,
             ).consume()
 
-    with ThreadPoolExecutor(max_workers=1) as pool, driver.session(
-        database="neo4j"
-    ) as session:
+    with (
+        ThreadPoolExecutor(max_workers=1) as pool,
+        driver.session(database="neo4j") as session,
+    ):
         with session.begin_transaction(timeout=10) as transaction:
             monkeypatch.setattr(locks, "db", TransactionAdapter(transaction))
             locks.lock_study_metadata_references(bindings)
@@ -206,9 +207,10 @@ def test_missing_reference_is_rejected_without_a_success_receipt(graph, monkeypa
     )
 
     driver, fixture_id = graph
-    with driver.session(
-        database="neo4j"
-    ) as session, session.begin_transaction() as transaction:
+    with (
+        driver.session(database="neo4j") as session,
+        session.begin_transaction() as transaction,
+    ):
         monkeypatch.setattr(locks, "db", TransactionAdapter(transaction))
         with pytest.raises(OsbCandidateSetError) as error:
             locks.lock_study_metadata_references(

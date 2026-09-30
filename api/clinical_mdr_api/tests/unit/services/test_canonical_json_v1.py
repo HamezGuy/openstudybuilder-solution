@@ -9,16 +9,21 @@ from clinical_mdr_api.services.integrations.canonical_json import (
     canonical_json,
 )
 
-FIXTURE = json.loads(
-    (
-        Path(__file__).parents[5]
-        / "import_sponsor_data"
-        / "importers"
-        / "tests"
-        / "fixtures"
-        / "canonical-json-v1.json"
-    ).read_text(encoding="utf-8")
+FIXTURE_PATH = (
+    Path(__file__).parents[5]
+    / "import_sponsor_data"
+    / "importers"
+    / "tests"
+    / "fixtures"
+    / "canonical-json-v1.json"
 )
+if not FIXTURE_PATH.is_file():
+    # The API test container mounts api/ only; the shared vectors live beside it.
+    pytest.skip(
+        f"cross-language vectors not in this checkout: {FIXTURE_PATH}",
+        allow_module_level=True,
+    )
+FIXTURE = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
 
 
 def test_api_matches_every_cross_language_vector():

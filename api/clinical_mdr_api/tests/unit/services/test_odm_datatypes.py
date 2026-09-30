@@ -38,8 +38,16 @@ def test_term_uids_come_from_the_configured_codmdt_codelist():
     def find_all_terms_aggregated_result(codelist_submission_value):
         requested["codelist"] = codelist_submission_value
         return [
-            SimpleNamespace(ct_codelist_term_vo=SimpleNamespace(submission_value="Integer", term_uid="T_INT")),
-            SimpleNamespace(ct_codelist_term_vo=SimpleNamespace(submission_value="text", term_uid="T_TEXT")),
+            SimpleNamespace(
+                ct_codelist_term_vo=SimpleNamespace(
+                    submission_value="Integer", term_uid="T_INT"
+                )
+            ),
+            SimpleNamespace(
+                ct_codelist_term_vo=SimpleNamespace(
+                    submission_value="text", term_uid="T_TEXT"
+                )
+            ),
         ], 2
 
     repos = SimpleNamespace(
@@ -83,15 +91,25 @@ def test_capture_port_writes_the_term_uid_and_keeps_the_plan_string(monkeypatch)
     port._native_body("odm_items", body)  # pylint: disable=protected-access
     assert len(lookups) == 1
     with pytest.raises(BusinessLogicException):
-        port._native_body("odm_items", {"datatype": "boolean"})  # pylint: disable=protected-access
+        port._native_body(
+            "odm_items", {"datatype": "boolean"}
+        )  # pylint: disable=protected-access
     form = {"name": "F", "oid": "F.1"}
-    assert port._native_body("odm_forms", form) is form  # pylint: disable=protected-access
+    assert (
+        port._native_body("odm_forms", form) is form
+    )  # pylint: disable=protected-access
 
 
 def test_capture_port_readback_keeps_the_evidence_string_shape():
     view = NativeCapturePort._native_view  # pylint: disable=protected-access
-    assert view("odm_items", {"uid": "OdmItem_1", "datatype": dict(TERM)})["datatype"] == "integer"
-    assert view("odm_items", {"uid": "OdmItem_1", "datatype": "text"})["datatype"] == "text"
+    assert (
+        view("odm_items", {"uid": "OdmItem_1", "datatype": dict(TERM)})["datatype"]
+        == "integer"
+    )
+    assert (
+        view("odm_items", {"uid": "OdmItem_1", "datatype": "text"})["datatype"]
+        == "text"
+    )
     form = {"uid": "OdmForm_1", "datatype": dict(TERM)}
     assert view("odm_forms", form)["datatype"] == TERM
 

@@ -55,6 +55,7 @@ def validate_odm_item_length(
             msg="When datatype is 'float', both length and significant_digits must be provided together, or both must be null."
         )
 
+
 if TYPE_CHECKING:
     from clinical_mdr_api.models.odms.item import OdmItemCodelist, OdmItemParentGroup
 

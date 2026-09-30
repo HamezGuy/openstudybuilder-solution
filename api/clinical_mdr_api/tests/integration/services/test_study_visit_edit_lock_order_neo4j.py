@@ -147,10 +147,13 @@ def test_ordinary_reorder_reads_siblings_after_the_actual_study_lock(
         "before": before,
     }
     pending = None
-    with GraphDatabase.driver(
-        f"bolt://{parsed.hostname}:{parsed.port}",
-        auth=(parsed.username, parsed.password),
-    ) as monitor, ThreadPoolExecutor(max_workers=1) as pool:
+    with (
+        GraphDatabase.driver(
+            f"bolt://{parsed.hostname}:{parsed.port}",
+            auth=(parsed.username, parsed.password),
+        ) as monitor,
+        ThreadPoolExecutor(max_workers=1) as pool,
+    ):
         try:
             try:
                 with fixture.principal(), db.transaction:

@@ -42,12 +42,15 @@ def test_error_responses_preserve_status_metadata_and_one_rejection_id(
     def failure():
         raise exception
 
-    with patch(
-        "common.exception_handlers.log_exception",
-        AsyncMock(return_value={"rejectionId": "unit-rejection"}),
-    ) as logged, patch.object(
-        ExceptionTracebackMiddleware, "add_traceback_attributes"
-    ) as traced:
+    with (
+        patch(
+            "common.exception_handlers.log_exception",
+            AsyncMock(return_value={"rejectionId": "unit-rejection"}),
+        ) as logged,
+        patch.object(
+            ExceptionTracebackMiddleware, "add_traceback_attributes"
+        ) as traced,
+    ):
         response = TestClient(app).get("/failure")
 
     assert response.status_code == status_code

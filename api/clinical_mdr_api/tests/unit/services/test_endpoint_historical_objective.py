@@ -3,10 +3,10 @@ from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
-from common.exceptions import NotFoundException
 from clinical_mdr_api.services.studies.study_endpoint_selection import (
     StudyEndpointSelectionService,
 )
+from common.exceptions import NotFoundException
 
 
 def instant(day):
@@ -40,12 +40,15 @@ class EndpointHistoricalObjectiveTests(TestCase):
         def objective(**values):
             return values["study_selection_history"].objective_version
 
-        with patch(
-            "clinical_mdr_api.services.studies.study_endpoint_selection.StudySelectionEndpoint.from_study_selection_history",
-            side_effect=endpoint,
-        ), patch(
-            "clinical_mdr_api.services.studies.study_endpoint_selection.StudySelectionObjective.from_study_selection_history",
-            side_effect=objective,
+        with (
+            patch(
+                "clinical_mdr_api.services.studies.study_endpoint_selection.StudySelectionEndpoint.from_study_selection_history",
+                side_effect=endpoint,
+            ),
+            patch(
+                "clinical_mdr_api.services.studies.study_endpoint_selection.StudySelectionObjective.from_study_selection_history",
+                side_effect=objective,
+            ),
         ):
             return service._transform_history_to_response_model(
                 histories, "S1", [None] * len(histories)
@@ -103,13 +106,16 @@ class EndpointHistoricalObjectiveTests(TestCase):
                 values["effective_date"],
             )
 
-        with patch(
-            "clinical_mdr_api.services.studies.study_endpoint_selection.StudySelectionEndpoint.from_study_selection_history",
-            side_effect=endpoint,
-        ), patch(
-            "clinical_mdr_api.services.studies.study_endpoint_selection.StudySelectionObjective.from_study_selection_history",
-            side_effect=objective,
-        ) as render:
+        with (
+            patch(
+                "clinical_mdr_api.services.studies.study_endpoint_selection.StudySelectionEndpoint.from_study_selection_history",
+                side_effect=endpoint,
+            ),
+            patch(
+                "clinical_mdr_api.services.studies.study_endpoint_selection.StudySelectionObjective.from_study_selection_history",
+                side_effect=objective,
+            ) as render,
+        ):
             expected = [
                 ("1.0", None),
                 ("1.0", None),
@@ -151,8 +157,9 @@ class EndpointHistoricalObjectiveTests(TestCase):
             objective_version="2.0",
         )
         for rows, at in [([], 2), ([row, row], 2), ([row], 5), ([future], 2)]:
-            with self.subTest(rows=len(rows), at=at), self.assertRaises(
-                NotFoundException
+            with (
+                self.subTest(rows=len(rows), at=at),
+                self.assertRaises(NotFoundException),
             ):
                 self.render(self.service(rows), [at])
         with self.assertRaises(NotFoundException):
@@ -177,8 +184,9 @@ class EndpointHistoricalObjectiveTests(TestCase):
                 end_date=None,
                 objective_version=version,
             )
-            with self.subTest(version=version), self.assertRaisesRegex(
-                NotFoundException, "no exact library version"
+            with (
+                self.subTest(version=version),
+                self.assertRaisesRegex(NotFoundException, "no exact library version"),
             ):
                 self.render(self.service([row]), [2])
 

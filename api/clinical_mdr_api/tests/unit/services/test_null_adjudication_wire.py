@@ -27,8 +27,9 @@ SECTIONS = [
 
 @pytest.mark.parametrize("entry", WIRE["cases"], ids=lambda entry: entry["name"])
 def test_native_consumes_exact_cli_request_and_replays_its_receipt_and_metadata(entry):
-    with native_harness() as harness, patch.object(
-        studies, "StudyService", return_value=harness.service
+    with (
+        native_harness() as harness,
+        patch.object(studies, "StudyService", return_value=harness.service),
     ):
         api, _ = client(harness)
         before = api.get(

@@ -59,8 +59,9 @@ def client(h, allowed=True, legacy=False):
 
 
 def test_guarded_route_executes_real_service_and_returns_request_bound_receipt():
-    with native_harness() as h, patch.object(
-        studies, "StudyService", return_value=h.service
+    with (
+        native_harness() as h,
+        patch.object(studies, "StudyService", return_value=h.service),
     ):
         api, checks = client(h)
         capability = api.get(f"/{STUDY_UID}/null-adjudications")
@@ -76,8 +77,9 @@ def test_guarded_route_executes_real_service_and_returns_request_bound_receipt()
 
 
 def test_route_preserves_scope_refusal_before_native_mutation():
-    with native_harness() as h, patch.object(
-        studies, "StudyService", return_value=h.service
+    with (
+        native_harness() as h,
+        patch.object(studies, "StudyService", return_value=h.service),
     ):
         api, _ = client(h, allowed=False)
         assert (
@@ -91,8 +93,9 @@ def test_route_preserves_scope_refusal_before_native_mutation():
 
 @pytest.mark.parametrize("missing", ["expected_value", "expected_null_companion"])
 def test_missing_guard_http_request_never_calls_service(missing):
-    with native_harness() as h, patch.object(
-        studies, "StudyService", return_value=h.service
+    with (
+        native_harness() as h,
+        patch.object(studies, "StudyService", return_value=h.service),
     ):
         api, _ = client(h)
         payload = request_payload()
@@ -105,8 +108,9 @@ def test_missing_guard_http_request_never_calls_service(missing):
 
 
 def test_old_router_returns_404_and_does_not_route_guard_to_ordinary_patch():
-    with native_harness() as h, patch.object(
-        studies, "StudyService", return_value=h.service
+    with (
+        native_harness() as h,
+        patch.object(studies, "StudyService", return_value=h.service),
     ):
         api, _ = client(h, legacy=True)
         assert api.get(f"/{STUDY_UID}/null-adjudications").status_code == 404
@@ -120,8 +124,9 @@ def test_old_router_returns_404_and_does_not_route_guard_to_ordinary_patch():
 
 
 def test_unsupported_pair_uses_documented_native_validation_response_without_saving():
-    with native_harness() as h, patch.object(
-        studies, "StudyService", return_value=h.service
+    with (
+        native_harness() as h,
+        patch.object(studies, "StudyService", return_value=h.service),
     ):
         api, _ = client(h)
         payload = request_payload(

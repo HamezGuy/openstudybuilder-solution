@@ -9,6 +9,9 @@ from unittest.mock import patch
 from neomodel import db
 from neomodel.sync_.transaction import TransactionProxy
 
+from clinical_mdr_api.domain_repositories.controlled_terminologies import (
+    ct_term_generic_repository,
+)
 from clinical_mdr_api.domains.study_definition_aggregates.registry_identifiers import (
     RegistryIdentifiersVO,
 )
@@ -28,9 +31,6 @@ from clinical_mdr_api.models.study_selections.null_adjudication import (
 from clinical_mdr_api.models.study_selections.study import StudyPatchRequestJsonModel
 from clinical_mdr_api.services.studies.study import StudyService
 from clinical_mdr_api.services.user_info import UserInfoService
-from clinical_mdr_api.domain_repositories.controlled_terminologies import (
-    ct_term_generic_repository,
-)
 
 STUDY_UID = "OFFLINE_NULL_STUDY"
 VALUE_PATH = "high_level_study_design.is_extension_trial"
@@ -192,12 +192,15 @@ def native_harness(parent=False, design=None, population=None, intervention=None
         try:
             # Preserve the public GET's real reader/projection. Only its database
             # transaction transport is authored, as for the PATCH above.
-            with patch.object(
-                TransactionProxy, "__enter__", lambda transaction: transaction
-            ), patch.object(
-                TransactionProxy,
-                "__exit__",
-                lambda *_: None,
+            with (
+                patch.object(
+                    TransactionProxy, "__enter__", lambda transaction: transaction
+                ),
+                patch.object(
+                    TransactionProxy,
+                    "__exit__",
+                    lambda *_: None,
+                ),
             ):
                 yield SimpleNamespace(
                     service=service,

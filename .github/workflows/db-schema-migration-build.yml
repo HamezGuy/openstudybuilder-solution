@@ -211,6 +211,19 @@ jobs:
           API_AUTH_TOKEN: ""
         run: pipenv run test
 
+      - name: Test AccuraTrial fork data through migration_024
+        # Rehearses the 2.9 -> 2.10 upgrade with every ODM datatype the fork's
+        # native capture writes (upstream's seed uses four).
+        if: always() && steps.generate-neo4j-password.outcome == 'success' && steps.wait-for-api.outcome == 'success'
+        env:
+          DATABASE_NAME: ""
+          API_BASE_URL: http://localhost:8000
+          API_AUTH_TOKEN: ""
+        run: >-
+          pipenv run python -m pytest -s -o junit_family=xunit2
+          --junitxml=reports/accuratrial_migration_report.xml
+          tests/test_migration_024_accuratrial.py
+
       - name: Test corrections
         # Mirrors ADO `condition: always()` — run even if the migration
         # tests above failed (the two suites are independent). Scoped to
@@ -268,7 +281,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: db-schema-migration-test-report
-          path: db_schema_migration/reports/test_report.xml
+          path: |
+            db_schema_migration/reports/test_report.xml
+            db_schema_migration/reports/accuratrial_migration_report.xml
           if-no-files-found: warn
 
       - name: Upload coverage report
