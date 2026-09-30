@@ -189,7 +189,9 @@ class OdmItemGroupService(OdmGenericService[OdmItemGroupAR]):
                 any(order < 1 for order in orders) or len(set(orders)) != len(orders),
                 msg="Source item orders must be unique positive integers.",
             )
-            post_input = sorted(odm_item_group_item_post_input, key=lambda item: item.order_number)
+            post_input = sorted(
+                odm_item_group_item_post_input, key=lambda item: item.order_number
+            )
         else:
             post_input = self.renumber_items_sequentially(
                 odm_item_group_item_post_input, "order_number", renumbering_start

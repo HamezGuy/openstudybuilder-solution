@@ -897,7 +897,9 @@ class OdmGenericRepository(
             msg="Unsupported capture item owner.",
         )
         cls._get_origin_and_relation_node(
-            uid=uid, relation_uid=item_uid, relationship_type=RelationType.ITEM,
+            uid=uid,
+            relation_uid=item_uid,
+            relationship_type=RelationType.ITEM,
             zero_or_one_relation=True,
         )
 

@@ -10,7 +10,9 @@ from clinical_mdr_api.services.integrations.osb_vocabulary_registry import (
     resource_types_where,
 )
 
-TARGET_CAPABILITIES: dict[str, str] = {name: row["osbCapability"] for name, row in ROWS.items()}
+TARGET_CAPABILITIES: dict[str, str] = {
+    name: row["osbCapability"] for name, row in ROWS.items()
+}
 
 # Families with a complete typed existing-route operation/reconciliation plan.
 # A valid OSB model name outside this set remains native but non-executable.

@@ -24,8 +24,10 @@ from clinical_mdr_api.services._utils import (
     service_level_generic_filtering,
     service_level_generic_header_filtering,
 )
+from clinical_mdr_api.services.studies.study_compound_snapshot import (
+    StudyCompoundSnapshotReader,
+)
 from clinical_mdr_api.services.studies.study_selection_base import StudySelectionMixin
-from clinical_mdr_api.services.studies.study_compound_snapshot import StudyCompoundSnapshotReader
 from common import exceptions
 from common.auth.user import user
 
@@ -96,14 +98,20 @@ class StudyCompoundDosingSelectionService(StudySelectionMixin):
             )
 
         snapshot = StudyCompoundSnapshotReader(
-            self._repos, study_uid, study_value_version,
+            self._repos,
+            study_uid,
+            study_value_version,
             as_of=history_date,
             terms_at_specific_datetime=terms_at_specific_datetime,
         )
-        compound, compound_alias, medicinal_product, products = snapshot.selection_models(
-            study_compound,
-            history_dosing_uid=study_compound_dosing_uid if history_date is not None else None,
-            history_date=history_date,
+        compound, compound_alias, medicinal_product, products = (
+            snapshot.selection_models(
+                study_compound,
+                history_dosing_uid=(
+                    study_compound_dosing_uid if history_date is not None else None
+                ),
+                history_date=history_date,
+            )
         )
 
         return StudySelectionCompound.from_study_compound_ar(
@@ -167,9 +175,13 @@ class StudyCompoundDosingSelectionService(StudySelectionMixin):
             )
         dose_snapshot = (
             StudyCompoundSnapshotReader(
-                self._repos, study_uid, study_value_version,
+                self._repos,
+                study_uid,
+                study_value_version,
                 terms_at_specific_datetime=terms_at_specific_datetime,
-            ) if compound_dosing_vo.dose_value_uid is not None else None
+            )
+            if compound_dosing_vo.dose_value_uid is not None
+            else None
         )
         result = StudyCompoundDosing.from_vo(
             compound_dosing_vo,
@@ -191,17 +203,20 @@ class StudyCompoundDosingSelectionService(StudySelectionMixin):
                 terms_at_specific_datetime=terms_at_specific_datetime,
             ),
             find_numeric_value_by_uid=(
-                dose_snapshot.callback("numericValueWithUnit") if dose_snapshot is not None
+                dose_snapshot.callback("numericValueWithUnit")
+                if dose_snapshot is not None
                 else self._repos.numeric_value_with_unit_repository.find_by_uid_2
             ),
             find_unit_by_uid=(
-                dose_snapshot.callback("unitDefinition") if dose_snapshot is not None
+                dose_snapshot.callback("unitDefinition")
+                if dose_snapshot is not None
                 else self._repos.unit_definition_repository.find_by_uid_2
             ),
             # Resolved only for a set dose frequency: a null dose and frequency
             # authorize no library lookup.
             find_codelist_term_by_uid_and_submval=(
-                dose_snapshot.codelist_term if dose_snapshot is not None
+                dose_snapshot.codelist_term
+                if dose_snapshot is not None
                 else lambda *args, **kwargs: (
                     self._repos.ct_codelist_name_repository.get_codelist_term_by_uid_and_submval(
                         *args, **kwargs
@@ -331,7 +346,10 @@ class StudyCompoundDosingSelectionService(StudySelectionMixin):
         result = []
         for history in study_selection_history:
             snapshot = StudyCompoundSnapshotReader(
-                self._repos, study_uid, None, as_of=history.start_date,
+                self._repos,
+                study_uid,
+                None,
+                as_of=history.start_date,
             )
             reading = StudyCompoundDosing.from_study_selection_history(
                 history,

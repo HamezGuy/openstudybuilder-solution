@@ -23,6 +23,8 @@ class OdmCollectionInitializationInput(BaseModel):
             raise ValueError("ODM_COLLECTION_CHILD_ID_DUPLICATE")
         if set(self.expected_children) != set(uids):
             raise ValueError("ODM_COLLECTION_CHILD_SNAPSHOT_SET_MISMATCH")
-        if any(value.get("uid") != uid for uid, value in self.expected_children.items()):
+        if any(
+            value.get("uid") != uid for uid, value in self.expected_children.items()
+        ):
             raise ValueError("ODM_COLLECTION_CHILD_SNAPSHOT_ID_MISMATCH")
         return self

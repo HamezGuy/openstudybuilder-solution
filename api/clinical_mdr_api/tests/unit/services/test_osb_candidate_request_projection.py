@@ -2,7 +2,9 @@ from copy import deepcopy
 
 import pytest
 
-from clinical_mdr_api.generated.platform_contracts.hash_signing_v1 import canonical_json_hash_ref
+from clinical_mdr_api.generated.platform_contracts.hash_signing_v1 import (
+    canonical_json_hash_ref,
+)
 from clinical_mdr_api.services.integrations.candidate_set import (
     OsbCandidateSetError,
     _assert_request_projection,
@@ -16,7 +18,11 @@ def _hash(value, schema: str):
     return canonical_json_hash_ref(value, schema_version=schema)
 
 
-def _intent(fact_id: str = "fact-1", family: str = "controlled_terminology", extra: dict | None = None):
+def _intent(
+    fact_id: str = "fact-1",
+    family: str = "controlled_terminology",
+    extra: dict | None = None,
+):
     source = {
         "assertionType": None,
         "clinicalDomain": None,
@@ -58,8 +64,14 @@ def _routed(
     }
 
 
-def _census_row(member_index: int, intent_index: int, member: dict, intent: dict,
-                snapshot_version_id: str, request_id: str):
+def _census_row(
+    member_index: int,
+    intent_index: int,
+    member: dict,
+    intent: dict,
+    snapshot_version_id: str,
+    request_id: str,
+):
     return {
         "unitId": f'{intent["factId"]}@{intent["revision"]}:primary',
         "source": {
@@ -79,7 +91,11 @@ def _census_row(member_index: int, intent_index: int, member: dict, intent: dict
         "multiplicity": {"source": 1, "target": 1},
         "splitMergeGroup": None,
         "splitMergeRule": None,
-        "ordering": {"significant": True, "sourceIndex": member_index, "targetIndex": intent_index},
+        "ordering": {
+            "significant": True,
+            "sourceIndex": member_index,
+            "targetIndex": intent_index,
+        },
         "disposition": "native",
         "exclusionPolicy": None,
         "evidenceRefs": [f'source-fact:{intent["factId"]}@{intent["revision"]}'],
@@ -87,7 +103,9 @@ def _census_row(member_index: int, intent_index: int, member: dict, intent: dict
     }
 
 
-def _routed_census_row(member_index: int, member: dict, item: dict, snapshot_version_id: str):
+def _routed_census_row(
+    member_index: int, member: dict, item: dict, snapshot_version_id: str
+):
     return {
         "unitId": f'{item["factId"]}@{item["revision"]}:primary',
         "source": {
@@ -101,24 +119,41 @@ def _routed_census_row(member_index: int, member: dict, item: dict, snapshot_ver
         "multiplicity": {"source": 1, "target": 0},
         "splitMergeGroup": None,
         "splitMergeRule": None,
-        "ordering": {"significant": False, "sourceIndex": member_index, "targetIndex": None},
+        "ordering": {
+            "significant": False,
+            "sourceIndex": member_index,
+            "targetIndex": None,
+        },
         "disposition": item["disposition"],
         "exclusionPolicy": None,
-        "evidenceRefs": [f'source-fact:{item["factId"]}@{item["revision"]}', *item["reasonCodes"]],
+        "evidenceRefs": [
+            f'source-fact:{item["factId"]}@{item["revision"]}',
+            *item["reasonCodes"],
+        ],
         "receiptRefs": [],
     }
 
 
 _COUNT_KEYS = {
-    "native": "native", "governed_extension": "governedExtension",
-    "excluded_signed": "excludedSigned", "deferred_blocking": "deferredBlocking",
-    "quarantined": "quarantined", "rejected": "rejected",
+    "native": "native",
+    "governed_extension": "governedExtension",
+    "excluded_signed": "excludedSigned",
+    "deferred_blocking": "deferredBlocking",
+    "quarantined": "quarantined",
+    "rejected": "rejected",
 }
 
 
 def _counts(rows: list[dict]) -> dict:
-    counts = {"rows": len(rows), "native": 0, "governedExtension": 0, "excludedSigned": 0,
-              "deferredBlocking": 0, "quarantined": 0, "rejected": 0}
+    counts = {
+        "rows": len(rows),
+        "native": 0,
+        "governedExtension": 0,
+        "excludedSigned": 0,
+        "deferredBlocking": 0,
+        "quarantined": 0,
+        "rejected": 0,
+    }
     for row in rows:
         counts[_COUNT_KEYS[row["disposition"]]] += 1
     return counts
@@ -149,14 +184,24 @@ def _payload(intents=None, family: str = "controlled_terminology", routed=None):
     request_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     snapshot_version_id = "77777777-7777-4777-8777-777777777777"
     rows = []
-    for member_index, ((kind, item), member) in enumerate(zip(units, members, strict=True)):
+    for member_index, ((kind, item), member) in enumerate(
+        zip(units, members, strict=True)
+    ):
         if kind == "native":
-            rows.append(_census_row(
-                member_index, intents.index(item), member, item,
-                snapshot_version_id, request_id,
-            ))
+            rows.append(
+                _census_row(
+                    member_index,
+                    intents.index(item),
+                    member,
+                    item,
+                    snapshot_version_id,
+                    request_id,
+                )
+            )
         else:
-            rows.append(_routed_census_row(member_index, member, item, snapshot_version_id))
+            rows.append(
+                _routed_census_row(member_index, member, item, snapshot_version_id)
+            )
     snapshot_hash = _hash({"snapshot": "synthetic"}, "SemanticSnapshotV1@1.0.0")
     package_hash = _hash({"package": "synthetic"}, "SourceFactPackageV1@1.0.0")
     identity = {
@@ -189,17 +234,24 @@ def _payload(intents=None, family: str = "controlled_terminology", routed=None):
             "memberSetHash": _hash(members, "SemanticSnapshotMemberSetV1@1.0.0"),
         },
         "activeClaimRevisions": members,
-        "requestedObjectFamilies": sorted({intent["resourceFamily"] for intent in intents}),
+        "requestedObjectFamilies": sorted(
+            {intent["resourceFamily"] for intent in intents}
+        ),
         "typedSourceIntents": intents,
-        "evidenceArtifactRefs": [{
-            "artifactVersionId": "66666666-6666-4666-8666-666666666666",
-            "payloadHash": package_hash,
-            "tenantId": identity["tenantId"],
-        }],
+        "evidenceArtifactRefs": [
+            {
+                "artifactVersionId": "66666666-6666-4666-8666-666666666666",
+                "payloadHash": package_hash,
+                "tenantId": identity["tenantId"],
+            }
+        ],
         "projectionRuleset": {
             "id": "csl-to-osb-candidate-request",
             "version": "1.0.0",
-            "hash": _hash({"mapping": "fail-closed-family-router", "version": "1.0.0"}, "ProjectionRulesetV1@1.0.0"),
+            "hash": _hash(
+                {"mapping": "fail-closed-family-router", "version": "1.0.0"},
+                "ProjectionRulesetV1@1.0.0",
+            ),
         },
         "inputConservation": {
             "contractVersion": "ConservationCensusV1@1.0.0",
@@ -265,17 +317,25 @@ def test_routed_claims_validate():
         ],
     )
     counts = payload["inputConservation"]["counts"]
-    assert counts == {"rows": 4, "native": 2, "governedExtension": 1,
-                      "excludedSigned": 0, "deferredBlocking": 1,
-                      "quarantined": 0, "rejected": 0}
+    assert counts == {
+        "rows": 4,
+        "native": 2,
+        "governedExtension": 1,
+        "excludedSigned": 0,
+        "deferredBlocking": 1,
+        "quarantined": 0,
+        "rejected": 0,
+    }
     _assert_request_projection(payload, {})
 
 
 def test_routed_census_counts_must_match_rows():
-    payload = deepcopy(_payload(
-        intents=[_intent("fact-native-a")],
-        routed=[_routed("fact-x-deferred", "deferred_blocking")],
-    ))
+    payload = deepcopy(
+        _payload(
+            intents=[_intent("fact-native-a")],
+            routed=[_routed("fact-x-deferred", "deferred_blocking")],
+        )
+    )
     payload["inputConservation"]["counts"]["deferredBlocking"] = 2
     with pytest.raises(OsbCandidateSetError) as error:
         _assert_request_projection(payload, {})
@@ -283,13 +343,20 @@ def test_routed_census_counts_must_match_rows():
 
 
 def test_routed_row_with_target_is_rejected():
-    payload = deepcopy(_payload(
-        intents=[_intent("fact-native-a")],
-        routed=[_routed("fact-x-deferred", "deferred_blocking")],
-    ))
+    payload = deepcopy(
+        _payload(
+            intents=[_intent("fact-native-a")],
+            routed=[_routed("fact-x-deferred", "deferred_blocking")],
+        )
+    )
     for row in payload["inputConservation"]["rows"]:
         if row["disposition"] == "deferred_blocking":
-            row["target"] = {"artifactId": "x", "contract": "y", "type": "z", "path": "#/x"}
+            row["target"] = {
+                "artifactId": "x",
+                "contract": "y",
+                "type": "z",
+                "path": "#/x",
+            }
             row["multiplicity"] = {"source": 1, "target": 1}
     _refresh_census_hash(payload)
     with pytest.raises(OsbCandidateSetError) as error:
@@ -332,15 +399,20 @@ def test_intent_for_routed_member_is_rejected():
 
 
 def test_additive_change_window_fields_are_accepted():
-    intent = _intent(extra={
-        "semanticRole": "eligibility_criterion",
-        "searchStringsOmitted": 2,
-        "searchCodesOmitted": 0,
-        "createOption": {"allowed": True, "requestedNativeType": None},
-    })
+    intent = _intent(
+        extra={
+            "semanticRole": "eligibility_criterion",
+            "searchStringsOmitted": 2,
+            "searchCodesOmitted": 0,
+            "createOption": {"allowed": True, "requestedNativeType": None},
+        }
+    )
     intent["source"] = {
         **intent["source"],
-        "classification": {"assertionType": "eligibility", "clinicalDomain": "demographics"},
+        "classification": {
+            "assertionType": "eligibility",
+            "clinicalDomain": "demographics",
+        },
     }
     payload = _payload(
         intents=[intent],
@@ -354,11 +426,14 @@ def test_additive_change_window_fields_are_accepted():
     _assert_request_projection(payload, {})
 
 
-@pytest.mark.parametrize("name,value", [
-    ("searchStringsOmitted", -1),
-    ("searchStringsOmitted", "2"),
-    ("searchCodesOmitted", True),
-])
+@pytest.mark.parametrize(
+    "name,value",
+    [
+        ("searchStringsOmitted", -1),
+        ("searchStringsOmitted", "2"),
+        ("searchCodesOmitted", True),
+    ],
+)
 def test_omission_counter_wrong_types_are_rejected(name, value):
     payload = _payload(intents=[_intent(extra={name: value})])
     with pytest.raises(OsbCandidateSetError) as error:
@@ -459,7 +534,9 @@ def test_mismatched_transfer_envelope_is_rejected():
     envelope = _signed_transfer_envelope(payload, "sha256:" + "a" * 64)
     envelope["signingStatement"]["signingPurpose"] = "osb-candidate-generation"
     with pytest.raises(OsbCandidateSetError) as error:
-        assert_candidate_request_transfer_envelope(payload, "sha256:" + "a" * 64, envelope)
+        assert_candidate_request_transfer_envelope(
+            payload, "sha256:" + "a" * 64, envelope
+        )
     assert error.value.code == "OSB_CANDIDATE_REQUEST_SIGNATURE_INVALID"
 
 
@@ -487,10 +564,16 @@ def test_zero_or_multiple_osb_bindings_are_rejected():
         require_exactly_one_active_osb_binding([])
     assert error.value.code == "OSB_NATIVE_IDENTITY_BINDING_REQUIRED"
     with pytest.raises(OsbCandidateSetError) as error:
-        require_exactly_one_active_osb_binding([
-            ["b1", "Study_A", "0.1"],
-            ["b2", "Study_B", "0.1"],
-        ])
+        require_exactly_one_active_osb_binding(
+            [
+                ["b1", "Study_A", "0.1"],
+                ["b2", "Study_B", "0.1"],
+            ]
+        )
     assert error.value.code == "OSB_NATIVE_IDENTITY_BINDING_REQUIRED"
     selected = require_exactly_one_active_osb_binding([["b1", "Study_A", "0.1"]])
-    assert selected == {"bindingId": "b1", "nativeIdentity": "Study_A", "nativeVersion": "0.1"}
+    assert selected == {
+        "bindingId": "b1",
+        "nativeIdentity": "Study_A",
+        "nativeVersion": "0.1",
+    }

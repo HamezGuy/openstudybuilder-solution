@@ -110,7 +110,6 @@ def cypher_tracing(query: str, params: Mapping):
             metrics.cypher_slowest_time = delta_time
 
 
-
 def patch_neomodel_database():
     """Monkey-patch neomodel db singleton to trace Cypher queries"""
 

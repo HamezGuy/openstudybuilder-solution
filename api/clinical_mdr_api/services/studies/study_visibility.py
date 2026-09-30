@@ -54,7 +54,9 @@ def bind_study_to_current_tenant(study_uid: str) -> None:
     tenant_id = str(getattr(caller, "tenant_id", "") or "").strip()
     status = "active" if tenant_id else "quarantined"
     if _strict() and not tenant_id:
-        raise ForbiddenException(msg="An exact tenant is required to create an OSB study.")
+        raise ForbiddenException(
+            msg="An exact tenant is required to create an OSB study."
+        )
     rows, _ = db.cypher_query(
         """
         MATCH (study:StudyRoot {uid: $study_uid})
@@ -69,7 +71,9 @@ def bind_study_to_current_tenant(study_uid: str) -> None:
         {"study_uid": study_uid, "tenant_id": tenant_id or None, "status": status},
     )
     if not rows or rows[0][0] != (tenant_id or None) or rows[0][1] != status:
-        raise ForbiddenException(msg="OSB study tenant binding conflicts with the authenticated tenant.")
+        raise ForbiddenException(
+            msg="OSB study tenant binding conflicts with the authenticated tenant."
+        )
 
 
 def study_visible_to_user(
@@ -157,7 +161,9 @@ def _assert_operation_scope(caller, require_write: bool) -> None:
         "interactive-domain-access",
         "workflow-orchestration",
     }:
-        raise ForbiddenException(msg="Token purpose does not authorize OSB study access.")
+        raise ForbiddenException(
+            msg="Token purpose does not authorize OSB study access."
+        )
     needed = "study:write" if require_write else "study:read"
     if needed not in set(getattr(caller, "capabilities", None) or []):
         raise ForbiddenException(msg=f"{needed} capability is required.")
@@ -227,7 +233,9 @@ def assigned_study_uids(*, require_write: bool = False) -> tuple[str, ...]:
         return ()
     tenant_id = str(getattr(caller, "tenant_id", "") or "").strip()
     if not tenant_id:
-        raise ForbiddenException(msg="An exact tenant is required for OSB study access.")
+        raise ForbiddenException(
+            msg="An exact tenant is required for OSB study access."
+        )
     assigned = tuple(
         sorted(
             {

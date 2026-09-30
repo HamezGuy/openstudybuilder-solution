@@ -160,9 +160,13 @@ class JWKService(KeySet):
         await self.refresh_jwk_set()
 
         try:
-            encoded_header = (token.decode() if isinstance(token, bytes) else token).split(".", 1)[0]
+            encoded_header = (
+                token.decode() if isinstance(token, bytes) else token
+            ).split(".", 1)[0]
             padding = "=" * (-len(encoded_header) % 4)
-            token_header = json.loads(base64.urlsafe_b64decode(encoded_header + padding))
+            token_header = json.loads(
+                base64.urlsafe_b64decode(encoded_header + padding)
+            )
             token_kid = token_header.get("kid")
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             raise NotAuthenticatedException("JWT protected header is invalid") from exc
@@ -183,7 +187,9 @@ class JWKService(KeySet):
                 raise NotAuthenticatedException(exc.args[0]) from exc
 
             if token_kid not in self.keys:
-                raise NotAuthenticatedException(f"Unknown key id: {token_kid!s}") from exc
+                raise NotAuthenticatedException(
+                    f"Unknown key id: {token_kid!s}"
+                ) from exc
 
             # retry decoding of JWT
             claims = jwt.decode(token, key=self, claims_options=self.claims_options)

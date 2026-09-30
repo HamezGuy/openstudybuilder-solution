@@ -129,7 +129,9 @@ class StudySelectionArmVO:
         :param arm_exists_callback:
         :return:
         """
-        validate_study_arm_origin(self.data_origin_type_uid, self.data_origin_description)
+        validate_study_arm_origin(
+            self.data_origin_type_uid, self.data_origin_description
+        )
 
         # Check if there exist a Term with the selected uid
         exceptions.ValidationException.raise_if(

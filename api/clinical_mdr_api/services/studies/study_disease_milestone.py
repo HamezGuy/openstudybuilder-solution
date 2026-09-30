@@ -138,8 +138,10 @@ class StudyDiseaseMilestoneService:
                     self._repos, study_uid, study_value_version
                 ),
                 sort_by=sort_by or {"uid": True},
-                page_number=page_number, page_size=page_size,
-                filter_by=filter_by, filter_operator=filter_operator,
+                page_number=page_number,
+                page_size=page_size,
+                filter_by=filter_by,
+                filter_operator=filter_operator,
                 total_count=total_count,
             )
         items, total = self.repo.find_all_disease_milestone(

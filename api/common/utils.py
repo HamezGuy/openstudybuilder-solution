@@ -88,7 +88,10 @@ class BaseTimelineAR(Generic[StudyVisit]):
 
         # Create Anchor lookups
         for visit in self._visits:
-            if getattr(visit, "timing_mode", VisitTimingMode.STANDARD) == VisitTimingMode.UNTIMED:
+            if (
+                getattr(visit, "timing_mode", VisitTimingMode.STANDARD)
+                == VisitTimingMode.UNTIMED
+            ):
                 visit.anchor_visit = visits_dict.get(
                     (visit.untimed_timing or {}).get("anchor_visit_uid")
                 )
@@ -122,8 +125,10 @@ class BaseTimelineAR(Generic[StudyVisit]):
 
         # Assign Anchors
         standard_visits = [
-            visit for visit in self._visits
-            if getattr(visit, "timing_mode", VisitTimingMode.STANDARD) != VisitTimingMode.UNTIMED
+            visit
+            for visit in self._visits
+            if getattr(visit, "timing_mode", VisitTimingMode.STANDARD)
+            != VisitTimingMode.UNTIMED
         ]
         for order, visit in enumerate(standard_visits):
             time_anchor = visit.time_reference_name
@@ -146,7 +151,12 @@ class BaseTimelineAR(Generic[StudyVisit]):
             key=lambda x: (
                 x.get_absolute_duration() is None,
                 x.get_absolute_duration(),
-                x.visit_number if getattr(x, "timing_mode", VisitTimingMode.STANDARD) == VisitTimingMode.UNTIMED else float("-inf"),
+                (
+                    x.visit_number
+                    if getattr(x, "timing_mode", VisitTimingMode.STANDARD)
+                    == VisitTimingMode.UNTIMED
+                    else float("-inf")
+                ),
             ),
         )
 
@@ -203,7 +213,12 @@ class BaseTimelineAR(Generic[StudyVisit]):
             key=lambda x: (
                 x.get_absolute_duration() is None,
                 x.get_absolute_duration(),
-                x.visit_number if getattr(x, "timing_mode", VisitTimingMode.STANDARD) == VisitTimingMode.UNTIMED else float("-inf"),
+                (
+                    x.visit_number
+                    if getattr(x, "timing_mode", VisitTimingMode.STANDARD)
+                    == VisitTimingMode.UNTIMED
+                    else float("-inf")
+                ),
             ),
         )
 

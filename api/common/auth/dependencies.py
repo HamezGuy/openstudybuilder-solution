@@ -80,13 +80,13 @@ async def validate_token(token: Annotated[str, Depends(oauth_scheme)]):
             )
         except ValueError as exc:
             log.info("Delegated access-token profile rejected: %s", str(exc))
-            raise NotAuthenticatedException("Delegated access-token profile is invalid") from exc
+            raise NotAuthenticatedException(
+                "Delegated access-token profile is invalid"
+            ) from exc
 
     # Attributes to current tracing span
     tracer: Tracer = execution_context.get_opencensus_tracer()
-    tracer.add_attribute_to_current_span(
-        "ai.user.authUserId", access_token_claims.sub
-    )
+    tracer.add_attribute_to_current_span("ai.user.authUserId", access_token_claims.sub)
     tracer.add_attribute_to_current_span(
         "ai.user.accountId", access_token_claims.oid or access_token_claims.sub
     )

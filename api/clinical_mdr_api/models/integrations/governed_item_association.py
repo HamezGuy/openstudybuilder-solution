@@ -1,12 +1,24 @@
 """An explicit native human association review, distinct from the earlier decision."""
+
 from typing import Annotated, Literal
+
 from pydantic import BaseModel, ConfigDict, Field
-from clinical_mdr_api.models.integrations.selected_activity_item_observation import SelectedActivityItemRequest
+
+from clinical_mdr_api.models.integrations.selected_activity_item_observation import (
+    SelectedActivityItemRequest,
+)
 
 Hash = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
 Hash64 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
-Instant = Annotated[str, Field(pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")]
-UUID = Annotated[str, Field(pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")]
+Instant = Annotated[
+    str, Field(pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")
+]
+UUID = Annotated[
+    str,
+    Field(
+        pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    ),
+]
 
 
 class Closed(BaseModel):
@@ -41,7 +53,9 @@ class GovernedItemAssociationReview(Closed):
     associationId: UUID
     selector: GovernedItemAssociationSelector
     signatureId: Annotated[str, Field(min_length=1, max_length=512)]
-    displayedStatement: Literal["I reviewed this exact proposal decision, CSL plan and native selected Item association."]
+    displayedStatement: Literal[
+        "I reviewed this exact proposal decision, CSL plan and native selected Item association."
+    ]
 
 
 class GovernedItemAssociationRead(Closed):
@@ -69,7 +83,9 @@ class NativeAssociationReviewAssurance(Closed):
     credentialIssuedAt: int
     credentialExpiresAt: int
     reviewedAt: Instant
-    displayedStatement: Literal["I reviewed this exact proposal decision, CSL plan and native selected Item association."]
+    displayedStatement: Literal[
+        "I reviewed this exact proposal decision, CSL plan and native selected Item association."
+    ]
 
 
 class GovernedItemAssociationRecord(Closed):

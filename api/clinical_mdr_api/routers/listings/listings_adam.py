@@ -11,15 +11,15 @@ from clinical_mdr_api.models.listings.listings_adam import (
 from clinical_mdr_api.models.utils import CustomPage
 from clinical_mdr_api.repositories._utils import FilterOperator
 from clinical_mdr_api.routers import _generic_descriptions
+
+# Prefixed with "/listings"
+from clinical_mdr_api.routers.studies.study_access import enforce_visible_study
 from clinical_mdr_api.services.listings.listings_adam import (
     ADAMListingsService as ListingsService,
 )
 from common.auth import rbac
 from common.auth.dependencies import security
 from common.config import settings
-
-# Prefixed with "/listings"
-from clinical_mdr_api.routers.studies.study_access import enforce_visible_study
 
 router = APIRouter(dependencies=[Depends(enforce_visible_study)])
 

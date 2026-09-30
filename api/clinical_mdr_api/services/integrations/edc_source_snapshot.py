@@ -26,6 +26,7 @@ class SourceSnapshotError(ValueError):
 
 def _strict_json(value: str | bytes) -> Any:
     """Never select one of two same-key source readings during deserialization."""
+
     def unique_object(pairs):
         result = {}
         for key, child in pairs:
@@ -43,8 +44,12 @@ def _strict_json(value: str | bytes) -> Any:
             invalid_constant(value)
         return number
 
-    return json.loads(value, object_pairs_hook=unique_object,
-                      parse_constant=invalid_constant, parse_float=finite_float)
+    return json.loads(
+        value,
+        object_pairs_hook=unique_object,
+        parse_constant=invalid_constant,
+        parse_float=finite_float,
+    )
 
 
 def _attributes(record: dict) -> dict:

@@ -91,8 +91,16 @@ def delegated_claims(**overrides):
             "iss": "https://command-center.example.test",
         },
         "actor_chain": [
-            {"subject": "https://idp.example.test|human-42", "type": "human", "issuer": "https://idp.example.test"},
-            {"subject": "service:accuratrial-command-center", "type": "service", "issuer": "https://command-center.example.test"},
+            {
+                "subject": "https://idp.example.test|human-42",
+                "type": "human",
+                "issuer": "https://idp.example.test",
+            },
+            {
+                "subject": "service:accuratrial-command-center",
+                "type": "service",
+                "issuer": "https://command-center.example.test",
+            },
         ],
         "idp_iss": "https://idp.example.test",
         "purpose": "interactive-domain-access",
@@ -131,7 +139,13 @@ def test_service_profile_cannot_carry_human_reauthentication():
         human_subject=None,
         service_actor="service:accuratrial-command-center",
         act=None,
-        actor_chain=[{"subject": "service:accuratrial-command-center", "type": "service", "issuer": "https://command-center.example.test"}],
+        actor_chain=[
+            {
+                "subject": "service:accuratrial-command-center",
+                "type": "service",
+                "issuer": "https://command-center.example.test",
+            }
+        ],
         idp_iss=None,
         auth_time=1_999_999_950,
     )

@@ -51,9 +51,13 @@ def validate(claims: AccessTokenClaims) -> None:
     fields = Settings.model_fields
     validate_delegated_claims(
         claims,
-        exchanging_clients=set(fields["ENV_OAUTH_EXCHANGING_CLIENTS"].default.split(",")),
+        exchanging_clients=set(
+            fields["ENV_OAUTH_EXCHANGING_CLIENTS"].default.split(",")
+        ),
         allowed_purposes=set(fields["ENV_OAUTH_ALLOWED_PURPOSES"].default.split(",")),
-        allowed_capabilities=set(fields["ENV_OAUTH_ALLOWED_CAPABILITIES"].default.split(",")),
+        allowed_capabilities=set(
+            fields["ENV_OAUTH_ALLOWED_CAPABILITIES"].default.split(",")
+        ),
         allowed_roles=set(fields["ENV_OAUTH_ALLOWED_ROLES"].default.split(",")),
     )
 
@@ -63,9 +67,16 @@ def test_broker_osb_profile_accepts_supported_draft_capabilities():
     validate(
         broker_claims(
             [
-                "study:read", "study:write", "candidate:read", "candidate:generate",
-                "candidate:apply", "draft:stage", "draft:read", "package:release",
-                "native-identity:bind", "native-identity:inventory",
+                "study:read",
+                "study:write",
+                "candidate:read",
+                "candidate:generate",
+                "candidate:apply",
+                "draft:stage",
+                "draft:read",
+                "package:release",
+                "native-identity:bind",
+                "native-identity:inventory",
             ]
         )
     )
@@ -81,7 +92,11 @@ def test_downscoped_draft_workflow_still_requires_the_delegated_profile(capabili
         validate(claims)
 
 
-@pytest.mark.parametrize("capability", ["*", "draft:*", "configuration:activate", "draft:delete"])
-def test_draft_support_does_not_accept_wildcards_or_unrecognized_capabilities(capability):
+@pytest.mark.parametrize(
+    "capability", ["*", "draft:*", "configuration:activate", "draft:delete"]
+)
+def test_draft_support_does_not_accept_wildcards_or_unrecognized_capabilities(
+    capability,
+):
     with pytest.raises(ValueError, match="Capability"):
         validate(broker_claims(["study:read", capability]))

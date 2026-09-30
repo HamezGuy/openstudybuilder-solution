@@ -199,9 +199,13 @@ class UnitDefinitionRepository(ConceptGenericRepository[UnitDefinitionAR]):
             unit_subset_term = CTTerm(
                 uid=selected_unit_subset.uid,
                 name=(
-                    snapshot.read("ctTermName", selected_unit_subset.uid).ct_term_vo.name
+                    snapshot.read(
+                        "ctTermName", selected_unit_subset.uid
+                    ).ct_term_vo.name
                     if snapshot is not None
-                    else selected_unit_subset.has_name_root.get().latest_final.get().name
+                    else selected_unit_subset.has_name_root.get()
+                    .latest_final.get()
+                    .name
                 ),
             )
             unit_subsets.append(unit_subset_term)
@@ -236,12 +240,16 @@ class UnitDefinitionRepository(ConceptGenericRepository[UnitDefinitionAR]):
                 unit_dimension_uid=ct_dimension.uid if ct_dimension else None,
                 ucum_uid=ucum_term.uid if ucum_term else None,
                 ucum_name=(
-                    snapshot.read("dictionaryTerm", ucum_term.uid).dictionary_term_vo.name
-                    if snapshot is not None and ucum_term is not None else None
+                    snapshot.read(
+                        "dictionaryTerm", ucum_term.uid
+                    ).dictionary_term_vo.name
+                    if snapshot is not None and ucum_term is not None
+                    else None
                 ),
                 unit_dimension_name=(
                     snapshot.read("ctTermName", ct_dimension.uid).ct_term_vo.name
-                    if snapshot is not None and ct_dimension is not None else None
+                    if snapshot is not None and ct_dimension is not None
+                    else None
                 ),
                 is_template_parameter=self.is_concept_node_a_tp(concept_node=value),
             ),

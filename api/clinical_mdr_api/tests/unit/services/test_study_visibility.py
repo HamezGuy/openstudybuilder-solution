@@ -43,15 +43,11 @@ def test_assigned_study_uid_is_visible_even_when_not_author():
     )
     investigator.study_ids = {"Study_000017"}
     assert (
-        study_visible_to_user(
-            investigator, "staging-admin", study_uid="Study_000017"
-        )
+        study_visible_to_user(investigator, "staging-admin", study_uid="Study_000017")
         is True
     )
     assert (
-        study_visible_to_user(
-            investigator, "staging-admin", study_uid="Study_000001"
-        )
+        study_visible_to_user(investigator, "staging-admin", study_uid="Study_000001")
         is False
     )
     assert study_visible_to_user(investigator, "staging-admin") is False
@@ -75,9 +71,7 @@ def test_assert_study_uid_visible_skips_admin_and_missing_user(monkeypatch):
     vis.assert_study_uid_visible("Study_000001")
     assert called["repo"] is False
 
-    investigator = _User(
-        oid="edc:10", username="iso_nest", roles={"Study.Read"}
-    )
+    investigator = _User(oid="edc:10", username="iso_nest", roles={"Study.Read"})
 
     class _Study:
         current_metadata = type(

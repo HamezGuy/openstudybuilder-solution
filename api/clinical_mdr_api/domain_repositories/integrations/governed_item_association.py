@@ -1,11 +1,15 @@
 """Bounded custody on the existing proposal review graph and native study root."""
-from clinical_mdr_api.domain_repositories.integrations.selected_activity_item_observation import SelectedActivityItemRepository
+
+from clinical_mdr_api.domain_repositories.integrations.selected_activity_item_observation import (
+    SelectedActivityItemRepository,
+)
 from common.utils import convert_to_datetime
 
 
 class GovernedItemAssociationRepository(SelectedActivityItemRepository):
     def review_custody(self, p, timeout):
-        rows = self.query("""
+        rows = self.query(
+            """
           MATCH (proposal:OsbProposalReview {proposal_hash:$proposalHash})
             -[:HAS_REVIEW_OBJECT]->(object:OsbProposalReviewObject {proposal_object_id:$proposalObjectId})
           MATCH (proposal)-[:USES_MAPPING_CONTEXT]->(context:OsbMappingContextSnapshot)
@@ -23,7 +27,10 @@ class GovernedItemAssociationRepository(SelectedActivityItemRepository):
             CASE WHEN size(decision.actor_id)<=512 THEN decision.actor_id ELSE null END,
             decision.decided_at,CASE WHEN size(context.context_hash)<=64 THEN context.context_hash ELSE null END
           LIMIT 2
-        """, p, timeout)
+        """,
+            p,
+            timeout,
+        )
         for row in rows:
             if row[11] is not None:
                 row[11] = convert_to_datetime(row[11]).isoformat()
@@ -32,7 +39,8 @@ class GovernedItemAssociationRepository(SelectedActivityItemRepository):
     def associations(self, p, timeout):
         # All live decisions count, across proposal objects, for the same exact
         # CSL/native target. No latest-by-time choice between associations.
-        return self.query("""
+        return self.query(
+            """
           MATCH (proposal:OsbProposalReview)-[:HAS_REVIEW_OBJECT]->(object:OsbProposalReviewObject)
             -[:LATEST_DECISION]->(decision:OsbProposalReviewDecision)
             -[:HAS_GOVERNED_ITEM_ASSOCIATION]->(association:OsbGovernedItemAssociation {
@@ -43,7 +51,10 @@ class GovernedItemAssociationRepository(SelectedActivityItemRepository):
             proposal.proposal_hash=$proposalHash AND object.proposal_object_id=$proposalObjectId
               AND decision.decision_id=$reviewDecisionId AND decision.decision_content_hash=$reviewDecisionHash
           LIMIT 2
-        """, p, timeout)
+        """,
+            p,
+            timeout,
+        )
 
     def append_association(self, p, timeout):
         # Native StudyRoot lock serializes associations on this target study;
@@ -52,7 +63,8 @@ class GovernedItemAssociationRepository(SelectedActivityItemRepository):
         # exact scope/binding too, and recheck their pins after acquisition so a
         # status/version withdrawal cannot be borrowed from a pre-lock read.
         # The original decision is never modified or relabeled as this review.
-        return self.query("""
+        return self.query(
+            """
           MATCH (study:StudyRoot {uid:$nativeStudyId})
           SET study.governed_item_association_epoch=coalesce(study.governed_item_association_epoch,0)+1
           WITH study
@@ -103,4 +115,7 @@ class GovernedItemAssociationRepository(SelectedActivityItemRepository):
             association_id:$associationId,payload_hash:$associationHash,payload_json:$payloadJson,created_at:datetime()})
           CREATE (decision)-[:HAS_GOVERNED_ITEM_ASSOCIATION]->(association)
           RETURN association.association_id,association.payload_hash,association.payload_json
-        """, p, timeout)
+        """,
+            p,
+            timeout,
+        )

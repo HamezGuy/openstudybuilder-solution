@@ -1,7 +1,6 @@
 from collections import defaultdict
 from uuid import NAMESPACE_URL, uuid5
 
-
 # USDM 4.0.0 types most entity identifiers as non-empty strings, but the root
 # Study.id is a UUID. Keep this explicit rather than changing every identifier:
 # subordinate ids are cross-referenced as their existing stable strings.

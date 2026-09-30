@@ -10,8 +10,11 @@ from clinical_mdr_api.services.integrations.edc_export import (
     EdcExportService,
     _source_study_id,
 )
-
-from clinical_mdr_api.tests.unit.services.test_edc_study_exchange import document, exchange, retained
+from clinical_mdr_api.tests.unit.services.test_edc_study_exchange import (
+    document,
+    exchange,
+    retained,
+)
 
 
 def test_real_study_response_resolves_source_identity_from_identification_metadata():
@@ -132,7 +135,7 @@ def test_owned_unattached_definitions_survive_without_claiming_foreign_or_simila
                 {"uid": "Foreign", "oid": "IT.360I.actt-other.ITEM"},
                 {"uid": "Embedded", "oid": "FOREIGN.IT.360I.actt.ITEM"},
             ],
-            **kw
+            **kw,
         )
     )
     exporter._retain_source_owned_odm_definitions("actt")
@@ -241,12 +244,21 @@ def test_empty_native_parameter_projection_keeps_all_source_design_values(monkey
     exporter._group_classes = lambda *args: []
     exporter._retain_native_associated_records = lambda *args: None
     bundle = exporter.build_bundle("Study_1")
-    assert retained(bundle, "openstudybuilder.edc-source-snapshot")["study"]["studyParameters"] == parameters
+    assert (
+        retained(bundle, "openstudybuilder.edc-source-snapshot")["study"][
+            "studyParameters"
+        ]
+        == parameters
+    )
     assert bundle["definition"]["document"] == document()
-    assert bundle["extensions"]["_osbExport"]["native"]["records"][0]["record"] == {"uid": "Study_1"}
+    assert bundle["extensions"]["_osbExport"]["native"]["records"][0]["record"] == {
+        "uid": "Study_1"
+    }
     report = bundle["extensions"]["_osbExport"]["mappingReport"]
     assert (report["state"], report["studyUid"], report["studyValueVersion"]) == (
-        "incomplete", "Study_1", None,
+        "incomplete",
+        "Study_1",
+        None,
     )
     assert report["issues"][0]["code"] == "SYNTHETIC_MAPPING_NOT_VALIDATED"
     assert bundle["extensions"]["_osbExport"]["native"]["usdmMappingRecords"] == []
@@ -262,14 +274,18 @@ def service():
         get_by_uid_with_report=lambda uid, study_value_version=None: {
             "document": document(),
             "mappingReport": {
-                "state": "incomplete", "studyUid": uid,
+                "state": "incomplete",
+                "studyUid": uid,
                 "studyValueVersion": study_value_version,
-                "issues": [{
-                    "code": "SYNTHETIC_MAPPING_NOT_VALIDATED",
-                    "sourcePath": "fixture", "targetPath": "Study",
-                    "message": "This retention fixture supplies a partial document.",
-                    "resolution": "Use the actual mapper/schema tests for conformance evidence.",
-                }],
+                "issues": [
+                    {
+                        "code": "SYNTHETIC_MAPPING_NOT_VALIDATED",
+                        "sourcePath": "fixture",
+                        "targetPath": "Study",
+                        "message": "This retention fixture supplies a partial document.",
+                        "resolution": "Use the actual mapper/schema tests for conformance evidence.",
+                    }
+                ],
             },
             "nativeRecords": [],
         }
@@ -361,12 +377,23 @@ def test_semantic_study_identifiers_are_not_replaced_with_osb_internal_identifie
     canonical = document()
     canonical["study"]["name"] = source_study["name"]
     source_exchange = exchange(document=canonical)
-    source_exchange["definition"]["execution"]["identification"]["nativeIdentifier"] = source_study["uniqueIdentifier"]
-    source_exchange["extensions"].update({
-        "_provenance": {"builtBy": "csl.bundle-builder/2.0/preview"},
-        "_exportCensus": {"contractVersion": "source-v1", "units": [{"id": "claim-1", "unknown": [0, False, None]}], "counts": {"mapped": 0}},
-        "_mappingAuthority": {"mode": "preview", "semanticMetadata": {"accepted": False}},
-    })
+    source_exchange["definition"]["execution"]["identification"]["nativeIdentifier"] = (
+        source_study["uniqueIdentifier"]
+    )
+    source_exchange["extensions"].update(
+        {
+            "_provenance": {"builtBy": "csl.bundle-builder/2.0/preview"},
+            "_exportCensus": {
+                "contractVersion": "source-v1",
+                "units": [{"id": "claim-1", "unknown": [0, False, None]}],
+                "counts": {"mapped": 0},
+            },
+            "_mappingAuthority": {
+                "mode": "preview",
+                "semanticMetadata": {"accepted": False},
+            },
+        }
+    )
 
     def forms(*args):
         exporter.source_bundle_meta = deepcopy(source_exchange)
@@ -378,13 +405,22 @@ def test_semantic_study_identifiers_are_not_replaced_with_osb_internal_identifie
     exporter._retain_native_associated_records = lambda *a: None
     bundle = exporter.build_bundle("Study_1")
     assert bundle["definition"]["document"]["study"]["name"] == source_study["name"]
-    assert bundle["definition"]["execution"]["identification"]["nativeIdentifier"] == source_study["uniqueIdentifier"]
+    assert (
+        bundle["definition"]["execution"]["identification"]["nativeIdentifier"]
+        == source_study["uniqueIdentifier"]
+    )
     assert bundle["definition"] == source_exchange["definition"]
     report = bundle["extensions"]["_osbExport"]
     assert report["mappingAuthority"]["sourceTruthSystem"] == "canonical-study-exchange"
     assert report["mappingAuthority"]["deploymentAllowed"] is False
-    assert report["mappingAuthority"]["sourceAuthority"] == source_exchange["extensions"]["_mappingAuthority"]
-    assert bundle["extensions"]["_exportCensus"] == source_exchange["extensions"]["_exportCensus"]
+    assert (
+        report["mappingAuthority"]["sourceAuthority"]
+        == source_exchange["extensions"]["_mappingAuthority"]
+    )
+    assert (
+        bundle["extensions"]["_exportCensus"]
+        == source_exchange["extensions"]["_exportCensus"]
+    )
     assert any(
         row["nativeValue"] == "OSB-123"
         for row in exporter.census

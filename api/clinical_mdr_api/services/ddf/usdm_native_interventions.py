@@ -61,7 +61,10 @@ class NativeInterventionMapping:
                     continue
                 key = product.uid, product.version
                 source = native_json(product)
-                if key in self._product_sources and self._product_sources[key] != source:
+                if (
+                    key in self._product_sources
+                    and self._product_sources[key] != source
+                ):
                     raise USDMMappingAuthorityRequired(
                         f"USDM_PRODUCT_SOURCE_CONFLICT: {product.uid}@{product.version}"
                     )
@@ -74,7 +77,8 @@ class NativeInterventionMapping:
                     self._product_sources[key] = source
                     self._products[key] = self._product(product, bindings)
                     self.context.retain(
-                        "pharmaceuticalProductDefinition", f"{product.uid}@{product.version}",
+                        "pharmaceuticalProductDefinition",
+                        f"{product.uid}@{product.version}",
                         product,
                         scope={
                             "studyUid": self.mapper._study_uid,
@@ -83,8 +87,11 @@ class NativeInterventionMapping:
                     )
             # A compact catalog reference cannot stand in for formulations,
             # ingredients, quantities or independently versioned children.
-            compact = getattr(getattr(selection, "medicinal_product", None),
-                              "pharmaceutical_products", [])
+            compact = getattr(
+                getattr(selection, "medicinal_product", None),
+                "pharmaceutical_products",
+                [],
+            )
             for reference in compact:
                 if reference.uid not in by_uid:
                     self.issue(
@@ -102,14 +109,20 @@ class NativeInterventionMapping:
             selected = set()
             unresolved_selection = False
             for binding in bindings:
-                if binding.get("kind") != "pharmaceuticalProduct" or binding.get("mode") != "selected-value":
+                if (
+                    binding.get("kind") != "pharmaceuticalProduct"
+                    or binding.get("mode") != "selected-value"
+                ):
                     continue
                 if (
                     binding.get("studyUid") != self.mapper._study_uid
-                    or binding.get("studyValueVersion") != self.mapper._study_value_version
+                    or binding.get("studyValueVersion")
+                    != self.mapper._study_value_version
                     or binding.get("studyCompoundUid") != uid
                 ):
-                    raise USDMMappingAuthorityRequired("USDM_PRODUCT_SELECTION_SCOPE_MISMATCH")
+                    raise USDMMappingAuthorityRequired(
+                        "USDM_PRODUCT_SELECTION_SCOPE_MISMATCH"
+                    )
                 key = binding.get("uid"), binding.get("version")
                 if key not in self._products or by_uid.get(key[0]) != key:
                     unresolved_selection = True
@@ -145,12 +158,15 @@ class NativeInterventionMapping:
         if len(forms) == 1:
             dose_form = AliasCode(
                 id=self.identifier("AliasCode", "product-dose-form:" + uid),
-                standardCode=self.mapper.get_ct_package_term_as_usdm_code(forms[0].term_uid),
+                standardCode=self.mapper.get_ct_package_term_as_usdm_code(
+                    forms[0].term_uid
+                ),
             )
         elif len(forms) > 1:
             self.issue(
                 "USDM_PRODUCT_DOSE_FORM_AMBIGUOUS",
-                source_path + "/dosage_forms", "AdministrableProduct/administrableDoseForm",
+                source_path + "/dosage_forms",
+                "AdministrableProduct/administrableDoseForm",
                 "The native product has multiple dose forms; USDM requires one.",
                 "Resolve an explicit administrable product or reviewed dose form. Every native form remains in typed metadata.",
             )
@@ -161,7 +177,8 @@ class NativeInterventionMapping:
                 key = f"{uid}:formulation:{formulation_index}:ingredient:{ingredient_index}"
                 ingredients.append(self._ingredient(ingredient, bindings, key, path))
         return self.context.build(
-            AdministrableProduct, source_path,
+            AdministrableProduct,
+            source_path,
             id=self.identifier("AdministrableProduct", uid),
             name=product.derived_name or product.external_id or product.uid,
             label=product.derived_name,
@@ -177,52 +194,74 @@ class NativeInterventionMapping:
         strengths = []
         if ingredient.strength is not None:
             quantity = self.mapper._native_dose_quantity(
-                ingredient.strength, "ingredient-strength:" + key,
+                ingredient.strength,
+                "ingredient-strength:" + key,
                 native_bindings=bindings,
             )
-            strengths.append(self.context.build(
-                Strength, source_path + "/strength",
-                id=self.identifier("Strength", key), name=ingredient.strength.uid,
-                numerator=quantity,
-                extensionAttributes=[
-                    self.extension("ingredient-strength", key, ingredient.strength)
-                ],
-            ))
+            strengths.append(
+                self.context.build(
+                    Strength,
+                    source_path + "/strength",
+                    id=self.identifier("Strength", key),
+                    name=ingredient.strength.uid,
+                    numerator=quantity,
+                    extensionAttributes=[
+                        self.extension("ingredient-strength", key, ingredient.strength)
+                    ],
+                )
+            )
         unii = source.unii
         codes = []
         if unii is not None:
             readings = [
-                row for row in bindings
+                row
+                for row in bindings
                 if row.get("kind") == "dictionarySubstance"
                 and row.get("uid") == unii.substance_term_uid
             ]
             if len(readings) == 1:
                 reading = readings[0]
-                codes.append(self.context.build(
-                    Code, source_path + "/active_substance/unii",
-                    id=self.identifier("Code", "substance-unii:" + key),
-                    code=unii.substance_unii, decode=unii.substance_name,
-                    codeSystem=reading.get("libraryName"),
-                    codeSystemVersion=reading.get("version"),
-                ))
+                codes.append(
+                    self.context.build(
+                        Code,
+                        source_path + "/active_substance/unii",
+                        id=self.identifier("Code", "substance-unii:" + key),
+                        code=unii.substance_unii,
+                        decode=unii.substance_name,
+                        codeSystem=reading.get("libraryName"),
+                        codeSystemVersion=reading.get("version"),
+                    )
+                )
             else:
                 self.issue(
                     "USDM_SUBSTANCE_DICTIONARY_VERSION_REQUIRED",
-                    source_path + "/active_substance/unii", "Substance/codes",
+                    source_path + "/active_substance/unii",
+                    "Substance/codes",
                     "The substance code lacks one exact dictionary version reading.",
                     "Resolve the selected substance dictionary value; its native metadata remains intact.",
                 )
         substance = self.context.build(
-            Substance, source_path + "/active_substance",
+            Substance,
+            source_path + "/active_substance",
             id=self.identifier("Substance", key),
-            name=(source.inn or (unii.substance_name if unii else None)
-                  or source.long_number or source.short_number
-                  or source.analyte_number or source.uid),
-            strengths=strengths, codes=codes,
+            name=(
+                source.inn
+                or (unii.substance_name if unii else None)
+                or source.long_number
+                or source.short_number
+                or source.analyte_number
+                or source.uid
+            ),
+            strengths=strengths,
+            codes=codes,
             extensionAttributes=[self.extension("activeSubstance", key, source)],
         )
         return self.context.build(
-            Ingredient, source_path, id=self.identifier("Ingredient", key),
+            Ingredient,
+            source_path,
+            id=self.identifier("Ingredient", key),
             substance=substance,
-            extensionAttributes=[self.extension("pharmaceuticalIngredient", key, ingredient)],
+            extensionAttributes=[
+                self.extension("pharmaceuticalIngredient", key, ingredient)
+            ],
         )

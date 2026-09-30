@@ -26,9 +26,11 @@ def strict_domain_scope(monkeypatch):
     monkeypatch.setattr(
         vis,
         "_study_scope",
-        lambda uid: (True, "tenant-synthetic", "active")
-        if uid == "Study_000999"
-        else (True, "another-tenant", "active"),
+        lambda uid: (
+            (True, "tenant-synthetic", "active")
+            if uid == "Study_000999"
+            else (True, "another-tenant", "active")
+        ),
     )
 
 
@@ -38,24 +40,36 @@ def _request(path: str, **path_params):
 
 def test_a_study_route_outside_the_assignment_answers_not_found():
     consumer_visibility.enforce_visible_consumer_study(
-        _request("/v1/studies/Study_000999/study-visits", uid="Study_000999"), _auth=None
+        _request("/v1/studies/Study_000999/study-visits", uid="Study_000999"),
+        _auth=None,
     )
     with pytest.raises(NotFoundException):
         consumer_visibility.enforce_visible_consumer_study(
-            _request("/v1/studies/Study_000998/study-visits", uid="Study_000998"), _auth=None
+            _request("/v1/studies/Study_000998/study-visits", uid="Study_000998"),
+            _auth=None,
         )
 
 
 def test_the_study_list_keeps_only_assigned_studies():
-    rows = [{"uid": "Study_000999", "id": "A"}, {"uid": "Study_000998", "id": "B"}, {"uid": "", "id": "C"}]
-    assert [row["id"] for row in consumer_visibility.visible_consumer_studies(rows)] == ["A"]
+    rows = [
+        {"uid": "Study_000999", "id": "A"},
+        {"uid": "Study_000998", "id": "B"},
+        {"uid": "", "id": "C"},
+    ]
+    assert [
+        row["id"] for row in consumer_visibility.visible_consumer_studies(rows)
+    ] == ["A"]
 
 
 def test_cross_study_collection_surfaces_fail_closed_in_delegated_mode():
-    consumer_visibility.enforce_consumer_collection_scope(_request("/v1/studies"), _auth=None)
+    consumer_visibility.enforce_consumer_collection_scope(
+        _request("/v1/studies"), _auth=None
+    )
     for path in ("/v1/studies/audit-trail", "/v1/papillons/soa"):
         with pytest.raises(ForbiddenException):
-            consumer_visibility.enforce_consumer_collection_scope(_request(path), _auth=None)
+            consumer_visibility.enforce_consumer_collection_scope(
+                _request(path), _auth=None
+            )
 
 
 def test_study_metadata_listing_asserts_visibility_after_resolving_the_uid(monkeypatch):

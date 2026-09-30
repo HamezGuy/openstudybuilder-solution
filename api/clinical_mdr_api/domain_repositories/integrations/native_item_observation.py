@@ -1,4 +1,5 @@
 """Bounded projections from existing native nodes; no graph writes or models."""
+
 from typing import Any
 
 from neo4j import Query
@@ -17,7 +18,8 @@ class NativeItemObservationRepository:
         return rows or []
 
     def scope(self, p: dict, timeout: float) -> list:
-        return self.query("""
+        return self.query(
+            """
           MATCH (binding:PlatformNativeStudyBinding {tenant_id:$tenantId,
             platform_study_id:$platformStudyId,namespace:'accuratrials-osb',
             object_type:'study-draft-root',status:'active'})
@@ -26,19 +28,27 @@ class NativeItemObservationRepository:
           MATCH (study:StudyRoot {uid:scope.study_uid})
           RETURN binding.binding_id,binding.native_study_id,binding.native_version
           LIMIT 2
-        """, p, timeout)
+        """,
+            p,
+            timeout,
+        )
 
     def study_heads(self, p: dict, timeout: float) -> list:
-        return self.query("""
+        return self.query(
+            """
           MATCH (study:StudyRoot {uid:$nativeStudyId})
           OPTIONAL MATCH (study)-[:LATEST]->(latest:StudyValue)
           MATCH (study)-[head:LATEST_DRAFT|LATEST_LOCKED|LATEST_RELEASED]->(value:StudyValue)
           RETURN type(head),head.version,head.status,
             toString(head.start_date),toString(head.end_date),value=latest LIMIT 5
-        """, p, timeout)
+        """,
+            p,
+            timeout,
+        )
 
     def custody(self, p: dict, timeout: float) -> list:
-        return self.query("""
+        return self.query(
+            """
           MATCH (evidence:OsbNativeEvidenceSetV1 {tenant_id:$tenantId,
             platform_study_id:$platformStudyId,evidence_set_version_id:$evidenceSetVersionId,
             payload_hash:$evidenceSetHash,decision_hash:$decisionHash})
@@ -58,16 +68,22 @@ class NativeItemObservationRepository:
             operation.payload_json] AS blobs,operation
           RETURN CASE WHEN all(blob IN blobs WHERE blob IS NOT NULL AND size(blob)<=$maxChars)
             THEN blobs ELSE null END,operation.payload_hash LIMIT 2
-        """, {**p, "maxChars": MAX_JSON_CHARS}, timeout)
+        """,
+            {**p, "maxChars": MAX_JSON_CHARS},
+            timeout,
+        )
 
     def item(self, p: dict, timeout: float) -> list:
         # The datatype is the item's CODMDT term submission value (a
         # HAS_DATA_TYPE relationship since OpenStudyBuilder 2.10).
-        return self.query("""
+        return self.query(
+            """
           MATCH (root:OdmItemRoot {uid:$itemUid})-[:LATEST]->(value:OdmItemValue)
           MATCH (root)-[version:HAS_VERSION]->(value)
           WHERE version.end_date IS NULL
-          WITH root,value,version,""" + odm_item_datatype_cypher("value") + """ AS datatype
+          WITH root,value,version,"""
+            + odm_item_datatype_cypher("value")
+            + """ AS datatype
           WITH root,value,version,datatype,
             [value.name,value.oid,value.prompt,datatype,value.sas_field_name,
              value.sds_var_name,value.origin,value.comment] AS strings
@@ -79,4 +95,7 @@ class NativeItemObservationRepository:
               origin:value.origin,comment:value.comment} ELSE null END,
             EXISTS { (value)-[:HAS_UNIT_DEFINITION|HAS_CODELIST|HAS_CODELIST_TERM]->() }
           LIMIT 2
-        """, p, timeout)
+        """,
+            p,
+            timeout,
+        )

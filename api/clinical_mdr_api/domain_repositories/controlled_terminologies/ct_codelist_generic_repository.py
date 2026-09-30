@@ -778,6 +778,7 @@ class CTCodelistGenericRepository(
             version_rel_type = "LATEST_FINAL"
         term_attributes_date = ""
         if strict_snapshot:
+
             def dated_value(relationship):
                 return f"""
                     WHERE {relationship}.start_date <= datetime($at_specific_date)
@@ -785,6 +786,7 @@ class CTCodelistGenericRepository(
                            OR datetime($at_specific_date) < datetime({relationship}.end_date))
                       AND {relationship}.status IN ['Final', 'Retired']
                 """
+
             cl_attrs_date = dated_value("cl_attrs_hv")
             cl_name_date = dated_value("cl_name_hv")
             term_name_date = dated_value("term_name_hv")
@@ -796,7 +798,9 @@ class CTCodelistGenericRepository(
                 elementId(cl_name_hv) AS codelist_name_identity,
                 elementId(term_name_hv) AS term_name_identity,
                 elementId(term_attributes_hv) AS term_attributes_identity
-            """ if strict_snapshot else ""
+            """
+            if strict_snapshot
+            else ""
         )
 
         query = f"""
@@ -827,7 +831,7 @@ class CTCodelistGenericRepository(
         exceptions.ValidationException.raise_if(
             strict_snapshot and len(result_array) != 1,
             msg="STUDY_LIBRARY_CT_SNAPSHOT_UNRESOLVED: "
-                f"{term_uid}/{codelist_submission_value}; expected one exact dated membership and value set.",
+            f"{term_uid}/{codelist_submission_value}; expected one exact dated membership and value set.",
         )
         if len(result_array) > 0:
             data_dict = {
@@ -836,15 +840,21 @@ class CTCodelistGenericRepository(
             }
             data_dict["date_conflict"] = is_date_conflict
             exceptions.ValidationException.raise_if(
-                strict_snapshot and any(
-                    data_dict.get(field) is None for field in (
-                        "codelist_name", "term_name", "membership_identity",
-                        "codelist_attributes_identity", "codelist_name_identity",
-                        "term_name_identity", "term_attributes_identity",
+                strict_snapshot
+                and any(
+                    data_dict.get(field) is None
+                    for field in (
+                        "codelist_name",
+                        "term_name",
+                        "membership_identity",
+                        "codelist_attributes_identity",
+                        "codelist_name_identity",
+                        "term_name_identity",
+                        "term_attributes_identity",
                     )
                 ),
                 msg="STUDY_LIBRARY_CT_SNAPSHOT_INCOMPLETE: "
-                    "No undated or later value may replace a missing selected terminology reading.",
+                "No undated or later value may replace a missing selected terminology reading.",
             )
             if data_dict["codelist_name"] is None:
                 # fallback, query for the first codelist name version

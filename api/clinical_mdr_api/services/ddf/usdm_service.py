@@ -4,16 +4,38 @@ from typing import Any
 from clinical_mdr_api.domains.study_definition_aggregates.study_metadata import (
     StudyComponentEnum,
 )
+from clinical_mdr_api.models.study_selections.study_visit import StudyVisit
 from clinical_mdr_api.services.ddf.usdm_mapper import USDMMapper
 from clinical_mdr_api.services.studies.study import StudyService
+from clinical_mdr_api.services.studies.study_activity_group import (
+    StudyActivityGroupService,
+)
+from clinical_mdr_api.services.studies.study_activity_instance_selection import (
+    StudyActivityInstanceSelectionService,
+)
+from clinical_mdr_api.services.studies.study_activity_instance_snapshot import (
+    read_study_activity_instance_definition,
+)
+from clinical_mdr_api.services.studies.study_activity_instruction import (
+    StudyActivityInstructionService,
+)
 from clinical_mdr_api.services.studies.study_activity_schedule import (
     StudyActivityScheduleService,
 )
 from clinical_mdr_api.services.studies.study_activity_selection import (
     StudyActivitySelectionService,
 )
+from clinical_mdr_api.services.studies.study_activity_subgroup import (
+    StudyActivitySubGroupService,
+)
 from clinical_mdr_api.services.studies.study_arm_selection import (
     StudyArmSelectionService,
+)
+from clinical_mdr_api.services.studies.study_branch_arm_selection import (
+    StudyBranchArmSelectionService,
+)
+from clinical_mdr_api.services.studies.study_cohort_selection import (
+    StudyCohortSelectionService,
 )
 from clinical_mdr_api.services.studies.study_compound_dosing_selection import (
     StudyCompoundDosingSelectionService,
@@ -24,7 +46,14 @@ from clinical_mdr_api.services.studies.study_compound_selection import (
 from clinical_mdr_api.services.studies.study_criteria_selection import (
     StudyCriteriaSelectionService,
 )
+from clinical_mdr_api.services.studies.study_data_supplier import (
+    StudyDataSupplierSelectionService,
+)
 from clinical_mdr_api.services.studies.study_design_cell import StudyDesignCellService
+from clinical_mdr_api.services.studies.study_design_class import StudyDesignClassService
+from clinical_mdr_api.services.studies.study_disease_milestone import (
+    StudyDiseaseMilestoneService,
+)
 from clinical_mdr_api.services.studies.study_element_selection import (
     StudyElementSelectionService,
 )
@@ -35,26 +64,15 @@ from clinical_mdr_api.services.studies.study_epoch import StudyEpochService
 from clinical_mdr_api.services.studies.study_objective_selection import (
     StudyObjectiveSelectionService,
 )
+from clinical_mdr_api.services.studies.study_soa_footnote import StudySoAFootnoteService
+from clinical_mdr_api.services.studies.study_soa_group import StudySoAGroupService
+from clinical_mdr_api.services.studies.study_source_variable import (
+    StudySourceVariableService,
+)
 from clinical_mdr_api.services.studies.study_standard_version_selection import (
     StudyStandardVersionService,
 )
 from clinical_mdr_api.services.studies.study_visit import StudyVisitService
-from clinical_mdr_api.models.study_selections.study_visit import StudyVisit
-from clinical_mdr_api.services.studies.study_cohort_selection import StudyCohortSelectionService
-from clinical_mdr_api.services.studies.study_branch_arm_selection import StudyBranchArmSelectionService
-from clinical_mdr_api.services.studies.study_activity_instance_selection import StudyActivityInstanceSelectionService
-from clinical_mdr_api.services.studies.study_activity_instruction import StudyActivityInstructionService
-from clinical_mdr_api.services.studies.study_activity_group import StudyActivityGroupService
-from clinical_mdr_api.services.studies.study_activity_subgroup import StudyActivitySubGroupService
-from clinical_mdr_api.services.studies.study_soa_footnote import StudySoAFootnoteService
-from clinical_mdr_api.services.studies.study_soa_group import StudySoAGroupService
-from clinical_mdr_api.services.studies.study_disease_milestone import StudyDiseaseMilestoneService
-from clinical_mdr_api.services.studies.study_data_supplier import StudyDataSupplierSelectionService
-from clinical_mdr_api.services.studies.study_design_class import StudyDesignClassService
-from clinical_mdr_api.services.studies.study_source_variable import StudySourceVariableService
-from clinical_mdr_api.services.studies.study_activity_instance_snapshot import (
-    read_study_activity_instance_definition,
-)
 from common.telemetry import trace_calls
 
 
@@ -88,10 +106,14 @@ def read_native_visits(
     if page_size != 0:
         raise ValueError("USDM native visit snapshots require the complete collection")
     StudyService.check_if_study_uid_and_version_exists(study_uid, study_value_version)
-    visits = StudyVisitService._get_all_visits(study_uid, study_value_version=study_value_version)
+    visits = StudyVisitService._get_all_visits(
+        study_uid, study_value_version=study_value_version
+    )
     return [
         NativeVisitSnapshot(
-            StudyVisit.transform_to_response_model(visit, study_value_version=study_value_version),
+            StudyVisit.transform_to_response_model(
+                visit, study_value_version=study_value_version
+            ),
             getattr(visit.anchor_visit, "uid", None),
         )
         for visit in visits
@@ -161,7 +183,8 @@ class USDMService:
         self, uid: str, study_value_version: str | None = None
     ) -> dict[str, Any]:
         return self._usdm_mapper.map(
-            self._read_study(uid, study_value_version), study_value_version=study_value_version
+            self._read_study(uid, study_value_version),
+            study_value_version=study_value_version,
         )
 
     @trace_calls(args=[1], kwargs=["uid"])
@@ -170,7 +193,8 @@ class USDMService:
     ) -> dict[str, Any]:
         """Return an honest draft and source issues; this grants no release authority."""
         return self._usdm_mapper.map_with_report(
-            self._read_study(uid, study_value_version), study_value_version=study_value_version
+            self._read_study(uid, study_value_version),
+            study_value_version=study_value_version,
         )
 
     @staticmethod

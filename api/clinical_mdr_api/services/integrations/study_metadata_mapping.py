@@ -223,8 +223,12 @@ def _validate_metadata_value(path: str, value: Any):
 class NativeStudyMetadataPort:
     def stage_context(self, uid: str) -> dict[str, Any]:
         """Read the study's actual CT selections for unapproved source drafts."""
-        from clinical_mdr_api.models.integrations.mapping_context import MappingContextRequest
-        from clinical_mdr_api.services.integrations.mapping_context import MappingContextService
+        from clinical_mdr_api.models.integrations.mapping_context import (
+            MappingContextRequest,
+        )
+        from clinical_mdr_api.services.integrations.mapping_context import (
+            MappingContextService,
+        )
 
         warnings: list[str] = []
         blockers: list[str] = []
@@ -236,12 +240,16 @@ class NativeStudyMetadataPort:
                 "OSB_STUDY_METADATA_CONTEXT_REQUIRED",
                 "The native study terminology selections are unavailable.",
             )
-        return {"selectedPackages": [
-            {"packageUid": package.package_uid,
-             "catalogueName": package.catalogue_name,
-             "effectiveDate": package.effective_date}
-            for package in packages
-        ]}
+        return {
+            "selectedPackages": [
+                {
+                    "packageUid": package.package_uid,
+                    "catalogueName": package.catalogue_name,
+                    "effectiveDate": package.effective_date,
+                }
+                for package in packages
+            ]
+        }
 
     def read(self, uid: str) -> dict[str, Any]:
         from clinical_mdr_api.services.studies.study import StudyService
@@ -652,8 +660,12 @@ def compose_metadata_values(grouped: dict[str, list[dict[str, Any]]]):
     """Compose exact contributors, refusing conflicting scalar proposals."""
     result = {}
     for path, contributors in grouped.items():
-        values = list({canonical_json(item["metadataValue"]): item["metadataValue"]
-                       for item in contributors}.values())
+        values = list(
+            {
+                canonical_json(item["metadataValue"]): item["metadataValue"]
+                for item in contributors
+            }.values()
+        )
         if len(values) == 1:
             value = values[0]
         elif all(item.get("joinedText") is True for item in contributors) and all(
@@ -663,16 +675,29 @@ def compose_metadata_values(grouped: dict[str, list[dict[str, Any]]]):
         elif all(item.get("multiValued") is True for item in contributors) and all(
             isinstance(item, list) for item in values
         ):
-            value = list({canonical_json(item): item for items_value in values for item in items_value}.values())
+            value = list(
+                {
+                    canonical_json(item): item
+                    for items_value in values
+                    for item in items_value
+                }.values()
+            )
         else:
-            _fail("OSB_STUDY_METADATA_CONFLICT", f"Selected source facts disagree on {path}.")
+            _fail(
+                "OSB_STUDY_METADATA_CONFLICT",
+                f"Selected source facts disagree on {path}.",
+            )
         _validate_metadata_value(path, value)
         result[path] = value
     return result
 
 
 def apply_metadata_selections(
-    items: list[dict[str, Any]], uid: str, *, context=None, port=None,
+    items: list[dict[str, Any]],
+    uid: str,
+    *,
+    context=None,
+    port=None,
     result_pre_versions: dict[str, str | None] | None = None,
 ):
     """Apply all selected metadata contributors in one native PATCH.

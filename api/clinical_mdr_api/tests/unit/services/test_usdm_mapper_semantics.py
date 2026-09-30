@@ -2,42 +2,91 @@
 
 from types import SimpleNamespace
 
-from clinical_mdr_api.services.ddf.usdm_mapper import USDMMapper
-from clinical_mdr_api.domain_repositories.syntax_instances.timeframe_repository import TimeframeRepository
-from clinical_mdr_api.services.ddf.usdm_mapper import USDMMappingAuthorityRequired
-from clinical_mdr_api.services.ddf.usdm_mapping_context import MappingContext
 import pytest
 
+from clinical_mdr_api.domain_repositories.syntax_instances.timeframe_repository import (
+    TimeframeRepository,
+)
+from clinical_mdr_api.services.ddf.usdm_mapper import (
+    USDMMapper,
+    USDMMappingAuthorityRequired,
+)
+from clinical_mdr_api.services.ddf.usdm_mapping_context import MappingContext
 
-@pytest.mark.parametrize('observational', [True, False])
+
+@pytest.mark.parametrize("observational", [True, False])
 def test_opposite_native_typed_design_attributes_require_reconciliation(observational):
     from clinical_mdr_api.services.ddf.usdm_mapper import USDMMappingAuthorityRequired
+
     mapper = _mapper()
-    term = SimpleNamespace(term_uid='C16084' if observational else 'C98388', sponsor_preferred_name='Sponsor display label')
-    opposite = SimpleNamespace(term_uid='opposite-model')
-    high = SimpleNamespace(study_type_code=term, observational_model_code=None if observational else opposite, observational_time_perspective_code=None)
-    study = SimpleNamespace(current_metadata=SimpleNamespace(high_level_study_design=high, study_intervention=SimpleNamespace(intervention_model_code=opposite if observational else None)))
-    with pytest.raises(USDMMappingAuthorityRequired, match='USDM_STUDY_DESIGN_AUTHORITY_CONFLICT'):
+    term = SimpleNamespace(
+        term_uid="C16084" if observational else "C98388",
+        sponsor_preferred_name="Sponsor display label",
+    )
+    opposite = SimpleNamespace(term_uid="opposite-model")
+    high = SimpleNamespace(
+        study_type_code=term,
+        observational_model_code=None if observational else opposite,
+        observational_time_perspective_code=None,
+    )
+    study = SimpleNamespace(
+        current_metadata=SimpleNamespace(
+            high_level_study_design=high,
+            study_intervention=SimpleNamespace(
+                intervention_model_code=opposite if observational else None
+            ),
+        )
+    )
+    with pytest.raises(
+        USDMMappingAuthorityRequired, match="USDM_STUDY_DESIGN_AUTHORITY_CONFLICT"
+    ):
         mapper._get_study_designs(study)
 
-@pytest.mark.parametrize('label,code',[(None,'USDM_STUDY_DESIGN_TYPE_AUTHORITY_REQUIRED'),('Observational','USDM_OBSERVATIONAL_MODEL_AUTHORITY_REQUIRED'),('Interventional','USDM_INTERVENTIONAL_MODEL_AUTHORITY_REQUIRED')])
-def test_concrete_usdm_design_requires_native_type_and_kind_specific_properties(label,code):
-    mapper=_mapper()
-    term=SimpleNamespace(term_uid='C16084' if label == 'Observational' else 'C98388', sponsor_preferred_name=label) if label else None
-    study=SimpleNamespace(current_metadata=SimpleNamespace(high_level_study_design=SimpleNamespace(study_type_code=term)))
-    with pytest.raises(USDMMappingAuthorityRequired,match=code):mapper._get_study_designs(study)
+
+@pytest.mark.parametrize(
+    "label,code",
+    [
+        (None, "USDM_STUDY_DESIGN_TYPE_AUTHORITY_REQUIRED"),
+        ("Observational", "USDM_OBSERVATIONAL_MODEL_AUTHORITY_REQUIRED"),
+        ("Interventional", "USDM_INTERVENTIONAL_MODEL_AUTHORITY_REQUIRED"),
+    ],
+)
+def test_concrete_usdm_design_requires_native_type_and_kind_specific_properties(
+    label, code
+):
+    mapper = _mapper()
+    term = (
+        SimpleNamespace(
+            term_uid="C16084" if label == "Observational" else "C98388",
+            sponsor_preferred_name=label,
+        )
+        if label
+        else None
+    )
+    study = SimpleNamespace(
+        current_metadata=SimpleNamespace(
+            high_level_study_design=SimpleNamespace(study_type_code=term)
+        )
+    )
+    with pytest.raises(USDMMappingAuthorityRequired, match=code):
+        mapper._get_study_designs(study)
+
 
 def test_native_criteria_callback_gets_required_no_brackets_argument():
-    calls=[]
+    calls = []
+
     def actual_signature(study_uid, no_brackets, study_value_version=None):
-        calls.append((study_uid,no_brackets,study_value_version));return []
-    mapper=_mapper()
-    mapper._get_osb_study_criteria=actual_signature
-    mapper._load_study_criteria_selections('Study_native')
-    assert calls == [('Study_native',False,None)]
+        calls.append((study_uid, no_brackets, study_value_version))
+        return []
+
+    mapper = _mapper()
+    mapper._get_osb_study_criteria = actual_signature
+    mapper._load_study_criteria_selections("Study_native")
+    assert calls == [("Study_native", False, None)]
+
 
 def test_unselected_global_timeframe_is_discoverable_before_first_study_selection():
-    assert TimeframeRepository._only_instances_with_studies(None) == ''
+    assert TimeframeRepository._only_instances_with_studies(None) == ""
 
 
 def _mapper(
@@ -87,13 +136,29 @@ def test_ct_code_is_resolved_only_through_the_selected_final_package(monkeypatch
         observed["query"] = text
         observed["params"] = params
         package = {"uid": "DDF CT 2025-09-26", "effective_date": "2025-09-26"}
-        return ([[
-            {"name": "CDISC"}, "NativeTerm_official_title", "TermAttributes:selected:1",
-            {"concept_id": "C207616", "preferred_term": "Study Official Title"},
-            package, "DDF CT", package, "DDF CT",
-            [{"version": "1.0", "status": "Final", "start_date": "2025-09-26T00:00:00Z"}],
-            [package],
-        ]], None)
+        return (
+            [
+                [
+                    {"name": "CDISC"},
+                    "NativeTerm_official_title",
+                    "TermAttributes:selected:1",
+                    {"concept_id": "C207616", "preferred_term": "Study Official Title"},
+                    package,
+                    "DDF CT",
+                    package,
+                    "DDF CT",
+                    [
+                        {
+                            "version": "1.0",
+                            "status": "Final",
+                            "start_date": "2025-09-26T00:00:00Z",
+                        }
+                    ],
+                    [package],
+                ]
+            ],
+            None,
+        )
 
     monkeypatch.setattr(
         "clinical_mdr_api.services.ddf.usdm_mapper.db.cypher_query", query
@@ -115,8 +180,11 @@ def test_ct_code_is_resolved_only_through_the_selected_final_package(monkeypatch
     assert code.code == "C207616"
     assert code.codeSystem == "http://www.cdisc.org"
     assert code.codeSystemVersion == "2025-09-26"
-    retained = next(row for row in mapper._context.native_records
-                    if row["kind"] == "ctPackageTermDefinition")
+    retained = next(
+        row
+        for row in mapper._context.native_records
+        if row["kind"] == "ctPackageTermDefinition"
+    )
     assert retained["record"]["selectedPackage"]["uid"] == "DDF CT 2025-09-26"
 
 
@@ -240,7 +308,10 @@ def test_study_element_name_is_native_and_dosing_links_real_intervention():
     )
     assert elements[0].name == "Monthly treatment"
     assert elements[0].studyInterventionIds == [interventions[0].id]
-    assert "durationWillVary" not in interventions[0].administrations[0].duration.model_dump()
+    assert (
+        "durationWillVary"
+        not in interventions[0].administrations[0].duration.model_dump()
+    )
 
 
 def test_indication_survives_unknown_rare_disease_state(monkeypatch):
@@ -328,7 +399,9 @@ def test_endpoint_source_semantics_are_typed_extensions():
 
     assert payload["name"] == "Change in BCVA"
     assert "purpose" not in payload
-    assert any(row["targetPath"] == "Endpoint/purpose" for row in mapper._context.issues)
+    assert any(
+        row["targetPath"] == "Endpoint/purpose" for row in mapper._context.issues
+    )
     assert extensions["endpoint-sublevel"]["valueCode"]["code"] == "C98772"
     assert extensions["endpoint-timeframe"]["valueString"] == "At month 12"
     assert (
@@ -415,28 +488,32 @@ def test_population_preserves_unknown_health_one_sided_age_and_diagnosis_semanti
             SimpleNamespace(term_uid="MedDRA_10029114", name="Neoplasms")
         ],
     )
-    study = SimpleNamespace(current_metadata=SimpleNamespace(study_population=population))
+    study = SimpleNamespace(
+        current_metadata=SimpleNamespace(study_population=population)
+    )
     with pytest.raises(USDMMappingAuthorityRequired, match="maxValue"):
         mapper._get_study_population(study)
     mapper._context = MappingContext(allow_incomplete=True)
     projected = mapper._get_study_population(study)
     payload = projected.model_dump(by_alias=True)
     extensions = {
-        item["url"].rsplit("/", 1)[-1]: item
-        for item in payload["extensionAttributes"]
+        item["url"].rsplit("/", 1)[-1]: item for item in payload["extensionAttributes"]
     }
 
     assert "includesHealthySubjects" not in payload
     assert payload["plannedAge"]["minValue"]["value"] == 18
     assert "maxValue" not in payload["plannedAge"]
     assert "isApproximate" not in payload["plannedAge"]
-    assert {"Range/maxValue", "Range/isApproximate", "StudyDesignPopulation/includesHealthySubjects"} <= {
-        row["targetPath"] for row in mapper._context.issues
-    }
+    assert {
+        "Range/maxValue",
+        "Range/isApproximate",
+        "StudyDesignPopulation/includesHealthySubjects",
+    } <= {row["targetPath"] for row in mapper._context.issues}
     assert payload["description"] is None
     assert extensions["healthy-subject-indicator-unresolved"]["valueBoolean"] is True
     assert extensions["planned-minimum-age"]["valueQuantity"]["value"] == 18
     assert extensions["pediatric-study-indicator"]["valueBoolean"] is False
-    assert extensions["diagnosis-groups"]["extensionAttributes"][0]["valueCode"][
-        "code"
-    ] == "MedDRA_10029114"
+    assert (
+        extensions["diagnosis-groups"]["extensionAttributes"][0]["valueCode"]["code"]
+        == "MedDRA_10029114"
+    )

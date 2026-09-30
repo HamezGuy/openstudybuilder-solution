@@ -47,9 +47,7 @@ def _principal(
         human_user_id=actor_id,
         token_id=signature_id,
         tenant_id="tenant-1",
-        scoped_study_ids=(
-            scoped_study_ids or frozenset({"study-1", "Study_1"})
-        ),
+        scoped_study_ids=(scoped_study_ids or frozenset({"study-1", "Study_1"})),
         organization_ids=frozenset(),
         roles=frozenset({"Study.Read", "Study.Write"}),
         authentication_verified=True,
@@ -934,7 +932,9 @@ def test_a_declined_optional_family_is_a_recorded_deferral_not_a_blocker():
         proposal["proposalHash"],
         _item_object(proposal)["proposalObjectId"],
         ProposalObjectDecisionInput(
-            action="create_request", note="Create draft item", signature_id="signature-2"
+            action="create_request",
+            note="Create draft item",
+            signature_id="signature-2",
         ),
         principal=_principal("reviewer-2", "signature-2"),
     )
@@ -950,8 +950,14 @@ def test_a_declined_optional_family_is_a_recorded_deferral_not_a_blocker():
     )
     assert complete.review_complete is True
     dosing_id = dosing["proposalObjectId"]
-    assert f"OSB_NATIVE_V2_CREATE_REQUEST_REQUIRED:{dosing_id}" not in complete.execution_blockers
-    assert f"OSB_NATIVE_V2_SELECTION_REQUIRED:{dosing_id}" not in complete.execution_blockers
+    assert (
+        f"OSB_NATIVE_V2_CREATE_REQUEST_REQUIRED:{dosing_id}"
+        not in complete.execution_blockers
+    )
+    assert (
+        f"OSB_NATIVE_V2_SELECTION_REQUIRED:{dosing_id}"
+        not in complete.execution_blockers
+    )
     assert not any(
         blocker.startswith("OSB_RELEASE_NATIVE_FAMILY_EXECUTOR_UNAVAILABLE:")
         and blocker.endswith(":StudyCompoundDosing")
@@ -980,10 +986,14 @@ def test_the_spine_keeps_its_all_or_nothing_rule_under_not_applicable():
         proposal["proposalHash"],
         _item_object(proposal)["proposalObjectId"],
         ProposalObjectDecisionInput(
-            action="create_request", note="Create draft item", signature_id="signature-2"
+            action="create_request",
+            note="Create draft item",
+            signature_id="signature-2",
         ),
         principal=_principal("reviewer-2", "signature-2"),
     )
     assert declined_activity.review_complete is False
     activity_id = _activity_object(proposal)["proposalObjectId"]
-    assert f"OSB_NATIVE_V2_SELECTION_REQUIRED:{activity_id}" in complete.execution_blockers
+    assert (
+        f"OSB_NATIVE_V2_SELECTION_REQUIRED:{activity_id}" in complete.execution_blockers
+    )

@@ -10,8 +10,10 @@ from clinical_mdr_api.models.integrations.proposal_review import (
     ProposalReviewIntake,
     ProposalReviewStatus,
 )
+from clinical_mdr_api.routers.integrations.governed_item_association import (
+    router as governed_item_association_router,
+)
 from clinical_mdr_api.routers.integrations.mapping_context import canonical_openapi_hash
-from clinical_mdr_api.routers.integrations.governed_item_association import router as governed_item_association_router
 from clinical_mdr_api.services.integrations.proposal_review import (
     ProposalReviewPrincipal,
     ProposalReviewService,
@@ -37,9 +39,7 @@ def _review_principal() -> ProposalReviewPrincipal:
         token_id=claims.sid or claims.jti or claims.uti or "",
         tenant_id=claims.tenant_id or "",
         scoped_study_ids=frozenset(str(value) for value in claims.study_ids),
-        organization_ids=frozenset(
-            str(value) for value in claims.organization_ids
-        ),
+        organization_ids=frozenset(str(value) for value in claims.organization_ids),
         roles=frozenset(claims.roles or set()),
         authentication_verified=authenticated.authentication_verified,
         # Delegated-claim surfaces postdate the original token contract, so a

@@ -2650,7 +2650,10 @@ class StudyService:
                 and study_patch_request.current_metadata.identification_metadata
                 is not None
             ):
-                if null_adjudication is None and study_patch_request.study_parent_part_uid:
+                if (
+                    null_adjudication is None
+                    and study_patch_request.study_parent_part_uid
+                ):
                     # pylint: disable=line-too-long
                     study_patch_request.current_metadata.identification_metadata.registry_identifiers = RegistryIdentifiersJsonModel.from_study_registry_identifiers_vo(
                         parent_part_ar.current_metadata.id_metadata.registry_identifiers,
@@ -2705,7 +2708,10 @@ class StudyService:
                 study_patch_request.current_metadata is not None
                 and study_patch_request.current_metadata.study_description is not None
             ):
-                if null_adjudication is None and study_patch_request.study_parent_part_uid:
+                if (
+                    null_adjudication is None
+                    and study_patch_request.study_parent_part_uid
+                ):
                     study_patch_request.current_metadata.study_description.study_title = (
                         parent_part_ar.current_metadata.study_description.study_title
                     )

@@ -3,10 +3,10 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Body, Path, Query
 from starlette.requests import Request
 
-from clinical_mdr_api.models.odms.common_models import OdmElementWithParentUid
 from clinical_mdr_api.models.odms.collection_initialization import (
     OdmCollectionInitializationInput,
 )
+from clinical_mdr_api.models.odms.common_models import OdmElementWithParentUid
 from clinical_mdr_api.models.odms.form import (
     OdmForm,
     OdmFormItemGroupPostInput,
@@ -16,11 +16,11 @@ from clinical_mdr_api.models.odms.form import (
 from clinical_mdr_api.models.utils import CustomPage
 from clinical_mdr_api.repositories._utils import FilterOperator
 from clinical_mdr_api.routers import _generic_descriptions, decorators
-from clinical_mdr_api.services.odms.forms import OdmFormService
-from clinical_mdr_api.services.odms.item_groups import OdmItemGroupService
 from clinical_mdr_api.services.odms.collection_initialization import (
     initialize_odm_collection,
 )
+from clinical_mdr_api.services.odms.forms import OdmFormService
+from clinical_mdr_api.services.odms.item_groups import OdmItemGroupService
 from common.auth import rbac
 from common.auth.dependencies import security
 from common.config import settings
@@ -517,7 +517,10 @@ def initialize_item_groups_of_odm_form(
     request: OdmCollectionInitializationInput,
 ) -> OdmForm:
     return initialize_odm_collection(
-        OdmFormService(), OdmItemGroupService(), odm_form_uid, request,
+        OdmFormService(),
+        OdmItemGroupService(),
+        odm_form_uid,
+        request,
         collection="item_groups",
     )
 

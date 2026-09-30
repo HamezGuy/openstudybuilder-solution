@@ -395,8 +395,11 @@ class StudyVisitRepository:
             visit_class=VisitClass[study_visit.get("visit_class")],
             timing_mode=VisitTimingMode(study_visit.get("timing_mode") or "STANDARD"),
             untimed_timing=(
-                parse_untimed_timing(study_visit["untimed_timing"]).model_dump(mode="json")
-                if study_visit.get("untimed_timing") is not None else None
+                parse_untimed_timing(study_visit["untimed_timing"]).model_dump(
+                    mode="json"
+                )
+                if study_visit.get("untimed_timing") is not None
+                else None
             ),
             visit_subclass=(
                 VisitSubclass[study_visit["visit_subclass"]]
@@ -1056,12 +1059,10 @@ class StudyVisitRepository:
 
         # Visit contact mode
         if visit_contact_mode is not None:
-            selected_contact_mode_node = (
-                CTCodelistAttributesRepository().get_or_create_selected_term(
-                    visit_contact_mode,
-                    codelist_submission_value=settings.study_visit_contact_mode_cl_submval,
-                    catalogue_name=settings.sdtm_ct_catalogue_name,
-                )
+            selected_contact_mode_node = CTCodelistAttributesRepository().get_or_create_selected_term(
+                visit_contact_mode,
+                codelist_submission_value=settings.study_visit_contact_mode_cl_submval,
+                catalogue_name=settings.sdtm_ct_catalogue_name,
             )
             new_visit.has_visit_contact_mode.connect(selected_contact_mode_node)
 

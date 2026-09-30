@@ -1,4 +1,6 @@
-from clinical_mdr_api.services.integrations.mapping_decision_v1 import executor_kind_for_family
+from clinical_mdr_api.services.integrations.mapping_decision_v1 import (
+    executor_kind_for_family,
+)
 from clinical_mdr_api.services.integrations.osb_family_map import (
     BLOCKER_ONLY_FAMILIES,
     CAPTURE_SECTION_FAMILIES,
@@ -20,8 +22,13 @@ def test_every_phase4_study_section_has_a_study_executor() -> None:
 
 def test_every_phase4_capture_section_has_a_capture_executor() -> None:
     required = (
-        "forms", "sections_groups", "items", "checks", "conditions",
-        "branching", "assignments",
+        "forms",
+        "sections_groups",
+        "items",
+        "checks",
+        "conditions",
+        "branching",
+        "assignments",
     )
     for section in required:
         families = CAPTURE_SECTION_FAMILIES[section]

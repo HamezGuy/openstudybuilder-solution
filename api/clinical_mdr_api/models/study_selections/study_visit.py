@@ -11,15 +11,15 @@ from clinical_mdr_api.models.controlled_terminologies.ct_term import (
     CTTermUidInput,
     SimpleCTTermNameWithConflictFlag,
 )
+from clinical_mdr_api.models.study_selections.visit_timing import (
+    UntimedVisitTiming,
+    VisitTimingInput,
+)
 from clinical_mdr_api.models.utils import (
     BaseModel,
     PatchInputModel,
     PostInputModel,
     get_latest_on_datetime_str,
-)
-from clinical_mdr_api.models.study_selections.visit_timing import (
-    UntimedVisitTiming,
-    VisitTimingInput,
 )
 from common.config import settings
 from common.utils import VisitClass, VisitSubclass, VisitTimingMode

@@ -15,7 +15,6 @@ from clinical_mdr_api.services.ddf.usdm_mapping_context import (
     native_json,
 )
 
-
 SCOPE_URL = "https://openstudybuilder.org/usdm/extensions/cell-transition-scope/"
 REVIEW_CODE = "USDM_CELL_TRANSITION_EXECUTION_REVIEW_REQUIRED"
 
@@ -27,7 +26,10 @@ def project_cell_transitions(mapper, study, version, design):
     visit sequence. Its entry, main role, destination and executable evaluation
     require review. No source narrative is parsed into an executable predicate.
     """
-    from clinical_mdr_api.services.ddf.usdm_mapper import _items, _stable_selection_order
+    from clinical_mdr_api.services.ddf.usdm_mapper import (
+        _items,
+        _stable_selection_order,
+    )
 
     context = mapper._context
     rows = _stable_selection_order(
@@ -96,7 +98,9 @@ def project_cell_transitions(mapper, study, version, design):
             ],
         }
         context.unresolved(
-            REVIEW_CODE, source_path, "ConditionAssignment/conditionTargetId",
+            REVIEW_CODE,
+            source_path,
+            "ConditionAssignment/conditionTargetId",
             "The exact cell transition narrative is preserved as a pending decision. "
             "The native source supplies no scheduled destination, default path or executable predicate.",
             "Review the displayed native cell, arm/branch, epoch and element; place this decision in its "
@@ -115,7 +119,8 @@ def project_cell_transitions(mapper, study, version, design):
             for name, target in scope.items()
         ]
         assignment = context.build(
-            ConditionAssignment, source_path,
+            ConditionAssignment,
+            source_path,
             id=assignment_id,
             condition=narrative,
             # conditionTargetId is required by USDM, but absent in this source.
@@ -125,14 +130,16 @@ def project_cell_transitions(mapper, study, version, design):
             ],
         )
         decision = context.build(
-            ScheduledDecisionInstance, source_path,
+            ScheduledDecisionInstance,
+            source_path,
             id=decision_id,
             name=f"Cell transition {uid}",
             epochId=scope.get("epochId"),
             conditionAssignments=[assignment],
         )
         timeline = context.build(
-            ScheduleTimeline, source_path,
+            ScheduleTimeline,
+            source_path,
             id=timeline_id,
             name=f"Unplaced cell transition {uid}",
             instances=[decision],

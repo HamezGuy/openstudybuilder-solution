@@ -13,7 +13,6 @@ from clinical_mdr_api.services.integrations.edc_export import (
     _carrier_json,
     _source_study_id,
 )
-
 from clinical_mdr_api.tests.unit.services.test_edc_study_exchange import exchange
 
 
@@ -27,9 +26,7 @@ def _service():
 def test_compressed_carrier_restores_exact_json():
     source = {"refKey": "AE.TERM", "metadata": ["exact"] * 1000}
     raw = json.dumps(source, separators=(",", ":")).encode()
-    carrier = "gzip+base64:" + base64.b64encode(
-        gzip.compress(raw, mtime=0)
-    ).decode()
+    carrier = "gzip+base64:" + base64.b64encode(gzip.compress(raw, mtime=0)).decode()
 
     assert _carrier_json(carrier) == source
 
@@ -285,10 +282,16 @@ def test_v1_legacy_send_requires_nonproduction_explicit_opt_in(monkeypatch):
     from clinical_mdr_api.services.integrations import edc_export
 
     monkeypatch.setattr(edc_export.config.settings, "mapping_authority_mode", "legacy")
-    monkeypatch.setattr(edc_export.config.settings, "deployment_environment", "development")
-    monkeypatch.setattr(edc_export.config.settings, "allow_unsafe_legacy_edc_send", False)
+    monkeypatch.setattr(
+        edc_export.config.settings, "deployment_environment", "development"
+    )
+    monkeypatch.setattr(
+        edc_export.config.settings, "allow_unsafe_legacy_edc_send", False
+    )
     service = _service()
-    with pytest.raises(EdcExportError, match="LEGACY_EDC_SEND_EXPLICIT_OPT_IN_REQUIRED"):
+    with pytest.raises(
+        EdcExportError, match="LEGACY_EDC_SEND_EXPLICIT_OPT_IN_REQUIRED"
+    ):
         service.send_to_edc("Study_1", dry_run=True)
 
 
@@ -296,8 +299,12 @@ def test_v1_real_send_is_always_prohibited(monkeypatch):
     from clinical_mdr_api.services.integrations import edc_export
 
     monkeypatch.setattr(edc_export.config.settings, "mapping_authority_mode", "legacy")
-    monkeypatch.setattr(edc_export.config.settings, "deployment_environment", "development")
-    monkeypatch.setattr(edc_export.config.settings, "allow_unsafe_legacy_edc_send", True)
+    monkeypatch.setattr(
+        edc_export.config.settings, "deployment_environment", "development"
+    )
+    monkeypatch.setattr(
+        edc_export.config.settings, "allow_unsafe_legacy_edc_send", True
+    )
     service = _service()
     with pytest.raises(EdcExportError, match="LEGACY_EDC_ACTIVATION_PROHIBITED"):
         service.send_to_edc("Study_1", dry_run=False)
@@ -325,13 +332,17 @@ def _sendable_service(monkeypatch, bundle, body):
     from clinical_mdr_api.services.integrations import edc_export
 
     monkeypatch.setattr(edc_export.config.settings, "mapping_authority_mode", "legacy")
-    monkeypatch.setattr(edc_export.config.settings, "deployment_environment", "development")
-    monkeypatch.setattr(edc_export.config.settings, "allow_unsafe_legacy_edc_send", True)
+    monkeypatch.setattr(
+        edc_export.config.settings, "deployment_environment", "development"
+    )
+    monkeypatch.setattr(
+        edc_export.config.settings, "allow_unsafe_legacy_edc_send", True
+    )
     monkeypatch.setattr(edc_export.config.settings, "edc_base_url", "http://edc.test")
     monkeypatch.setattr(
-        edc_export.config.settings, "edc_api_key", type(
-            "Key", (), {"get_secret_value": lambda self: "secret"}
-        )()
+        edc_export.config.settings,
+        "edc_api_key",
+        type("Key", (), {"get_secret_value": lambda self: "secret"})(),
     )
     service = _service()
     service.build_bundle = lambda study_uid: json.loads(json.dumps(bundle))
@@ -355,22 +366,40 @@ def _sendable_service(monkeypatch, bundle, body):
 
 
 def test_send_keeps_export_census_on_the_wire(monkeypatch):
-    census = {"rows": [{"kind": "mapping_authority", "ref": "s", "detail": "d"}],
-              "counts": {"total": 1, "downgrades": 0, "ambiguous_joins": 0, "lossy": 0}}
-    bundle = exchange(census=census, disclosure={"mode": "legacy", "deploymentAllowed": False})
+    census = {
+        "rows": [{"kind": "mapping_authority", "ref": "s", "detail": "d"}],
+        "counts": {"total": 1, "downgrades": 0, "ambiguous_joins": 0, "lossy": 0},
+    }
+    bundle = exchange(
+        census=census, disclosure={"mode": "legacy", "deploymentAllowed": False}
+    )
     service, captured = _sendable_service(monkeypatch, bundle, {"success": True})
     result = service.send_to_edc("Study_1", dry_run=True)
     assert captured["json"]["bundle"]["extensions"]["_osbExport"]["census"] == census
     assert result["exportCensus"] == census
 
 
-@pytest.mark.parametrize("body,expect", [
-    ({"success": True, "partial": True}, "partial=True"),
-    ({"success": True, "census": {"counts": {"unknown": 2}}}, r"census\.counts\.unknown=2"),
-    ({"success": True, "assignmentsSkipped": 3}, "assignmentsSkipped=3"),
-    ({"success": True, "census": {"counts": {"unknown": 0}, "studyTasksSkipped": [{"ref": "T1"}]}},
-     "studyTasksSkipped="),
-])
+@pytest.mark.parametrize(
+    "body,expect",
+    [
+        ({"success": True, "partial": True}, "partial=True"),
+        (
+            {"success": True, "census": {"counts": {"unknown": 2}}},
+            r"census\.counts\.unknown=2",
+        ),
+        ({"success": True, "assignmentsSkipped": 3}, "assignmentsSkipped=3"),
+        (
+            {
+                "success": True,
+                "census": {
+                    "counts": {"unknown": 0},
+                    "studyTasksSkipped": [{"ref": "T1"}],
+                },
+            },
+            "studyTasksSkipped=",
+        ),
+    ],
+)
 def test_send_rejects_narrowed_edc_acceptance(monkeypatch, body, expect):
     bundle = exchange()
     service, _ = _sendable_service(monkeypatch, bundle, body)

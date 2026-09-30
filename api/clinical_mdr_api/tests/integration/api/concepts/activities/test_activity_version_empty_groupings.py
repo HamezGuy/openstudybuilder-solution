@@ -11,8 +11,7 @@ from neomodel import db
 def groupings_client(temp_database):
     # Real Neo4j relationships, including an unbound historical version whose
     # current version has a grouping. No clinical bindings are synthesized by GET.
-    db.cypher_query(
-        """
+    db.cypher_query("""
         CREATE (gr:ActivityGroupRoot {uid: 'Group_fixture'})
             -[:HAS_VERSION {version: '1.0', status: 'Final', start_date: datetime('2026-09-01T00:00:00Z')}]->
             (gv:ActivityGroupValue {name: 'Source group'})
@@ -50,8 +49,7 @@ def groupings_client(temp_database):
             (wrong_value:ActivityValue {name: 'Malformed grouping target'})
         CREATE (wrong_label)-[:LATEST]->(wrong_value)
         CREATE (wrong_value)-[:HAS_GROUPING]->(:MalformedGroupingTarget {uid: 'Wrong_target'})
-        """
-    )
+        """)
     from clinical_mdr_api.main import app
 
     return TestClient(app)
@@ -68,7 +66,11 @@ def test_existing_activity_version_without_groups_returns_an_empty_page(
     before, _ = db.cypher_query("MATCH ()-[r:HAS_GROUPING]->() RETURN count(r)")
     response = groupings_client.get(
         grouping_url("Activity_empty"),
-        params={"page_number": page_number, "page_size": page_size, "total_count": True},
+        params={
+            "page_number": page_number,
+            "page_size": page_size,
+            "total_count": True,
+        },
     )
     assert response.status_code == 200, response.text
     result = response.json()

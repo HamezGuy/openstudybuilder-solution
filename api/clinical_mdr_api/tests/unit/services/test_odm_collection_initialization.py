@@ -12,17 +12,25 @@ import pytest
 from neomodel import db
 from pydantic import ValidationError
 
-from clinical_mdr_api.domain_repositories._utils.native_read_cache import native_read_cached
-from clinical_mdr_api.domain_repositories.models.odm import OdmItemGroupRefRelation, OdmItemRefRelation
+from clinical_mdr_api.domain_repositories._utils.native_read_cache import (
+    native_read_cached,
+)
+from clinical_mdr_api.domain_repositories.models.odm import (
+    OdmItemGroupRefRelation,
+    OdmItemRefRelation,
+)
 from clinical_mdr_api.domain_repositories.odms import generic_repository
 from clinical_mdr_api.domains.enums import LibraryItemStatus
 from clinical_mdr_api.domains.odms.utils import RelationType
-from clinical_mdr_api.models.odms.collection_initialization import OdmCollectionInitializationInput
+from clinical_mdr_api.models.odms.collection_initialization import (
+    OdmCollectionInitializationInput,
+)
 from clinical_mdr_api.models.odms.item import OdmItemParentGroup
 from clinical_mdr_api.models.odms.item_group import OdmItemGroupItemPostInput
 from clinical_mdr_api.services import _utils
 from clinical_mdr_api.services.odms.collection_initialization import (
-    OdmCollectionInitializationConflict, initialize_odm_collection,
+    OdmCollectionInitializationConflict,
+    initialize_odm_collection,
 )
 from clinical_mdr_api.services.odms.forms import OdmFormService
 from clinical_mdr_api.services.odms.item_groups import OdmItemGroupService
@@ -91,20 +99,26 @@ class RelationRepository:
         rows = []
         for record in self.store.state[uid][collection]:
             properties = {
-                key: deepcopy(value) for key, value in record.items()
+                key: deepcopy(value)
+                for key, value in record.items()
                 if key not in {"uid", "name", "oid", "version"} and value is not None
             }
             properties["mandatory"] = record["mandatory"] == "Yes"
-            properties["vendor"] = json.dumps({
-                "attributes": [
-                    {key: attribute[key] for key in ("uid", "value")}
-                    for attribute in record["vendor"]["attributes"]
-                ],
-            })
-            rows.append({
-                "properties": properties, "owner_uids": [record["uid"]],
-                "current_owner_uids": [record["uid"]],
-            })
+            properties["vendor"] = json.dumps(
+                {
+                    "attributes": [
+                        {key: attribute[key] for key in ("uid", "value")}
+                        for attribute in record["vendor"]["attributes"]
+                    ],
+                }
+            )
+            rows.append(
+                {
+                    "properties": properties,
+                    "owner_uids": [record["uid"]],
+                    "current_owner_uids": [record["uid"]],
+                }
+            )
         return rows
 
     def validate_capture_item_custody(self, uid, item_uid):
@@ -113,41 +127,69 @@ class RelationRepository:
         # Model the existing native zero-or-one ITEM_REF ownership query. A
         # child's projected backlink alone cannot enumerate all incoming edges.
         for owner_uid, owner in self.store.state.items():
-            if owner_uid != uid and any(row["uid"] == item_uid for row in owner.get("items", [])):
+            if owner_uid != uid and any(
+                row["uid"] == item_uid for row in owner.get("items", [])
+            ):
                 raise BusinessLogicException(
                     msg=f"OdmItem with UID '{item_uid}' is already connected to another OdmItemGroup."
                 )
 
-    def add_relation(self, uid, relation_uid, relationship_type, parameters=None, **kwargs):
+    def add_relation(
+        self, uid, relation_uid, relationship_type, parameters=None, **kwargs
+    ):
         assert (self.family, uid) in self.store.locks
         assert self.store.staged is not None
         self.store.writes.append((uid, relation_uid, deepcopy(parameters)))
         if self.store.failure_at == len(self.store.writes):
             raise RuntimeError("Second native child write failed")
         field = "item_groups" if self.family == "OdmForm" else "items"
-        raw = self.store.raw_state.setdefault(uid, self.read_capture_collection(uid, field))
+        raw = self.store.raw_state.setdefault(
+            uid, self.read_capture_collection(uid, field)
+        )
         # Use the same native relationship model/deflater as RelationshipManager.connect.
         # In particular strtobool supplies integers, while Neo4j stores BooleanProperty.
-        model = OdmItemGroupRefRelation if field == "item_groups" else OdmItemRefRelation
-        assert not (set(parameters) - set(model.defined_properties(aliases=False, rels=False)))
+        model = (
+            OdmItemGroupRefRelation if field == "item_groups" else OdmItemRefRelation
+        )
+        assert not (
+            set(parameters) - set(model.defined_properties(aliases=False, rels=False))
+        )
         native_relation = model(**deepcopy(parameters))
         properties = {
-            key: value for key, value in model.deflate(native_relation.__properties__).items()
+            key: value
+            for key, value in model.deflate(native_relation.__properties__).items()
             if value is not None
         }
-        raw.append({"properties": properties, "owner_uids": [relation_uid],
-                    "current_owner_uids": [relation_uid]})
+        raw.append(
+            {
+                "properties": properties,
+                "owner_uids": [relation_uid],
+                "current_owner_uids": [relation_uid],
+            }
+        )
         child = self.store.state[relation_uid]
-        relation = {**deepcopy(parameters), "uid": relation_uid, "oid": child["oid"],
-                    "name": child["name"], "version": child["version"]}
+        relation = {
+            **deepcopy(parameters),
+            "uid": relation_uid,
+            "oid": child["oid"],
+            "name": child["name"],
+            "version": child["version"],
+        }
         relation["mandatory"] = "Yes" if parameters["mandatory"] else "No"
         for attribute in relation["vendor"]["attributes"]:
-            attribute.update(name="Native attribute", data_type="string", value_regex=".*", vendor_namespace_uid="Namespace")
+            attribute.update(
+                name="Native attribute",
+                data_type="string",
+                value_regex=".*",
+                vendor_namespace_uid="Namespace",
+            )
         self.store.state[uid][field].append(relation)
         if field == "items":
             parent = self.store.state[uid]
             child["odm_item_group"] = OdmItemParentGroup(
-                uid=parent["uid"], oid=parent["oid"], name=parent["name"],
+                uid=parent["uid"],
+                oid=parent["oid"],
+                name=parent["name"],
             ).model_dump(mode="json")
         if self.store.change_child_after_write is not None:
             self.store.change_child_after_write(child)
@@ -164,10 +206,12 @@ class MemoryService:
     def __init__(self, store):
         self.store = store
         self._repository = RelationRepository(store, self.family)
-        self._repos = SimpleNamespace(**{
-            "odm_form_repository": self._repository,
-            "odm_item_group_repository": self._repository,
-        })
+        self._repos = SimpleNamespace(
+            **{
+                "odm_form_repository": self._repository,
+                "odm_item_group_repository": self._repository,
+            }
+        )
 
     def __del__(self):
         pass
@@ -179,9 +223,12 @@ class MemoryService:
     def _find_by_uid_or_raise_not_found(self, uid, **kwargs):
         record = self.store.state[uid]
         return SimpleNamespace(
-            uid=uid, item_metadata=SimpleNamespace(status=LibraryItemStatus(record["status"])),
-            odm_vo=SimpleNamespace(item_group_uids=[row["uid"] for row in record.get("item_groups", [])],
-                                   item_uids=[row["uid"] for row in record.get("items", [])]),
+            uid=uid,
+            item_metadata=SimpleNamespace(status=LibraryItemStatus(record["status"])),
+            odm_vo=SimpleNamespace(
+                item_group_uids=[row["uid"] for row in record.get("item_groups", [])],
+                item_uids=[row["uid"] for row in record.get("items", [])],
+            ),
             snapshot=deepcopy(record),
         )
 
@@ -217,62 +264,108 @@ class MemoryItem(MemoryService, OdmItemService):
 def native(monkeypatch):
     store = StagedStore()
     monkeypatch.setattr(db, "_active_transaction", None)
-    monkeypatch.setattr(_utils, "TransactionProxy", lambda database: store.transaction(database))
+    monkeypatch.setattr(
+        _utils, "TransactionProxy", lambda database: store.transaction(database)
+    )
     return store
 
 
 def case(store, collection, count=2):
-    parent_type, child_type = (MemoryForm, MemoryGroup) if collection == "item_groups" else (MemoryGroup, MemoryItem)
+    parent_type, child_type = (
+        (MemoryForm, MemoryGroup)
+        if collection == "item_groups"
+        else (MemoryGroup, MemoryItem)
+    )
     store.records["Parent"] = {
-        "uid": "Parent", "oid": "P.EXACT", "name": "Parent", "version": "0.1", "status": "Draft",
-        "library_name": "Sponsor", collection: [], "independent_metadata": {"unknown": [None, False, 0, ""]},
+        "uid": "Parent",
+        "oid": "P.EXACT",
+        "name": "Parent",
+        "version": "0.1",
+        "status": "Draft",
+        "library_name": "Sponsor",
+        collection: [],
+        "independent_metadata": {"unknown": [None, False, 0, ""]},
     }
     children = []
     for index in range(count):
         uid = f"Child-{index}"
-        store.records[uid] = {"uid": uid, "oid": f"C.{index}", "name": f"Child {index}",
-                              "version": "0.1", "status": "Draft", "retained": {"source": [1, 2]}}
+        store.records[uid] = {
+            "uid": uid,
+            "oid": f"C.{index}",
+            "name": f"Child {index}",
+            "version": "0.1",
+            "status": "Draft",
+            "retained": {"source": [1, 2]},
+        }
         relation = {
-            "uid": uid, "order_number": 7 + index * 4, "mandatory": "No",
+            "uid": uid,
+            "order_number": 7 + index * 4,
+            "mandatory": "No",
             "collection_exception_condition_oid": "Condition.source",
             "vendor": {"attributes": [{"uid": "Attribute", "value": "source value"}]},
         }
         if collection == "items":
             store.records[uid]["odm_item_group"] = None
-            relation.update(key_sequence="2", method_oid="Method.source", imputation_method_oid=None,
-                            role="Source role", role_codelist_oid=None)
+            relation.update(
+                key_sequence="2",
+                method_oid="Method.source",
+                imputation_method_oid=None,
+                role="Source role",
+                role_codelist_oid=None,
+            )
         children.append(relation)
     request = OdmCollectionInitializationInput(
         expected_parent=deepcopy(store.records["Parent"]),
-        expected_children={row["uid"]: deepcopy(store.records[row["uid"]]) for row in children},
+        expected_children={
+            row["uid"]: deepcopy(store.records[row["uid"]]) for row in children
+        },
         children=children,
     )
     return parent_type(store), child_type(store), request
 
 
 def call(parent, child, request, collection):
-    return initialize_odm_collection(parent, child, "Parent", request, collection=collection)
+    return initialize_odm_collection(
+        parent, child, "Parent", request, collection=collection
+    )
 
 
 @pytest.mark.parametrize("collection", ["items", "item_groups"])
-def test_actual_native_writer_preserves_full_bindings_and_exact_replay_is_noop(native, collection):
+def test_actual_native_writer_preserves_full_bindings_and_exact_replay_is_noop(
+    native, collection
+):
     parent, child, request = case(native, collection)
     original_request = deepcopy(request.model_dump(mode="json"))
     expected_children = deepcopy(request.expected_children)
     if collection == "items":
         for value in expected_children.values():
             value["odm_item_group"] = OdmItemParentGroup(
-                uid="Parent", oid="P.EXACT", name="Parent",
+                uid="Parent",
+                oid="P.EXACT",
+                name="Parent",
             ).model_dump(mode="json")
     result = call(parent, child, request, collection)
     assert native.transactions == ["commit"]
     assert [row["order_number"] for row in result[collection]] == [7, 11]
-    assert all(row["collection_exception_condition_oid"] == "Condition.source" for row in result[collection])
-    assert all(row["vendor"]["attributes"][0]["value"] == "source value" for row in result[collection])
+    assert all(
+        row["collection_exception_condition_oid"] == "Condition.source"
+        for row in result[collection]
+    )
+    assert all(
+        row["vendor"]["attributes"][0]["value"] == "source value"
+        for row in result[collection]
+    )
     if collection == "items":
-        assert all(row["key_sequence"] == "2" and row["method_oid"] == "Method.source"
-                   and row["role"] == "Source role" for row in result[collection])
-    assert result["independent_metadata"] == request.expected_parent["independent_metadata"]
+        assert all(
+            row["key_sequence"] == "2"
+            and row["method_oid"] == "Method.source"
+            and row["role"] == "Source role"
+            for row in result[collection]
+        )
+    assert (
+        result["independent_metadata"]
+        == request.expected_parent["independent_metadata"]
+    )
     assert {uid: native.records[uid] for uid in expected_children} == expected_children
     assert request.model_dump(mode="json") == original_request
     assert len(native.writes) == 2
@@ -285,7 +378,9 @@ def test_actual_native_writer_preserves_full_bindings_and_exact_replay_is_noop(n
     assert native.transactions == ["commit", "commit"]
 
 
-def test_original_prelink_snapshot_replay_accepts_only_the_committed_native_image(native):
+def test_original_prelink_snapshot_replay_accepts_only_the_committed_native_image(
+    native,
+):
     parent, child, request = case(native, "items")
     original_request = deepcopy(request.model_dump(mode="json"))
     # Establish the state through the real ordinary service, not the initializer
@@ -294,11 +389,21 @@ def test_original_prelink_snapshot_replay_accepts_only_the_committed_native_imag
     with native.transaction(db):
         parent.repository.lock_for_relationship_update("Parent")
         parent.add_items(
-            "Parent", [OdmItemGroupItemPostInput(**row) for row in request.children],
-            override=False, preserve_order=True,
+            "Parent",
+            [OdmItemGroupItemPostInput(**row) for row in request.children],
+            override=False,
+            preserve_order=True,
         )
-    before, raw_before, writes = deepcopy(native.records), deepcopy(native.raw_records), len(native.writes)
-    assert before["Child-0"]["odm_item_group"] == {"uid": "Parent", "oid": "P.EXACT", "name": "Parent"}
+    before, raw_before, writes = (
+        deepcopy(native.records),
+        deepcopy(native.raw_records),
+        len(native.writes),
+    )
+    assert before["Child-0"]["odm_item_group"] == {
+        "uid": "Parent",
+        "oid": "P.EXACT",
+        "name": "Parent",
+    }
     assert call(parent, child, request, "items") == before["Parent"]
     assert native.records == before and native.raw_records == raw_before
     assert len(native.writes) == writes
@@ -309,7 +414,9 @@ def ownership_query_port(monkeypatch, rows):
     origin = object()
     child = SimpleNamespace(__label__="OdmItemValue")
     child_root = SimpleNamespace(has_latest_value=SimpleNamespace(single=lambda: child))
-    child_type = SimpleNamespace(nodes=SimpleNamespace(get_or_none=lambda **_: child_root))
+    child_type = SimpleNamespace(
+        nodes=SimpleNamespace(get_or_none=lambda **_: child_root)
+    )
     parent_value = SimpleNamespace(item_ref=origin)
     parent_root = SimpleNamespace(
         __label__="OdmItemGroupRoot",
@@ -341,42 +448,88 @@ def ownership_query_port(monkeypatch, rows):
     return Repository, origin, child, observed
 
 
-@pytest.mark.parametrize("rows", [
-    [], [[]], [[False, False]], [[False], [False]], [[0]], [[1]],
-    [[None]], [["false"]], None, {"value": False},
-], ids=[
-    "empty", "zero_columns", "multiple_columns", "multiple_rows", "integer_zero",
-    "integer_one", "null_value", "string_value", "null_result", "mapping_result",
-])
+@pytest.mark.parametrize(
+    "rows",
+    [
+        [],
+        [[]],
+        [[False, False]],
+        [[False], [False]],
+        [[0]],
+        [[1]],
+        [[None]],
+        [["false"]],
+        None,
+        {"value": False},
+    ],
+    ids=[
+        "empty",
+        "zero_columns",
+        "multiple_columns",
+        "multiple_rows",
+        "integer_zero",
+        "integer_one",
+        "null_value",
+        "string_value",
+        "null_result",
+        "mapping_result",
+    ],
+)
 def test_ownership_query_requires_one_boolean_aggregate(monkeypatch, rows):
     repository, _, _, observed = ownership_query_port(monkeypatch, rows)
-    with pytest.raises(BusinessLogicException, match="ODM_RELATIONSHIP_OWNERSHIP_QUERY_UNPROVEN"):
+    with pytest.raises(
+        BusinessLogicException, match="ODM_RELATIONSHIP_OWNERSHIP_QUERY_UNPROVEN"
+    ):
         repository._get_origin_and_relation_node(
-            "Parent", "Child", RelationType.ITEM, zero_or_one_relation=True,
+            "Parent",
+            "Child",
+            RelationType.ITEM,
+            zero_or_one_relation=True,
         )
     assert len(observed) == 2
 
 
 @pytest.mark.parametrize("foreign_owner", [False, True])
 def test_ownership_query_preserves_actual_boolean_behavior(monkeypatch, foreign_owner):
-    repository, origin, child, observed = ownership_query_port(monkeypatch, [[foreign_owner]])
+    repository, origin, child, observed = ownership_query_port(
+        monkeypatch, [[foreign_owner]]
+    )
     if foreign_owner:
-        with pytest.raises(BusinessLogicException, match="already connected to another"):
+        with pytest.raises(
+            BusinessLogicException, match="already connected to another"
+        ):
             repository._get_origin_and_relation_node(
-                "Parent", "Child", RelationType.ITEM, zero_or_one_relation=True,
+                "Parent",
+                "Child",
+                RelationType.ITEM,
+                zero_or_one_relation=True,
             )
     else:
         result = repository._get_origin_and_relation_node(
-            "Parent", "Child", RelationType.ITEM, zero_or_one_relation=True,
+            "Parent",
+            "Child",
+            RelationType.ITEM,
+            zero_or_one_relation=True,
         )
         assert result == (origin, child)
     assert len(observed) == 2
 
 
-@pytest.mark.parametrize("change", [
-    "uid", "version", "attribute", "unknown", "backlink_parent", "backlink_oid",
-    "backlink_name", "backlink_unknown", "backlink_missing", "backlink_null",
-])
+@pytest.mark.parametrize(
+    "change",
+    [
+        "uid",
+        "version",
+        "attribute",
+        "unknown",
+        "backlink_parent",
+        "backlink_oid",
+        "backlink_name",
+        "backlink_unknown",
+        "backlink_missing",
+        "backlink_null",
+    ],
+)
 def test_original_request_replay_refuses_unrelated_child_changes(native, change):
     parent, child, request = case(native, "items")
     call(parent, child, request, "items")
@@ -401,27 +554,44 @@ def test_original_request_replay_refuses_unrelated_child_changes(native, change)
         del value["odm_item_group"]
     else:
         value["odm_item_group"] = None
-    before, raw_before, writes = deepcopy(native.records), deepcopy(native.raw_records), len(native.writes)
-    with pytest.raises(OdmCollectionInitializationConflict, match="CHILD_SNAPSHOT_CHANGED"):
+    before, raw_before, writes = (
+        deepcopy(native.records),
+        deepcopy(native.raw_records),
+        len(native.writes),
+    )
+    with pytest.raises(
+        OdmCollectionInitializationConflict, match="CHILD_SNAPSHOT_CHANGED"
+    ):
         call(parent, child, request, "items")
     assert native.records == before and native.raw_records == raw_before
     assert len(native.writes) == writes
     assert native.transactions[-1] == "rollback"
 
 
-@pytest.mark.parametrize("backlink", [
-    {"uid": "Foreign-parent", "oid": "F.EXACT", "name": "Foreign"},
-    {"uid": "Parent", "oid": "P.EXACT", "name": "Different name"},
-    {"uid": "Parent", "oid": "P.EXACT", "name": "Parent", "unknown": None},
-])
-def test_complete_foreign_or_unproved_backlink_snapshot_cannot_be_rebound(native, backlink):
+@pytest.mark.parametrize(
+    "backlink",
+    [
+        {"uid": "Foreign-parent", "oid": "F.EXACT", "name": "Foreign"},
+        {"uid": "Parent", "oid": "P.EXACT", "name": "Different name"},
+        {"uid": "Parent", "oid": "P.EXACT", "name": "Parent", "unknown": None},
+    ],
+)
+def test_complete_foreign_or_unproved_backlink_snapshot_cannot_be_rebound(
+    native, backlink
+):
     parent, child, request = case(native, "items")
     native.records["Child-0"]["odm_item_group"] = deepcopy(backlink)
-    request = request.model_copy(update={"expected_children": {
-        uid: deepcopy(native.records[uid]) for uid in request.expected_children
-    }})
+    request = request.model_copy(
+        update={
+            "expected_children": {
+                uid: deepcopy(native.records[uid]) for uid in request.expected_children
+            }
+        }
+    )
     before = deepcopy(native.records)
-    with pytest.raises(OdmCollectionInitializationConflict, match="CHILD_BACKLINK_CUSTODY_UNPROVEN"):
+    with pytest.raises(
+        OdmCollectionInitializationConflict, match="CHILD_BACKLINK_CUSTODY_UNPROVEN"
+    ):
         call(parent, child, request, "items")
     assert native.records == before and native.raw_records == {}
     assert native.writes == [] and native.transactions == ["rollback"]
@@ -430,11 +600,17 @@ def test_complete_foreign_or_unproved_backlink_snapshot_cannot_be_rebound(native
 def test_missing_native_backlink_member_is_not_defaulted(native):
     parent, child, request = case(native, "items")
     del native.records["Child-0"]["odm_item_group"]
-    request = request.model_copy(update={"expected_children": {
-        uid: deepcopy(native.records[uid]) for uid in request.expected_children
-    }})
+    request = request.model_copy(
+        update={
+            "expected_children": {
+                uid: deepcopy(native.records[uid]) for uid in request.expected_children
+            }
+        }
+    )
     before = deepcopy(native.records)
-    with pytest.raises(OdmCollectionInitializationConflict, match="CHILD_BACKLINK_CUSTODY_UNPROVEN"):
+    with pytest.raises(
+        OdmCollectionInitializationConflict, match="CHILD_BACKLINK_CUSTODY_UNPROVEN"
+    ):
         call(parent, child, request, "items")
     assert native.records == before and native.raw_records == {}
     assert native.writes == [] and native.transactions == ["rollback"]
@@ -449,14 +625,20 @@ def test_exact_projected_backlink_does_not_hide_an_additional_foreign_owner(nati
     # The native child DTO selects one parent; keep its own-parent projection.
     # The complete native ownership query must still reject the other owner.
     assert native.records["Child-0"]["odm_item_group"]["uid"] == "Parent"
-    before, raw_before, writes = deepcopy(native.records), deepcopy(native.raw_records), len(native.writes)
+    before, raw_before, writes = (
+        deepcopy(native.records),
+        deepcopy(native.raw_records),
+        len(native.writes),
+    )
     with pytest.raises(BusinessLogicException, match="already connected to another"):
         call(parent, child, request, "items")
     assert native.records == before and native.raw_records == raw_before
     assert len(native.writes) == writes and native.transactions[-1] == "rollback"
 
 
-@pytest.mark.parametrize("change", ["uid", "version", "attribute", "unknown", "foreign_backlink"])
+@pytest.mark.parametrize(
+    "change", ["uid", "version", "attribute", "unknown", "foreign_backlink"]
+)
 def test_native_child_write_may_only_add_the_exact_parent_backlink(native, change):
     parent, child, request = case(native, "items")
     before = deepcopy(native.records)
@@ -474,21 +656,32 @@ def test_native_child_write_may_only_add_the_exact_parent_backlink(native, chang
             value["odm_item_group"]["uid"] = "Foreign-parent"
 
     native.change_child_after_write = change_child
-    with pytest.raises(OdmCollectionInitializationConflict, match="CHILD_WRITE_DIVERGED"):
+    with pytest.raises(
+        OdmCollectionInitializationConflict, match="CHILD_WRITE_DIVERGED"
+    ):
         call(parent, child, request, "items")
     assert native.records == before and native.raw_records == {}
     assert native.transactions == ["rollback"]
 
 
 @pytest.mark.parametrize("collection", ["items", "item_groups"])
-def test_same_version_concurrent_collection_edit_is_not_overwritten_or_appended(native, collection):
+def test_same_version_concurrent_collection_edit_is_not_overwritten_or_appended(
+    native, collection
+):
     parent, child, request = case(native, collection, count=1)
-    existing = {**deepcopy(request.children[0]), "uid": "Independent-child",
-                "name": "Independent child", "oid": "I.KEEP", "version": "3.0"}
+    existing = {
+        **deepcopy(request.children[0]),
+        "uid": "Independent-child",
+        "name": "Independent child",
+        "oid": "I.KEEP",
+        "version": "3.0",
+    }
     native.records["Parent"][collection] = [existing]
     before = deepcopy(native.records)
     assert before["Parent"]["version"] == request.expected_parent["version"]
-    with pytest.raises(OdmCollectionInitializationConflict, match="EXISTING_CHILDREN_CONFLICT"):
+    with pytest.raises(
+        OdmCollectionInitializationConflict, match="EXISTING_CHILDREN_CONFLICT"
+    ):
         call(parent, child, request, collection)
     assert native.records == before
     assert native.writes == []
@@ -497,7 +690,9 @@ def test_same_version_concurrent_collection_edit_is_not_overwritten_or_appended(
 
 @pytest.mark.parametrize("collection", ["items", "item_groups"])
 @pytest.mark.parametrize("which", ["parent", "child"])
-def test_full_snapshot_pin_detects_same_version_metadata_edit(native, collection, which):
+def test_full_snapshot_pin_detects_same_version_metadata_edit(
+    native, collection, which
+):
     parent, child, request = case(native, collection, count=1)
     uid = "Parent" if which == "parent" else "Child-0"
     native.records[uid]["unrequested_metadata"] = {"new": False}
@@ -525,9 +720,19 @@ def test_locked_guard_bypasses_a_real_native_read_cache(native, which):
 
 
 @pytest.mark.parametrize("collection", ["items", "item_groups"])
-@pytest.mark.parametrize("change", ["unknown_property", "parallel_edge", "unowned_target",
-                                   "old_target_version", "vendor_duplicate_json_key"])
-def test_full_persisted_inventory_cannot_be_hidden_by_native_dto_projection(native, collection, change):
+@pytest.mark.parametrize(
+    "change",
+    [
+        "unknown_property",
+        "parallel_edge",
+        "unowned_target",
+        "old_target_version",
+        "vendor_duplicate_json_key",
+    ],
+)
+def test_full_persisted_inventory_cannot_be_hidden_by_native_dto_projection(
+    native, collection, change
+):
     parent, child, request = case(native, collection, count=1)
     result = call(parent, child, request, collection)
     writes = len(native.writes)
@@ -541,7 +746,9 @@ def test_full_persisted_inventory_cannot_be_hidden_by_native_dto_projection(nati
     elif change == "old_target_version":
         stored["current_owner_uids"] = []
     else:
-        stored["properties"]["vendor"] = '{"attributes":[],"attributes":[{"uid":"Attribute","value":"source value"}]}'
+        stored["properties"][
+            "vendor"
+        ] = '{"attributes":[],"attributes":[{"uid":"Attribute","value":"source value"}]}'
     before, raw_before = deepcopy(native.records), deepcopy(native.raw_records)
     request = request.model_copy(update={"expected_parent": result})
     with pytest.raises(OdmCollectionInitializationConflict):
@@ -552,7 +759,9 @@ def test_full_persisted_inventory_cannot_be_hidden_by_native_dto_projection(nati
 
 
 @pytest.mark.parametrize("collection", ["items", "item_groups"])
-def test_second_child_failure_rolls_back_native_links_and_retry_then_noop_replay(native, collection):
+def test_second_child_failure_rolls_back_native_links_and_retry_then_noop_replay(
+    native, collection
+):
     parent, child, request = case(native, collection)
     before = deepcopy(native.records)
     native.failure_at = 2
@@ -572,7 +781,9 @@ def test_second_child_failure_rolls_back_native_links_and_retry_then_noop_replay
 
 
 @pytest.mark.parametrize("collection", ["items", "item_groups"])
-def test_actual_writer_divergence_rolls_back_instead_of_receipting_modified_values(native, collection):
+def test_actual_writer_divergence_rolls_back_instead_of_receipting_modified_values(
+    native, collection
+):
     parent, child, request = case(native, collection, count=1)
     before = deepcopy(native.records)
     native.corrupt_after_write = True
@@ -583,8 +794,13 @@ def test_actual_writer_divergence_rolls_back_instead_of_receipting_modified_valu
 
 
 @pytest.mark.parametrize("collection", ["items", "item_groups"])
-@pytest.mark.parametrize("property_name", ["mandatory", "collection_exception_condition_oid", "vendor", "unknown"])
-def test_occupied_same_uid_conflicting_qualifiers_remain_byte_for_byte(native, collection, property_name):
+@pytest.mark.parametrize(
+    "property_name",
+    ["mandatory", "collection_exception_condition_oid", "vendor", "unknown"],
+)
+def test_occupied_same_uid_conflicting_qualifiers_remain_byte_for_byte(
+    native, collection, property_name
+):
     parent, child, request = case(native, collection, count=1)
     existing = deepcopy(request.children[0])
     if property_name == "mandatory":
@@ -596,7 +812,9 @@ def test_occupied_same_uid_conflicting_qualifiers_remain_byte_for_byte(native, c
     else:
         existing["unknown_qualifier"] = {"retained": [False, None]}
     native.records["Parent"][collection] = [existing]
-    request = request.model_copy(update={"expected_parent": deepcopy(native.records["Parent"])})
+    request = request.model_copy(
+        update={"expected_parent": deepcopy(native.records["Parent"])}
+    )
     before = deepcopy(native.records)
     with pytest.raises(OdmCollectionInitializationConflict):
         call(parent, child, request, collection)
@@ -605,7 +823,9 @@ def test_occupied_same_uid_conflicting_qualifiers_remain_byte_for_byte(native, c
 
 
 @pytest.mark.parametrize("collection", ["items", "item_groups"])
-def test_changed_request_cannot_use_a_previously_occupied_snapshot_as_replacement_authority(native, collection):
+def test_changed_request_cannot_use_a_previously_occupied_snapshot_as_replacement_authority(
+    native, collection
+):
     parent, child, original = case(native, collection, count=1)
     call(parent, child, original, collection)
     replacement = original.model_dump()
@@ -613,13 +833,24 @@ def test_changed_request_cannot_use_a_previously_occupied_snapshot_as_replacemen
     replacement["children"][0]["mandatory"] = "Yes"
     before = deepcopy(native.records)
     writes = len(native.writes)
-    with pytest.raises(OdmCollectionInitializationConflict, match="EXISTING_CHILDREN_CONFLICT"):
+    with pytest.raises(
+        OdmCollectionInitializationConflict, match="EXISTING_CHILDREN_CONFLICT"
+    ):
         call(parent, child, OdmCollectionInitializationInput(**replacement), collection)
     assert native.records == before
     assert len(native.writes) == writes
 
 
-@pytest.mark.parametrize("mutation", ["duplicate", "missing_snapshot", "wrong_snapshot_uid", "extra_snapshot", "extra_request_field"])
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "duplicate",
+        "missing_snapshot",
+        "wrong_snapshot_uid",
+        "extra_snapshot",
+        "extra_request_field",
+    ],
+)
 def test_request_requires_exact_child_snapshot_inventory(native, mutation):
     _, _, original = case(native, "items", count=1)
     value = original.model_dump()

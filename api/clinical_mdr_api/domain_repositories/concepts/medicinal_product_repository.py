@@ -248,28 +248,39 @@ class MedicinalProductRepository(ConceptGenericRepository):
             pharmaceutical_products = [
                 MedicinalProductVO.PharmaceuticalProductInfo(
                     uid=pp.uid,
-                    external_id=snapshot.read("pharmaceuticalProduct", pp.uid).concept_vo.external_id,
+                    external_id=snapshot.read(
+                        "pharmaceuticalProduct", pp.uid
+                    ).concept_vo.external_id,
                 )
                 for pp in value.has_pharmaceutical_product.all()
             ]
             dose_values = []
             for root_dose in value.has_dose_value.all():
                 dose = snapshot.read("numericValueWithUnit", root_dose.uid)
-                unit = snapshot.read("unitDefinition", dose.concept_vo.unit_definition_uid)
-                dose_values.append(MedicinalProductVO.DoseValueInfo(
-                    uid=dose.uid, value=dose.concept_vo.value,
-                    unit_definition_uid=unit.uid, unit_label=unit.concept_vo.name,
-                ))
+                unit = snapshot.read(
+                    "unitDefinition", dose.concept_vo.unit_definition_uid
+                )
+                dose_values.append(
+                    MedicinalProductVO.DoseValueInfo(
+                        uid=dose.uid,
+                        value=dose.concept_vo.value,
+                        unit_definition_uid=unit.uid,
+                        unit_label=unit.concept_vo.name,
+                    )
+                )
             dose_frequencies = [
                 dose_frequency
                 for ct_term_context in value.has_dose_frequency.all()
                 if (dose_frequency := snapshot.term_info(ct_term_context)) is not None
             ]
-            delivery_device = snapshot.term_info(value.has_delivery_device.get_or_none())
+            delivery_device = snapshot.term_info(
+                value.has_delivery_device.get_or_none()
+            )
             dispenser = snapshot.term_info(value.has_dispenser.get_or_none())
             selected_compound = snapshot.read("compound", value.is_compound.get().uid)
             compound = MedicinalProductVO.CompoundInfo(
-                uid=selected_compound.uid, name=selected_compound.concept_vo.name,
+                uid=selected_compound.uid,
+                name=selected_compound.concept_vo.name,
             )
         else:
             pharmaceutical_products = [
@@ -281,8 +292,10 @@ class MedicinalProductRepository(ConceptGenericRepository):
             ]
             dose_values = [
                 MedicinalProductVO.DoseValueInfo(
-                    uid=dv.uid, value=dv_val.value,
-                    unit_definition_uid=unit.uid, unit_label=unit_val.name,
+                    uid=dv.uid,
+                    value=dv_val.value,
+                    unit_definition_uid=unit.uid,
+                    unit_label=unit_val.name,
                 )
                 for dv in value.has_dose_value.all()
                 if (dv_val := dv.has_latest_value.get_or_none()) is not None

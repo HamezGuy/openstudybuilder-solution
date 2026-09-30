@@ -12,7 +12,15 @@ from clinical_mdr_api.domain_repositories.models.controlled_terminology import (
 )
 
 
-@pytest.mark.parametrize("root_type", [CTCodelistAttributesRoot, CTCodelistNameRoot, CTTermAttributesRoot, CTTermNameRoot])
+@pytest.mark.parametrize(
+    "root_type",
+    [
+        CTCodelistAttributesRoot,
+        CTCodelistNameRoot,
+        CTTermAttributesRoot,
+        CTTermNameRoot,
+    ],
+)
 def test_ct_version_roots_resolve_the_requested_value_and_its_own_relation(root_type):
     shared_value = object()
     selected = SimpleNamespace(version="1.0", end_date=10, start_date=1)
@@ -27,7 +35,9 @@ def test_ct_version_roots_resolve_the_requested_value_and_its_own_relation(root_
             return [latest, selected]
 
     root = SimpleNamespace(has_version=Relations())
-    root.get_value_for_version = lambda version: root_type.get_value_for_version(root, version)
+    root.get_value_for_version = lambda version: root_type.get_value_for_version(
+        root, version
+    )
     assert root_type.get_value_for_version(root, "1.0") is shared_value
     assert root_type.get_relation_for_version(root, "1.0") is selected
     assert root_type.get_relation_for_version(root, "2.0") is latest

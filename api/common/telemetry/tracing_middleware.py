@@ -68,7 +68,10 @@ class TracingMiddleware:
         )  # always lowercase, may contain :port
 
         host_name = host or ""
-        if host_name in self.exclude_hosts or host_name.split(":", 1)[0] in self.exclude_hosts:
+        if (
+            host_name in self.exclude_hosts
+            or host_name.split(":", 1)[0] in self.exclude_hosts
+        ):
             log.debug("Bypassing %s for an excluded host", type(self).__name__)
             await self.app(scope, receive, send)
             return
@@ -172,7 +175,6 @@ class TracingMiddleware:
         if span := execution_context.get_current_span():
             if request_size is not None:
                 span.add_attribute(COMMON_ATTRIBUTES["HTTP_REQUEST_SIZE"], request_size)
-
 
     @staticmethod
     def add_attributes_from_response(

@@ -3333,6 +3333,13 @@
       "relationships": []
     },
     {
+      "class": "ControlledTerminologyVersionRoot",
+      "label": null,
+      "module": "clinical_mdr_api.domain_repositories.models.controlled_terminology",
+      "properties": {},
+      "relationships": []
+    },
+    {
       "class": "ControlledTerminologyWithUID",
       "label": null,
       "module": "clinical_mdr_api.domain_repositories.models.controlled_terminology",
@@ -8992,6 +8999,7 @@
       "properties": {
         "accepted_version": "BooleanProperty",
         "arm_code": "StringProperty",
+        "data_origin_description": "StringProperty",
         "description": "StringProperty",
         "label": "StringProperty",
         "merge_branch_for_this_arm_for_sdtm_adam": "BooleanProperty",
@@ -9009,6 +9017,14 @@
           "direction": "OUTGOING",
           "rel_properties_model": "clinical_mdr_api.domain_repositories.models.generic.ClinicalMdrRel",
           "relation_type": "HAS_ARM_TYPE",
+          "target_class": "clinical_mdr_api.domain_repositories.models.controlled_terminology.CTTermContext"
+        },
+        {
+          "attribute": "data_origin_type",
+          "cardinality": "ZeroOrOne",
+          "direction": "OUTGOING",
+          "rel_properties_model": "clinical_mdr_api.domain_repositories.models.generic.ClinicalMdrRel",
+          "relation_type": "HAS_ARM_DATA_ORIGIN_TYPE",
           "target_class": "clinical_mdr_api.domain_repositories.models.controlled_terminology.CTTermContext"
         },
         {
@@ -10273,8 +10289,10 @@
         "show_visit": "BooleanProperty",
         "start_rule": "StringProperty",
         "status": "StringProperty",
+        "timing_mode": "StringProperty",
         "uid": "StringProperty",
         "unique_visit_number": "StringProperty",
+        "untimed_timing": "JSONProperty",
         "visit_class": "StringProperty",
         "visit_name_label": "StringProperty",
         "visit_number": "FloatProperty",
@@ -13146,103 +13164,7 @@
           "target_class": "clinical_mdr_api.domain_repositories.models.preferences.UserPreferences"
         }
       ]
-    },
-    {
-      "class": "Extract",
-      "label": "Extract",
-      "module": "extensions.prodex.db_models",
-      "properties": {
-        "author_id": "StringProperty",
-        "error": "StringProperty",
-        "finished_at": "ZonedDateTimeProperty",
-        "log": "ArrayProperty",
-        "raw_json": "JSONProperty",
-        "started_at": "ZonedDateTimeProperty",
-        "uid": "StringProperty"
-      },
-      "relationships": [
-        {
-          "attribute": "loads",
-          "cardinality": "ZeroOrMore",
-          "direction": "OUTGOING",
-          "rel_properties_model": "clinical_mdr_api.domain_repositories.models.generic.ClinicalMdrRel",
-          "relation_type": "LOADED",
-          "target_class": "extensions.prodex.db_models.Load"
-        }
-      ]
-    },
-    {
-      "class": "ExtractActiveSubstances",
-      "label": "ExtractActiveSubstances",
-      "module": "extensions.prodex.db_models",
-      "properties": {
-        "author_id": "StringProperty",
-        "error": "StringProperty",
-        "finished_at": "ZonedDateTimeProperty",
-        "log": "ArrayProperty",
-        "raw_json": "JSONProperty",
-        "started_at": "ZonedDateTimeProperty",
-        "uid": "StringProperty"
-      },
-      "relationships": [
-        {
-          "attribute": "loads",
-          "cardinality": "ZeroOrMore",
-          "direction": "OUTGOING",
-          "rel_properties_model": "clinical_mdr_api.domain_repositories.models.generic.ClinicalMdrRel",
-          "relation_type": "LOADED",
-          "target_class": "extensions.prodex.db_models.Load"
-        }
-      ]
-    },
-    {
-      "class": "ExtractMedicinalProducts",
-      "label": "ExtractMedicinalProducts",
-      "module": "extensions.prodex.db_models",
-      "properties": {
-        "author_id": "StringProperty",
-        "error": "StringProperty",
-        "finished_at": "ZonedDateTimeProperty",
-        "log": "ArrayProperty",
-        "raw_json": "JSONProperty",
-        "started_at": "ZonedDateTimeProperty",
-        "uid": "StringProperty"
-      },
-      "relationships": [
-        {
-          "attribute": "loads",
-          "cardinality": "ZeroOrMore",
-          "direction": "OUTGOING",
-          "rel_properties_model": "clinical_mdr_api.domain_repositories.models.generic.ClinicalMdrRel",
-          "relation_type": "LOADED",
-          "target_class": "extensions.prodex.db_models.Load"
-        }
-      ]
-    },
-    {
-      "class": "Load",
-      "label": "Load",
-      "module": "extensions.prodex.db_models",
-      "properties": {
-        "author_id": "StringProperty",
-        "errors": "ArrayProperty",
-        "finished_at": "ZonedDateTimeProperty",
-        "log": "ArrayProperty",
-        "started_at": "ZonedDateTimeProperty",
-        "uid": "StringProperty",
-        "warnings": "ArrayProperty"
-      },
-      "relationships": [
-        {
-          "attribute": "extract",
-          "cardinality": "One",
-          "direction": "INCOMING",
-          "rel_properties_model": "clinical_mdr_api.domain_repositories.models.generic.ClinicalMdrRel",
-          "relation_type": "LOADED",
-          "target_class": "extensions.prodex.db_models.Extract"
-        }
-      ]
     }
   ],
-  "structured_node_class_count": 252
+  "structured_node_class_count": 249
 }

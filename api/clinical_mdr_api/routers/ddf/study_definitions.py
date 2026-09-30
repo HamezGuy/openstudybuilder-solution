@@ -3,7 +3,6 @@ from pathlib import Path as PathFromPathLib
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Query, Request
-
 from fastapi.templating import Jinja2Templates
 
 from clinical_mdr_api.domain_repositories.study_selections.study_soa_repository import (
@@ -11,6 +10,7 @@ from clinical_mdr_api.domain_repositories.study_selections.study_soa_repository 
 )
 from clinical_mdr_api.models.utils import PrettyJSONResponse
 from clinical_mdr_api.routers import _generic_descriptions
+from clinical_mdr_api.routers.studies.study_access import enforce_visible_study
 from clinical_mdr_api.services.ddf.usdm_service import USDMService
 from clinical_mdr_api.services.studies.study_design_figure import (
     StudyDesignFigureService,
@@ -20,8 +20,6 @@ from common.auth import rbac
 from common.auth.dependencies import security
 from common.models.error import ErrorResponse
 from common.telemetry import trace_block
-
-from clinical_mdr_api.routers.studies.study_access import enforce_visible_study
 
 router = APIRouter(
     prefix="/studyDefinitions",

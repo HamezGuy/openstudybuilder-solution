@@ -11,7 +11,9 @@ from copy import deepcopy
 from fastapi.encoders import jsonable_encoder
 from neomodel import db
 
-from clinical_mdr_api.domain_repositories._utils.native_read_cache import uncached_native_reads
+from clinical_mdr_api.domain_repositories._utils.native_read_cache import (
+    uncached_native_reads,
+)
 from clinical_mdr_api.models.odms.collection_initialization import (
     OdmCollectionInitializationInput,
 )
@@ -40,12 +42,20 @@ def _refuse(code):
 def _json(value):
     # Python equality conflates True and 1. These preconditions compare JSON
     # values without accepting non-finite numbers or converting unknown values.
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    )
 
 
 def _wire(service, uid):
     item = service._find_by_uid_or_raise_not_found(uid)
-    return jsonable_encoder(service._transform_aggregate_root_to_pydantic_model(item), exclude_none=False)
+    return jsonable_encoder(
+        service._transform_aggregate_root_to_pydantic_model(item), exclude_none=False
+    )
 
 
 def _linked_children(parent, snapshots, *, collection):
@@ -56,7 +66,9 @@ def _linked_children(parent, snapshots, *, collection):
     if not {"uid", "oid", "name"}.issubset(parent):
         _refuse("ODM_COLLECTION_PARENT_BACKLINK_IDENTITY_UNPROVEN")
     parent_ref = OdmItemParentGroup(
-        uid=parent["uid"], oid=parent["oid"], name=parent["name"],
+        uid=parent["uid"],
+        oid=parent["oid"],
+        name=parent["name"],
     ).model_dump(mode="json")
     for child in linked.values():
         if "odm_item_group" not in child or (
@@ -87,7 +99,9 @@ def _vendor_value(value, *, native):
     native_fields = set(OdmRefVendorAttributeModel.model_fields)
     result = {}
     for row in attributes:
-        if not isinstance(row, dict) or set(row) - (native_fields if native else source_fields):
+        if not isinstance(row, dict) or set(row) - (
+            native_fields if native else source_fields
+        ):
             _refuse("ODM_COLLECTION_VENDOR_PROPERTY_UNPROVEN")
         if not source_fields.issubset(row):
             _refuse("ODM_COLLECTION_VENDOR_PROPERTY_UNPROVEN")
@@ -106,7 +120,9 @@ def _relations(value, input_model, reference_model, *, native):
     result = {}
     orders = set()
     for row in value:
-        if not isinstance(row, dict) or set(row) - (native_fields if native else source_fields):
+        if not isinstance(row, dict) or set(row) - (
+            native_fields if native else source_fields
+        ):
             _refuse("ODM_COLLECTION_PROPERTY_UNPROVEN")
         if not source_fields.issubset(row):
             _refuse("ODM_COLLECTION_PROPERTY_UNPROVEN")
@@ -118,7 +134,9 @@ def _relations(value, input_model, reference_model, *, native):
             _refuse("ODM_COLLECTION_ORDER_UNPROVEN")
         if relation["mandatory"] not in {"Yes", "No"}:
             _refuse("ODM_COLLECTION_MANDATORY_UNPROVEN")
-        relation["vendor"] = {"attributes": _vendor_value(relation["vendor"], native=native)}
+        relation["vendor"] = {
+            "attributes": _vendor_value(relation["vendor"], native=native)
+        }
         result[uid] = relation
         orders.add(order)
     return [result[uid] for uid in sorted(result)]
@@ -160,7 +178,8 @@ def _stored_relations(repository, uid, collection, input_model, reference_model)
         relation["uid"] = owners[0]
         relation["mandatory"] = "Yes" if properties["mandatory"] else "No"
         relation["vendor"] = json.loads(
-            properties["vendor"], object_pairs_hook=_json_object,
+            properties["vendor"],
+            object_pairs_hook=_json_object,
             parse_constant=lambda _: _refuse("ODM_COLLECTION_STORED_JSON_INVALID"),
         )
         rows.append(relation)
@@ -200,34 +219,51 @@ def initialize_odm_collection(
         parsed.append(model)
     requested = _relations(
         [row.model_dump(mode="json") for row in parsed],
-        input_model, reference_model, native=False,
+        input_model,
+        reference_model,
+        native=False,
     )
     expected = deepcopy(request.expected_parent)
-    expected_relations = _relations(expected.get(collection), input_model, reference_model, native=True)
+    expected_relations = _relations(
+        expected.get(collection), input_model, reference_model, native=True
+    )
     if expected_relations and _json(expected_relations) != _json(requested):
         _refuse("ODM_COLLECTION_EXISTING_CHILDREN_CONFLICT")
 
     # The same root lock is acquired by ordinary ODM relation mutations and
     # existing native version writers. Read only after all these locks are held.
-    locks = [(parent_service, uid), *((child_service, key) for key in request.expected_children)]
+    locks = [
+        (parent_service, uid),
+        *((child_service, key) for key in request.expected_children),
+    ]
     for service, key in sorted(
         locks, key=lambda pair: (pair[0].repository.root_class.__label__, pair[1])
     ):
         service.repository.lock_for_relationship_update(key)
     current = _wire(parent_service, uid)
-    current_relations = _relations(current.get(collection), input_model, reference_model, native=True)
-    stored = _stored_relations(parent_service.repository, uid, collection, input_model, reference_model)
+    current_relations = _relations(
+        current.get(collection), input_model, reference_model, native=True
+    )
+    stored = _stored_relations(
+        parent_service.repository, uid, collection, input_model, reference_model
+    )
     if _json(stored) != _json(current_relations):
         _refuse("ODM_COLLECTION_STORED_READBACK_DIVERGED")
-    definition = lambda value: {key: child for key, child in value.items() if key != collection}
+    definition = lambda value: {
+        key: child for key, child in value.items() if key != collection
+    }
     if _json(definition(current)) != _json(definition(expected)):
         _refuse("ODM_COLLECTION_PARENT_SNAPSHOT_CHANGED")
     is_exact_replay = _json(current_relations) == _json(requested)
-    linked_children = _linked_children(current, request.expected_children, collection=collection)
+    linked_children = _linked_children(
+        current, request.expected_children, collection=collection
+    )
     # A replay may carry the original pre-link snapshots. Accept their exact
     # native-derived state only after proving the complete intended collection,
     # raw stored relationships, and unchanged parent definition above.
-    admitted_children = linked_children if is_exact_replay else request.expected_children
+    admitted_children = (
+        linked_children if is_exact_replay else request.expected_children
+    )
     for key, snapshot in admitted_children.items():
         if _json(_wire(child_service, key)) != _json(snapshot):
             _refuse("ODM_COLLECTION_CHILD_SNAPSHOT_CHANGED")
@@ -254,9 +290,15 @@ def initialize_odm_collection(
     after = jsonable_encoder(result, exclude_none=False)
     if _json(definition(after)) != _json(definition(current)):
         _refuse("ODM_COLLECTION_PARENT_WRITE_DIVERGED")
-    if _json(_relations(after.get(collection), input_model, reference_model, native=True)) != _json(requested):
+    if _json(
+        _relations(after.get(collection), input_model, reference_model, native=True)
+    ) != _json(requested):
         _refuse("ODM_COLLECTION_WRITE_DIVERGED")
-    if _json(_stored_relations(parent_service.repository, uid, collection, input_model, reference_model)) != _json(requested):
+    if _json(
+        _stored_relations(
+            parent_service.repository, uid, collection, input_model, reference_model
+        )
+    ) != _json(requested):
         _refuse("ODM_COLLECTION_STORED_WRITE_DIVERGED")
     for key, snapshot in linked_children.items():
         if _json(_wire(child_service, key)) != _json(snapshot):

@@ -15,14 +15,14 @@ from common.exceptions import ValidationException
 from common.models.error import ErrorResponse
 from common.utils import BaseTimelineAR
 from consumer_api.shared.common import PAGE_NUMBER_QUERY, PAGE_SIZE_QUERY
+from consumer_api.shared.responses import (
+    PaginatedResponse,
+    PaginatedResponseWithStudyVersion,
+)
 from consumer_api.shared.visibility import (
     enforce_consumer_collection_scope,
     enforce_visible_consumer_study,
     visible_consumer_studies,
-)
-from consumer_api.shared.responses import (
-    PaginatedResponse,
-    PaginatedResponseWithStudyVersion,
 )
 from consumer_api.v1 import api_specs
 from consumer_api.v1 import db as DB
@@ -46,7 +46,11 @@ _MMA_QORIG_REVERSE_MAP: dict[tuple[str, str], str] = {
 @router.get(
     "/studies",
     tags=["[V1] Studies"],
-    dependencies=[security, rbac.STUDY_READ, Depends(enforce_consumer_collection_scope)],
+    dependencies=[
+        security,
+        rbac.STUDY_READ,
+        Depends(enforce_consumer_collection_scope),
+    ],
     status_code=200,
 )
 def get_studies(
@@ -755,7 +759,11 @@ def get_library_activity_item_classes(
 @router.get(
     "/papillons/soa",
     tags=["[V1] Papillons"],
-    dependencies=[security, rbac.STUDY_READ, Depends(enforce_consumer_collection_scope)],
+    dependencies=[
+        security,
+        rbac.STUDY_READ,
+        Depends(enforce_consumer_collection_scope),
+    ],
     status_code=200,
     responses={
         404: {
@@ -917,7 +925,11 @@ def get_papillons_data_type_mapping(
 @router.get(
     "/studies/audit-trail",
     tags=["[V1] Audit trail"],
-    dependencies=[security, rbac.STUDY_READ, Depends(enforce_consumer_collection_scope)],
+    dependencies=[
+        security,
+        rbac.STUDY_READ,
+        Depends(enforce_consumer_collection_scope),
+    ],
     status_code=200,
     responses={
         200: {

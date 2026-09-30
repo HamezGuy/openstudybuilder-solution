@@ -2,11 +2,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from clinical_mdr_api.services.studies import study as study_service
-from clinical_mdr_api.services.studies import study_visibility as vis
 from clinical_mdr_api.services.integrations.proposal_review import (
     ProposalReviewPrincipal,
 )
+from clinical_mdr_api.services.studies import study as study_service
+from clinical_mdr_api.services.studies import study_visibility as vis
 from common.exceptions import ForbiddenException, NotFoundException
 
 
@@ -25,9 +25,11 @@ def strict_domain_scope(monkeypatch):
     monkeypatch.setattr(
         vis,
         "_study_scope",
-        lambda uid: (True, "tenant-synthetic", "active")
-        if uid == "Study_000999"
-        else (True, "another-tenant", "active"),
+        lambda uid: (
+            (True, "tenant-synthetic", "active")
+            if uid == "Study_000999"
+            else (True, "another-tenant", "active")
+        ),
     )
 
 
@@ -46,7 +48,9 @@ def test_exact_assignment_and_native_tenant_binding_are_required():
         ("roles", {"Study.Read"}),
     ],
 )
-def test_write_scope_rejects_wrong_purpose_capability_or_role(monkeypatch, field, value):
+def test_write_scope_rejects_wrong_purpose_capability_or_role(
+    monkeypatch, field, value
+):
     principal = SyntheticUser()
     monkeypatch.setattr(principal, field, value)
     monkeypatch.setattr(vis, "_request_user", lambda: principal)
@@ -86,66 +90,109 @@ def test_scoped_list_route_is_read_only():
 
 
 def test_epoch_configuration_read_keeps_delegated_operation_scope(monkeypatch):
-    vis.assert_collection_scope(require_write=False, route_path="/api/epochs/allowed-configs")
+    vis.assert_collection_scope(
+        require_write=False, route_path="/api/epochs/allowed-configs"
+    )
     with pytest.raises(ForbiddenException):
-        vis.assert_collection_scope(require_write=True, route_path="/api/epochs/allowed-configs")
+        vis.assert_collection_scope(
+            require_write=True, route_path="/api/epochs/allowed-configs"
+        )
     principal = SyntheticUser()
     principal.capabilities = set()
     monkeypatch.setattr(vis, "_request_user", lambda: principal)
     with pytest.raises(ForbiddenException):
-        vis.assert_collection_scope(require_write=False, route_path="/api/epochs/allowed-configs")
+        vis.assert_collection_scope(
+            require_write=False, route_path="/api/epochs/allowed-configs"
+        )
 
 
 @pytest.mark.parametrize(
     ("local_path", "request_path"),
     [("/list", "/studies/list"), ("/list", "/api/studies/list"), ("", "/studies")],
 )
-def test_included_router_uses_concrete_prefixed_collection_path(local_path, request_path):
+def test_included_router_uses_concrete_prefixed_collection_path(
+    local_path, request_path
+):
     from starlette.requests import Request
+
     from clinical_mdr_api.routers.studies.study_access import enforce_visible_study
 
-    request = Request({
-        "type": "http", "method": "GET", "path": request_path,
-        "headers": [], "query_string": b"", "path_params": {},
-        "route": SimpleNamespace(path=local_path),
-    })
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": request_path,
+            "headers": [],
+            "query_string": b"",
+            "path_params": {},
+            "route": SimpleNamespace(path=local_path),
+        }
+    )
     enforce_visible_study(request, _auth=None)
 
 
 def test_local_route_template_cannot_authorize_a_different_collection():
     from starlette.requests import Request
+
     from clinical_mdr_api.routers.studies.study_access import enforce_visible_study
 
-    request = Request({
-        "type": "http", "method": "GET", "path": "/studies/headers",
-        "headers": [], "query_string": b"", "path_params": {},
-        "route": SimpleNamespace(path="/studies/list"),
-    })
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/studies/headers",
+            "headers": [],
+            "query_string": b"",
+            "path_params": {},
+            "route": SimpleNamespace(path="/studies/list"),
+        }
+    )
     with pytest.raises(ForbiddenException):
         enforce_visible_study(request, _auth=None)
 
 
-@pytest.mark.parametrize("child_parameter", [
-    "study_standard_version_uid", "study_visit_uid", "study_epoch_uid",
-    "study_arm_uid", "study_cohort_uid", "study_element_uid",
-    "study_objective_uid", "study_endpoint_uid", "study_criteria_uid",
-    "study_activity_uid", "study_activity_instance_uid", "study_design_cell_uid",
-])
+@pytest.mark.parametrize(
+    "child_parameter",
+    [
+        "study_standard_version_uid",
+        "study_visit_uid",
+        "study_epoch_uid",
+        "study_arm_uid",
+        "study_cohort_uid",
+        "study_element_uid",
+        "study_objective_uid",
+        "study_endpoint_uid",
+        "study_criteria_uid",
+        "study_activity_uid",
+        "study_activity_instance_uid",
+        "study_design_cell_uid",
+    ],
+)
 @pytest.mark.parametrize("method", ["GET", "PATCH"])
-def test_nested_item_is_checked_against_its_parent_study(monkeypatch, child_parameter, method):
+def test_nested_item_is_checked_against_its_parent_study(
+    monkeypatch, child_parameter, method
+):
     from starlette.requests import Request
+
     from clinical_mdr_api.routers.studies import study_access
 
     checked = []
+
     def assert_parent(uid, *, require_write):
         checked.append((uid, require_write))
         vis.assert_study_uid_visible(uid, require_write=require_write)
+
     monkeypatch.setattr(study_access, "assert_study_uid_visible", assert_parent)
-    request = Request({
-        "type": "http", "method": method, "path": "/studies/Study_000999/items/Child_1",
-        "headers": [], "query_string": b"",
-        "path_params": {"study_uid": "Study_000999", child_parameter: "Child_1"},
-    })
+    request = Request(
+        {
+            "type": "http",
+            "method": method,
+            "path": "/studies/Study_000999/items/Child_1",
+            "headers": [],
+            "query_string": b"",
+            "path_params": {"study_uid": "Study_000999", child_parameter: "Child_1"},
+        }
+    )
     study_access.enforce_visible_study(request, _auth=None)
     assert checked == [("Study_000999", method == "PATCH")]
     request.scope["path_params"]["study_uid"] = "Study_000998"
@@ -155,17 +202,24 @@ def test_nested_item_is_checked_against_its_parent_study(monkeypatch, child_para
 
 def test_nested_item_without_parent_and_cross_study_target_still_fail_closed():
     from starlette.requests import Request
+
     from clinical_mdr_api.routers.studies.study_access import enforce_visible_study
 
-    request = Request({
-        "type": "http", "method": "PATCH", "path": "/study-standard-versions/Child_1",
-        "headers": [], "query_string": b"",
-        "path_params": {"study_standard_version_uid": "Child_1"},
-    })
+    request = Request(
+        {
+            "type": "http",
+            "method": "PATCH",
+            "path": "/study-standard-versions/Child_1",
+            "headers": [],
+            "query_string": b"",
+            "path_params": {"study_standard_version_uid": "Child_1"},
+        }
+    )
     with pytest.raises(ForbiddenException):
         enforce_visible_study(request, _auth=None)
     request.scope["path_params"] = {
-        "study_uid": "Study_000999", "target_study_uid": "Study_000998",
+        "study_uid": "Study_000999",
+        "target_study_uid": "Study_000998",
     }
     with pytest.raises(NotFoundException):
         enforce_visible_study(request, _auth=None)
@@ -196,7 +250,10 @@ def test_list_repository_queries_only_exact_assigned_roots(
     )
     assert result == []
     query, params = calls[0]
-    assert "UNWIND $study_uids AS scoped_uid MATCH (sr:StudyRoot {uid: scoped_uid})" in query
+    assert (
+        "UNWIND $study_uids AS scoped_uid MATCH (sr:StudyRoot {uid: scoped_uid})"
+        in query
+    )
     assert params == {"study_uids": ["Study_000999"]}
     assert "NOT EXISTS((sv)-[:HAS_STUDY_ENDPOINT]->(:StudyEndpoint))" in query
     deletion_predicate = "EXISTS((sv)<-[:BEFORE]-(:Delete))"
@@ -213,14 +270,22 @@ def test_list_repository_empty_scope_never_queries_all_studies(monkeypatch):
 
     monkeypatch.setattr(repository_module.db, "cypher_query", unexpected_query)
     repository = SimpleNamespace(_check_not_closed=lambda: None)
-    assert repository_module.StudyDefinitionRepository.get_studies_list(
-        repository, study_uids=()
-    ) == []
+    assert (
+        repository_module.StudyDefinitionRepository.get_studies_list(
+            repository, study_uids=()
+        )
+        == []
+    )
 
 
 def test_list_service_passes_validated_scope_and_closes_repositories(monkeypatch):
     calls, closed = [], []
-    item = {"uid": "Study_000999", "id": "SCOPED-001", "acronym": None, "subpart_acronym": None}
+    item = {
+        "uid": "Study_000999",
+        "id": "SCOPED-001",
+        "acronym": None,
+        "subpart_acronym": None,
+    }
     service = object.__new__(study_service.StudyService)
     service._repos = SimpleNamespace(
         study_definition_repository=SimpleNamespace(
@@ -282,9 +347,7 @@ def test_proposal_review_requires_purpose_and_capability():
         capabilities=frozenset({"study:write"}),
         enforce_delegated_scope=True,
     )
-    principal.assert_proposal_access(
-        "tenant-synthetic", "Study_000999", "Study.Write"
-    )
+    principal.assert_proposal_access("tenant-synthetic", "Study_000999", "Study.Write")
 
     invalid = ProposalReviewPrincipal(
         **{

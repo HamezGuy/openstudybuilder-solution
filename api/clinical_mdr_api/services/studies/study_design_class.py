@@ -74,7 +74,8 @@ class StudyDesignClassService:
         )
         return (
             StudyDesignClass.model_validate(study_design_class_node)
-            if study_design_class_node is not None else None
+            if study_design_class_node is not None
+            else None
         )
 
     def is_study_design_class_edition_allowed(

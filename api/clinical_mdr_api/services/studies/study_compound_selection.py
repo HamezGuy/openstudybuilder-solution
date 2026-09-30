@@ -26,8 +26,10 @@ from clinical_mdr_api.services._utils import (
 from clinical_mdr_api.services.studies.study_compound_dosing_selection import (
     StudyCompoundDosingRelationMixin,
 )
+from clinical_mdr_api.services.studies.study_compound_snapshot import (
+    StudyCompoundSnapshotReader,
+)
 from clinical_mdr_api.services.studies.study_selection_base import StudySelectionMixin
-from clinical_mdr_api.services.studies.study_compound_snapshot import StudyCompoundSnapshotReader
 from common.auth.user import user
 from common.exceptions import BusinessLogicException
 
@@ -56,10 +58,14 @@ class StudyCompoundSelectionService(
             study_selection.study_compounds_selection, start=1
         ):
             snapshot = StudyCompoundSnapshotReader(
-                self._repos, study_selection.study_uid, study_value_version,
+                self._repos,
+                study_selection.study_uid,
+                study_value_version,
                 terms_at_specific_datetime=terms_at_specific_datetime,
             )
-            compound_model, compound_alias_model, medicinal_product_model, products = snapshot.selection_models(selection)
+            compound_model, compound_alias_model, medicinal_product_model, products = (
+                snapshot.selection_models(selection)
+            )
 
             result.append(
                 StudySelectionCompound.from_study_compound_ar(
@@ -86,10 +92,14 @@ class StudyCompoundSelectionService(
             study_uid=study_uid,
         )
         snapshot = StudyCompoundSnapshotReader(
-            self._repos, study_uid, None,
+            self._repos,
+            study_uid,
+            None,
             terms_at_specific_datetime=terms_at_specific_datetime,
         )
-        compound_model, compound_alias_model, medicinal_product_model, products = snapshot.selection_models(study_selection)
+        compound_model, compound_alias_model, medicinal_product_model, products = (
+            snapshot.selection_models(study_selection)
+        )
 
         result = StudySelectionCompound.from_study_compound_ar(
             study_uid=study_uid,
@@ -237,7 +247,8 @@ class StudyCompoundSelectionService(
 
             header_values = service_level_generic_header_filtering(
                 items=self._transform_all_to_response_model(
-                    compound_selection_ar, study_value_version=study_value_version,
+                    compound_selection_ar,
+                    study_value_version=study_value_version,
                 ),
                 field_name=field_name,
                 search_string=search_string,

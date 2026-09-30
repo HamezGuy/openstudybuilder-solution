@@ -1,10 +1,17 @@
 """Exact native selected-activity reachability; not semantic or form approval."""
+
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
 from clinical_mdr_api.models.integrations.native_item_observation import (
-    NativeItemObservationRequest, NativeItemObservationResponse, Identity,
-    ScalarText, ScalarInteger, ObservationHash, Instant,
+    Identity,
+    Instant,
+    NativeItemObservationRequest,
+    NativeItemObservationResponse,
+    ObservationHash,
+    ScalarInteger,
+    ScalarText,
 )
 
 

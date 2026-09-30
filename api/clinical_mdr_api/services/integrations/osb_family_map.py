@@ -26,11 +26,15 @@ STUDY_SECTION_FAMILIES: dict[str, tuple[str, ...]] = _section_families("study")
 
 CAPTURE_SECTION_FAMILIES: dict[str, tuple[str, ...]] = _section_families("capture")
 
-BLOCKER_ONLY_FAMILIES = frozenset(family for family, entry in FAMILIES.items() if entry["blockerOnly"])
+BLOCKER_ONLY_FAMILIES = frozenset(
+    family for family, entry in FAMILIES.items() if entry["blockerOnly"]
+)
 
 # The release blocker a blocker-only family raises in the mapping context.
 BLOCKER_ONLY_FAMILY_CODES: dict[str, str] = {
-    family: entry["blockerCode"] for family, entry in FAMILIES.items() if entry["blockerCode"]
+    family: entry["blockerCode"]
+    for family, entry in FAMILIES.items()
+    if entry["blockerCode"]
 }
 
 # Families whose retrieval consults the SDTM/CDASH data models and IGs. Their
@@ -45,17 +49,21 @@ STUDY_FAMILIES = frozenset(
 CAPTURE_FAMILIES = frozenset(
     family for families in CAPTURE_SECTION_FAMILIES.values() for family in families
 )
-SUPPORTED_RESOURCE_FAMILIES = STUDY_FAMILIES | CAPTURE_FAMILIES | frozenset(FAMILY_ALIASES)
+SUPPORTED_RESOURCE_FAMILIES = (
+    STUDY_FAMILIES | CAPTURE_FAMILIES | frozenset(FAMILY_ALIASES)
+)
 
 NATIVE_READ_MODELS: dict[str, tuple[str, str | None]] = {
     family: (entry["readModel"]["root"], entry["readModel"]["value"])
-    for family, entry in FAMILIES.items() if entry["readModel"]
+    for family, entry in FAMILIES.items()
+    if entry["readModel"]
 }
 
 # Root label, value label and the model class the versioned library search reports as resourceType.
 FAMILY_NODE_MODELS: dict[str, tuple[str, str, str]] = {
     family: (entry["readModel"]["root"], entry["readModel"]["value"], entry["model"])
-    for family, entry in FAMILIES.items() if entry["model"]
+    for family, entry in FAMILIES.items()
+    if entry["model"]
 }
 
 NATIVE_CREATE_FAMILIES = frozenset(

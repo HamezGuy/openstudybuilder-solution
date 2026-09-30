@@ -17,13 +17,13 @@ from clinical_mdr_api.models.integrations.mapping_context import (
     MappingContextV2Response,
 )
 from clinical_mdr_api.services.integrations.canonical_json import canonical_hash
+from clinical_mdr_api.services.integrations.nested_transaction import (
+    call_in_ambient_transaction,
+)
 from clinical_mdr_api.services.integrations.osb_family_map import (
     BLOCKER_ONLY_FAMILY_CODES,
     COLLECTION_MODE_FAMILIES,
     FAMILY_NODE_MODELS,
-)
-from clinical_mdr_api.services.integrations.nested_transaction import (
-    call_in_ambient_transaction,
 )
 from clinical_mdr_api.services.integrations.proposal_review import (
     Neo4jProposalReviewRepository,
@@ -127,7 +127,9 @@ class MappingContextService:
             for family in families:
                 if family == "study_metadata":
                     rows = []
-                    release_blockers.append("MAPPING_CONTEXT_STUDY_METADATA_REQUIRES_GOVERNED_REQUEST")
+                    release_blockers.append(
+                        "MAPPING_CONTEXT_STUDY_METADATA_REQUIRES_GOVERNED_REQUEST"
+                    )
                 elif family in BLOCKER_ONLY_FAMILY_CODES:
                     rows = []
                     release_blockers.append(BLOCKER_ONLY_FAMILY_CODES[family])
@@ -356,7 +358,10 @@ class MappingContextService:
                     )
                 elif requested.resource_family in {"odm_aliases", "activity_schedules"}:
                     candidates, incomplete_count = self._unversioned_name_family_v2(
-                        requested.resource_family, searches, codes, query_limit,
+                        requested.resource_family,
+                        searches,
+                        codes,
+                        query_limit,
                     )
                 else:
                     candidates, incomplete_count = self._versioned_library_family_v2(
@@ -843,7 +848,17 @@ class MappingContextService:
         incomplete = 0
         for row in result:
             if not all(
-                (row[0], row[1], row[3], row[4], row[7], row[8], row[9], row[10], row[12])
+                (
+                    row[0],
+                    row[1],
+                    row[3],
+                    row[4],
+                    row[7],
+                    row[8],
+                    row[9],
+                    row[10],
+                    row[12],
+                )
             ):
                 incomplete += 1
                 continue
@@ -1308,7 +1323,8 @@ class MappingContextService:
         else:
             raise KeyError(family)
         result, _ = db.cypher_query(
-            query, {"searches": searches, "codes": codes, "limit": limit},
+            query,
+            {"searches": searches, "codes": codes, "limit": limit},
         )
         candidates: list[MappingContextCandidate] = []
         incomplete = 0

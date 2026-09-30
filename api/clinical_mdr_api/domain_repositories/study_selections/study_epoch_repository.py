@@ -259,7 +259,10 @@ class StudyEpochRepository:
                     "ELSE null END AS native_study_as_of"
                 )
                 params["study_value_version"] = study_value_version
-                params["study_status"] = [StudyStatus.LOCKED.value, StudyStatus.RELEASED.value]
+                params["study_status"] = [
+                    StudyStatus.LOCKED.value,
+                    StudyStatus.RELEASED.value,
+                ]
 
             else:
                 query.append(
@@ -336,9 +339,7 @@ class StudyEpochRepository:
                     }}
                 """
             query.append(
-                term_query.format(
-                    root="epoch_ct_term_root", value="epoch_term"
-                )
+                term_query.format(root="epoch_ct_term_root", value="epoch_term")
             )
             query.append(
                 term_query.format(

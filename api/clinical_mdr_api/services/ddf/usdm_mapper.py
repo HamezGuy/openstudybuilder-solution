@@ -10,7 +10,6 @@ import re
 from datetime import date, datetime, timezone
 from itertools import chain
 from typing import Any, Callable
-from common.exceptions import ValidationException
 
 from neomodel import db
 from usdm_info import __model_version__ as usdm_package_version
@@ -18,28 +17,31 @@ from usdm_model import Activity as USDMActivity
 from usdm_model import Administration as USDMAdministration
 from usdm_model import AliasCode as USDMAliasCode
 from usdm_model import Code as USDMCode
-from usdm_model import Encounter as USDMEncounter
 from usdm_model import Duration as USDMDuration
 from usdm_model import EligibilityCriterion as USDMEligibilityCriterion
 from usdm_model import EligibilityCriterionItem as USDMEligibilityCriterionItem
+from usdm_model import Encounter as USDMEncounter
 from usdm_model import Endpoint as USDMEndpoint
 from usdm_model import Indication as USDMIndication
+from usdm_model import InterventionalStudyDesign as USDMStudyDesign
 from usdm_model import Objective as USDMObjective
+from usdm_model import ObservationalStudyDesign as USDMObservationalStudyDesign
 from usdm_model import Organization as USDMOrganization
 from usdm_model import Quantity as USDMQuantity
 from usdm_model import Range as USDMRange
-from usdm_model import ScheduledActivityInstance
+from usdm_model import (
+    ScheduledActivityInstance,
+)
 from usdm_model import ScheduleTimeline as USDMScheduleTimeline
 from usdm_model import Study as USDMStudy
-from usdm_model import StudyArm
+from usdm_model import (
+    StudyArm,
+)
 from usdm_model import StudyCell as USDMStudyCell
 from usdm_model import StudyDefinitionDocument as USDMStudyDefinitionDocument
 from usdm_model import (
     StudyDefinitionDocumentVersion as USDMStudyDefinitionDocumentVersion,
 )
-from usdm_model import InterventionalStudyDesign as USDMStudyDesign
-from usdm_model import ObservationalStudyDesign as USDMObservationalStudyDesign
-
 from usdm_model import StudyDesignPopulation as USDMStudyDesignPopulation
 from usdm_model import StudyElement as USDMStudyElement
 from usdm_model import StudyEpoch as USDMStudyEpoch
@@ -49,31 +51,30 @@ from usdm_model import StudyTitle as USDMStudyTitle
 from usdm_model import StudyVersion as USDMStudyVersion
 from usdm_model import Timing as USDMTiming
 from usdm_model import TransitionRule as USDMTransitionRule
-from usdm_model.extension import (
-    BaseAliasCode as USDMExtensionAliasCode,
-    BaseCode as USDMExtensionCode,
-    BaseQuantity as USDMExtensionQuantity,
-    ExtensionAttribute as USDMExtensionAttribute,
-)
+from usdm_model.extension import BaseAliasCode as USDMExtensionAliasCode
+from usdm_model.extension import BaseCode as USDMExtensionCode
+from usdm_model.extension import BaseQuantity as USDMExtensionQuantity
+from usdm_model.extension import ExtensionAttribute as USDMExtensionAttribute
 
-from clinical_mdr_api.domains.study_definition_aggregates.study_metadata import (
-    StudyStatus,
-)
 from clinical_mdr_api.domain_repositories.study_selections.study_arm_origin_repository import (
     StudyArmOriginRepository,
+)
+from clinical_mdr_api.domains.study_definition_aggregates.study_metadata import (
+    StudyStatus,
 )
 from clinical_mdr_api.domains.study_selections.study_arm_origin import (
     STUDY_ARM_ORIGIN_CATALOGUE,
 )
 from clinical_mdr_api.models.study_selections.study import Study as OSBStudy
-from clinical_mdr_api.services.ddf.usdm_utils import IdManager
 from clinical_mdr_api.services.ddf.usdm_mapping_context import (
     MappingContext,
     USDMMappingAuthorityRequired,
+    finalize_document,
     native_json,
     source_extension,
-    finalize_document,
 )
+from clinical_mdr_api.services.ddf.usdm_utils import IdManager
+from common.exceptions import ValidationException
 from common.telemetry import trace_calls
 
 DDF_ORGANIZATION_TYPE_STUDY_REGISTRY = "C93453"
@@ -139,7 +140,9 @@ def _items(value: Any) -> list[Any]:
     if isinstance(value, dict):
         items, total = value.get("items"), value.get("total")
     else:
-        items, total = getattr(value, "items", value or []), getattr(value, "total", None)
+        items, total = getattr(value, "items", value or []), getattr(
+            value, "total", None
+        )
     if not isinstance(items, (list, tuple)):
         raise USDMMappingAuthorityRequired("USDM_COMPLETE_SOURCE_COLLECTION_REQUIRED")
     if isinstance(total, int) and total > len(items):
@@ -150,17 +153,18 @@ def _items(value: Any) -> list[Any]:
 def _accepts_keyword(callback: Callable, keyword: str) -> bool:
     try:
         parameters = inspect.signature(callback).parameters.values()
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return True
     return any(
-        parameter.kind == inspect.Parameter.VAR_KEYWORD
-        or parameter.name == keyword
+        parameter.kind == inspect.Parameter.VAR_KEYWORD or parameter.name == keyword
         for parameter in parameters
     )
 
 
 def _update_ddf_encounter_scheduled_at(encounters, schedule_timelines) -> None:
-    timings = list(chain.from_iterable(timeline.timings for timeline in schedule_timelines))
+    timings = list(
+        chain.from_iterable(timeline.timings for timeline in schedule_timelines)
+    )
     timing_by_instance = {
         timing.relativeFromScheduledInstanceId: timing.id
         for timing in timings
@@ -234,14 +238,26 @@ class USDMMapper:
         self._native_readers = {
             "studyCohort": (get_osb_study_cohorts, "cohort_uid"),
             "studyBranchArm": (get_osb_study_branch_arms, "branch_arm_uid"),
-            "studyActivityInstance": (get_osb_activity_instances, "study_activity_instance_uid"),
-            "studyActivityInstruction": (get_osb_activity_instructions, "study_activity_instruction_uid"),
+            "studyActivityInstance": (
+                get_osb_activity_instances,
+                "study_activity_instance_uid",
+            ),
+            "studyActivityInstruction": (
+                get_osb_activity_instructions,
+                "study_activity_instruction_uid",
+            ),
             "studyActivityGroup": (get_osb_activity_groups, "study_activity_group_uid"),
-            "studyActivitySubGroup": (get_osb_activity_subgroups, "study_activity_subgroup_uid"),
+            "studyActivitySubGroup": (
+                get_osb_activity_subgroups,
+                "study_activity_subgroup_uid",
+            ),
             "studySoAGroup": (get_osb_soa_groups, "study_soa_group_uid"),
             "studySoAFootnote": (get_osb_soa_footnotes, "uid"),
             "studyDiseaseMilestone": (get_osb_disease_milestones, "uid"),
-            "studyDataSupplier": (get_osb_study_data_suppliers, "study_data_supplier_uid"),
+            "studyDataSupplier": (
+                get_osb_study_data_suppliers,
+                "study_data_supplier_uid",
+            ),
             "studyDesignClass": (get_osb_study_design_class, "study_uid"),
             "studySourceVariable": (get_osb_study_source_variable, "study_uid"),
         }
@@ -253,12 +269,18 @@ class USDMMapper:
             "studyElement": (get_osb_study_elements, "element_uid"),
             "studyDesignCell": (get_osb_study_design_cells, "design_cell_uid"),
             "studyActivity": (get_osb_study_activities, "study_activity_uid"),
-            "studyActivitySchedule": (get_osb_activity_schedules, "study_activity_schedule_uid"),
+            "studyActivitySchedule": (
+                get_osb_activity_schedules,
+                "study_activity_schedule_uid",
+            ),
             "studyObjective": (get_osb_study_objectives, "study_objective_uid"),
             "studyEndpoint": (get_osb_study_endpoints, "study_endpoint_uid"),
             "studyCriteria": (get_osb_study_criteria, "study_criteria_uid"),
             "studyCompound": (get_osb_study_compounds, "study_compound_uid"),
-            "studyCompoundDosing": (get_osb_study_compound_dosings, "study_compound_dosing_uid"),
+            "studyCompoundDosing": (
+                get_osb_study_compound_dosings,
+                "study_compound_dosing_uid",
+            ),
             "studyStandardVersion": (get_osb_study_standard_versions, "uid"),
         }
         self._get_activity_instance_definition = get_osb_activity_instance_definition
@@ -293,30 +315,55 @@ class USDMMapper:
                     schedule_scopes = {}
                     for record in records:
                         uid = record.get(identity)
-                        selected_scope = (record.get("study_activity_uid"), record.get("study_visit_uid"))
-                        if uid in schedule_scopes and schedule_scopes[uid] != selected_scope:
+                        selected_scope = (
+                            record.get("study_activity_uid"),
+                            record.get("study_visit_uid"),
+                        )
+                        if (
+                            uid in schedule_scopes
+                            and schedule_scopes[uid] != selected_scope
+                        ):
                             raise USDMMappingAuthorityRequired(
                                 f"USDM_OPERATIONAL_SCHEDULE_SCOPE_CONFLICT: {uid}"
                             )
                         schedule_scopes[uid] = selected_scope
-                    records.sort(key=lambda record: (
-                        record.get(identity) or "", record.get("study_activity_instance_uid") or ""
-                    ))
+                    records.sort(
+                        key=lambda record: (
+                            record.get(identity) or "",
+                            record.get("study_activity_instance_uid") or "",
+                        )
+                    )
                 for record in records:
                     if "study_uid" in record and record["study_uid"] != self._study_uid:
-                        raise USDMMappingAuthorityRequired(f"USDM_SOURCE_STUDY_MISMATCH: {kind}")
+                        raise USDMMappingAuthorityRequired(
+                            f"USDM_SOURCE_STUDY_MISMATCH: {kind}"
+                        )
                     version = record.get("study_version")
-                    if self._study_value_version is not None and version is not None and version != self._study_value_version:
-                        raise USDMMappingAuthorityRequired(f"USDM_SOURCE_VERSION_MISMATCH: {kind}")
+                    if (
+                        self._study_value_version is not None
+                        and version is not None
+                        and version != self._study_value_version
+                    ):
+                        raise USDMMappingAuthorityRequired(
+                            f"USDM_SOURCE_VERSION_MISMATCH: {kind}"
+                        )
                     instance_uid = (
                         record.get("study_activity_instance_uid")
-                        if kind == "studyOperationalActivitySchedule" else None
+                        if kind == "studyOperationalActivitySchedule"
+                        else None
                     )
                     self._context.retain(
-                        kind, record.get(identity), record,
+                        kind,
+                        record.get(identity),
+                        record,
                         scope={
-                            "studyUid": self._study_uid, "studyValueVersion": self._study_value_version,
-                            **({"studyActivityInstanceUid": instance_uid} if instance_uid is not None else {}),
+                            "studyUid": self._study_uid,
+                            "studyValueVersion": self._study_value_version,
+                            **(
+                                {"studyActivityInstanceUid": instance_uid}
+                                if instance_uid is not None
+                                else {}
+                            ),
                         },
                         reading_identity=instance_uid,
                     )
@@ -363,10 +410,19 @@ class USDMMapper:
         )
 
     def _load_study_criteria_selections(self, study_uid: str) -> None:
-        criteria_kwargs = {"no_brackets": False} if self._get_osb_study_criteria is not None and _accepts_keyword(self._get_osb_study_criteria, "no_brackets") else {}
+        criteria_kwargs = (
+            {"no_brackets": False}
+            if self._get_osb_study_criteria is not None
+            and _accepts_keyword(self._get_osb_study_criteria, "no_brackets")
+            else {}
+        )
         self._study_criteria = (
             _stable_selection_order(
-                _items(self._call(self._get_osb_study_criteria, study_uid, **criteria_kwargs)),
+                _items(
+                    self._call(
+                        self._get_osb_study_criteria, study_uid, **criteria_kwargs
+                    )
+                ),
                 "study_criteria_uid",
             )
             if self._get_osb_study_criteria is not None
@@ -416,7 +472,9 @@ class USDMMapper:
             instanceType="Code",
         )
 
-    def _source_quantity(self, value: Any, *, unit_version: str | None = None) -> USDMExtensionQuantity | None:
+    def _source_quantity(
+        self, value: Any, *, unit_version: str | None = None
+    ) -> USDMExtensionQuantity | None:
         magnitude = getattr(value, "value", None)
         if magnitude is None:
             magnitude = getattr(value, "duration_value", None)
@@ -436,20 +494,26 @@ class USDMMapper:
         unit = None
         if unit_uid or unit_label:
             selected_unit = (
-                self.get_ddf_study_population_duration_unit_from_name_as_code(unit_label)
-                if duration_unit is not None else None
+                self.get_ddf_study_population_duration_unit_from_name_as_code(
+                    unit_label
+                )
+                if duration_unit is not None
+                else None
             )
-            unit_code = (USDMExtensionCode(**selected_unit.model_dump())
-                         if selected_unit is not None and selected_unit.code else USDMExtensionCode(
-                id=self._id_manager.get_id(
-                    USDMExtensionCode.__name__, unit_uid or unit_label
-                ),
-                code=unit_uid,
-                codeSystem="OpenStudyBuilder unit definition",
-                codeSystemVersion=unit_version or "",
-                decode=unit_label,
-                instanceType="Code",
-            ))
+            unit_code = (
+                USDMExtensionCode(**selected_unit.model_dump())
+                if selected_unit is not None and selected_unit.code
+                else USDMExtensionCode(
+                    id=self._id_manager.get_id(
+                        USDMExtensionCode.__name__, unit_uid or unit_label
+                    ),
+                    code=unit_uid,
+                    codeSystem="OpenStudyBuilder unit definition",
+                    codeSystemVersion=unit_version or "",
+                    decode=unit_label,
+                    instanceType="Code",
+                )
+            )
             unit = USDMExtensionAliasCode(
                 id=self._id_manager.get_id(
                     USDMExtensionAliasCode.__name__, unit_uid or unit_label
@@ -500,8 +564,10 @@ class USDMMapper:
             package_uid = getattr(package, "uid", None)
             effective_date = getattr(package, "effective_date", None)
             if (
-                not isinstance(catalogue_name, str) or not catalogue_name.strip()
-                or not isinstance(package_uid, str) or not package_uid.strip()
+                not isinstance(catalogue_name, str)
+                or not catalogue_name.strip()
+                or not isinstance(package_uid, str)
+                or not package_uid.strip()
                 or effective_date is None
             ):
                 raise USDMMappingAuthorityRequired(
@@ -510,7 +576,10 @@ class USDMMapper:
                 )
             effective_date_string = str(effective_date)
             try:
-                valid_date = date.fromisoformat(effective_date_string).isoformat() == effective_date_string
+                valid_date = (
+                    date.fromisoformat(effective_date_string).isoformat()
+                    == effective_date_string
+                )
             except ValueError:
                 valid_date = False
             if not valid_date:
@@ -519,7 +588,8 @@ class USDMMapper:
                 )
             if catalogue_name in self._ct_packages:
                 raise USDMMappingAuthorityRequired(
-                    "USDM_CT_PACKAGE_SELECTION_AMBIGUOUS: multiple selections for " + catalogue_name
+                    "USDM_CT_PACKAGE_SELECTION_AMBIGUOUS: multiple selections for "
+                    + catalogue_name
                 )
             candidate = {
                 "uid": package_uid,
@@ -545,13 +615,18 @@ class USDMMapper:
     def get_void_usdm_code(self) -> USDMCode:
         return USDMCode(
             id=self._id_manager.get_id(USDMCode.__name__),
-            code="", codeSystem="", codeSystemVersion="", decode="",
+            code="",
+            codeSystem="",
+            codeSystemVersion="",
+            decode="",
             instanceType="Code",
         )
 
     @trace_calls(args=[1], kwargs=["concept_id"])
     def get_ct_package_term_as_usdm_code(self, concept_id: str | None) -> USDMCode:
-        from clinical_mdr_api.services.ddf.usdm_ct_package_mapping import selected_cdisc_code
+        from clinical_mdr_api.services.ddf.usdm_ct_package_mapping import (
+            selected_cdisc_code,
+        )
 
         return selected_cdisc_code(self, concept_id, db.cypher_query)
 
@@ -561,8 +636,10 @@ class USDMMapper:
             return self.get_void_usdm_code()
         if self._study_as_of is None:
             self._context.unresolved(
-                "USDM_DICTIONARY_SNAPSHOT_REQUIRED", f"dictionary-terms/{term_uid}",
-                "Code/codeSystemVersion", "No native study snapshot time is available for this dictionary term.",
+                "USDM_DICTIONARY_SNAPSHOT_REQUIRED",
+                f"dictionary-terms/{term_uid}",
+                "Code/codeSystemVersion",
+                "No native study snapshot time is available for this dictionary term.",
                 "Select an exact native study version with its recorded timestamp.",
             )
             return self.get_void_usdm_code()
@@ -574,27 +651,42 @@ class USDMMapper:
               AND (version.end_date IS NULL OR version.end_date > $as_of)
             RETURN library, value, properties(version)
         """
-        result, _ = db.cypher_query(query, {"term_uid": term_uid, "as_of": self._study_as_of})
+        result, _ = db.cypher_query(
+            query, {"term_uid": term_uid, "as_of": self._study_as_of}
+        )
         if len(result) != 1:
             self._context.unresolved(
-                "USDM_DICTIONARY_VERSION_UNRESOLVED", f"dictionary-terms/{term_uid}",
-                "Code/codeSystemVersion", "The exact dictionary identity and snapshot do not resolve to one version.",
+                "USDM_DICTIONARY_VERSION_UNRESOLVED",
+                f"dictionary-terms/{term_uid}",
+                "Code/codeSystemVersion",
+                "The exact dictionary identity and snapshot do not resolve to one version.",
                 "Resolve the native dictionary version without a prefix or latest-version fallback.",
             )
             return self.get_void_usdm_code()
         library, value, version = result[0]
         self._context.retain(
-            "dictionaryTermDefinition", f"{term_uid}@{version.get('version')}",
-            {"uid": term_uid, "library": dict(library), "value": dict(value), "version": dict(version)},
-            scope={"studyUid": getattr(self, "_study_uid", None), "studyValueVersion": self._study_value_version},
+            "dictionaryTermDefinition",
+            f"{term_uid}@{version.get('version')}",
+            {
+                "uid": term_uid,
+                "library": dict(library),
+                "value": dict(value),
+                "version": dict(version),
+            },
+            scope={
+                "studyUid": getattr(self, "_study_uid", None),
+                "studyValueVersion": self._study_value_version,
+            },
         )
         return USDMCode(
             id=self._id_manager.get_id(USDMCode.__name__),
-            code=term_uid, codeSystem="OpenStudyBuilder dictionary: " + library["name"],
+            code=term_uid,
+            codeSystem="OpenStudyBuilder dictionary: " + library["name"],
             # This is the native dictionary object's version, never an invented
             # external dictionary edition. The external code remains in custody.
             codeSystemVersion=version.get("version") or "",
-            decode=value["name"], instanceType="Code",
+            decode=value["name"],
+            instanceType="Code",
         )
 
     def get_ddf_study_population_duration_unit_from_name_as_code(
@@ -615,7 +707,9 @@ class USDMMapper:
         )
 
     def get_ddf_study_population_enrollment_number_unit(self) -> USDMCode:
-        return self.get_ct_package_term_as_usdm_code(DDF_STUDY_POPULATION_ENROLLMENT_NUMBER_UNIT)
+        return self.get_ct_package_term_as_usdm_code(
+            DDF_STUDY_POPULATION_ENROLLMENT_NUMBER_UNIT
+        )
 
     def get_ddf_study_protocol_status_draft(self) -> USDMCode:
         return self.get_ct_package_term_as_usdm_code(DDF_STUDY_PROTOCOL_STATUS_DRAFT)
@@ -642,17 +736,24 @@ class USDMMapper:
         return self.get_ct_package_term_as_usdm_code(DDF_TIMING_TYPE_FIXED)
 
     def get_ddf_timing_relative_to_from(self) -> USDMCode:
-        return self.get_ct_package_term_as_usdm_code(DDF_TIME_RELATIVE_TO_FROM_START_TO_START)
+        return self.get_ct_package_term_as_usdm_code(
+            DDF_TIME_RELATIVE_TO_FROM_START_TO_START
+        )
 
     @trace_calls
     def map(
-        self, study: OSBStudy, study_value_version: str | None = None,
-        *, allow_incomplete: bool = False,
+        self,
+        study: OSBStudy,
+        study_value_version: str | None = None,
+        *,
+        allow_incomplete: bool = False,
     ) -> dict[str, Any]:
         self._study_value_version = study_value_version
         self._study_uid = study.uid
         self._study_as_of = getattr(
-            getattr(study.current_metadata, "version_metadata", None), "version_timestamp", None
+            getattr(study.current_metadata, "version_metadata", None),
+            "version_timestamp",
+            None,
         )
         self._context = MappingContext(allow_incomplete=allow_incomplete)
         self._context.retain("study", study.uid, study)
@@ -674,10 +775,13 @@ class USDMMapper:
         for kind, (reader, identity) in self._native_readers.items():
             self._native_rows[kind] = (
                 _stable_selection_order(_items(self._call(reader, study.uid)), identity)
-                if reader is not None else []
+                if reader is not None
+                else []
             )
 
-        usdm_study = self._build(USDMStudy, "study",
+        usdm_study = self._build(
+            USDMStudy,
+            "study",
             id=self._id_manager.get_id(USDMStudy.__name__, study.uid),
             name=self._get_study_name(study),
             label=self._get_study_label(study),
@@ -687,7 +791,9 @@ class USDMMapper:
         )
         document = self._get_study_definition_document(study)
         usdm_study.documentedBy = [document] if document is not None else []
-        title = self._build(USDMStudyTitle, "current_metadata.study_description.study_title",
+        title = self._build(
+            USDMStudyTitle,
+            "current_metadata.study_description.study_title",
             id=self._id_manager.get_id(USDMStudyTitle.__name__),
             text=self._get_study_title(study),
             type=self.get_ct_package_term_as_usdm_code(DDF_STUDY_OFFICIAL_TITLE),
@@ -697,7 +803,9 @@ class USDMMapper:
             study
         )
         version_metadata = getattr(study.current_metadata, "version_metadata", None)
-        version = self._build(USDMStudyVersion, "current_metadata.version_metadata",
+        version = self._build(
+            USDMStudyVersion,
+            "current_metadata.version_metadata",
             id=self._id_manager.get_id(USDMStudyVersion.__name__),
             titles=[title],
             studyIdentifiers=identifiers,
@@ -705,7 +813,9 @@ class USDMMapper:
             versionIdentifier=self._get_study_version(study),
             rationale=getattr(version_metadata, "version_description", None),
             instanceType="StudyVersion",
-            documentVersionIds=[item.id for item in document.versions] if document is not None else [],
+            documentVersionIds=(
+                [item.id for item in document.versions] if document is not None else []
+            ),
         )
         version.studyInterventions = self._get_study_interventions(study)
         eligibility_items, eligibility_criteria = self._get_eligibility_criteria()
@@ -724,12 +834,17 @@ class USDMMapper:
         from clinical_mdr_api.services.ddf.usdm_native_mapping import NativeStudyMapping
 
         NativeStudyMapping(self).apply(study, usdm_study, version)
-        return finalize_document(native_json({
-            "study": usdm_study,
-            "usdmVersion": usdm_package_version,
-            "systemName": None,
-            "systemVersion": None,
-        }), self._context)
+        return finalize_document(
+            native_json(
+                {
+                    "study": usdm_study,
+                    "usdmVersion": usdm_package_version,
+                    "systemName": None,
+                    "systemVersion": None,
+                }
+            ),
+            self._context,
+        )
 
     def _get_eligibility_criteria(
         self,
@@ -763,9 +878,15 @@ class USDMMapper:
             if text is None:
                 text = getattr(native, "name", None)
             template = getattr(selection, "template", None)
-            display = text or getattr(template, "name_plain", None) or getattr(template, "name", None) or selection_uid
+            display = (
+                text
+                or getattr(template, "name_plain", None)
+                or getattr(template, "name", None)
+                or selection_uid
+            )
             item = self._build(
-                USDMEligibilityCriterionItem, f"study-criteria/{selection_uid}/criteria",
+                USDMEligibilityCriterionItem,
+                f"study-criteria/{selection_uid}/criteria",
                 id=item_ids[index],
                 name=display,
                 label=selection_uid,
@@ -793,9 +914,7 @@ class USDMMapper:
                 criterionItemId=item.id,
                 previousId=criterion_ids[index - 1] if index > 0 else None,
                 nextId=(
-                    criterion_ids[index + 1]
-                    if index + 1 < len(criterion_ids)
-                    else None
+                    criterion_ids[index + 1] if index + 1 < len(criterion_ids) else None
                 ),
                 extensionAttributes=[
                     self._extension_attribute(
@@ -803,10 +922,17 @@ class USDMMapper:
                         source_key=selection_uid,
                         valueId=selection_uid,
                     ),
-                    *([self._extension_attribute(
-                        "key-criterion", source_key=selection_uid,
-                        valueBoolean=selection.key_criteria,
-                    )] if getattr(selection, "key_criteria", None) is not None else []),
+                    *(
+                        [
+                            self._extension_attribute(
+                                "key-criterion",
+                                source_key=selection_uid,
+                                valueBoolean=selection.key_criteria,
+                            )
+                        ]
+                        if getattr(selection, "key_criteria", None) is not None
+                        else []
+                    ),
                 ],
                 instanceType="EligibilityCriterion",
             )
@@ -815,11 +941,16 @@ class USDMMapper:
         return items, criteria
 
     def _get_study_arms(self, study: OSBStudy) -> list[StudyArm]:
-        rows = _stable_selection_order(_items(self._call(self._get_osb_study_arms, study.uid)), "arm_uid")
+        rows = _stable_selection_order(
+            _items(self._call(self._get_osb_study_arms, study.uid)), "arm_uid"
+        )
         result = []
         for row in rows:
             declared_fields = getattr(type(row), "model_fields", {})
-            if not {"data_origin_type_uid", "data_origin_description"} <= declared_fields.keys():
+            if (
+                not {"data_origin_type_uid", "data_origin_description"}
+                <= declared_fields.keys()
+            ):
                 raise USDMMappingAuthorityRequired(
                     f"USDM_ARM_DATA_ORIGIN_CAPABILITY_REQUIRED: study-arms/{row.arm_uid}; "
                     "the native response must expose the persisted origin UID and description."
@@ -827,8 +958,10 @@ class USDMMapper:
             origin_uid = row.data_origin_type_uid
             origin_description = row.data_origin_description
             if (
-                not isinstance(origin_uid, str) or not origin_uid.strip()
-                or not isinstance(origin_description, str) or not origin_description.strip()
+                not isinstance(origin_uid, str)
+                or not origin_uid.strip()
+                or not isinstance(origin_description, str)
+                or not origin_description.strip()
             ):
                 raise USDMMappingAuthorityRequired(
                     f"USDM_ARM_DATA_ORIGIN_AUTHORITY_REQUIRED: study-arms/{row.arm_uid}; "
@@ -851,8 +984,10 @@ class USDMMapper:
                 ) from error
             origin_code = USDMCode(
                 id=self._id_manager.get_id(USDMCode.__name__, origin_uid),
-                code=origin["code"], codeSystem=origin["code_system"],
-                codeSystemVersion=origin["code_system_version"], decode=origin["decode"],
+                code=origin["code"],
+                codeSystem=origin["code_system"],
+                codeSystemVersion=origin["code_system_version"],
+                decode=origin["decode"],
                 instanceType="Code",
             )
             if row.arm_type is None:
@@ -860,19 +995,29 @@ class USDMMapper:
                     f"USDM_ARM_TYPE_AUTHORITY_REQUIRED: study-arms/{row.arm_uid}"
                 )
             arm_type_code = self.get_ct_package_term_as_usdm_code(row.arm_type.term_uid)
-            if not getattr(arm_type_code, "code", None) or not getattr(arm_type_code, "codeSystemVersion", None):
+            if not getattr(arm_type_code, "code", None) or not getattr(
+                arm_type_code, "codeSystemVersion", None
+            ):
                 raise USDMMappingAuthorityRequired(
                     f"USDM_ARM_TYPE_CT_PIN_REQUIRED: study-arms/{row.arm_uid}"
                 )
-            result.append(self._build(StudyArm, f"study-arms/{row.arm_uid}",
-                id=self._id_manager.get_id(StudyArm.__name__, row.arm_uid),
-                name=row.name, label=getattr(row, "label", None) or getattr(row, "short_name", None),
-                description=row.description,
-                type=arm_type_code,
-                dataOriginDescription=origin_description,
-                dataOriginType=origin_code,
-                extensionAttributes=[self._native_extension("studyArm", row.arm_uid, row)],
-            ))
+            result.append(
+                self._build(
+                    StudyArm,
+                    f"study-arms/{row.arm_uid}",
+                    id=self._id_manager.get_id(StudyArm.__name__, row.arm_uid),
+                    name=row.name,
+                    label=getattr(row, "label", None)
+                    or getattr(row, "short_name", None),
+                    description=row.description,
+                    type=arm_type_code,
+                    dataOriginDescription=origin_description,
+                    dataOriginType=origin_code,
+                    extensionAttributes=[
+                        self._native_extension("studyArm", row.arm_uid, row)
+                    ],
+                )
+            )
         return result
 
     def _get_study_cells(self, study: OSBStudy):
@@ -880,10 +1025,14 @@ class USDMMapper:
 
         return NativeStudyMapping(self).cells(study)
 
-    def _get_study_designs(self, study: OSBStudy) -> list[USDMStudyDesign | USDMObservationalStudyDesign]:
+    def _get_study_designs(
+        self, study: OSBStudy
+    ) -> list[USDMStudyDesign | USDMObservationalStudyDesign]:
         high_level = getattr(study.current_metadata, "high_level_study_design", None)
         study_type = getattr(high_level, "study_type_code", None)
-        type_code = extract_c_code_from_simple_term(getattr(study_type, "term_uid", None))
+        type_code = extract_c_code_from_simple_term(
+            getattr(study_type, "term_uid", None)
+        )
         if type_code not in {"C98388", "C16084"}:
             self._context.unresolved(
                 "USDM_STUDY_DESIGN_TYPE_AUTHORITY_REQUIRED",
@@ -895,31 +1044,60 @@ class USDMMapper:
             return []
         observational = type_code == "C16084"
         intervention = getattr(study.current_metadata, "study_intervention", None)
-        opposite_model = getattr(intervention, "intervention_model_code", None) if observational else (
-            getattr(high_level, "observational_model_code", None) or getattr(high_level, "observational_time_perspective_code", None)
+        opposite_model = (
+            getattr(intervention, "intervention_model_code", None)
+            if observational
+            else (
+                getattr(high_level, "observational_model_code", None)
+                or getattr(high_level, "observational_time_perspective_code", None)
+            )
         )
         if getattr(opposite_model, "term_uid", None):
-            raise USDMMappingAuthorityRequired("USDM_STUDY_DESIGN_AUTHORITY_CONFLICT: explicit native attributes of the opposite study design type require reconciliation")
-        model = getattr(high_level, "observational_model_code", None) if observational else getattr(intervention, "intervention_model_code", None)
+            raise USDMMappingAuthorityRequired(
+                "USDM_STUDY_DESIGN_AUTHORITY_CONFLICT: explicit native attributes of the opposite study design type require reconciliation"
+            )
+        model = (
+            getattr(high_level, "observational_model_code", None)
+            if observational
+            else getattr(intervention, "intervention_model_code", None)
+        )
         model_uid = getattr(model, "term_uid", None)
         if not model_uid:
-            code = "USDM_OBSERVATIONAL_MODEL_AUTHORITY_REQUIRED" if observational else "USDM_INTERVENTIONAL_MODEL_AUTHORITY_REQUIRED"
+            code = (
+                "USDM_OBSERVATIONAL_MODEL_AUTHORITY_REQUIRED"
+                if observational
+                else "USDM_INTERVENTIONAL_MODEL_AUTHORITY_REQUIRED"
+            )
             self._context.unresolved(
-                code, "current_metadata.study_design.model", "StudyDesign/model",
+                code,
+                "current_metadata.study_design.model",
+                "StudyDesign/model",
                 "The native design model has not been selected.",
                 "Select the appropriate native interventional or observational model.",
             )
-        model_code = self.get_ct_package_term_as_usdm_code(extract_c_code_from_simple_term(model_uid)) if model_uid else None
-        if model_code is not None and (not model_code.code or model_code.code == "VOID"):
+        model_code = (
+            self.get_ct_package_term_as_usdm_code(
+                extract_c_code_from_simple_term(model_uid)
+            )
+            if model_uid
+            else None
+        )
+        if model_code is not None and (
+            not model_code.code or model_code.code == "VOID"
+        ):
             self._context.unresolved(
-                "USDM_DESIGN_MODEL_CT_PIN_REQUIRED", "current_metadata.study_design.model",
-                "StudyDesign/model", "The selected model has no study-pinned CT definition.",
+                "USDM_DESIGN_MODEL_CT_PIN_REQUIRED",
+                "current_metadata.study_design.model",
+                "StudyDesign/model",
+                "The selected model has no study-pinned CT definition.",
                 "Pin the relevant CT package and resolve the selected model.",
             )
             model_code = None
         kind_fields = {}
         if observational:
-            perspective = getattr(high_level, "observational_time_perspective_code", None)
+            perspective = getattr(
+                high_level, "observational_time_perspective_code", None
+            )
             perspective_uid = getattr(perspective, "term_uid", None)
             if not perspective_uid:
                 self._context.unresolved(
@@ -929,11 +1107,21 @@ class USDMMapper:
                     "The observational time perspective is unknown.",
                     "Select the native observational time perspective.",
                 )
-            perspective_code = self.get_ct_package_term_as_usdm_code(extract_c_code_from_simple_term(perspective_uid)) if perspective_uid else None
+            perspective_code = (
+                self.get_ct_package_term_as_usdm_code(
+                    extract_c_code_from_simple_term(perspective_uid)
+                )
+                if perspective_uid
+                else None
+            )
             kind_fields["timePerspective"] = perspective_code
-        design_class = USDMObservationalStudyDesign if observational else USDMStudyDesign
+        design_class = (
+            USDMObservationalStudyDesign if observational else USDMStudyDesign
+        )
         design_name = self._get_study_name(study)
-        design = self._build(design_class, "current_metadata.study_design",
+        design = self._build(
+            design_class,
+            "current_metadata.study_design",
             id=self._id_manager.get_id(design_class.__name__),
             name=f"{design_name} Study Design" if design_name else "Study Design",
             description=self._get_study_description(study) or "",
@@ -956,14 +1144,22 @@ class USDMMapper:
             if blinding is not None:
                 design.blindingSchema = USDMAliasCode(
                     id=self._id_manager.get_id("AliasCode"),
-                    standardCode=self.get_ct_package_term_as_usdm_code(extract_c_code_from_simple_term(blinding.term_uid)),
+                    standardCode=self.get_ct_package_term_as_usdm_code(
+                        extract_c_code_from_simple_term(blinding.term_uid)
+                    ),
                 )
             design.intentTypes = [
-                self.get_ct_package_term_as_usdm_code(extract_c_code_from_simple_term(term.term_uid))
-                for term in (getattr(intervention, "trial_intent_types_codes", None) or [])
+                self.get_ct_package_term_as_usdm_code(
+                    extract_c_code_from_simple_term(term.term_uid)
+                )
+                for term in (
+                    getattr(intervention, "trial_intent_types_codes", None) or []
+                )
             ]
         design.subTypes = [
-            self.get_ct_package_term_as_usdm_code(extract_c_code_from_simple_term(term.term_uid))
+            self.get_ct_package_term_as_usdm_code(
+                extract_c_code_from_simple_term(term.term_uid)
+            )
             for term in (getattr(high_level, "trial_type_codes", None) or [])
         ]
         design.extensionAttributes = self._get_study_design_extensions(study)
@@ -977,19 +1173,31 @@ class USDMMapper:
 
     def _get_study_activities(self, study: OSBStudy) -> list[USDMActivity]:
         rows = _stable_selection_order(
-            _items(self._call(self._get_osb_study_activities, study.uid)), "study_activity_uid")
+            _items(self._call(self._get_osb_study_activities, study.uid)),
+            "study_activity_uid",
+        )
         activities = []
         for row in rows:
             native = getattr(row, "activity", None)
-            activities.append(self._build(USDMActivity, f"study-activities/{row.study_activity_uid}",
-                id=self._id_manager.get_id(USDMActivity.__name__, row.study_activity_uid),
-                name=getattr(native, "name", None),
-                label=getattr(native, "name_sentence_case", None),
-                description=getattr(native, "definition", None),
-                definedProcedures=[],
-                extensionAttributes=[self._native_extension("studyActivity", row.study_activity_uid, row)],
-                instanceType="Activity",
-            ))
+            activities.append(
+                self._build(
+                    USDMActivity,
+                    f"study-activities/{row.study_activity_uid}",
+                    id=self._id_manager.get_id(
+                        USDMActivity.__name__, row.study_activity_uid
+                    ),
+                    name=getattr(native, "name", None),
+                    label=getattr(native, "name_sentence_case", None),
+                    description=getattr(native, "definition", None),
+                    definedProcedures=[],
+                    extensionAttributes=[
+                        self._native_extension(
+                            "studyActivity", row.study_activity_uid, row
+                        )
+                    ],
+                    instanceType="Activity",
+                )
+            )
         return activities
 
     def _get_study_elements(self, study: OSBStudy) -> list[USDMStudyElement]:
@@ -1018,24 +1226,44 @@ class USDMMapper:
                     name=row.name,
                     description=row.description,
                     label=row.name,
-                    transitionStartRule=(USDMTransitionRule(
-                        id=self._id_manager.get_id("TransitionRule", f"element-start:{row.element_uid}"),
-                        name=f"{row.element_uid} start", text=row.start_rule,
-                    ) if getattr(row, "start_rule", None) is not None else None),
-                    transitionEndRule=(USDMTransitionRule(
-                        id=self._id_manager.get_id("TransitionRule", f"element-end:{row.element_uid}"),
-                        name=f"{row.element_uid} end", text=row.end_rule,
-                    ) if getattr(row, "end_rule", None) is not None else None),
+                    transitionStartRule=(
+                        USDMTransitionRule(
+                            id=self._id_manager.get_id(
+                                "TransitionRule", f"element-start:{row.element_uid}"
+                            ),
+                            name=f"{row.element_uid} start",
+                            text=row.start_rule,
+                        )
+                        if getattr(row, "start_rule", None) is not None
+                        else None
+                    ),
+                    transitionEndRule=(
+                        USDMTransitionRule(
+                            id=self._id_manager.get_id(
+                                "TransitionRule", f"element-end:{row.element_uid}"
+                            ),
+                            name=f"{row.element_uid} end",
+                            text=row.end_rule,
+                        )
+                        if getattr(row, "end_rule", None) is not None
+                        else None
+                    ),
                     studyInterventionIds=intervention_ids,
-                    extensionAttributes=[self._native_extension("studyElement", row.element_uid, row)],
+                    extensionAttributes=[
+                        self._native_extension("studyElement", row.element_uid, row)
+                    ],
                     instanceType="StudyElement",
                 )
             )
         return result
 
     def _get_study_epochs(self, study: OSBStudy) -> list[USDMStudyEpoch]:
-        rows = _stable_selection_order(_items(self._call(self._get_osb_study_epochs, study.uid)), "uid")
-        all_ordered = bool(rows) and all(getattr(row, "order", None) is not None for row in rows)
+        rows = _stable_selection_order(
+            _items(self._call(self._get_osb_study_epochs, study.uid)), "uid"
+        )
+        all_ordered = bool(rows) and all(
+            getattr(row, "order", None) is not None for row in rows
+        )
         labels = {row.uid: row.epoch_name for row in rows}
         for row in rows:
             witness = getattr(row, "terminology_source", None)
@@ -1044,39 +1272,73 @@ class USDMMapper:
                     witness.get("studyUid") != study.uid
                     or witness.get("studyValueVersion") != self._study_value_version
                     or witness.get("studyEpochUid") != row.uid
-                    or (self._study_as_of is not None
-                        and witness.get("nativeStudyAsOf") != native_json(self._study_as_of))
+                    or (
+                        self._study_as_of is not None
+                        and witness.get("nativeStudyAsOf")
+                        != native_json(self._study_as_of)
+                    )
                 ):
-                    raise USDMMappingAuthorityRequired("USDM_EPOCH_TERM_SOURCE_SCOPE_MISMATCH")
+                    raise USDMMappingAuthorityRequired(
+                        "USDM_EPOCH_TERM_SOURCE_SCOPE_MISMATCH"
+                    )
                 if witness.get("issues"):
                     self._context.unresolved(
-                        "USDM_EPOCH_TERM_HISTORY_REQUIRED", f"study-epochs/{row.uid}",
-                        "StudyEpoch/name", "An epoch term has no unique history at the exact selected standard date.",
+                        "USDM_EPOCH_TERM_HISTORY_REQUIRED",
+                        f"study-epochs/{row.uid}",
+                        "StudyEpoch/name",
+                        "An epoch term has no unique history at the exact selected standard date.",
                         "Resolve the selected catalogue/package and the indicated native term histories.",
                     )
                 term = witness.get("terms", {}).get("epoch") or {}
                 text = ((term.get("name") or {}).get("properties") or {}).get("name")
                 if text != row.epoch_name:
-                    raise USDMMappingAuthorityRequired("USDM_EPOCH_TERM_SOURCE_TEXT_MISMATCH")
+                    raise USDMMappingAuthorityRequired(
+                        "USDM_EPOCH_TERM_SOURCE_TEXT_MISMATCH"
+                    )
             elif getattr(row.epoch_ctterm, "date_conflict", None) is True:
                 labels[row.uid] = None
                 self._context.unresolved(
-                    "USDM_EPOCH_TERM_HISTORY_REQUIRED", f"study-epochs/{row.uid}",
-                    "StudyEpoch/name", "The reader reported a conflicting epoch term date.",
+                    "USDM_EPOCH_TERM_HISTORY_REQUIRED",
+                    f"study-epochs/{row.uid}",
+                    "StudyEpoch/name",
+                    "The reader reported a conflicting epoch term date.",
                     "Resolve the exact epoch terminology history; a fallback label is not authoritative.",
                 )
-        return [self._build(USDMStudyEpoch, f"study-epochs/{row.uid}",
-            id=self._id_manager.get_id(USDMStudyEpoch.__name__, row.uid),
-            name=labels[row.uid],
-            label=labels[row.uid], description=row.description,
-            type=(self.get_ct_package_term_as_usdm_code(row.epoch_type_ctterm.term_uid)
-                  if row.epoch_type_ctterm is not None else self.get_void_usdm_code()),
-            nextId=(self._id_manager.get_id(USDMStudyEpoch.__name__, rows[index + 1].uid)
-                    if all_ordered and index + 1 < len(rows) else None),
-            previousId=(self._id_manager.get_id(USDMStudyEpoch.__name__, rows[index - 1].uid)
-                        if all_ordered and index > 0 else None),
-            extensionAttributes=[self._native_extension("studyEpoch", row.uid, row)],
-        ) for index, row in enumerate(rows)]
+        return [
+            self._build(
+                USDMStudyEpoch,
+                f"study-epochs/{row.uid}",
+                id=self._id_manager.get_id(USDMStudyEpoch.__name__, row.uid),
+                name=labels[row.uid],
+                label=labels[row.uid],
+                description=row.description,
+                type=(
+                    self.get_ct_package_term_as_usdm_code(
+                        row.epoch_type_ctterm.term_uid
+                    )
+                    if row.epoch_type_ctterm is not None
+                    else self.get_void_usdm_code()
+                ),
+                nextId=(
+                    self._id_manager.get_id(
+                        USDMStudyEpoch.__name__, rows[index + 1].uid
+                    )
+                    if all_ordered and index + 1 < len(rows)
+                    else None
+                ),
+                previousId=(
+                    self._id_manager.get_id(
+                        USDMStudyEpoch.__name__, rows[index - 1].uid
+                    )
+                    if all_ordered and index > 0
+                    else None
+                ),
+                extensionAttributes=[
+                    self._native_extension("studyEpoch", row.uid, row)
+                ],
+            )
+            for index, row in enumerate(rows)
+        ]
 
     def _get_study_objectives(self, study: OSBStudy) -> list[USDMObjective]:
         endpoint_kwargs = (
@@ -1129,15 +1391,23 @@ class USDMMapper:
                     "Associate the native endpoint with a selected study objective before validation and release.",
                 )
                 continue
-            endpoint_id = self._id_manager.get_id(USDMEndpoint.__name__, selection.study_endpoint_uid)
+            endpoint_id = self._id_manager.get_id(
+                USDMEndpoint.__name__, selection.study_endpoint_uid
+            )
             text = getattr(endpoint, "name_plain", None)
             if text is None:
                 text = getattr(endpoint, "name", None)
             template = getattr(selection, "template", None)
-            display = text or getattr(template, "name_plain", None) or getattr(template, "name", None) or selection.study_endpoint_uid
+            display = (
+                text
+                or getattr(template, "name_plain", None)
+                or getattr(template, "name", None)
+                or selection.study_endpoint_uid
+            )
             endpoints_by_objective.setdefault(selection_uid, []).append(
                 self._build(
-                    USDMEndpoint, f"study-endpoints/{selection.study_endpoint_uid}/endpoint",
+                    USDMEndpoint,
+                    f"study-endpoints/{selection.study_endpoint_uid}/endpoint",
                     id=endpoint_id,
                     name=display,
                     description=getattr(endpoint, "name", None),
@@ -1161,13 +1431,19 @@ class USDMMapper:
             if text is None:
                 text = getattr(objective, "name", None)
             template = getattr(selection, "template", None)
-            display = text or getattr(template, "name_plain", None) or getattr(template, "name", None) or selection.study_objective_uid
+            display = (
+                text
+                or getattr(template, "name_plain", None)
+                or getattr(template, "name", None)
+                or selection.study_objective_uid
+            )
             objective_id = self._id_manager.get_id(
                 USDMObjective.__name__, selection.study_objective_uid
             )
             result.append(
                 self._build(
-                    USDMObjective, f"study-objectives/{selection.study_objective_uid}/objective",
+                    USDMObjective,
+                    f"study-objectives/{selection.study_objective_uid}/objective",
                     id=objective_id,
                     name=display,
                     instanceType="Objective",
@@ -1292,30 +1568,73 @@ class USDMMapper:
         return NativeStudyMapping(self).timelines(study)
 
     def _get_study_encounters(self, study: OSBStudy) -> list[USDMEncounter]:
-        visits = _stable_selection_order(_items(self._call(self._get_osb_study_visits, study.uid)), "uid")
-        return [USDMEncounter(
-            id=self._id_manager.get_id(USDMEncounter.__name__, visit.uid),
-            name=visit.visit_short_name, label=visit.visit_name, description=visit.description,
-            type=(self.get_ct_package_term_as_usdm_code(visit.visit_type.term_uid)
-                  if visit.visit_type is not None else self.get_void_usdm_code()),
-            transitionStartRule=USDMTransitionRule(
-                id=self._id_manager.get_id(USDMTransitionRule.__name__, f"start:{visit.uid}"),
-                name="Transition Start Rule", text=visit.start_rule)
-                if visit.start_rule is not None else None,
-            transitionEndRule=USDMTransitionRule(
-                id=self._id_manager.get_id(USDMTransitionRule.__name__, f"end:{visit.uid}"),
-                name="Transition End Rule", text=visit.end_rule)
-                if visit.end_rule is not None else None,
-            contactModes=([self.get_ct_package_term_as_usdm_code(visit.visit_contact_mode.term_uid)]
-                          if visit.visit_contact_mode is not None else []),
-            nextId=(self._id_manager.get_id(USDMEncounter.__name__, visits[index + 1].uid)
-                    if index + 1 < len(visits) else None),
-            previousId=(self._id_manager.get_id(USDMEncounter.__name__, visits[index - 1].uid)
-                        if index > 0 else None),
-        ) for index, visit in enumerate(visits)]
+        visits = _stable_selection_order(
+            _items(self._call(self._get_osb_study_visits, study.uid)), "uid"
+        )
+        return [
+            USDMEncounter(
+                id=self._id_manager.get_id(USDMEncounter.__name__, visit.uid),
+                name=visit.visit_short_name,
+                label=visit.visit_name,
+                description=visit.description,
+                type=(
+                    self.get_ct_package_term_as_usdm_code(visit.visit_type.term_uid)
+                    if visit.visit_type is not None
+                    else self.get_void_usdm_code()
+                ),
+                transitionStartRule=(
+                    USDMTransitionRule(
+                        id=self._id_manager.get_id(
+                            USDMTransitionRule.__name__, f"start:{visit.uid}"
+                        ),
+                        name="Transition Start Rule",
+                        text=visit.start_rule,
+                    )
+                    if visit.start_rule is not None
+                    else None
+                ),
+                transitionEndRule=(
+                    USDMTransitionRule(
+                        id=self._id_manager.get_id(
+                            USDMTransitionRule.__name__, f"end:{visit.uid}"
+                        ),
+                        name="Transition End Rule",
+                        text=visit.end_rule,
+                    )
+                    if visit.end_rule is not None
+                    else None
+                ),
+                contactModes=(
+                    [
+                        self.get_ct_package_term_as_usdm_code(
+                            visit.visit_contact_mode.term_uid
+                        )
+                    ]
+                    if visit.visit_contact_mode is not None
+                    else []
+                ),
+                nextId=(
+                    self._id_manager.get_id(
+                        USDMEncounter.__name__, visits[index + 1].uid
+                    )
+                    if index + 1 < len(visits)
+                    else None
+                ),
+                previousId=(
+                    self._id_manager.get_id(
+                        USDMEncounter.__name__, visits[index - 1].uid
+                    )
+                    if index > 0
+                    else None
+                ),
+            )
+            for index, visit in enumerate(visits)
+        ]
 
     def _get_study_identifiers_and_organizations(self, study: OSBStudy):
-        identification = getattr(study.current_metadata, "identification_metadata", None)
+        identification = getattr(
+            study.current_metadata, "identification_metadata", None
+        )
         registry = getattr(identification, "registry_identifiers", None)
         identifiers, organizations = [], []
         for field_name, config in self.REGISTRY_ORGANIZATIONS.items():
@@ -1323,15 +1642,34 @@ class USDMMapper:
             value = getattr(registry, field_name, None)
             if not value:
                 continue
-            organization_id = self._id_manager.get_id(USDMOrganization.__name__, field_name)
-            organizations.append(USDMOrganization(
-                id=organization_id, name=org_name,
-                label=self._registid_labels.get(term_uid, fallback) if term_uid else fallback,
-                type=self.get_ct_package_term_as_usdm_code(org_type),
-                identifierScheme=scheme, identifier=org_name, instanceType="Organization"))
-            identifiers.append(USDMStudyIdentifier(
-                id=self._id_manager.get_id(USDMStudyIdentifier.__name__, field_name),
-                text=value, scopeId=organization_id, instanceType="StudyIdentifier"))
+            organization_id = self._id_manager.get_id(
+                USDMOrganization.__name__, field_name
+            )
+            organizations.append(
+                USDMOrganization(
+                    id=organization_id,
+                    name=org_name,
+                    label=(
+                        self._registid_labels.get(term_uid, fallback)
+                        if term_uid
+                        else fallback
+                    ),
+                    type=self.get_ct_package_term_as_usdm_code(org_type),
+                    identifierScheme=scheme,
+                    identifier=org_name,
+                    instanceType="Organization",
+                )
+            )
+            identifiers.append(
+                USDMStudyIdentifier(
+                    id=self._id_manager.get_id(
+                        USDMStudyIdentifier.__name__, field_name
+                    ),
+                    text=value,
+                    scopeId=organization_id,
+                    instanceType="StudyIdentifier",
+                )
+            )
         return identifiers, organizations
 
     def _get_study_indications(self, study: OSBStudy) -> list[USDMIndication]:
@@ -1340,7 +1678,9 @@ class USDMMapper:
             return []
         rare = getattr(population, "rare_disease_indicator", None)
         result = []
-        for item in getattr(population, "disease_condition_or_indication_codes", []) or []:
+        for item in (
+            getattr(population, "disease_condition_or_indication_codes", []) or []
+        ):
             name = getattr(item, "name", None)
             if not name:
                 continue
@@ -1369,7 +1709,9 @@ class USDMMapper:
                     )
                 )
             result.append(
-                self._build(USDMIndication, f"current_metadata.study_population/indication/{term_uid}",
+                self._build(
+                    USDMIndication,
+                    f"current_metadata.study_population/indication/{term_uid}",
                     id=self._id_manager.get_id(
                         USDMIndication.__name__, term_uid or name
                     ),
@@ -1494,7 +1836,9 @@ class USDMMapper:
                         valueId=element_uid,
                     )
                 )
-            duration = self._build(USDMDuration, f"study-compound-dosings/{dosing_uid}/duration",
+            duration = self._build(
+                USDMDuration,
+                f"study-compound-dosings/{dosing_uid}/duration",
                 id=self._id_manager.get_id(
                     USDMDuration.__name__, f"administration-duration:{dosing_uid}"
                 ),
@@ -1518,14 +1862,13 @@ class USDMMapper:
                 )
             administrations.append(
                 USDMAdministration(
-                    id=self._id_manager.get_id(
-                        USDMAdministration.__name__, dosing_uid
-                    ),
+                    id=self._id_manager.get_id(USDMAdministration.__name__, dosing_uid),
                     name=f"{self._study_compound_name(selection)} administration",
                     description=f"Native OSB compound dosing for {element_name}.",
                     duration=duration,
                     dose=self._native_dose_quantity(
-                        getattr(dosing, "dose_value", None), dosing_uid,
+                        getattr(dosing, "dose_value", None),
+                        dosing_uid,
                         native_bindings=getattr(dosing, "native_library_bindings", []),
                     ),
                     frequency=self._dosing_frequency(dosing, selection, dosing_uid),
@@ -1574,7 +1917,8 @@ class USDMMapper:
                 ),
                 code=unit_uid,
                 codeSystem="OpenStudyBuilder unit definition",
-                codeSystemVersion=self._native_unit_version(value, native_bindings) or "",
+                codeSystemVersion=self._native_unit_version(value, native_bindings)
+                or "",
                 decode=unit_label,
                 instanceType="Code",
             )
@@ -1597,13 +1941,16 @@ class USDMMapper:
     def _native_unit_version(self, value, bindings):
         uid = getattr(value, "unit_definition_uid", None)
         versions = {
-            binding.get("version") for binding in bindings
+            binding.get("version")
+            for binding in bindings
             if binding.get("kind") == "unitDefinition" and binding.get("uid") == uid
         }
         if len(versions) > 1:
             self._context.unresolved(
-                "USDM_UNIT_SOURCE_VERSION_AMBIGUOUS", f"unit-definitions/{uid}",
-                "Quantity/unit", "The native quantity has more than one unit-definition version.",
+                "USDM_UNIT_SOURCE_VERSION_AMBIGUOUS",
+                f"unit-definitions/{uid}",
+                "Quantity/unit",
+                "The native quantity has more than one unit-definition version.",
                 "Resolve the exact unit version in this selected source scope.",
             )
             return None
@@ -1662,9 +2009,7 @@ class USDMMapper:
             dosing_compound = getattr(dosing, "study_compound", None)
             if getattr(dosing_compound, "study_compound_uid", None) != selection_uid:
                 continue
-            dosing_uid = str(
-                getattr(dosing, "study_compound_dosing_uid", None) or ""
-            )
+            dosing_uid = str(getattr(dosing, "study_compound_dosing_uid", None) or "")
             children = []
             if dosing_uid:
                 children.append(
@@ -1782,15 +2127,22 @@ class USDMMapper:
         sex_term = getattr(population, "sex_of_participants_code", None)
         sex_uid = extract_c_code_from_simple_term(getattr(sex_term, "term_uid", None))
         sex_codes = {
-            DDF_STUDY_POPULATION_SEX_BOTH: (DDF_STUDY_POPULATION_SEX_FEMALE, DDF_STUDY_POPULATION_SEX_MALE),
+            DDF_STUDY_POPULATION_SEX_BOTH: (
+                DDF_STUDY_POPULATION_SEX_FEMALE,
+                DDF_STUDY_POPULATION_SEX_MALE,
+            ),
             DDF_STUDY_POPULATION_SEX_FEMALE: (DDF_STUDY_POPULATION_SEX_FEMALE,),
             DDF_STUDY_POPULATION_SEX_MALE: (DDF_STUDY_POPULATION_SEX_MALE,),
         }.get(sex_uid, ())
-        planned_sex = [self.get_ct_package_term_as_usdm_code(code) for code in sex_codes]
+        planned_sex = [
+            self.get_ct_package_term_as_usdm_code(code) for code in sex_codes
+        ]
         if sex_term is not None and not sex_codes:
             self._context.unresolved(
-                "USDM_PLANNED_SEX_CODE_UNRESOLVED", "current_metadata.study_population.sex_of_participants_code",
-                "StudyDesignPopulation/plannedSex", "The native code is not an explicit male, female or both concept.",
+                "USDM_PLANNED_SEX_CODE_UNRESOLVED",
+                "current_metadata.study_population.sex_of_participants_code",
+                "StudyDesignPopulation/plannedSex",
+                "The native code is not an explicit male, female or both concept.",
                 "Select a governed Sex of Participants concept; display labels do not authorize a mapping.",
             )
         minimum = getattr(population, "planned_minimum_age_of_subjects", None)
@@ -1798,14 +2150,25 @@ class USDMMapper:
         planned_age = None
         if minimum is not None or maximum is not None:
             planned_age = self._build(
-                USDMRange, "current_metadata.study_population.planned_age",
+                USDMRange,
+                "current_metadata.study_population.planned_age",
                 id=self._id_manager.get_id(USDMRange.__name__),
-                minValue=(self._duration_quantity(
-                    minimum, "current_metadata.study_population.planned_minimum_age_of_subjects"
-                ) if minimum is not None else None),
-                maxValue=(self._duration_quantity(
-                    maximum, "current_metadata.study_population.planned_maximum_age_of_subjects"
-                ) if maximum is not None else None),
+                minValue=(
+                    self._duration_quantity(
+                        minimum,
+                        "current_metadata.study_population.planned_minimum_age_of_subjects",
+                    )
+                    if minimum is not None
+                    else None
+                ),
+                maxValue=(
+                    self._duration_quantity(
+                        maximum,
+                        "current_metadata.study_population.planned_maximum_age_of_subjects",
+                    )
+                    if maximum is not None
+                    else None
+                ),
                 instanceType="Range",
             )
         enrollment = getattr(population, "number_of_expected_subjects", None)
@@ -1819,13 +2182,17 @@ class USDMMapper:
             if enrollment is not None
             else None
         )
-        result = self._build(USDMStudyDesignPopulation, "current_metadata.study_population.healthy_subject_indicator",
+        result = self._build(
+            USDMStudyDesignPopulation,
+            "current_metadata.study_population.healthy_subject_indicator",
             id=self._id_manager.get_id(USDMStudyDesignPopulation.__name__),
             name="Study Design Population",
             plannedSex=planned_sex,
             plannedEnrollmentNumber=planned_enrollment,
             plannedAge=planned_age,
-            includesHealthySubjects=getattr(population, "healthy_subject_indicator", None),
+            includesHealthySubjects=getattr(
+                population, "healthy_subject_indicator", None
+            ),
             extensionAttributes=self._get_population_extensions(population),
         )
         return result
@@ -1952,15 +2319,28 @@ class USDMMapper:
                 )
         return extensions
 
-    def _duration_quantity(self, duration, source_path="native-duration") -> USDMQuantity:
+    def _duration_quantity(
+        self, duration, source_path="native-duration"
+    ) -> USDMQuantity:
         unit_name = getattr(getattr(duration, "duration_unit_code", None), "name", None)
-        return self._build(USDMQuantity, source_path,
-            id=self._id_manager.get_id(USDMQuantity.__name__), value=duration.duration_value,
+        return self._build(
+            USDMQuantity,
+            source_path,
+            id=self._id_manager.get_id(USDMQuantity.__name__),
+            value=duration.duration_value,
             unit=USDMAliasCode(
                 id=self._id_manager.get_id(USDMAliasCode.__name__),
-                standardCode=(self.get_ddf_study_population_duration_unit_from_name_as_code(unit_name)
-                              if unit_name else self.get_void_usdm_code()),
-                instanceType="AliasCode"), instanceType="Quantity")
+                standardCode=(
+                    self.get_ddf_study_population_duration_unit_from_name_as_code(
+                        unit_name
+                    )
+                    if unit_name
+                    else self.get_void_usdm_code()
+                ),
+                instanceType="AliasCode",
+            ),
+            instanceType="Quantity",
+        )
 
     def _get_study_definition_document(
         self, study: OSBStudy
@@ -1970,18 +2350,32 @@ class USDMMapper:
         return NativeStudyMapping(self).protocol_document(study)
 
     def _get_study_description(self, study: OSBStudy):
-        return getattr(getattr(study.current_metadata, "study_description", None), "study_title", None)
+        return getattr(
+            getattr(study.current_metadata, "study_description", None),
+            "study_title",
+            None,
+        )
 
     def _get_study_label(self, study: OSBStudy):
-        return getattr(getattr(study.current_metadata, "study_description", None), "study_short_title", None)
+        return getattr(
+            getattr(study.current_metadata, "study_description", None),
+            "study_short_title",
+            None,
+        )
 
     def _get_study_name(self, study: OSBStudy):
-        identification = getattr(study.current_metadata, "identification_metadata", None)
-        name = getattr(identification, "study_id", None) or getattr(identification, "study_acronym", None)
+        identification = getattr(
+            study.current_metadata, "identification_metadata", None
+        )
+        name = getattr(identification, "study_id", None) or getattr(
+            identification, "study_acronym", None
+        )
         if not isinstance(name, str) or not name.strip():
             self._context.unresolved(
-                "USDM_STUDY_NAME_AUTHORITY_REQUIRED", "current_metadata.identification_metadata.study_id",
-                "Study/name", "The native study has no identifier or acronym.",
+                "USDM_STUDY_NAME_AUTHORITY_REQUIRED",
+                "current_metadata.identification_metadata.study_id",
+                "Study/name",
+                "The native study has no identifier or acronym.",
                 "Supply the native study identifier or acronym.",
             )
             return None
@@ -2000,7 +2394,8 @@ class USDMMapper:
             standardCode=self.get_ct_package_term_as_usdm_code(
                 extract_c_code_from_simple_term(phase.term_uid)
             ),
-            instanceType="AliasCode")
+            instanceType="AliasCode",
+        )
 
     def _get_study_type(self, study: OSBStudy) -> USDMCode | None:
         design = getattr(study.current_metadata, "high_level_study_design", None)
@@ -2020,21 +2415,101 @@ class USDMMapper:
 
     def _get_therapeutic_areas(self, study: OSBStudy) -> list[USDMCode]:
         population = getattr(study.current_metadata, "study_population", None)
-        return [self.get_dictionary_term_as_usdm_code(term.term_uid)
-                for term in (getattr(population, "therapeutic_area_codes", None) or [])]
+        return [
+            self.get_dictionary_term_as_usdm_code(term.term_uid)
+            for term in (getattr(population, "therapeutic_area_codes", None) or [])
+        ]
 
     REGISTRY_ORGANIZATIONS: dict[str, tuple[str, str | None, str, str, str]] = {
-        "ct_gov_id": ("CT-GOV", "CTTerm_000212", "USGOV", DDF_ORGANIZATION_TYPE_STUDY_REGISTRY, "ClinicalTrials.gov ID"),
-        "eudract_id": ("EUDRACT", "CTTerm_000215", "EU", DDF_ORGANIZATION_TYPE_STUDY_REGISTRY, "EUDRACT ID"),
-        "eu_trial_number": ("EU-CT", "CTTerm_000218", "EU", DDF_ORGANIZATION_TYPE_STUDY_REGISTRY, "EU Trial Number"),
-        "universal_trial_number_utn": ("WHO-UTN", "CTTerm_000214", "UTN", DDF_ORGANIZATION_TYPE_STUDY_REGISTRY, "Universal Trial Number (UTN)"),
-        "japanese_trial_registry_id_japic": ("JAPIC", "CTTerm_000213", "JAPIC", DDF_ORGANIZATION_TYPE_STUDY_REGISTRY, "Japanese Trial Registry ID (JAPIC)"),
-        "japanese_trial_registry_number_jrct": ("JRCT", "CTTerm_000221", "JRCT", DDF_ORGANIZATION_TYPE_STUDY_REGISTRY, "Japanese Trial Registry Number (jRCT)"),
-        "investigational_new_drug_application_number_ind": ("FDA-IND", "CTTerm_000217", "USGOV", DDF_ORGANIZATION_TYPE_REGULATORY_AGENCY, "Investigational New Drug Application (IND) Number"),
-        "investigational_device_exemption_ide_number": ("FDA-IDE", "CTTerm_000224", "USGOV", DDF_ORGANIZATION_TYPE_REGULATORY_AGENCY, "Investigational Device Exemption (IDE) Number"),
-        "civ_id_sin_number": ("CIV-SIN", "CTTerm_000216", "EU", DDF_ORGANIZATION_TYPE_STUDY_REGISTRY, "CIV-ID/SIN Number"),
-        "national_clinical_trial_number": ("NCT-REG", "CTTerm_000220", "NATIONAL", DDF_ORGANIZATION_TYPE_STUDY_REGISTRY, "National Clinical Trial Number"),
-        "national_medical_products_administration_nmpa_number": ("NMPA", "CTTerm_000222", "NMPA", DDF_ORGANIZATION_TYPE_REGULATORY_AGENCY, "National Medical Products Administration (NMPA) Number"),
-        "eudamed_srn_number": ("EUDAMED", "CTTerm_000223", "EU", DDF_ORGANIZATION_TYPE_REGULATORY_AGENCY, "EUDAMED SRN Number"),
-        "eu_pas_number": ("EU-PAS", None, "EU", DDF_ORGANIZATION_TYPE_STUDY_REGISTRY, "EU PAS Register"),
+        "ct_gov_id": (
+            "CT-GOV",
+            "CTTerm_000212",
+            "USGOV",
+            DDF_ORGANIZATION_TYPE_STUDY_REGISTRY,
+            "ClinicalTrials.gov ID",
+        ),
+        "eudract_id": (
+            "EUDRACT",
+            "CTTerm_000215",
+            "EU",
+            DDF_ORGANIZATION_TYPE_STUDY_REGISTRY,
+            "EUDRACT ID",
+        ),
+        "eu_trial_number": (
+            "EU-CT",
+            "CTTerm_000218",
+            "EU",
+            DDF_ORGANIZATION_TYPE_STUDY_REGISTRY,
+            "EU Trial Number",
+        ),
+        "universal_trial_number_utn": (
+            "WHO-UTN",
+            "CTTerm_000214",
+            "UTN",
+            DDF_ORGANIZATION_TYPE_STUDY_REGISTRY,
+            "Universal Trial Number (UTN)",
+        ),
+        "japanese_trial_registry_id_japic": (
+            "JAPIC",
+            "CTTerm_000213",
+            "JAPIC",
+            DDF_ORGANIZATION_TYPE_STUDY_REGISTRY,
+            "Japanese Trial Registry ID (JAPIC)",
+        ),
+        "japanese_trial_registry_number_jrct": (
+            "JRCT",
+            "CTTerm_000221",
+            "JRCT",
+            DDF_ORGANIZATION_TYPE_STUDY_REGISTRY,
+            "Japanese Trial Registry Number (jRCT)",
+        ),
+        "investigational_new_drug_application_number_ind": (
+            "FDA-IND",
+            "CTTerm_000217",
+            "USGOV",
+            DDF_ORGANIZATION_TYPE_REGULATORY_AGENCY,
+            "Investigational New Drug Application (IND) Number",
+        ),
+        "investigational_device_exemption_ide_number": (
+            "FDA-IDE",
+            "CTTerm_000224",
+            "USGOV",
+            DDF_ORGANIZATION_TYPE_REGULATORY_AGENCY,
+            "Investigational Device Exemption (IDE) Number",
+        ),
+        "civ_id_sin_number": (
+            "CIV-SIN",
+            "CTTerm_000216",
+            "EU",
+            DDF_ORGANIZATION_TYPE_STUDY_REGISTRY,
+            "CIV-ID/SIN Number",
+        ),
+        "national_clinical_trial_number": (
+            "NCT-REG",
+            "CTTerm_000220",
+            "NATIONAL",
+            DDF_ORGANIZATION_TYPE_STUDY_REGISTRY,
+            "National Clinical Trial Number",
+        ),
+        "national_medical_products_administration_nmpa_number": (
+            "NMPA",
+            "CTTerm_000222",
+            "NMPA",
+            DDF_ORGANIZATION_TYPE_REGULATORY_AGENCY,
+            "National Medical Products Administration (NMPA) Number",
+        ),
+        "eudamed_srn_number": (
+            "EUDAMED",
+            "CTTerm_000223",
+            "EU",
+            DDF_ORGANIZATION_TYPE_REGULATORY_AGENCY,
+            "EUDAMED SRN Number",
+        ),
+        "eu_pas_number": (
+            "EU-PAS",
+            None,
+            "EU",
+            DDF_ORGANIZATION_TYPE_STUDY_REGISTRY,
+            "EU PAS Register",
+        ),
     }

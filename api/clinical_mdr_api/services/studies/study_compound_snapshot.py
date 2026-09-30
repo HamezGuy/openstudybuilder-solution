@@ -6,12 +6,17 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from fastapi.encoders import jsonable_encoder
-from clinical_mdr_api.domain_repositories.models.controlled_terminology import CTTermRoot
+
+from clinical_mdr_api.domain_repositories.models.controlled_terminology import (
+    CTTermRoot,
+)
 from clinical_mdr_api.domains.controlled_terminologies.utils import CtTermInfo
 from clinical_mdr_api.models.concepts.compound import Compound
 from clinical_mdr_api.models.concepts.compound_alias import CompoundAlias
 from clinical_mdr_api.models.concepts.medicinal_product import MedicinalProduct
-from clinical_mdr_api.models.concepts.pharmaceutical_product import PharmaceuticalProduct
+from clinical_mdr_api.models.concepts.pharmaceutical_product import (
+    PharmaceuticalProduct,
+)
 from common.exceptions import ValidationException
 
 
@@ -24,7 +29,11 @@ def _utc(value):
         return None
     if not isinstance(value, datetime):
         raise StudyCompoundSourceError("STUDY_LIBRARY_SOURCE_DATE_REQUIRED")
-    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+    return (
+        value.replace(tzinfo=timezone.utc)
+        if value.tzinfo is None
+        else value.astimezone(timezone.utc)
+    )
 
 
 class StudyCompoundSnapshotReader:
@@ -45,8 +54,13 @@ class StudyCompoundSnapshotReader:
     }
 
     def __init__(
-        self, repos, study_uid: str, study_value_version: str | None,
-        *, as_of: datetime | None = None, terms_at_specific_datetime: datetime | None = None,
+        self,
+        repos,
+        study_uid: str,
+        study_value_version: str | None,
+        *,
+        as_of: datetime | None = None,
+        terms_at_specific_datetime: datetime | None = None,
     ):
         if not isinstance(study_uid, str) or not study_uid.strip():
             raise StudyCompoundSourceError("STUDY_LIBRARY_STUDY_IDENTITY_REQUIRED")
@@ -59,18 +73,23 @@ class StudyCompoundSnapshotReader:
             try:
                 requested_version = Decimal(study_value_version)
             except InvalidOperation as error:
-                raise StudyCompoundSourceError("STUDY_LIBRARY_STUDY_VERSION_INVALID") from error
+                raise StudyCompoundSourceError(
+                    "STUDY_LIBRARY_STUDY_VERSION_INVALID"
+                ) from error
             if not requested_version.is_finite():
                 raise StudyCompoundSourceError("STUDY_LIBRARY_STUDY_VERSION_INVALID")
         self.repos = repos
         self.study_uid = study_uid
         self.study_value_version = study_value_version
         if as_of is None and study_value_version is not None:
-            from clinical_mdr_api.domains.study_definition_aggregates.study_metadata import StudyComponentEnum
+            from clinical_mdr_api.domains.study_definition_aggregates.study_metadata import (
+                StudyComponentEnum,
+            )
             from clinical_mdr_api.services.studies.study import StudyService
 
             study = StudyService().get_by_uid(
-                study_uid, include_sections=[StudyComponentEnum.VERSION_METADATA],
+                study_uid,
+                include_sections=[StudyComponentEnum.VERSION_METADATA],
                 study_value_version=study_value_version,
             )
             if study.uid != study_uid:
@@ -131,22 +150,34 @@ class StudyCompoundSnapshotReader:
                 "No unique approved selected value/version exists in this native snapshot."
             )
         if not all(isinstance(version, str) and version for _, version in identities):
-            raise StudyCompoundSourceError(f"STUDY_LIBRARY_VERSION_REQUIRED: {kind}/{uid}")
+            raise StudyCompoundSourceError(
+                f"STUDY_LIBRARY_VERSION_REQUIRED: {kind}/{uid}"
+            )
         # State transitions of the same immutable value/version are history,
         # not alternative clinical values. Select the state effective latest
         # before this exact snapshot and reject tied, conflicting state rows.
-        latest_start = max(_utc(relationship.start_date) for _, relationship in candidates)
+        latest_start = max(
+            _utc(relationship.start_date) for _, relationship in candidates
+        )
         states = [
-            (value, relationship) for value, relationship in candidates
+            (value, relationship)
+            for value, relationship in candidates
             if _utc(relationship.start_date) == latest_start
         ]
         signatures = {
-            (relationship.version, relationship.status, _utc(relationship.end_date),
-             relationship.change_description, relationship.author_id)
+            (
+                relationship.version,
+                relationship.status,
+                _utc(relationship.end_date),
+                relationship.change_description,
+                relationship.author_id,
+            )
             for _, relationship in states
         }
         if len(signatures) != 1:
-            raise StudyCompoundSourceError(f"STUDY_LIBRARY_STATE_AMBIGUOUS: {kind}/{uid}")
+            raise StudyCompoundSourceError(
+                f"STUDY_LIBRARY_STATE_AMBIGUOUS: {kind}/{uid}"
+            )
         return states[0]
 
     def read(self, kind: str, uid: str | None, *, value_id: str | None = None):
@@ -156,7 +187,9 @@ class StudyCompoundSnapshotReader:
             raise StudyCompoundSourceError(f"STUDY_LIBRARY_IDENTITY_REQUIRED: {kind}")
         selected = self._selected_values.get((kind, uid))
         if value_id is not None and selected is not None and value_id != selected:
-            raise StudyCompoundSourceError(f"STUDY_LIBRARY_SELECTED_VALUE_CONFLICT: {kind}/{uid}")
+            raise StudyCompoundSourceError(
+                f"STUDY_LIBRARY_SELECTED_VALUE_CONFLICT: {kind}/{uid}"
+            )
         value_id = value_id or selected
         cutoff = self.terms_as_of if kind == "ctTermName" else self.as_of
         key = kind, uid, value_id, cutoff
@@ -167,48 +200,75 @@ class StudyCompoundSnapshotReader:
             # This repository's generic root getter takes the internal name-root
             # element ID. Native clinical relationships carry the public term UID.
             term_root = CTTermRoot.nodes.get_or_none(uid=uid)
-            root = term_root.has_name_root.get_or_none() if term_root is not None else None
-            library = term_root.has_library.get_or_none() if term_root is not None else None
+            root = (
+                term_root.has_name_root.get_or_none() if term_root is not None else None
+            )
+            library = (
+                term_root.has_library.get_or_none() if term_root is not None else None
+            )
         else:
             root, library = repository._get_root_and_library(uid)
         if root is None:
-            raise StudyCompoundSourceError(f"STUDY_LIBRARY_SOURCE_MISSING: {kind}/{uid}")
+            raise StudyCompoundSourceError(
+                f"STUDY_LIBRARY_SOURCE_MISSING: {kind}/{uid}"
+            )
         value, relationship = self._select_version(
             repository, root, kind, uid, value_id, cutoff
         )
         aggregate = repository._create_aggregate_root_instance_from_version_root_relationship_and_value(
-            root=root, library=library, value=value, relationship=relationship,
+            root=root,
+            library=library,
+            value=value,
+            relationship=relationship,
             native_snapshot_reader=self,
         )
-        if aggregate.uid != uid or aggregate.item_metadata.version != relationship.version:
-            raise StudyCompoundSourceError(f"STUDY_LIBRARY_READBACK_MISMATCH: {kind}/{uid}")
+        if (
+            aggregate.uid != uid
+            or aggregate.item_metadata.version != relationship.version
+        ):
+            raise StudyCompoundSourceError(
+                f"STUDY_LIBRARY_READBACK_MISMATCH: {kind}/{uid}"
+            )
         self._cache[key] = aggregate
         definition = next(
-            (getattr(aggregate, field) for field in
-             ("concept_vo", "ct_term_vo", "dictionary_term_vo")
-             if hasattr(aggregate, field)),
+            (
+                getattr(aggregate, field)
+                for field in ("concept_vo", "ct_term_vo", "dictionary_term_vo")
+                if hasattr(aggregate, field)
+            ),
             None,
         )
         if not is_dataclass(definition):
-            raise StudyCompoundSourceError(f"STUDY_LIBRARY_DEFINITION_REQUIRED: {kind}/{uid}")
-        self.bindings.append({
-            "kind": kind, "uid": uid, "version": relationship.version,
-            "libraryName": getattr(library, "name", None),
-            "mode": "selected-value" if value_id is not None else "snapshot-as-of",
-            "asOf": cutoff.isoformat(), "studyUid": self.study_uid,
-            "studyValueVersion": self.study_value_version,
-            "studyCompoundUid": self._selection_uid,
-            "valueIdentity": self._value_id(value),
-            "value": dict(value.__properties__),
-            "definition": jsonable_encoder(definition),
-            "versionState": {
-                "status": relationship.status,
-                "startDate": _utc(relationship.start_date).isoformat(),
-                "endDate": _utc(relationship.end_date).isoformat() if relationship.end_date else None,
-                "changeDescription": relationship.change_description,
-                "authorId": relationship.author_id,
-            },
-        })
+            raise StudyCompoundSourceError(
+                f"STUDY_LIBRARY_DEFINITION_REQUIRED: {kind}/{uid}"
+            )
+        self.bindings.append(
+            {
+                "kind": kind,
+                "uid": uid,
+                "version": relationship.version,
+                "libraryName": getattr(library, "name", None),
+                "mode": "selected-value" if value_id is not None else "snapshot-as-of",
+                "asOf": cutoff.isoformat(),
+                "studyUid": self.study_uid,
+                "studyValueVersion": self.study_value_version,
+                "studyCompoundUid": self._selection_uid,
+                "valueIdentity": self._value_id(value),
+                "value": dict(value.__properties__),
+                "definition": jsonable_encoder(definition),
+                "versionState": {
+                    "status": relationship.status,
+                    "startDate": _utc(relationship.start_date).isoformat(),
+                    "endDate": (
+                        _utc(relationship.end_date).isoformat()
+                        if relationship.end_date
+                        else None
+                    ),
+                    "changeDescription": relationship.change_description,
+                    "authorId": relationship.author_id,
+                },
+            }
+        )
         return aggregate
 
     def callback(self, kind):
@@ -224,16 +284,25 @@ class StudyCompoundSnapshotReader:
         return CtTermInfo(term_uid=term.uid, name=aggregate.ct_term_vo.name)
 
     def codelist_term(
-        self, term_uid, codelist_submission_value, at_specific_date_time=None,
+        self,
+        term_uid,
+        codelist_submission_value,
+        at_specific_date_time=None,
     ):
         # The selected study standard's effective date is independent of the
         # clinical snapshot date; pass it explicitly at this native boundary.
-        result = self.repos.ct_codelist_name_repository.get_codelist_term_by_uid_and_submval(
-            term_uid, codelist_submission_value,
-            at_specific_date_time=self.terms_as_of, strict_snapshot=True,
+        result = (
+            self.repos.ct_codelist_name_repository.get_codelist_term_by_uid_and_submval(
+                term_uid,
+                codelist_submission_value,
+                at_specific_date_time=self.terms_as_of,
+                strict_snapshot=True,
+            )
         )
         if result is None and term_uid is not None:
-            raise StudyCompoundSourceError(f"STUDY_LIBRARY_CT_SOURCE_MISSING: {term_uid}")
+            raise StudyCompoundSourceError(
+                f"STUDY_LIBRARY_CT_SOURCE_MISSING: {term_uid}"
+            )
         if result is not None and result.ct_simple_codelist_term_vo.date_conflict:
             raise StudyCompoundSourceError("STUDY_LIBRARY_CT_DATE_CONFLICT")
         if result is not None:
@@ -241,9 +310,12 @@ class StudyCompoundSnapshotReader:
             binding = {
                 "kind": "ctCodelistTerm",
                 "uid": f"{definition['codelist_uid']}:{term_uid}",
-                "mode": "snapshot-as-of", "asOf": self.terms_as_of.isoformat(),
-                "studyUid": self.study_uid, "studyValueVersion": self.study_value_version,
-                "studyCompoundUid": self._selection_uid, "definition": definition,
+                "mode": "snapshot-as-of",
+                "asOf": self.terms_as_of.isoformat(),
+                "studyUid": self.study_uid,
+                "studyValueVersion": self.study_value_version,
+                "studyCompoundUid": self._selection_uid,
+                "definition": definition,
             }
             if binding not in self.bindings:
                 self.bindings.append(binding)
@@ -263,7 +335,9 @@ class StudyCompoundSnapshotReader:
             find_codelist_term_by_uid_and_submission_value=self.codelist_term,
         )
 
-    def selection_models(self, selection, *, history_dosing_uid=None, history_date=None):
+    def selection_models(
+        self, selection, *, history_dosing_uid=None, history_date=None
+    ):
         if selection.study_uid != self.study_uid:
             raise StudyCompoundSourceError("STUDY_LIBRARY_SELECTION_STUDY_MISMATCH")
         selection_date = _utc(selection.start_date)
@@ -272,41 +346,67 @@ class StudyCompoundSnapshotReader:
         if selection_date > self.as_of:
             raise StudyCompoundSourceError("STUDY_LIBRARY_SELECTION_AFTER_SNAPSHOT")
         self._selection_uid = selection.study_selection_uid
-        references = self.repos.study_compound_repository.get_selected_library_references(
-            self.study_uid, selection.study_selection_uid,
-            study_value_version=self.study_value_version,
-            history_dosing_uid=history_dosing_uid, history_date=history_date,
+        references = (
+            self.repos.study_compound_repository.get_selected_library_references(
+                self.study_uid,
+                selection.study_selection_uid,
+                study_value_version=self.study_value_version,
+                history_dosing_uid=history_dosing_uid,
+                history_date=history_date,
+            )
         )
         for binding in references:
-            kind, uid, value_id = binding["kind"], binding["uid"], binding["valueIdentity"]
-            if kind not in {"compoundAlias", "medicinalProduct", "pharmaceuticalProduct"}:
+            kind, uid, value_id = (
+                binding["kind"],
+                binding["uid"],
+                binding["valueIdentity"],
+            )
+            if kind not in {
+                "compoundAlias",
+                "medicinalProduct",
+                "pharmaceuticalProduct",
+            }:
                 raise StudyCompoundSourceError("STUDY_LIBRARY_SELECTED_KIND_INVALID")
             expected_uid = {
                 "compoundAlias": selection.compound_alias_uid,
                 "medicinalProduct": selection.medicinal_product_uid,
             }
             if kind in expected_uid and expected_uid[kind] != uid:
-                raise StudyCompoundSourceError(f"STUDY_LIBRARY_SELECTED_IDENTITY_MISMATCH: {kind}/{uid}")
+                raise StudyCompoundSourceError(
+                    f"STUDY_LIBRARY_SELECTED_IDENTITY_MISMATCH: {kind}/{uid}"
+                )
             key = kind, uid
             previous = self._selected_values.get(key)
             if previous is not None and previous != value_id:
-                raise StudyCompoundSourceError(f"STUDY_LIBRARY_SELECTED_VALUE_AMBIGUOUS: {kind}/{uid}")
+                raise StudyCompoundSourceError(
+                    f"STUDY_LIBRARY_SELECTED_VALUE_AMBIGUOUS: {kind}/{uid}"
+                )
             self._selected_values[key] = value_id
         for kind, uid in (
             ("compoundAlias", selection.compound_alias_uid),
             ("medicinalProduct", selection.medicinal_product_uid),
         ):
             if uid is not None and (kind, uid) not in self._selected_values:
-                raise StudyCompoundSourceError(f"STUDY_LIBRARY_SELECTED_VALUE_MISSING: {kind}/{uid}")
+                raise StudyCompoundSourceError(
+                    f"STUDY_LIBRARY_SELECTED_VALUE_MISSING: {kind}/{uid}"
+                )
         compound = self.read("compound", selection.compound_uid)
         alias = self.read("compoundAlias", selection.compound_alias_uid)
         product = self.read("medicinalProduct", selection.medicinal_product_uid)
         for related in (alias, product):
-            if related is not None and related.concept_vo.compound_uid != selection.compound_uid:
-                raise StudyCompoundSourceError("STUDY_LIBRARY_COMPOUND_RELATIONSHIP_MISMATCH")
+            if (
+                related is not None
+                and related.concept_vo.compound_uid != selection.compound_uid
+            ):
+                raise StudyCompoundSourceError(
+                    "STUDY_LIBRARY_COMPOUND_RELATIONSHIP_MISMATCH"
+                )
         products = [
-            self.pharmaceutical_product(binding["uid"], value_id=binding["valueIdentity"])
-            for binding in references if binding["kind"] == "pharmaceuticalProduct"
+            self.pharmaceutical_product(
+                binding["uid"], value_id=binding["valueIdentity"]
+            )
+            for binding in references
+            if binding["kind"] == "pharmaceuticalProduct"
         ]
         selected_product_uids = {item.uid for item in products}
         if product is not None:
@@ -317,7 +417,15 @@ class StudyCompoundSnapshotReader:
             )
         return (
             Compound.from_compound_ar(compound) if compound is not None else None,
-            CompoundAlias.from_ar(alias, self.callback("compound")) if alias is not None else None,
-            MedicinalProduct.from_medicinal_product_ar(product) if product is not None else None,
+            (
+                CompoundAlias.from_ar(alias, self.callback("compound"))
+                if alias is not None
+                else None
+            ),
+            (
+                MedicinalProduct.from_medicinal_product_ar(product)
+                if product is not None
+                else None
+            ),
             products,
         )

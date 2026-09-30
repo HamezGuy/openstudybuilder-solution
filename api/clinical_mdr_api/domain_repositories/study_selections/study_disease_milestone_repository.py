@@ -97,9 +97,13 @@ class StudyDiseaseMilestoneRepository:
                    term.uid AS term_uid, codelist.uid AS codelist_uid
             ORDER BY selection_identity
         """
-        rows, columns = db.cypher_query(query, {
-            "study_uid": study_uid, "study_value_version": study_value_version,
-        })
+        rows, columns = db.cypher_query(
+            query,
+            {
+                "study_uid": study_uid,
+                "study_value_version": study_value_version,
+            },
+        )
         return [dict(zip(columns, row)) for row in rows]
 
     def find_all_disease_milestone(

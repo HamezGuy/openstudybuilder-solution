@@ -99,6 +99,12 @@ from clinical_mdr_api.models.syntax_instances.criteria import (
 from clinical_mdr_api.models.utils import CustomPage, GenericFilteringReturn
 from clinical_mdr_api.repositories._utils import FilterOperator
 from clinical_mdr_api.routers import _generic_descriptions, decorators
+
+# Mounted without a path-prefix
+from clinical_mdr_api.routers.studies.study_access import (
+    empty_cross_study_page,
+    enforce_visible_study,
+)
 from clinical_mdr_api.services.data_completeness_tags import DataCompletenessTagService
 from clinical_mdr_api.services.studies.study import StudyService
 from clinical_mdr_api.services.studies.study_activity_group import (
@@ -148,12 +154,6 @@ from common.auth.dependencies import security
 from common.config import settings
 from common.exceptions import ValidationException
 from common.models.error import ErrorResponse
-
-# Mounted without a path-prefix
-from clinical_mdr_api.routers.studies.study_access import (
-    empty_cross_study_page,
-    enforce_visible_study,
-)
 
 router = APIRouter(dependencies=[Depends(enforce_visible_study)])
 

@@ -19,26 +19,43 @@ from pathlib import Path
 from typing import Any
 
 REGISTRY_CONTRACT_VERSION = "OsbVocabularyRegistryV1@1.1.0"
-REGISTRY_PATH = Path(__file__).resolve().parents[2] / "schemas" / "platform" / "osb-vocabulary-registry-v1.json"
+REGISTRY_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "schemas"
+    / "platform"
+    / "osb-vocabulary-registry-v1.json"
+)
 
 
 class OsbVocabularyRegistryError(RuntimeError):
     """The registry copy is not the expected contract or its hash does not cover its content."""
 
 
-def canonical_registry_hash(families: dict[str, Any], rows: list[dict[str, Any]]) -> str:
-    canonical = json.dumps({"families": families, "rows": rows}, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+def canonical_registry_hash(
+    families: dict[str, Any], rows: list[dict[str, Any]]
+) -> str:
+    canonical = json.dumps(
+        {"families": families, "rows": rows},
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
     return "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def load_registry(path: Path = REGISTRY_PATH) -> dict[str, Any]:
     registry = json.loads(path.read_text(encoding="utf-8"))
-    if registry.get("contractVersion") != REGISTRY_CONTRACT_VERSION or not isinstance(registry.get("rows"), list) \
-            or not isinstance(registry.get("families"), dict):
+    if (
+        registry.get("contractVersion") != REGISTRY_CONTRACT_VERSION
+        or not isinstance(registry.get("rows"), list)
+        or not isinstance(registry.get("families"), dict)
+    ):
         raise OsbVocabularyRegistryError(f"OSB_VOCABULARY_REGISTRY_INVALID: {path}")
     names = [row["osbResourceType"] for row in registry["rows"]]
     if len(set(names)) != len(names):
-        raise OsbVocabularyRegistryError("OSB_VOCABULARY_REGISTRY_INVALID: a resource type is named twice")
+        raise OsbVocabularyRegistryError(
+            "OSB_VOCABULARY_REGISTRY_INVALID: a resource type is named twice"
+        )
     expected = canonical_registry_hash(registry["families"], registry["rows"])
     if registry.get("registryHash") != expected:
         raise OsbVocabularyRegistryError(
@@ -48,10 +65,14 @@ def load_registry(path: Path = REGISTRY_PATH) -> dict[str, Any]:
 
 
 REGISTRY: dict[str, Any] = load_registry()
-ROWS: dict[str, dict[str, Any]] = {row["osbResourceType"]: row for row in REGISTRY["rows"]}
+ROWS: dict[str, dict[str, Any]] = {
+    row["osbResourceType"]: row for row in REGISTRY["rows"]
+}
 FAMILIES: dict[str, dict[str, Any]] = REGISTRY["families"]
 FORMER_NAMES: dict[str, str] = {
-    former: row["osbResourceType"] for row in REGISTRY["rows"] for former in row["formerNames"]
+    former: row["osbResourceType"]
+    for row in REGISTRY["rows"]
+    for former in row["formerNames"]
 }
 
 

@@ -38,9 +38,7 @@ def _principal(actor_id, signature_id):
         human_user_id=actor_id,
         token_id=signature_id,
         tenant_id="tenant-1",
-        scoped_study_ids=frozenset(
-            {"study-1", "Study_Proposal_Authorization_Test"}
-        ),
+        scoped_study_ids=frozenset({"study-1", "Study_Proposal_Authorization_Test"}),
         organization_ids=frozenset(),
         roles=frozenset({"Study.Read", "Study.Write"}),
         authentication_verified=True,

@@ -8,8 +8,8 @@ from clinical_mdr_api.models.integrations.mapping_context import (
     MappingContextV2Request,
     MappingContextV2Response,
 )
-from clinical_mdr_api.services.integrations.mapping_context import MappingContextService
 from clinical_mdr_api.services.integrations.canonical_json import canonical_hash
+from clinical_mdr_api.services.integrations.mapping_context import MappingContextService
 from clinical_mdr_api.services.studies.study_visibility import (
     assert_mapping_context_scope,
 )

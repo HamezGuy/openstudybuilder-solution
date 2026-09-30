@@ -13,12 +13,12 @@ from clinical_mdr_api.domains.study_definition_aggregates.study_metadata import 
     StudyStatus,
 )
 from clinical_mdr_api.models.complexity_score import ComplexityScoreDetails
+from clinical_mdr_api.models.jobs.job import JobResponse
 from clinical_mdr_api.models.study_selections.null_adjudication import (
     StudyNullAdjudicationCapability,
     StudyNullAdjudicationReceipt,
     StudyNullAdjudicationRequest,
 )
-from clinical_mdr_api.models.jobs.job import JobResponse
 from clinical_mdr_api.models.study_selections.study import (
     CompactStudy,
     LockReleaseInput,
@@ -63,6 +63,9 @@ from clinical_mdr_api.routers._generic_descriptions import (
     study_fields_audit_trail_section_description,
     study_section_description,
 )
+
+# Prefixed with "/studies"
+from clinical_mdr_api.routers.studies.study_access import enforce_visible_study
 from clinical_mdr_api.services.studies.complexity_score import ComplexityScoreService
 from clinical_mdr_api.services.studies.null_adjudication import (
     null_adjudication_capability,
@@ -78,9 +81,6 @@ from common.auth.dependencies import security
 from common.config import settings
 from common.exceptions import NotFoundException, ValidationException
 from common.models.error import ErrorResponse
-
-# Prefixed with "/studies"
-from clinical_mdr_api.routers.studies.study_access import enforce_visible_study
 
 router = APIRouter(dependencies=[Depends(enforce_visible_study)])
 
@@ -950,7 +950,10 @@ def get_null_adjudication_capability(
         },
         403: _generic_descriptions.ERROR_403,
         404: _generic_descriptions.ERROR_404,
-        412: {"model": ErrorResponse, "description": "An expected value or null companion changed, or the slot is not empty."},
+        412: {
+            "model": ErrorResponse,
+            "description": "An expected value or null companion changed, or the slot is not empty.",
+        },
     },
 )
 def patch_null_adjudications(

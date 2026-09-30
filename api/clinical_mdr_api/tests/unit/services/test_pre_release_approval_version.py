@@ -19,9 +19,16 @@ def approval_pair(version="1.1.0"):
     }
     if version == "1.1.0":
         approval["readiness_basis"] = {
-            "cslStudyId": "synthetic-semantic-study", "ready": True, "lossless": True,
-            "counts": {"claims": 1, "unaccountedClaims": 0, "evidenceLessClaims": 0,
-                       "unresolvedCritical": 0, "unverifiedMappingDecisions": 0},
+            "cslStudyId": "synthetic-semantic-study",
+            "ready": True,
+            "lossless": True,
+            "counts": {
+                "claims": 1,
+                "unaccountedClaims": 0,
+                "evidenceLessClaims": 0,
+                "unresolvedCritical": 0,
+                "unverifiedMappingDecisions": 0,
+            },
             "expectedMappingSetHash": "sha256:" + "1" * 64,
             "fetchedAt": "2026-09-10T12:00:00.000Z",
         }
@@ -29,21 +36,34 @@ def approval_pair(version="1.1.0"):
 
 
 def reference(approval, version):
-    return package._artifact_ref({
-        "artifactId": approval["approval_id"],
-        "artifactVersionId": "44444444-4444-4444-8444-444444444444",
-        "kind": "pre-release-approval-v1", "tenantId": TENANT,
-        "byteSize": len(package.canonical_json(approval).encode("utf-8")),
-        "payloadContract": "accuratrials.cc.PreReleaseApprovalV1", "payloadContractVersion": version,
-        "payloadHash": package.canonical_json_hash_ref(approval,
-            schema_version=f"PreReleaseApprovalV1@{version}", media_type=package.PRE_RELEASE_APPROVAL_MEDIA_TYPE),
-    })
+    return package._artifact_ref(
+        {
+            "artifactId": approval["approval_id"],
+            "artifactVersionId": "44444444-4444-4444-8444-444444444444",
+            "kind": "pre-release-approval-v1",
+            "tenantId": TENANT,
+            "byteSize": len(package.canonical_json(approval).encode("utf-8")),
+            "payloadContract": "accuratrials.cc.PreReleaseApprovalV1",
+            "payloadContractVersion": version,
+            "payloadHash": package.canonical_json_hash_ref(
+                approval,
+                schema_version=f"PreReleaseApprovalV1@{version}",
+                media_type=package.PRE_RELEASE_APPROVAL_MEDIA_TYPE,
+            ),
+        }
+    )
 
 
 def verify(approval, artifact):
-    package._verify_artifact_ref(approval, artifact, kind="pre-release-approval-v1",
-        tenant_id=TENANT, platform_study_id=STUDY,
-        schema_version=package._approval_schema_version(artifact), media_type=package.PRE_RELEASE_APPROVAL_MEDIA_TYPE)
+    package._verify_artifact_ref(
+        approval,
+        artifact,
+        kind="pre-release-approval-v1",
+        tenant_id=TENANT,
+        platform_study_id=STUDY,
+        schema_version=package._approval_schema_version(artifact),
+        media_type=package.PRE_RELEASE_APPROVAL_MEDIA_TYPE,
+    )
 
 
 @pytest.mark.parametrize("version", ["1.0.0", "1.1.0"])
@@ -63,7 +83,18 @@ def test_mismatched_or_unknown_descriptor_versions_are_rejected(version):
     assert error.value.code == "OSB_PRE_RELEASE_APPROVAL_CONTRACT_VERSION_INVALID"
 
 
-@pytest.mark.parametrize("change", ["missing", "not-ready", "not-lossless", "unaccounted", "boolean-count", "date-only", "unknown-field"])
+@pytest.mark.parametrize(
+    "change",
+    [
+        "missing",
+        "not-ready",
+        "not-lossless",
+        "unaccounted",
+        "boolean-count",
+        "date-only",
+        "unknown-field",
+    ],
+)
 def test_invalid_readiness_cannot_be_authorized_by_rehashing_the_payload(change):
     approval, _ = approval_pair()
     basis = approval["readiness_basis"]

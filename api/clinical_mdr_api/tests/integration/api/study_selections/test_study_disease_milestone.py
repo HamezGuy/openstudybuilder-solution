@@ -223,7 +223,10 @@ def test_get_disease_milestone_data_for_specific_study_version(api_client):
         assert source["study_value_version"] == "1"
         assert source["term_uid"] == item["disease_milestone_type"]
         assert source["name"]["value"]["name"] == item["disease_milestone_type_name"]
-        assert source["attributes"]["value"]["definition"] == item["disease_milestone_type_definition"]
+        assert (
+            source["attributes"]["value"]["definition"]
+            == item["disease_milestone_type_definition"]
+        )
     assert res_v1 == res_old
     assert res_v1 != res_new
 

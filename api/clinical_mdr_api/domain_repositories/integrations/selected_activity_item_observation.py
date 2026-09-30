@@ -1,6 +1,8 @@
 """Independent cardinality check and bounded projection of one full native path."""
-from clinical_mdr_api.domain_repositories.integrations.native_item_observation import NativeItemObservationRepository
 
+from clinical_mdr_api.domain_repositories.integrations.native_item_observation import (
+    NativeItemObservationRepository,
+)
 
 # No incoming global item-group/form/event edge establishes study applicability.
 # No elementId is returned or used as a synthetic public ActivityItem identity.
@@ -48,10 +50,15 @@ class SelectedActivityItemRepository(NativeItemObservationRepository):
 
     def path_count(self, p, timeout):
         # Stop after two matched paths, before any data-bearing projection.
-        return self.query("CALL { " + PATH + " RETURN 1 AS found LIMIT 2 } RETURN count(found)", p, timeout)
+        return self.query(
+            "CALL { " + PATH + " RETURN 1 AS found LIMIT 2 } RETURN count(found)",
+            p,
+            timeout,
+        )
 
     def path_projection(self, p, timeout):
-        return self.query(PATH + """
+        return self.query(
+            PATH + """
           WITH study,studyVersion,selection,activityRoot,activityVersion,classRoot,classVersion,
             itemRoot,itemVersion,activityItem,itemLink,
             [activityItem.text_value,itemLink.preset_response_value,itemLink.value_condition,
@@ -71,4 +78,7 @@ class SelectedActivityItemRepository(NativeItemObservationRepository):
           } ELSE null END,
           EXISTS { (activityItem)-[:HAS_CODELIST|HAS_CT_TERM|HAS_UNIT_DEFINITION]->() }
           LIMIT 2
-        """, p, timeout)
+        """,
+            p,
+            timeout,
+        )

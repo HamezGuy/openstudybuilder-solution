@@ -16,6 +16,9 @@ from fastapi import APIRouter, Body, Depends, Path, Query
 from pydantic import BaseModel, Field
 
 from clinical_mdr_api.routers import _generic_descriptions
+
+# Prefixed with "/integrations/edc"
+from clinical_mdr_api.routers.studies.study_access import enforce_visible_study
 from clinical_mdr_api.services.integrations.edc_export import (
     EdcExportError,
     EdcExportService,
@@ -23,9 +26,6 @@ from clinical_mdr_api.services.integrations.edc_export import (
 from common.auth import rbac
 from common.auth.dependencies import security
 from common.exceptions import ValidationException
-
-# Prefixed with "/integrations/edc"
-from clinical_mdr_api.routers.studies.study_access import enforce_visible_study
 
 router = APIRouter(dependencies=[Depends(enforce_visible_study)])
 
@@ -52,7 +52,9 @@ class EdcSendInput(BaseModel):
     responses={
         403: _generic_descriptions.ERROR_403,
         404: _generic_descriptions.ERROR_404,
-        422: {"description": "The study cannot produce a valid V2 draft or its source custody cannot be verified."},
+        422: {
+            "description": "The study cannot produce a valid V2 draft or its source custody cannot be verified."
+        },
     },
 )
 def get_edc_study_bundle(
@@ -92,7 +94,8 @@ def send_edc_study_bundle(
 ) -> dict[str, Any]:
     try:
         return EdcExportService().send_to_edc(
-            study_uid, dry_run=send_input.dry_run,
+            study_uid,
+            dry_run=send_input.dry_run,
             study_value_version=study_value_version,
         )
     except EdcExportError as exc:

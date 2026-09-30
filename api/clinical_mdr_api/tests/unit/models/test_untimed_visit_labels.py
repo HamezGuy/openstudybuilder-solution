@@ -1,22 +1,39 @@
 """Unknown fixed timing must not be presented to users as day/week zero."""
+
 import datetime
 
 import pytest
 
-from clinical_mdr_api.domains.study_definition_aggregates.study_metadata import StudyStatus
-from clinical_mdr_api.domains.study_selections.study_visit import NumericValue, StudyVisitVO
+from clinical_mdr_api.domains.study_definition_aggregates.study_metadata import (
+    StudyStatus,
+)
+from clinical_mdr_api.domains.study_selections.study_visit import (
+    NumericValue,
+    StudyVisitVO,
+)
 from common.utils import VisitClass, VisitTimingMode
 
 
 def visit(mode):
     return StudyVisitVO(
-        visit_window_min=None, visit_window_max=None, window_unit_uid=None,
-        description=None, start_rule=None, end_rule=None, visit_contact_mode=None,
-        visit_type=None, status=StudyStatus.DRAFT,
+        visit_window_min=None,
+        visit_window_max=None,
+        window_unit_uid=None,
+        description=None,
+        start_rule=None,
+        end_rule=None,
+        visit_contact_mode=None,
+        visit_type=None,
+        status=StudyStatus.DRAFT,
         start_date=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
-        author_id="test", author_username="test",
-        visit_class=VisitClass.MANUALLY_DEFINED_VISIT, visit_subclass=None,
-        is_global_anchor_visit=False, visit_number=1, visit_order=1, show_visit=True,
+        author_id="test",
+        author_username="test",
+        visit_class=VisitClass.MANUALLY_DEFINED_VISIT,
+        visit_subclass=None,
+        is_global_anchor_visit=False,
+        visit_number=1,
+        visit_order=1,
+        show_visit=True,
         timing_mode=mode,
     )
 

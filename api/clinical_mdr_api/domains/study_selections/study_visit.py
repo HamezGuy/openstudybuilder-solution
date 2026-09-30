@@ -130,7 +130,9 @@ class StudyVisitVO:
     @property
     def has_timing(self) -> bool:
         return not self.is_untimed and self.visit_class not in (
-            VisitClass.NON_VISIT, VisitClass.UNSCHEDULED_VISIT, VisitClass.SPECIAL_VISIT,
+            VisitClass.NON_VISIT,
+            VisitClass.UNSCHEDULED_VISIT,
+            VisitClass.SPECIAL_VISIT,
         )
 
     @property

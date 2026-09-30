@@ -148,7 +148,9 @@ class User:
         self.email = email
         self.roles = roles
         self.tenant_id = tenant_id
-        self.study_ids = {str(value) for value in (study_ids or []) if str(value).strip()}
+        self.study_ids = {
+            str(value) for value in (study_ids or []) if str(value).strip()
+        }
         self.subject_type = subject_type
         self.issuer = issuer
         self.human_subject = human_subject
@@ -345,8 +347,14 @@ def validate_delegated_claims(
     if claims.exp <= claims.iat or claims.exp - claims.iat > max_ttl_seconds:
         raise ValueError("Access token violates the five-minute lifetime bound")
     client_id = claims.azp or claims.client_id or ""
-    if not client_id or claims.azp != claims.client_id or client_id not in exchanging_clients:
-        raise ValueError("Exchanging client is absent, inconsistent, or not allowlisted")
+    if (
+        not client_id
+        or claims.azp != claims.client_id
+        or client_id not in exchanging_clients
+    ):
+        raise ValueError(
+            "Exchanging client is absent, inconsistent, or not allowlisted"
+        )
     if not claims.tenant_id:
         raise ValueError("tenant_id is required")
     if not claims.purpose or claims.purpose not in allowed_purposes:

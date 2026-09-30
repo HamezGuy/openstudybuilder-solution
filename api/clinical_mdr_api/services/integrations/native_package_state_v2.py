@@ -13,7 +13,6 @@ from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
 from neomodel import db
-from clinical_mdr_api.services.ddf.usdm_service import USDMService
 
 from clinical_mdr_api.generated.platform_contracts.hash_signing_v1 import (
     canonical_json,
@@ -21,6 +20,7 @@ from clinical_mdr_api.generated.platform_contracts.hash_signing_v1 import (
     descriptor_hash,
     hash_refs_equal,
 )
+from clinical_mdr_api.services.ddf.usdm_service import USDMService
 from clinical_mdr_api.services.integrations.candidate_set import (
     OsbCandidateSetError,
     _assert_identity_binding,
@@ -34,16 +34,21 @@ from clinical_mdr_api.services.integrations.native_capture_mapping import (
     read_capture_target,
 )
 from clinical_mdr_api.services.integrations.native_capture_projection import (
-    CAPTURE_READBACK_SCHEMA, capture_field_receipts,
+    CAPTURE_READBACK_SCHEMA,
+    capture_field_receipts,
 )
-from clinical_mdr_api.services.integrations.native_study_head import select_current_study_head
+from clinical_mdr_api.services.integrations.native_study_head import (
+    select_current_study_head,
+)
 from clinical_mdr_api.services.integrations.osb_candidate_request_versions import (
     ACCEPTED_REQUEST_CONTRACT_VERSIONS,
     METADATA_REQUEST_CONTRACT_VERSIONS,
     SELECTED_CAPTURE_REQUEST_CONTRACT_VERSIONS,
 )
 from clinical_mdr_api.services.integrations.osb_family_map import canonicalize_family
-from clinical_mdr_api.services.integrations.study_metadata_mapping import METADATA_PATHS
+from clinical_mdr_api.services.integrations.study_metadata_mapping import (
+    METADATA_PATHS,
+)
 from clinical_mdr_api.services.integrations.study_metadata_mapping import (
     _normalized as normalize_metadata_value,
 )
@@ -213,10 +218,7 @@ def _custody(
     candidate, request = map(_json, row[:2])
     _scope(candidate, tenant_id, platform_study_id)
     _scope(request, tenant_id, platform_study_id)
-    _require(
-        request.get("contractVersion")
-        in ACCEPTED_REQUEST_CONTRACT_VERSIONS
-    )
+    _require(request.get("contractVersion") in ACCEPTED_REQUEST_CONTRACT_VERSIONS)
     request_hash = _hash(request, request["contractVersion"], REQUEST_MEDIA)
     _require(
         candidate.get("contractVersion") == "OsbCandidateSetV1@1.0.0"
@@ -309,14 +311,20 @@ def _current_study(
     )
     _require(bool(rows), "OSB_PACKAGE_STUDY_MISMATCH")
     try:
-        head = select_current_study_head([
-            {
-                "relationship": item[2], "version": item[3], "status": item[4],
-                "startDate": item[9], "endDate": item[10], "isLatest": item[11],
-                "row": item,
-            }
-            for item in rows
-        ])
+        head = select_current_study_head(
+            [
+                {
+                    "relationship": item[2],
+                    "version": item[3],
+                    "status": item[4],
+                    "startDate": item[9],
+                    "endDate": item[10],
+                    "isLatest": item[11],
+                    "row": item,
+                }
+                for item in rows
+            ]
+        )
     except ValueError as error:
         raise OsbCandidateSetError(
             "OSB_PACKAGE_STUDY_MISMATCH", "The native study current head differs.", 409
@@ -548,23 +556,45 @@ def _verify_native_projection(
     schema = _record(operation.get("normalizedReadBackHash")).get("schemaVersion")
     if schema == CAPTURE_READBACK_SCHEMA:
         action = selection.get("action")
-        _require((action == "create" or (action == "select"
-                                        and request_contract_version in SELECTED_CAPTURE_REQUEST_CONTRACT_VERSIONS))
-                 and operation.get("disposition") == "native"
-                 and observed.get("version") == operation.get("postTargetVersion")
-                 and hash_refs_equal(operation.get("sourceInputHash"),
-                                      _hash(intent, "OsbTypedSourceIntentV1@1.0.0")))
+        _require(
+            (
+                action == "create"
+                or (
+                    action == "select"
+                    and request_contract_version
+                    in SELECTED_CAPTURE_REQUEST_CONTRACT_VERSIONS
+                )
+            )
+            and operation.get("disposition") == "native"
+            and observed.get("version") == operation.get("postTargetVersion")
+            and hash_refs_equal(
+                operation.get("sourceInputHash"),
+                _hash(intent, "OsbTypedSourceIntentV1@1.0.0"),
+            )
+        )
         _, blockers = capture_field_receipts(
-            intent, observed, binding_key=_text(operation.get("idempotencyKey")),
-            native_study_id=_text(native_study.get("nativeIdentity")))
-        identity = {field: _text(observed.get(field))
-                    for field in ("resourceFamily", "resourceType", "uid", "version")}
+            intent,
+            observed,
+            binding_key=_text(operation.get("idempotencyKey")),
+            native_study_id=_text(native_study.get("nativeIdentity")),
+        )
+        identity = {
+            field: _text(observed.get(field))
+            for field in ("resourceFamily", "resourceType", "uid", "version")
+        }
         _require(operation.get("nativeTargetIdentity") == identity)
         target: dict[str, Any] = {**identity, "bindingKey": operation["idempotencyKey"]}
         if action == "select":
             selected = _record(selection.get("candidateIdentity"))
-            _require(any(_same(selected, value) for value in _list(candidate.get("nativeCandidates"))))
-            assert_selected_capture_identity(identity["resourceFamily"], selected, observed["native"])
+            _require(
+                any(
+                    _same(selected, value)
+                    for value in _list(candidate.get("nativeCandidates"))
+                )
+            )
+            assert_selected_capture_identity(
+                identity["resourceFamily"], selected, observed["native"]
+            )
             target["candidateIdentity"] = selected
         return {
             "targetIdentity": identity,
@@ -794,7 +824,11 @@ def load_checkpoint_native_state(
             None
             if schema == MANAGED_SCHEMA
             else _verify_native_projection(
-                operation, selection, intent, candidate, native,
+                operation,
+                selection,
+                intent,
+                candidate,
+                native,
                 request_contract_version=custody["request"]["contractVersion"],
             )
         )

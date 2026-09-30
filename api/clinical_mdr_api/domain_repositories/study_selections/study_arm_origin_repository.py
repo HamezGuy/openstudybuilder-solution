@@ -30,7 +30,9 @@ class StudyArmOriginRepository:
                 or not isinstance(member.get("term_uid"), str)
                 or not member["term_uid"].strip()
             ):
-                raise ValidationException(msg="STUDY_ARM_DATA_ORIGIN_CONTEXT_SCOPE_INVALID")
+                raise ValidationException(
+                    msg="STUDY_ARM_DATA_ORIGIN_CONTEXT_SCOPE_INVALID"
+                )
             uid = member["term_uid"]
         validate_study_arm_origin(uid, description)
         return uid
@@ -40,10 +42,7 @@ class StudyArmOriginRepository:
         term_uid: str,
         at_specific_date_time: datetime | None = None,
     ) -> CTSimpleCodelistTermAR:
-        if (
-            not isinstance(term_uid, str)
-            or not term_uid.strip()
-        ):
+        if not isinstance(term_uid, str) or not term_uid.strip():
             raise ValidationException(msg="STUDY_ARM_DATA_ORIGIN_TERM_SCOPE_INVALID")
         historical = at_specific_date_time is not None
         at = at_specific_date_time if historical else datetime.now(timezone.utc)
@@ -91,11 +90,17 @@ class StudyArmOriginRepository:
         if any(
             not isinstance(value.get(key), str) or not value[key].strip()
             for key in (
-                "term_uid", "term_name", "codelist_uid", "codelist_name",
-                "submission_value", "codelist_submission_value",
+                "term_uid",
+                "term_name",
+                "codelist_uid",
+                "codelist_name",
+                "submission_value",
+                "codelist_submission_value",
             )
         ):
-            raise ValidationException(msg="STUDY_ARM_DATA_ORIGIN_TERM_VERSION_INCOMPLETE")
+            raise ValidationException(
+                msg="STUDY_ARM_DATA_ORIGIN_TERM_VERSION_INCOMPLETE"
+            )
         value["date_conflict"] = False
         return CTSimpleCodelistTermAR.from_result_dict(value)
 
@@ -117,7 +122,9 @@ class StudyArmOriginRepository:
         ):
             raise ValidationException(msg="USDM_ARM_DATA_ORIGIN_CT_PIN_REQUIRED")
         try:
-            valid_date = date.fromisoformat(effective_date).isoformat() == effective_date
+            valid_date = (
+                date.fromisoformat(effective_date).isoformat() == effective_date
+            )
         except ValueError:
             valid_date = False
         if not valid_date:

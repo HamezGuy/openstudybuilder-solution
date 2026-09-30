@@ -83,7 +83,9 @@ def service_read(repository, *, for_update=False):
     )
 
 
-@pytest.mark.parametrize("repository_type", [FormRepository, ItemGroupRepository, ItemRepository])
+@pytest.mark.parametrize(
+    "repository_type", [FormRepository, ItemGroupRepository, ItemRepository]
+)
 def test_guard_scope_reaches_actual_odm_repository_cache(monkeypatch, repository_type):
     repository, state = native_reader(monkeypatch, repository_type)
     original = service_read(repository)
@@ -102,8 +104,12 @@ def test_guard_scope_reaches_actual_odm_repository_cache(monkeypatch, repository
     assert state["reads"] == 2
 
 
-@pytest.mark.parametrize("repository_type", [FormRepository, ItemGroupRepository, ItemRepository])
-def test_update_read_always_reenters_actual_lock_and_storage(monkeypatch, repository_type):
+@pytest.mark.parametrize(
+    "repository_type", [FormRepository, ItemGroupRepository, ItemRepository]
+)
+def test_update_read_always_reenters_actual_lock_and_storage(
+    monkeypatch, repository_type
+):
     repository, state = native_reader(monkeypatch, repository_type)
     first = service_read(repository, for_update=True)
     state["source"] = {"exact": [None, False, 0, "second native reading"]}
@@ -130,11 +136,17 @@ def test_exception_restores_nested_scope_without_replacing_normal_cache(monkeypa
 
 
 @pytest.mark.parametrize("for_update", [False, True])
-def test_ct_term_outer_cache_and_nested_library_cache_both_observe_scope(monkeypatch, for_update):
+def test_ct_term_outer_cache_and_nested_library_cache_both_observe_scope(
+    monkeypatch, for_update
+):
     repository, state = native_reader(monkeypatch, CTTermAttributesRepository)
     version_root = SimpleNamespace(element_id="Pinned-root")
     term_root = SimpleNamespace(
-        **{repository.relationship_from_root: SimpleNamespace(single=lambda: version_root)}
+        **{
+            repository.relationship_from_root: SimpleNamespace(
+                single=lambda: version_root
+            )
+        }
     )
     node_reads = []
 
@@ -173,25 +185,47 @@ def test_codelist_membership_cache_is_bypassed_without_importing_other_wip(monke
     repository = object.__new__(CTCodelistNameRepository)
     state = {"term_name": "Original selected term", "reads": 0}
     names = (
-        "term_uid", "term_name", "preferred_term", "submission_value", "order",
-        "codelist_name", "codelist_uid", "codelist_submission_value",
+        "term_uid",
+        "term_name",
+        "preferred_term",
+        "submission_value",
+        "order",
+        "codelist_name",
+        "codelist_uid",
+        "codelist_submission_value",
     )
 
     def query(_query, params):
         assert params == {"cl_submval": "EXACT-LIST", "term_uid": "Exact-term"}
         state["reads"] += 1
-        return [[
-            "Exact-term", state["term_name"], "Preferred", "Exact-value", 7,
-            "Selected list", "Exact-codelist", "EXACT-LIST",
-        ]], list(names)
+        return [
+            [
+                "Exact-term",
+                state["term_name"],
+                "Preferred",
+                "Exact-value",
+                7,
+                "Selected list",
+                "Exact-codelist",
+                "EXACT-LIST",
+            ]
+        ], list(names)
 
     monkeypatch.setattr(db, "cypher_query", query)
     first = repository.get_codelist_term_by_uid_and_submval("Exact-term", "EXACT-LIST")
     state["term_name"] = "Changed selected term"
-    assert repository.get_codelist_term_by_uid_and_submval("Exact-term", "EXACT-LIST") is first
+    assert (
+        repository.get_codelist_term_by_uid_and_submval("Exact-term", "EXACT-LIST")
+        is first
+    )
     with uncached_native_reads():
-        second = repository.get_codelist_term_by_uid_and_submval("Exact-term", "EXACT-LIST")
+        second = repository.get_codelist_term_by_uid_and_submval(
+            "Exact-term", "EXACT-LIST"
+        )
     assert second != first
     assert second.ct_simple_codelist_term_vo.term_name == state["term_name"]
-    assert repository.get_codelist_term_by_uid_and_submval("Exact-term", "EXACT-LIST") is first
+    assert (
+        repository.get_codelist_term_by_uid_and_submval("Exact-term", "EXACT-LIST")
+        is first
+    )
     assert state["reads"] == 2

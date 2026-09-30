@@ -289,7 +289,8 @@ class StudySelectionArmRepository:
                 study_selection_uid=selection["study_selection_uid"],
                 arm_type_uid=selection["arm_type_uid"],
                 data_origin_type_uid=StudyArmOriginRepository.selected_uid(
-                    selection["data_origin_memberships"], selection["data_origin_description"]
+                    selection["data_origin_memberships"],
+                    selection["data_origin_description"],
                 ),
                 data_origin_description=selection["data_origin_description"],
                 number_of_subjects=selection["number_of_subjects"],
@@ -516,7 +517,9 @@ class StudySelectionArmRepository:
                         previous_term is not None
                         and previous_term.uid == selection.data_origin_type_uid
                     ):
-                        previous_codelist = previous_context.has_selected_codelist.single()
+                        previous_codelist = (
+                            previous_context.has_selected_codelist.single()
+                        )
                         if (
                             previous_codelist is None
                             or previous_codelist.uid != STUDY_ARM_ORIGIN_CODELIST_UID
@@ -531,12 +534,10 @@ class StudySelectionArmRepository:
                 origin_term = StudyArmOriginRepository.get_term(
                     selection.data_origin_type_uid
                 )
-                origin_context = (
-                    CTCodelistAttributesRepository().get_or_create_selected_term(
-                        CTTermRoot.nodes.get(uid=selection.data_origin_type_uid),
-                        codelist_uid=origin_term.ct_simple_codelist_term_vo.codelist_uid,
-                        catalogue_name=STUDY_ARM_ORIGIN_CATALOGUE,
-                    )
+                origin_context = CTCodelistAttributesRepository().get_or_create_selected_term(
+                    CTTermRoot.nodes.get(uid=selection.data_origin_type_uid),
+                    codelist_uid=origin_term.ct_simple_codelist_term_vo.codelist_uid,
+                    catalogue_name=STUDY_ARM_ORIGIN_CATALOGUE,
                 )
 
         # Create new arm selection

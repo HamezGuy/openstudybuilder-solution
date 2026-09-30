@@ -218,7 +218,8 @@ def _get_study_odm_metadata(
     study_uid: str, study_value_version: str | None
 ) -> dict[str, Any]:
     """Load ODM forms/groups/items/events reachable from one native study version."""
-    query = """
+    query = (
+        """
         MATCH (study_root:StudyRoot {uid: $study_uid})
               -[study_version:HAS_VERSION|LATEST]->(study_value:StudyValue)
         WHERE ($study_value_version IS NULL AND type(study_version) = 'LATEST')
@@ -271,7 +272,9 @@ def _get_study_odm_metadata(
             name: odm_item.name,
             oid: odm_item.oid,
             prompt: odm_item.prompt,
-            datatype: """ + odm_item_datatype_cypher("odm_item") + """,
+            datatype: """
+        + odm_item_datatype_cypher("odm_item")
+        + """,
             length: odm_item.length,
             significantDigits: odm_item.significant_digits,
             sasFieldName: odm_item.sas_field_name,
@@ -354,6 +357,7 @@ def _get_study_odm_metadata(
                  odm_study_event_root.uid, odm_form_root.uid,
                  odm_item_group_root.uid, odm_item_root.uid
     """
+    )
     result, columns = db.cypher_query(
         query,
         {
@@ -361,10 +365,14 @@ def _get_study_odm_metadata(
             "study_value_version": study_value_version,
         },
     )
-    from clinical_mdr_api.services.studies.study_activity_instance_snapshot import resolve_candidate_class_history
+    from clinical_mdr_api.services.studies.study_activity_instance_snapshot import (
+        resolve_candidate_class_history,
+    )
 
     rows = resolve_candidate_class_history(
-        [dict(zip(columns, row)) for row in result], study_uid, study_value_version,
+        [dict(zip(columns, row)) for row in result],
+        study_uid,
+        study_value_version,
     )
     return _assemble_study_odm_metadata(rows)
 
@@ -372,14 +380,14 @@ def _get_study_odm_metadata(
 def _usdm_designs(usdm: dict[str, Any]) -> list[dict[str, Any]]:
     try:
         return usdm["study"]["versions"][0]["studyDesigns"] or []
-    except (KeyError, IndexError, TypeError):
+    except KeyError, IndexError, TypeError:
         return []
 
 
 def _usdm_version(usdm: dict[str, Any]) -> dict[str, Any]:
     try:
         return usdm["study"]["versions"][0] or {}
-    except (KeyError, IndexError, TypeError):
+    except KeyError, IndexError, TypeError:
         return {}
 
 
@@ -1822,12 +1830,8 @@ class StudyAuthorityService:
             usdm_interventions=usdm_counts["interventions"],
             usdm_administrations=usdm_counts["administrations"],
             usdm_eligibility_criteria=usdm_counts["eligibility_criteria"],
-            usdm_eligibility_criterion_items=usdm_counts[
-                "eligibility_criterion_items"
-            ],
-            usdm_population_criterion_links=usdm_counts[
-                "population_criterion_links"
-            ],
+            usdm_eligibility_criterion_items=usdm_counts["eligibility_criterion_items"],
+            usdm_population_criterion_links=usdm_counts["population_criterion_links"],
             usdm_scheduled_activity_links=usdm_counts["scheduled_activity_links"],
             usdm_void_codes=_usdm_void_code_count(usdm),
         )

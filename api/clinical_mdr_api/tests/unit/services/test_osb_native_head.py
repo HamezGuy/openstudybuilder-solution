@@ -52,7 +52,16 @@ class NativeHeads:
             return [], None
         if "RETURN binding.binding_id,study.uid,type(head)" in query:
             return [
-                ["native-binding", NATIVE_STUDY, *head[:3], "Title", "001", None, "P1", *head[3:]]
+                [
+                    "native-binding",
+                    NATIVE_STUDY,
+                    *head[:3],
+                    "Title",
+                    "001",
+                    None,
+                    "P1",
+                    *head[3:],
+                ]
                 for head in self.heads
             ], None
         if "ORDER BY preference" in query:
@@ -117,7 +126,10 @@ class NativeHeads:
             "tenantId": TENANT,
             "platformStudyId": PLATFORM_STUDY,
             "osbStudyIdentity": identity,
-            "capabilityCheckpoint": {"nativeVersion": version, "osbOpenApiHash": "synthetic-openapi"},
+            "capabilityCheckpoint": {
+                "nativeVersion": version,
+                "osbOpenApiHash": "synthetic-openapi",
+            },
             "expiresAt": "2099-01-01T00:00:00Z",
         }, binding
 
@@ -148,10 +160,14 @@ def test_current_head_agrees_across_actual_identity_candidate_and_package(
     store = NativeHeads(state)
     attach(monkeypatch, store)
     root, concepts = native_package_state_v2._current_study(
-        TENANT, PLATFORM_STUDY, {"nativeIdentity": NATIVE_STUDY, "nativeVersion": version}
+        TENANT,
+        PLATFORM_STUDY,
+        {"nativeIdentity": NATIVE_STUDY, "nativeVersion": version},
     )
     assert (root["relationship"], root["nativeVersion"], root["versionTimestamp"]) == (
-        relationship, version, timestamp
+        relationship,
+        version,
+        timestamp,
     )
     assert concepts == []
     assert native_identity.Neo4jOsbNativeIdentityTransactionV1._native_checkpoint(
@@ -170,7 +186,9 @@ def test_closed_draft_cannot_keep_a_draft_candidate_current(monkeypatch):
     assert store.writes == []
 
 
-def test_reopening_invalidates_locked_candidate_and_restores_draft_identity(monkeypatch):
+def test_reopening_invalidates_locked_candidate_and_restores_draft_identity(
+    monkeypatch,
+):
     store = NativeHeads("reopened")
     attach(monkeypatch, store)
     with pytest.raises(candidate_set.OsbCandidateSetError) as error:
@@ -180,8 +198,12 @@ def test_reopening_invalidates_locked_candidate_and_restores_draft_identity(monk
     assert store.writes == []
 
 
-@pytest.mark.parametrize("mutation", ["duplicate", "ended-lock", "wrong-status", "not-latest", "no-draft"])
-def test_invalid_current_head_is_rejected_at_all_three_boundaries(monkeypatch, mutation):
+@pytest.mark.parametrize(
+    "mutation", ["duplicate", "ended-lock", "wrong-status", "not-latest", "no-draft"]
+)
+def test_invalid_current_head_is_rejected_at_all_three_boundaries(
+    monkeypatch, mutation
+):
     store = NativeHeads("locked")
     if mutation == "duplicate":
         store.heads.append(deepcopy(store.heads[0]))
@@ -195,25 +217,41 @@ def test_invalid_current_head_is_rejected_at_all_three_boundaries(monkeypatch, m
         store.heads.pop(0)
     attach(monkeypatch, store)
     with pytest.raises(NativeIdentityCommandError) as error:
-        native_identity.Neo4jOsbNativeIdentityTransactionV1._native_checkpoint(NATIVE_STUDY)
+        native_identity.Neo4jOsbNativeIdentityTransactionV1._native_checkpoint(
+            NATIVE_STUDY
+        )
     assert error.value.code == "IDENTITY_NATIVE_VERSION_UNAVAILABLE"
     with pytest.raises(candidate_set.OsbCandidateSetError):
         revalidate(store, "1", "locked")
     with pytest.raises(candidate_set.OsbCandidateSetError):
         native_package_state_v2._current_study(
-            TENANT, PLATFORM_STUDY, {"nativeIdentity": NATIVE_STUDY, "nativeVersion": "1"}
+            TENANT,
+            PLATFORM_STUDY,
+            {"nativeIdentity": NATIVE_STUDY, "nativeVersion": "1"},
         )
     assert store.writes == []
 
 
-def test_actual_rollover_uses_current_lock_and_leaves_the_old_binding_as_history(monkeypatch):
+def test_actual_rollover_uses_current_lock_and_leaves_the_old_binding_as_history(
+    monkeypatch,
+):
     store = NativeHeads("locked")
     attach(monkeypatch, store)
-    transaction = native_identity.Neo4jOsbNativeIdentityTransactionV1(TENANT, PLATFORM_STUDY)
-    previous = {"bindingId": "previous-binding", "nativeIdentity": NATIVE_STUDY, "nativeVersion": "draft"}
+    transaction = native_identity.Neo4jOsbNativeIdentityTransactionV1(
+        TENANT, PLATFORM_STUDY
+    )
+    previous = {
+        "bindingId": "previous-binding",
+        "nativeIdentity": NATIVE_STUDY,
+        "nativeVersion": "draft",
+    }
     result = transaction._rollover(
         {"expectedAbsence": False},
-        {"nativeIdentity": NATIVE_STUDY, "nativeVersion": "1", "previousBindingId": previous["bindingId"]},
+        {
+            "nativeIdentity": NATIVE_STUDY,
+            "nativeVersion": "1",
+            "previousBindingId": previous["bindingId"],
+        },
         previous,
     )
     assert result["nativeVersion"] == "1"
@@ -229,5 +267,7 @@ def test_missing_root_remains_a_distinct_identity_not_found_error(monkeypatch):
     store.exists = False
     attach(monkeypatch, store)
     with pytest.raises(NativeIdentityCommandError) as error:
-        native_identity.Neo4jOsbNativeIdentityTransactionV1._native_checkpoint(NATIVE_STUDY)
+        native_identity.Neo4jOsbNativeIdentityTransactionV1._native_checkpoint(
+            NATIVE_STUDY
+        )
     assert error.value.code == "IDENTITY_NATIVE_ROOT_NOT_FOUND"

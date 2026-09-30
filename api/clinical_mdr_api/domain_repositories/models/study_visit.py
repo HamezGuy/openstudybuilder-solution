@@ -1,4 +1,10 @@
-from neomodel import JSONProperty, RelationshipFrom, RelationshipTo, ZeroOrMore, ZeroOrOne
+from neomodel import (
+    JSONProperty,
+    RelationshipFrom,
+    RelationshipTo,
+    ZeroOrMore,
+    ZeroOrOne,
+)
 
 from clinical_mdr_api.domain_repositories.models.concepts import (
     StudyDayRoot,

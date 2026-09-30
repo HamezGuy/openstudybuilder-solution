@@ -86,9 +86,9 @@ def from_duration_object_to_value_and_unit(
         for subset in subsets:
             units, _ = find_all_study_time_units(subset=subset)
             matches = [unit for unit in units if unit.name.strip().lower() in names]
-            matches.sort(key=lambda unit: (
-                unit.name.strip().lower() != preferred, str(unit.uid)
-            ))
+            matches.sort(
+                key=lambda unit: (unit.name.strip().lower() != preferred, str(unit.uid))
+            )
             if matches:
                 return duration_value, matches[0]
     return duration_value, None
@@ -447,9 +447,7 @@ def sanitize_template_html(string: str) -> str:
         return f"{prefix}{number}__"
 
     protected = sanitize_html(bracket.sub(protect, string))
-    return protected.replace(f"{prefix}91__", "&#91;").replace(
-        f"{prefix}93__", "&#93;"
-    )
+    return protected.replace(f"{prefix}91__", "&#91;").replace(f"{prefix}93__", "&#93;")
 
 
 def _make_field_annotation_optional(field_annotation: Any) -> Any:

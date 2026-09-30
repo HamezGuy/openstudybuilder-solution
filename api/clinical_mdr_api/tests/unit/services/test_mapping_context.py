@@ -433,9 +433,7 @@ def test_v2_collection_prerequisites_do_not_zero_library_families(monkeypatch):
     # not restated per group; the snapshot stays governed and persisted.
     assert context.governed is True
     assert saved
-    assert (
-        context.release_blockers.count("MAPPING_CONTEXT_SDTM_MODEL_IG_MISSING") == 1
-    )
+    assert context.release_blockers.count("MAPPING_CONTEXT_SDTM_MODEL_IG_MISSING") == 1
     assert not any(
         code.startswith("MAPPING_CONTEXT_SDTM_MODEL_IG_MISSING:")
         for code in context.release_blockers

@@ -7,9 +7,7 @@ STUDY_ARM_ORIGIN_CODELIST = "Study Arm Data Origin Type Value Set Terminology"
 STUDY_ARM_ORIGIN_CODELIST_UID = "C188727"
 
 
-def validate_study_arm_origin(
-    term_uid: str | None, description: str | None
-) -> None:
+def validate_study_arm_origin(term_uid: str | None, description: str | None) -> None:
     if term_uid is None and description is None:
         return
     if (

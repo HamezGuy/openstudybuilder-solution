@@ -6,7 +6,6 @@ import pytest
 from clinical_mdr_api.models.integrations.study_authority import StudyAuthoritySnapshot
 from clinical_mdr_api.services.integrations.study_authority import _canonical_hash
 
-
 _HERE = Path(__file__).resolve()
 FIXTURE_ROOT = (
     (_HERE.parents[6] if len(_HERE.parents) > 6 else Path("/nonexistent"))
@@ -61,4 +60,3 @@ def test_platform_baseline_authority_mutation_changes_content_hash() -> None:
     payload["native_study"]["title"] = "Mutated fixture title"
 
     assert _canonical_hash(payload) != expected
-

@@ -8,13 +8,12 @@ from clinical_mdr_api.models.integrations.study_authority import (
     StudyAuthoritySnapshot,
 )
 from clinical_mdr_api.routers import _generic_descriptions
+from clinical_mdr_api.routers.studies.study_access import enforce_visible_study
 from clinical_mdr_api.services.integrations.study_authority import (
     StudyAuthorityService,
 )
 from common.auth import rbac
 from common.auth.dependencies import security
-
-from clinical_mdr_api.routers.studies.study_access import enforce_visible_study
 
 router = APIRouter(dependencies=[Depends(enforce_visible_study)])
 
@@ -25,8 +24,12 @@ router = APIRouter(dependencies=[Depends(enforce_visible_study)])
     summary="Read complete native study records and edit history without release approval",
     response_model_exclude_none=False,
 )
-def get_native_observation(study_uid: Annotated[str, Path(description="The unique OSB study uid")]) -> dict:
-    from clinical_mdr_api.services.integrations.native_observation import collect_native_observation
+def get_native_observation(
+    study_uid: Annotated[str, Path(description="The unique OSB study uid")],
+) -> dict:
+    from clinical_mdr_api.services.integrations.native_observation import (
+        collect_native_observation,
+    )
 
     return collect_native_observation(study_uid)
 

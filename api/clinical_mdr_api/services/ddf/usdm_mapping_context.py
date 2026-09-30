@@ -5,17 +5,18 @@ pass off a fabricated clinical value as a conformant document. Strict callers
 receive an actionable error; preview callers receive the same source and issues.
 """
 
+import inspect
 from copy import deepcopy
 from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
-import inspect
 from typing import Any, Callable, Literal, NotRequired, TypedDict
 from urllib.parse import quote
 
-from common.exceptions import ValidationException
 from pydantic import BaseModel, ValidationError
-from usdm_model.extension import ExtensionAttribute, BaseQuantity
+from usdm_model.extension import BaseQuantity, ExtensionAttribute
+
+from common.exceptions import ValidationException
 
 
 class USDMMappingAuthorityRequired(ValidationException):
@@ -160,16 +161,24 @@ class MappingContext:
             return model_class.model_construct(**values)
 
     def retain(
-        self, kind: str, uid: str, value: Any, *, scope: dict[str, Any] | None = None,
+        self,
+        kind: str,
+        uid: str,
+        value: Any,
+        *,
+        scope: dict[str, Any] | None = None,
         reading_identity: str | None = None,
     ) -> None:
         if not isinstance(uid, str) or not uid:
             raise USDMMappingAuthorityRequired(f"USDM_SOURCE_IDENTITY_REQUIRED: {kind}")
         if reading_identity is not None and (
             kind != "studyOperationalActivitySchedule"
-            or not isinstance(reading_identity, str) or not reading_identity.strip()
+            or not isinstance(reading_identity, str)
+            or not reading_identity.strip()
         ):
-            raise USDMMappingAuthorityRequired(f"USDM_SOURCE_READING_IDENTITY_INVALID: {kind}")
+            raise USDMMappingAuthorityRequired(
+                f"USDM_SOURCE_READING_IDENTITY_INVALID: {kind}"
+            )
         record = native_json(value)
         # The native operational query expands one schedule UID into its
         # selected activity-instance rows. Preserve that exact qualifier while
@@ -206,10 +215,16 @@ def source_extension(id_manager, kind: str, uid: str, value: Any) -> ExtensionAt
             "instanceType": "ExtensionAttribute",
         }
         if item is None or isinstance(item, (dict, list)):
-            shape = "null" if item is None else "object" if isinstance(item, dict) else "array"
+            shape = (
+                "null"
+                if item is None
+                else "object" if isinstance(item, dict) else "array"
+            )
             children = [
                 ExtensionAttribute(
-                    id=id_manager.get_id("ExtensionAttribute", f"{kind}:{uid}:{path}:shape"),
+                    id=id_manager.get_id(
+                        "ExtensionAttribute", f"{kind}:{uid}:{path}:shape"
+                    ),
                     url="https://openstudybuilder.org/usdm/extensions/native-value-shape",
                     valueString=shape,
                     instanceType="ExtensionAttribute",
@@ -238,14 +253,23 @@ def source_extension(id_manager, kind: str, uid: str, value: Any) -> ExtensionAt
     return project(native_json(value), "")
 
 
-def finalize_document(document: dict[str, Any], context: MappingContext) -> dict[str, Any]:
+def finalize_document(
+    document: dict[str, Any], context: MappingContext
+) -> dict[str, Any]:
     """Remove unresolved code placeholders and give owned values unique IDs.
 
     USDM code/quantity/extension objects are embedded values, not shared entities.
     Repeated occurrences require separate IDs (DDF00083). Never repair a repeated
     identity for referenced clinical entities or silently choose one definition.
     """
-    inline_types = {"Code", "AliasCode", "Quantity", "Range", "Duration", "ExtensionAttribute"}
+    inline_types = {
+        "Code",
+        "AliasCode",
+        "Quantity",
+        "Range",
+        "Duration",
+        "ExtensionAttribute",
+    }
     seen: set[str] = set()
     occurrences: dict[str, int] = {}
 
@@ -254,7 +278,9 @@ def finalize_document(document: dict[str, Any], context: MappingContext) -> dict
             groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
             for item in value:
                 if isinstance(item, dict) and isinstance(item.get("name"), str):
-                    groups.setdefault((item.get("instanceType", ""), item["name"]), []).append(item)
+                    groups.setdefault(
+                        (item.get("instanceType", ""), item["name"]), []
+                    ).append(item)
             for items in groups.values():
                 if len(items) > 1:
                     for item in items:
@@ -269,7 +295,9 @@ def finalize_document(document: dict[str, Any], context: MappingContext) -> dict
                 if identifier in seen:
                     if kind not in inline_types:
                         context.unresolved(
-                            "USDM_DUPLICATE_ENTITY_ID", path, path + "/id",
+                            "USDM_DUPLICATE_ENTITY_ID",
+                            path,
+                            path + "/id",
                             "Distinct clinical entity occurrences have the same identifier.",
                             "Resolve the native selection identity; no occurrence was discarded.",
                         )
@@ -287,7 +315,9 @@ def finalize_document(document: dict[str, Any], context: MappingContext) -> dict
                 for field in ("code", "codeSystem", "codeSystemVersion", "decode"):
                     if value.get(field) == "":
                         context.unresolved(
-                            "USDM_CODE_AUTHORITY_REQUIRED", path, path + "/" + field,
+                            "USDM_CODE_AUTHORITY_REQUIRED",
+                            path,
+                            path + "/" + field,
                             f"No authoritative {field} is available for this native term.",
                             "Resolve the exact term in the selected terminology or dictionary version.",
                         )

@@ -2,6 +2,7 @@
 
 It deliberately does not extend NativeOperationEvidenceV1 or assert study use.
 """
+
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -47,7 +48,9 @@ class ObservationHash(BaseModel):
 
 ScalarText = Annotated[str, Field(strict=True, max_length=4096)]
 ScalarInteger = Annotated[int, Field(strict=True, ge=0, le=2_147_483_647)]
-Instant = Annotated[str, Field(strict=True, pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")]
+Instant = Annotated[
+    str, Field(strict=True, pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")
+]
 
 
 class NativeLibraryItemScalars(BaseModel):

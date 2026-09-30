@@ -115,7 +115,13 @@ from common.exceptions import (
     VisitsAreNotEqualException,
 )
 from common.telemetry import trace_calls
-from common.utils import TimeUnit, VisitClass, VisitSubclass, VisitTimingMode, convert_to_datetime
+from common.utils import (
+    TimeUnit,
+    VisitClass,
+    VisitSubclass,
+    VisitTimingMode,
+    convert_to_datetime,
+)
 
 
 class StudyVisitService(StudySelectionMixin):
@@ -597,10 +603,7 @@ class StudyVisitService(StudySelectionMixin):
                 visit_vo.visit_type.sponsor_preferred_name in time_reference_values
             )
 
-        if (
-            is_first_reference_visit
-            and visit_vo.has_timing
-        ):
+        if is_first_reference_visit and visit_vo.has_timing:
             ValidationException.raise_if(
                 visit_vo.timepoint.visit_value != 0
                 and visit_vo.timepoint.visit_timereference.sponsor_preferred_name.lower()
@@ -614,15 +617,8 @@ class StudyVisitService(StudySelectionMixin):
                     msg=f"There can be only one visit with the following visit type {visit_vo.visit_type.sponsor_preferred_name}",
                 )
 
-        if (
-            is_reference_visit
-            and visit_vo.has_timing
-        ):
-            for visit in [
-                vis
-                for vis in timeline._visits
-                if vis.has_timing
-            ]:
+        if is_reference_visit and visit_vo.has_timing:
+            for visit in [vis for vis in timeline._visits if vis.has_timing]:
                 ValidationException.raise_if(
                     # if we found another visit with the same visit type
                     visit.visit_type == visit_vo.visit_type
@@ -751,7 +747,10 @@ class StudyVisitService(StudySelectionMixin):
 
             # Perform check for timing uniqueness excluding Special Visits.
             # There can exist 2 visits with the same timing unless timing is 0, then there can exist only one such visit
-            if visit_vo.visit_class != VisitClass.SPECIAL_VISIT and not visit_vo.is_untimed:
+            if (
+                visit_vo.visit_class != VisitClass.SPECIAL_VISIT
+                and not visit_vo.is_untimed
+            ):
                 all_visit_timings = [
                     visit.get_absolute_duration()
                     for visit in ordered_visits
@@ -1078,7 +1077,8 @@ class StudyVisitService(StudySelectionMixin):
             timing_mode=create_input.timing_mode or VisitTimingMode.STANDARD,
             untimed_timing=(
                 create_input.untimed_timing.model_dump(mode="json")
-                if create_input.untimed_timing is not None else None
+                if create_input.untimed_timing is not None
+                else None
             ),
         )
         if study_visit_vo.has_timing:
@@ -1109,7 +1109,9 @@ class StudyVisitService(StudySelectionMixin):
             study_visit_vo.visit_name_sc = (
                 TextValue(uid="", name=create_input.visit_name)
                 if preview and study_visit_vo.is_untimed
-                else self._create_visit_name_simple_concept(visit_name=create_input.visit_name)
+                else self._create_visit_name_simple_concept(
+                    visit_name=create_input.visit_name
+                )
             )
         elif study_visit_vo.has_timing and any(
             [
@@ -1458,7 +1460,8 @@ class StudyVisitService(StudySelectionMixin):
         ValidationException.raise_if(
             any(
                 visit.is_untimed
-                and (visit.untimed_timing or {}).get("anchor_visit_uid") == study_visit_uid
+                and (visit.untimed_timing or {}).get("anchor_visit_uid")
+                == study_visit_uid
                 for visit in study_visits
             ),
             msg="The visit is an explicit anchor for another untimed visit in this study.",

@@ -19,39 +19,57 @@ def native_library_readers() -> dict[str, Reader]:
     def read(kind, uid, version):
         if kind not in services:
             if kind == "ctCodelistAttributes":
-                from clinical_mdr_api.services.controlled_terminologies.ct_codelist_attributes import CTCodelistAttributesService
+                from clinical_mdr_api.services.controlled_terminologies.ct_codelist_attributes import (
+                    CTCodelistAttributesService,
+                )
 
                 services[kind] = CTCodelistAttributesService()
             elif kind == "ctCodelistName":
-                from clinical_mdr_api.services.controlled_terminologies.ct_codelist_name import CTCodelistNameService
+                from clinical_mdr_api.services.controlled_terminologies.ct_codelist_name import (
+                    CTCodelistNameService,
+                )
 
                 services[kind] = CTCodelistNameService()
             elif kind == "ctTermAttributes":
-                from clinical_mdr_api.services.controlled_terminologies.ct_term_attributes import CTTermAttributesService
+                from clinical_mdr_api.services.controlled_terminologies.ct_term_attributes import (
+                    CTTermAttributesService,
+                )
 
                 services[kind] = CTTermAttributesService()
             elif kind == "ctTermName":
-                from clinical_mdr_api.services.controlled_terminologies.ct_term_name import CTTermNameService
+                from clinical_mdr_api.services.controlled_terminologies.ct_term_name import (
+                    CTTermNameService,
+                )
 
                 services[kind] = CTTermNameService()
             elif kind == "ctTermMemberships":
-                from clinical_mdr_api.services.controlled_terminologies.ct_term import CTTermService
+                from clinical_mdr_api.services.controlled_terminologies.ct_term import (
+                    CTTermService,
+                )
 
                 services[kind] = CTTermService()
             elif kind == "ctCodelistTerms":
-                from clinical_mdr_api.services.controlled_terminologies.ct_codelist import CTCodelistService
+                from clinical_mdr_api.services.controlled_terminologies.ct_codelist import (
+                    CTCodelistService,
+                )
 
                 services[kind] = CTCodelistService()
             elif kind == "dictionaryTerm":
-                from clinical_mdr_api.services.dictionaries.dictionary_term_generic_service import DictionaryTermGenericService
+                from clinical_mdr_api.services.dictionaries.dictionary_term_generic_service import (
+                    DictionaryTermGenericService,
+                )
 
                 services[kind] = DictionaryTermGenericService()
             elif kind == "unitDefinition":
-                from clinical_mdr_api.services.concepts.unit_definitions.unit_definition import UnitDefinitionService
+                from clinical_mdr_api.services.concepts.unit_definitions.unit_definition import (
+                    UnitDefinitionService,
+                )
 
                 services[kind] = UnitDefinitionService()
             elif kind == "timeframe":
-                from clinical_mdr_api.services.syntax_instances.timeframes import TimeframeService
+                from clinical_mdr_api.services.syntax_instances.timeframes import (
+                    TimeframeService,
+                )
 
                 services[kind] = TimeframeService()
         service = services[kind]
@@ -60,17 +78,33 @@ def native_library_readers() -> dict[str, Reader]:
         if kind == "dictionaryTerm":
             return service.get_by_uid(term_uid=uid)
         if kind == "ctCodelistTerms":
-            result = service.list_terms(codelist_uid=uid, page_size=0, total_count=True).model_dump()
+            result = service.list_terms(
+                codelist_uid=uid, page_size=0, total_count=True
+            ).model_dump()
             if result["total"] != len(result["items"]):
                 raise ValueError("codelist term inventory is incomplete")
             return {"codelist_uid": uid, "result": result}
-        key = "codelist_uid" if kind.startswith("ctCodelist") else "term_uid" if kind.startswith("ctTerm") else "uid"
+        key = (
+            "codelist_uid"
+            if kind.startswith("ctCodelist")
+            else "term_uid" if kind.startswith("ctTerm") else "uid"
+        )
         return service.get_by_uid(**{key: uid, "version": version})
 
-    return {kind: (lambda uid, version, kind=kind: read(kind, uid, version)) for kind in (
-        "ctCodelistAttributes", "ctCodelistName", "ctTermAttributes", "ctTermName",
-        "ctTermMemberships", "ctCodelistTerms", "dictionaryTerm", "unitDefinition", "timeframe",
-    )}
+    return {
+        kind: (lambda uid, version, kind=kind: read(kind, uid, version))
+        for kind in (
+            "ctCodelistAttributes",
+            "ctCodelistName",
+            "ctTermAttributes",
+            "ctTermName",
+            "ctTermMemberships",
+            "ctCodelistTerms",
+            "dictionaryTerm",
+            "unitDefinition",
+            "timeframe",
+        )
+    }
 
 
 def collect_native_library_definitions(
@@ -95,24 +129,56 @@ def collect_native_library_definitions(
         return deepcopy(value) if isinstance(value, dict) else None
 
     def identity(record, kind):
-        key = "codelist_uid" if kind.startswith("ctCodelist") else "term_uid" if kind.startswith("ctTerm") or kind == "dictionaryTerm" else "uid"
+        key = (
+            "codelist_uid"
+            if kind.startswith("ctCodelist")
+            else (
+                "term_uid"
+                if kind.startswith("ctTerm") or kind == "dictionaryTerm"
+                else "uid"
+            )
+        )
         return record.get(key)
 
     def add(source, path, reference, kind, uid, version=None, embedded=None):
-        invalid_reference = ("reference has no explicit UID" if not isinstance(uid, str) or not uid else
-                             "reference has an invalid explicit version" if version is not None and
-                             (not isinstance(version, str) or not version.strip()) else None)
+        invalid_reference = (
+            "reference has no explicit UID"
+            if not isinstance(uid, str) or not uid
+            else (
+                "reference has an invalid explicit version"
+                if version is not None
+                and (not isinstance(version, str) or not version.strip())
+                else None
+            )
+        )
         if invalid_reference:
-            association = {"sourceKind": source["kind"], "sourceUid": source.get("uid"),
-                           "sourcePath": path, "sourceReference": deepcopy(reference), "targetKind": kind,
-                           "targetUid": uid, "requestedVersion": deepcopy(version),
-                           "status": "unresolved", "reason": invalid_reference}
+            association = {
+                "sourceKind": source["kind"],
+                "sourceUid": source.get("uid"),
+                "sourcePath": path,
+                "sourceReference": deepcopy(reference),
+                "targetKind": kind,
+                "targetUid": uid,
+                "requestedVersion": deepcopy(version),
+                "status": "unresolved",
+                "reason": invalid_reference,
+            }
             associations.append(association)
-            census.append({"kind": "unresolved_native_reference", "ref": f"{source['kind']}/{source.get('uid')}{path}",
-                           "detail": f"{kind}: {invalid_reference}", "association": deepcopy(association)})
+            census.append(
+                {
+                    "kind": "unresolved_native_reference",
+                    "ref": f"{source['kind']}/{source.get('uid')}{path}",
+                    "detail": f"{kind}: {invalid_reference}",
+                    "association": deepcopy(association),
+                }
+            )
             return None
         key = (kind, uid, version)
-        reading = "embedded_selection" if embedded is not None else "referenced_version" if version else "current_reading"
+        reading = (
+            "embedded_selection"
+            if embedded is not None
+            else "referenced_version" if version else "current_reading"
+        )
         if embedded is not None:
             record, error = model(embedded), None
         else:
@@ -129,33 +195,50 @@ def collect_native_library_definitions(
                     if version is not None and result.get("version") != version:
                         raise ValueError("returned version differs from reference")
                     cache[key] = (result, None)
-                except Exception as error:  # Keep the source reference, disclose lookup failure.
+                except (
+                    Exception
+                ) as error:  # Keep the source reference, disclose lookup failure.
                     cache[key] = (None, f"{type(error).__name__}: {error}")
             record, error = cache[key]
         association = {
-            "sourceKind": source["kind"], "sourceUid": source.get("uid"),
-            "sourcePath": path, "sourceReference": deepcopy(reference),
-            "targetKind": kind, "targetUid": uid, "requestedVersion": version,
-            "reading": reading, "status": "retained" if record is not None else "unresolved",
+            "sourceKind": source["kind"],
+            "sourceUid": source.get("uid"),
+            "sourcePath": path,
+            "sourceReference": deepcopy(reference),
+            "targetKind": kind,
+            "targetUid": uid,
+            "requestedVersion": version,
+            "reading": reading,
+            "status": "retained" if record is not None else "unresolved",
         }
         if record is None:
             association["reason"] = error
-            census.append({
-                "kind": "unresolved_native_reference", "ref": f"{source['kind']}/{source.get('uid')}{path}",
-                "detail": f"{kind}/{uid}: {error}", "association": deepcopy(association),
-            })
+            census.append(
+                {
+                    "kind": "unresolved_native_reference",
+                    "ref": f"{source['kind']}/{source.get('uid')}{path}",
+                    "detail": f"{kind}/{uid}: {error}",
+                    "association": deepcopy(association),
+                }
+            )
         else:
             association["observedVersion"] = record.get("version")
             # Differing embedded readings with one UID/version remain distinct.
             seen = retained.setdefault(key, [])
             if record not in seen:
                 seen.append(record)
-                definitions.append({"kind": kind, "uid": uid, "record": deepcopy(record)})
+                definitions.append(
+                    {"kind": kind, "uid": uid, "record": deepcopy(record)}
+                )
         associations.append(association)
         return record
 
     def ct(source, path, reference, term=False, version=None):
-        uid = reference.get("term_uid") if term else reference.get("codelist_uid", reference.get("uid"))
+        uid = (
+            reference.get("term_uid")
+            if term
+            else reference.get("codelist_uid", reference.get("uid"))
+        )
         prefix = "ctTerm" if term else "ctCodelist"
         add(source, path, reference, prefix + "Attributes", uid, version)
         add(source, path, reference, prefix + "Name", uid)
@@ -174,7 +257,8 @@ def collect_native_library_definitions(
                 # DictionaryTermStripped, not SimpleCTTermName. Their shared
                 # term_uid spelling does not change the referenced model.
                 population_dictionary_fields = (
-                    "therapeutic_area_codes", "disease_condition_or_indication_codes",
+                    "therapeutic_area_codes",
+                    "disease_condition_or_indication_codes",
                     "diagnosis_group_codes",
                 )
                 if source["kind"] == "study" and any(
@@ -184,7 +268,11 @@ def collect_native_library_definitions(
                     add(source, path, value, "dictionaryTerm", value["term_uid"])
                     return
                 # Only ODM item's terms[].version is known to pin CT attributes.
-                version = value.get("version") if source["kind"] == "item" and path.startswith("/terms/") else None
+                version = (
+                    value.get("version")
+                    if source["kind"] == "item" and path.startswith("/terms/")
+                    else None
+                )
                 ct(source, path, value, term=True, version=version)
             # An item's datatype (OpenStudyBuilder 2.10) is one CODMDT term,
             # retained as that term below, not as its whole codelist.
@@ -195,7 +283,13 @@ def collect_native_library_definitions(
             for key, child in value.items():
                 # UCUM is a dictionary concept, not a CT term. Source carriers
                 # and arbitrary extension payloads are opaque, not join inputs.
-                if key not in {"ucum", "vendor_attributes", "vendor_elements", "vendor_element_attributes", "extensions"}:
+                if key not in {
+                    "ucum",
+                    "vendor_attributes",
+                    "vendor_elements",
+                    "vendor_element_attributes",
+                    "extensions",
+                }:
                     escaped = key.replace("~", "~0").replace("/", "~1")
                     walk_ct(source, child, f"{path}/{escaped}")
 
@@ -203,10 +297,23 @@ def collect_native_library_definitions(
         kind = source.get("kind")
         record = source.get("record")
         if not isinstance(record, dict) or kind not in {
-            "item", "study", "studyArm", "studyEpoch", "studyObjective", "studyEndpoint",
-            "studyCriteria", "studyActivity", "studyElement", "studyDesignCell",
-            "studyCohort", "studyBranchArm", "studyActivityGroup", "studyActivitySubGroup",
-            "studyActivityInstance", "studyActivityInstruction", "studyActivitySchedule",
+            "item",
+            "study",
+            "studyArm",
+            "studyEpoch",
+            "studyObjective",
+            "studyEndpoint",
+            "studyCriteria",
+            "studyActivity",
+            "studyElement",
+            "studyDesignCell",
+            "studyCohort",
+            "studyBranchArm",
+            "studyActivityGroup",
+            "studyActivitySubGroup",
+            "studyActivityInstance",
+            "studyActivityInstruction",
+            "studyActivitySchedule",
             "studyOperationalActivitySchedule",
         }:
             continue
@@ -214,28 +321,61 @@ def collect_native_library_definitions(
         if kind == "item":
             datatype = record.get("datatype")
             if isinstance(datatype, dict) and isinstance(datatype.get("uid"), str):
-                ct(source, "/datatype", {**datatype, "term_uid": datatype["uid"]}, term=True)
+                ct(
+                    source,
+                    "/datatype",
+                    {**datatype, "term_uid": datatype["uid"]},
+                    term=True,
+                )
             codelist = record.get("codelist")
             if isinstance(codelist, dict):
                 ct(source, "/codelist", codelist, version=codelist.get("version"))
             for index, reference in enumerate(record.get("unit_definitions") or []):
                 if not isinstance(reference, dict):
                     continue
-                unit = add(source, f"/unit_definitions/{index}", reference,
-                           "unitDefinition", reference.get("uid"), reference.get("version"))
+                unit = add(
+                    source,
+                    f"/unit_definitions/{index}",
+                    reference,
+                    "unitDefinition",
+                    reference.get("uid"),
+                    reference.get("version"),
+                )
                 if unit:
                     # Exactly one explicit dependency level from this definition;
                     # CT memberships are retained but never recursively expanded.
-                    walk_ct({"kind": "unitDefinition", "uid": reference["uid"]}, unit, "")
+                    walk_ct(
+                        {"kind": "unitDefinition", "uid": reference["uid"]}, unit, ""
+                    )
                     ucum = unit.get("ucum")
                     if isinstance(ucum, dict) and ucum.get("term_uid"):
-                        add({"kind": "unitDefinition", "uid": reference["uid"]}, "/ucum", ucum,
-                            "dictionaryTerm", ucum.get("term_uid"))
+                        add(
+                            {"kind": "unitDefinition", "uid": reference["uid"]},
+                            "/ucum",
+                            ucum,
+                            "dictionaryTerm",
+                            ucum.get("term_uid"),
+                        )
         if kind == "studyEndpoint":
             for key in ("timeframe", "latest_timeframe"):
                 reference = record.get(key)
                 if isinstance(reference, dict):
-                    complete = all(field in reference for field in ("parameter_terms", "template", "library", "name_plain"))
-                    add(source, "/" + key, reference, "timeframe", reference.get("uid"), reference.get("version"),
-                        embedded=reference if complete else None)
+                    complete = all(
+                        field in reference
+                        for field in (
+                            "parameter_terms",
+                            "template",
+                            "library",
+                            "name_plain",
+                        )
+                    )
+                    add(
+                        source,
+                        "/" + key,
+                        reference,
+                        "timeframe",
+                        reference.get("uid"),
+                        reference.get("version"),
+                        embedded=reference if complete else None,
+                    )
     return definitions, associations, census

@@ -10,10 +10,11 @@ from neomodel import db
 from clinical_mdr_api.domain_repositories.controlled_terminologies.ct_codelist_attributes_repository import (
     CTCodelistAttributesRepository,
 )
-from clinical_mdr_api.domain_repositories.models.controlled_terminology import CTTermRoot
+from clinical_mdr_api.domain_repositories.models.controlled_terminology import (
+    CTTermRoot,
+)
 from common.config import settings
 from common.exceptions import ValidationException
-
 
 # Needs an explicitly owned disposable Neo4j fixture from the evidence harness,
 # not the shared CI compose database; CI deselects it (-m 'not estate_fixture').
@@ -43,20 +44,32 @@ def terminology():
         CREATE (cl)-[:HAS_TERM {order: 2}]->(:CTCodelistTerm {submission_value: 'SECONDARY'})
                -[:HAS_TERM_ROOT]->(:CTTermRoot {uid: $term})
         """,
-        {"catalogue": catalogue, "other": prefix + "-other", "code": prefix,
-         "codelist": codelist, "term": term},
+        {
+            "catalogue": catalogue,
+            "other": prefix + "-other",
+            "code": prefix,
+            "codelist": codelist,
+            "term": term,
+        },
     )
     return {
-        "term": CTTermRoot.nodes.get(uid=term), "codelist": codelist,
-        "other": prefix + "-other", "catalogue": catalogue, "code": prefix,
+        "term": CTTermRoot.nodes.get(uid=term),
+        "codelist": codelist,
+        "other": prefix + "-other",
+        "catalogue": catalogue,
+        "code": prefix,
     }
 
 
 def select(case, **changes):
-    values = {"codelist_submission_value": case["code"],
-              "catalogue_name": case["catalogue"]}
+    values = {
+        "codelist_submission_value": case["code"],
+        "catalogue_name": case["catalogue"],
+    }
     values.update(changes)
-    return CTCodelistAttributesRepository().get_or_create_selected_term(case["term"], **values)
+    return CTCodelistAttributesRepository().get_or_create_selected_term(
+        case["term"], **values
+    )
 
 
 def context_count():
@@ -111,8 +124,15 @@ def test_ambiguous_memberships_require_an_explicit_codelist(terminology):
 def test_explicit_uid_still_validates_membership(terminology):
     before = context_count()
     with pytest.raises(ValidationException, match="was not found in the codelist"):
-        select(terminology, codelist_submission_value=None, codelist_uid=terminology["other"])
+        select(
+            terminology,
+            codelist_submission_value=None,
+            codelist_uid=terminology["other"],
+        )
     assert context_count() == before
-    selected = select(terminology, codelist_submission_value=None,
-                      codelist_uid=terminology["codelist"])
+    selected = select(
+        terminology,
+        codelist_submission_value=None,
+        codelist_uid=terminology["codelist"],
+    )
     assert selected.has_selected_codelist.single().uid == terminology["codelist"]

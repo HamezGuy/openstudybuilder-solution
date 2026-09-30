@@ -40,13 +40,75 @@ include = [
 
 [tool.black]
 target-version = ['py314']
+# Command Center hashes these OSB sources (contract registry pins and
+# platform-verification evidence). Formatting or lint-only edits would break
+# those pins without changing behaviour, so the tools leave their bytes alone.
+extend-exclude = '''
+^/(
+    clinical_mdr_api/generated/platform_contracts/
+    | clinical_mdr_api/main\.py
+    | clinical_mdr_api/models/integrations/mapping_context\.py
+    | clinical_mdr_api/models/integrations/proposal_review\.py
+    | clinical_mdr_api/models/integrations/study_authority\.py
+    | clinical_mdr_api/routers/integrations/native_identity\.py
+    | clinical_mdr_api/services/integrations/edc_export\.py
+    | clinical_mdr_api/services/integrations/governed_artifact_store\.py
+    | clinical_mdr_api/services/integrations/native_capture_projection\.py
+    | clinical_mdr_api/services/integrations/native_identity\.py
+    | clinical_mdr_api/services/integrations/native_package_v2\.py
+    | clinical_mdr_api/services/integrations/platform_command\.py
+    | clinical_mdr_api/services/integrations/source_draft_stage\.py
+    | common/config\.py
+    | common/observability_privacy\.py
+)
+'''
 
 [tool.isort]
 profile = 'black'
 src_paths = ['clinical_mdr_api', 'consumer_api', 'common', 'sblint', 'extensions']
 known_third_party = ['neomodel']
+# Command Center hashes these OSB sources (contract registry pins and
+# platform-verification evidence). Formatting or lint-only edits would break
+# those pins without changing behaviour, so the tools leave their bytes alone.
+extend_skip_glob = [
+    'clinical_mdr_api/generated/platform_contracts/*',
+    'clinical_mdr_api/main.py',
+    'clinical_mdr_api/models/integrations/mapping_context.py',
+    'clinical_mdr_api/models/integrations/proposal_review.py',
+    'clinical_mdr_api/models/integrations/study_authority.py',
+    'clinical_mdr_api/routers/integrations/native_identity.py',
+    'clinical_mdr_api/services/integrations/edc_export.py',
+    'clinical_mdr_api/services/integrations/governed_artifact_store.py',
+    'clinical_mdr_api/services/integrations/native_capture_projection.py',
+    'clinical_mdr_api/services/integrations/native_identity.py',
+    'clinical_mdr_api/services/integrations/native_package_v2.py',
+    'clinical_mdr_api/services/integrations/platform_command.py',
+    'clinical_mdr_api/services/integrations/source_draft_stage.py',
+    'common/config.py',
+    'common/observability_privacy.py',
+]
 
 [tool.pylint.'MASTER']
+# Command Center hashes these OSB sources (contract registry pins and
+# platform-verification evidence). Formatting or lint-only edits would break
+# those pins without changing behaviour, so the tools leave their bytes alone.
+ignore-paths = [
+    '^clinical_mdr_api/generated/platform_contracts/.*$',
+    '^clinical_mdr_api/main\.py$',
+    '^clinical_mdr_api/models/integrations/mapping_context\.py$',
+    '^clinical_mdr_api/models/integrations/proposal_review\.py$',
+    '^clinical_mdr_api/models/integrations/study_authority\.py$',
+    '^clinical_mdr_api/routers/integrations/native_identity\.py$',
+    '^clinical_mdr_api/services/integrations/edc_export\.py$',
+    '^clinical_mdr_api/services/integrations/governed_artifact_store\.py$',
+    '^clinical_mdr_api/services/integrations/native_capture_projection\.py$',
+    '^clinical_mdr_api/services/integrations/native_identity\.py$',
+    '^clinical_mdr_api/services/integrations/native_package_v2\.py$',
+    '^clinical_mdr_api/services/integrations/platform_command\.py$',
+    '^clinical_mdr_api/services/integrations/source_draft_stage\.py$',
+    '^common/config\.py$',
+    '^common/observability_privacy\.py$',
+]
 extension-pkg-allow-list = 'pydantic, lxml'
 unsafe-load-any-extension = 'yes'
 generated-members = '(.*)\.nodes\.(.*),(.*)\.connect$,(.*)\.__label__$,(.*)\.filter$,(.*)\.single$,_member_map_,.*.has_.*,ParameterTemplateRoot\.get,RelationshipDefinition\.get_or_none'
@@ -85,7 +147,27 @@ min-similarity-lines = 1000
 
 
 [tool.mypy]
-exclude = ["clinical_mdr_api/tests"]
+# Command Center hashes these OSB sources (contract registry pins and
+# platform-verification evidence). Formatting or lint-only edits would break
+# those pins without changing behaviour, so the tools leave their bytes alone.
+exclude = [
+    'clinical_mdr_api/tests',
+    '^clinical_mdr_api/generated/platform_contracts/',
+    '^clinical_mdr_api/main\.py$',
+    '^clinical_mdr_api/models/integrations/mapping_context\.py$',
+    '^clinical_mdr_api/models/integrations/proposal_review\.py$',
+    '^clinical_mdr_api/models/integrations/study_authority\.py$',
+    '^clinical_mdr_api/routers/integrations/native_identity\.py$',
+    '^clinical_mdr_api/services/integrations/edc_export\.py$',
+    '^clinical_mdr_api/services/integrations/governed_artifact_store\.py$',
+    '^clinical_mdr_api/services/integrations/native_capture_projection\.py$',
+    '^clinical_mdr_api/services/integrations/native_identity\.py$',
+    '^clinical_mdr_api/services/integrations/native_package_v2\.py$',
+    '^clinical_mdr_api/services/integrations/platform_command\.py$',
+    '^clinical_mdr_api/services/integrations/source_draft_stage\.py$',
+    '^common/config\.py$',
+    '^common/observability_privacy\.py$',
+]
 check_untyped_defs = true
 disallow_untyped_defs = true
 

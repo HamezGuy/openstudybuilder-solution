@@ -29,6 +29,8 @@ def require_csl() -> None:
     """The checkpoint and attestation builders are CSL's own TypeScript."""
     if not (CSL / "packages/semantic-core/src").is_dir():
         pytest.skip(f"CSL checkout not beside this repository: {CSL}")
+
+
 SERVICES = API / "services" / "integrations"
 
 
@@ -227,7 +229,11 @@ def artifact(payload, kind, schema, media, id_field, version_field):
             "stableLocator": f"artifact://test/{kind}/{payload[version_field]}",
             **(
                 {
-                    "payloadContract": "accuratrials.cc.PreReleaseApprovalV1" if kind == "pre-release-approval-v1" else "accuratrials.cc.PlatformManifestV1",
+                    "payloadContract": (
+                        "accuratrials.cc.PreReleaseApprovalV1"
+                        if kind == "pre-release-approval-v1"
+                        else "accuratrials.cc.PlatformManifestV1"
+                    ),
                     "payloadContractVersion": schema.rsplit("@", 1)[1],
                 }
                 if kind in {"pre-release-approval-v1", "platform-manifest-v1"}
@@ -745,19 +751,32 @@ def setup(
     store = MemoryStore(producer(spec, request_version, metadata_mode, capture_graph))
     DB.cypher_query = store.cypher_query
     METADATA["NativeStudyMetadataPort"] = lambda: store.metadata
+
     # Replace only the native USDM read port, like the other native readers.
     # This suite exercises package custody, not USDM mapping or conformance.
     def read_definition(uid, study_value_version=None):
         return {
-            "document": {"usdmVersion": "4.0.0", "study": {
-                "id": uid, "instanceType": "Study", "name": store.title, "versions": [],
-            }},
-            "mappingReport": {"state": "incomplete", "studyUid": uid,
-                              "studyValueVersion": study_value_version,
-                              "issues": [{"code": "SYNTHETIC_PACKAGE_FIXTURE"}]},
+            "document": {
+                "usdmVersion": "4.0.0",
+                "study": {
+                    "id": uid,
+                    "instanceType": "Study",
+                    "name": store.title,
+                    "versions": [],
+                },
+            },
+            "mappingReport": {
+                "state": "incomplete",
+                "studyUid": uid,
+                "studyValueVersion": study_value_version,
+                "issues": [{"code": "SYNTHETIC_PACKAGE_FIXTURE"}],
+            },
             "nativeRecords": [],
         }
-    STATE["USDMService"] = lambda: SimpleNamespace(get_by_uid_with_report=read_definition)
+
+    STATE["USDMService"] = lambda: SimpleNamespace(
+        get_by_uid_with_report=read_definition
+    )
     if store.capture is not None:
         CAPTURE_MAPPING["NativeCapturePort"] = lambda: store.capture
     return store

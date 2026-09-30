@@ -1,4 +1,5 @@
 """Exercise real approval/cascade methods with observable lifecycle operations."""
+
 from types import SimpleNamespace
 
 import pytest
@@ -63,19 +64,30 @@ def graph(monkeypatch):
     events, nodes = [], {}
     service = Service(nodes, events)
     modules = {
-        "forms": "OdmFormService", "item_groups": "OdmItemGroupService",
-        "items": "OdmItemService", "vendor_attributes": "OdmVendorAttributeService",
-        "vendor_elements": "OdmVendorElementService", "vendor_namespaces": "OdmVendorNamespaceService",
+        "forms": "OdmFormService",
+        "item_groups": "OdmItemGroupService",
+        "items": "OdmItemService",
+        "vendor_attributes": "OdmVendorAttributeService",
+        "vendor_elements": "OdmVendorElementService",
+        "vendor_namespaces": "OdmVendorNamespaceService",
     }
     for module, name in modules.items():
-        monkeypatch.setattr(f"clinical_mdr_api.services.odms.{module}.{name}", lambda: service)
+        monkeypatch.setattr(
+            f"clinical_mdr_api.services.odms.{module}.{name}", lambda: service
+        )
     return service, nodes, events, transaction
 
 
 def test_cascade_retains_every_lifecycle_operation_and_only_projects_root(graph):
     service, nodes, events, transaction = graph
     nodes["root"] = Aggregate("root", events, form_uids=["form"])
-    nodes["form"] = Aggregate("form", events, item_group_uids=["group"], vendor_attribute_uids=["attribute"], vendor_element_uids=["element"])
+    nodes["form"] = Aggregate(
+        "form",
+        events,
+        item_group_uids=["group"],
+        vendor_attribute_uids=["attribute"],
+        vendor_element_uids=["element"],
+    )
     nodes["group"] = Aggregate("group", events, item_uids=["item"])
     nodes["item"] = Aggregate("item", events, vendor_namespace_uids=["namespace"])
     for uid in ["attribute", "element", "namespace"]:
@@ -84,14 +96,18 @@ def test_cascade_retains_every_lifecycle_operation_and_only_projects_root(graph)
     assert result == Response(uid="root", status="Final")
     assert [event for event in events if event[0] == "project"] == [("project", "root")]
     assert {event[1] for event in events if event[0] == "save"} == set(nodes)
-    assert all(event[2] == {"for_update": True} for event in events if event[0] == "find")
+    assert all(
+        event[2] == {"for_update": True} for event in events if event[0] == "find"
+    )
     assert db._active_transaction is transaction
 
 
 def test_final_children_still_validate_and_recurse_without_projection(graph):
     service, nodes, events, _ = graph
     nodes["root"] = Aggregate("root", events, item_uids=["item"])
-    nodes["item"] = Aggregate("item", events, status="Final", vendor_attribute_uids=["attribute"])
+    nodes["item"] = Aggregate(
+        "item", events, status="Final", vendor_attribute_uids=["attribute"]
+    )
     nodes["attribute"] = Aggregate("attribute", events)
     service.approve("root", cascade_edit_and_approve=True)
     assert ("approve", "item", "Reviewer") in events
@@ -103,8 +119,12 @@ def test_final_children_still_validate_and_recurse_without_projection(graph):
 def test_child_validation_failure_propagates_and_prevents_root_projection(graph):
     service, nodes, events, _ = graph
     nodes["root"] = Aggregate("root", events, item_uids=["item"])
-    nodes["item"] = Aggregate("item", events, failure="Required lifecycle invariant failed")
-    with pytest.raises(BusinessLogicException, match="Required lifecycle invariant failed"):
+    nodes["item"] = Aggregate(
+        "item", events, failure="Required lifecycle invariant failed"
+    )
+    with pytest.raises(
+        BusinessLogicException, match="Required lifecycle invariant failed"
+    ):
         service.approve("root", cascade_edit_and_approve=True)
     assert not any(event[0] == "project" for event in events)
 

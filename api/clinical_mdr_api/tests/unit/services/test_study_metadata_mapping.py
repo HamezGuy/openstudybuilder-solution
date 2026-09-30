@@ -24,26 +24,42 @@ CONTEXT = SimpleNamespace(selected_packages=[])
 def test_native_term_resolution_requires_context_instead_of_crashing():
     with pytest.raises(OsbCandidateSetError) as error:
         mapping.NativeStudyMetadataPort().resolve(
-            "termRef", {"termName": "Observational", "codelistName": "Study Type"},
-            None, {}
+            "termRef",
+            {"termName": "Observational", "codelistName": "Study Type"},
+            None,
+            {},
         )
     assert error.value.code == "OSB_STUDY_METADATA_CONTEXT_REQUIRED"
 
 
-def test_source_stage_context_reads_only_the_selected_native_study_packages(monkeypatch):
-    from clinical_mdr_api.services.integrations.mapping_context import MappingContextService
+def test_source_stage_context_reads_only_the_selected_native_study_packages(
+    monkeypatch,
+):
+    from clinical_mdr_api.services.integrations.mapping_context import (
+        MappingContextService,
+    )
 
     observed = []
 
     def selected(_self, request, warnings, blockers):
         observed.append(request.study_uid)
-        return [SimpleNamespace(package_uid="DDF CT selected", catalogue_name="DDF CT",
-                                effective_date="2024-09-27")]
+        return [
+            SimpleNamespace(
+                package_uid="DDF CT selected",
+                catalogue_name="DDF CT",
+                effective_date="2024-09-27",
+            )
+        ]
 
     monkeypatch.setattr(MappingContextService, "_selected_packages", selected)
     assert mapping.NativeStudyMetadataPort().stage_context(UID) == {
-        "selectedPackages": [{"packageUid": "DDF CT selected", "catalogueName": "DDF CT",
-                              "effectiveDate": "2024-09-27"}]
+        "selectedPackages": [
+            {
+                "packageUid": "DDF CT selected",
+                "catalogueName": "DDF CT",
+                "effectiveDate": "2024-09-27",
+            }
+        ]
     }
     assert observed == [UID]
 
@@ -518,13 +534,26 @@ def test_locked_native_study_is_rejected():
 
 def test_the_pre_write_version_is_the_study_version_read_under_the_lock_before_the_patch():
     port = NativePort()
-    sources = [intent("title", TITLE, "A source-stated study"), intent("allocation", RANDOMISED, False)]
+    sources = [
+        intent("title", TITLE, "A source-stated study"),
+        intent("allocation", RANDOMISED, False),
+    ]
     pre_versions = {}
     observations = mapping.apply_metadata_selections(
         prepared(port, *sources), UID, port=port, result_pre_versions=pre_versions
     )
     assert set(pre_versions) == set(observations)
     assert set(pre_versions.values()) == {"2026-09-10T10:00:00Z"}
-    assert {item["version"] for item in observations.values()} == {"2026-09-10T11:00:00Z"}
+    assert {item["version"] for item in observations.values()} == {
+        "2026-09-10T11:00:00Z"
+    }
     # The read-back envelope itself is unchanged: the pre-version rides beside it, never inside its hash.
-    assert set(observations[key(sources[0])]) == {"resourceFamily", "resourceType", "uid", "version", "label", "metadataPath", "metadataValue"}
+    assert set(observations[key(sources[0])]) == {
+        "resourceFamily",
+        "resourceType",
+        "uid",
+        "version",
+        "label",
+        "metadataPath",
+        "metadataValue",
+    }

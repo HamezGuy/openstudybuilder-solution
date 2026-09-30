@@ -96,9 +96,12 @@ def _history_instant(history_date: datetime.datetime | None) -> dict[str, int | 
 class StudySelectionCompoundRepository:
 
     def get_selected_library_references(
-        self, study_uid: str, study_compound_uid: str,
+        self,
+        study_uid: str,
+        study_compound_uid: str,
         study_value_version: str | None = None,
-        *, history_dosing_uid: str | None = None,
+        *,
+        history_dosing_uid: str | None = None,
         history_date: datetime.datetime | None = None,
     ) -> list[dict[str, str]]:
         """Return exact selected value identities, including pharmaceutical products."""
@@ -145,12 +148,18 @@ class StudySelectionCompoundRepository:
                     <-[:HAS_VERSION]-(root:PharmaceuticalProductRoot)
                     | {kind: 'pharmaceuticalProduct', uid: root.uid, valueIdentity: elementId(value)}] AS pharmaceuticals
         """
-        rows = utils.db_result_to_list(db.cypher_query(query, {
-            "study_uid": study_uid, "study_compound_uid": study_compound_uid,
-            "study_value_version": study_value_version,
-            "history_dosing_uid": history_dosing_uid,
-            **_history_instant(history_date),
-        }))
+        rows = utils.db_result_to_list(
+            db.cypher_query(
+                query,
+                {
+                    "study_uid": study_uid,
+                    "study_compound_uid": study_compound_uid,
+                    "study_value_version": study_value_version,
+                    "history_dosing_uid": history_dosing_uid,
+                    **_history_instant(history_date),
+                },
+            )
+        )
         if len(rows) != 1:
             raise BusinessLogicException(
                 msg="STUDY_LIBRARY_SELECTION_SCOPE_UNRESOLVED: "
@@ -161,7 +170,9 @@ class StudySelectionCompoundRepository:
             for reference in rows[0][field]:
                 key = reference["kind"], reference["uid"], reference["valueIdentity"]
                 if not all(isinstance(value, str) and value for value in key):
-                    raise BusinessLogicException(msg="STUDY_LIBRARY_SELECTION_IDENTITY_REQUIRED")
+                    raise BusinessLogicException(
+                        msg="STUDY_LIBRARY_SELECTION_IDENTITY_REQUIRED"
+                    )
                 references[key] = reference
         return [references[key] for key in sorted(references)]
 

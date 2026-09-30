@@ -1,28 +1,32 @@
 """Transaction boundaries for native mutations that assign their own IDs."""
 
+import json
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
-import json
 
 import pytest
+from verify_signed_command_publication import make_command
 
-from clinical_mdr_api.generated.platform_contracts import platform_command_v1 as command_module
+from clinical_mdr_api.generated.platform_contracts import (
+    platform_command_v1 as command_module,
+)
 from clinical_mdr_api.generated.platform_contracts.platform_command_v1 import (
     PlatformCommandError,
     PlatformCommandPrincipalV1,
 )
-from clinical_mdr_api.services.integrations import atomic_signed_command as atomic_module
+from clinical_mdr_api.services.integrations import (
+    atomic_signed_command as atomic_module,
+)
 from clinical_mdr_api.services.integrations.atomic_signed_command import (
     execute_osb_atomic_signed_command,
 )
 from clinical_mdr_api.tests.unit.services.signed_command_test_fixtures import (
+    STUDY,
+    TENANT,
     MemoryCommandStore,
     StubPublisher,
-    TENANT,
-    STUDY,
 )
-from verify_signed_command_publication import make_command
 
 
 class NativeMemoryStore(MemoryCommandStore):
@@ -47,9 +51,12 @@ def setup(*, use_default_publisher=False):
     actor = "test:authorized-operator"
     command = make_command(TENANT, STUDY, actor)
     principal = PlatformCommandPrincipalV1(
-        tenant_id=TENANT, study_ids=(STUDY,), subject=actor,
+        tenant_id=TENANT,
+        study_ids=(STUDY,),
+        subject=actor,
         actor_chain=({"subject": actor, "type": "human"},),
-        roles=("osb-specialist",), purpose="workflow-orchestration",
+        roles=("osb-specialist",),
+        purpose="workflow-orchestration",
         capabilities=("package:release",),
     )
     store, publisher = NativeMemoryStore(), StubPublisher()
@@ -58,7 +65,8 @@ def setup(*, use_default_publisher=False):
     def mutate(tx):
         tx.native.append({"uid": "native-assigned-1", "source": "unchanged"})
         return {
-            "targetIdentity": "native-assigned-1", "targetVersion": "0.1",
+            "targetIdentity": "native-assigned-1",
+            "targetVersion": "0.1",
             "targetState": {"drafts": len(tx.native), "clinicalApproval": False},
             "conservationCounts": {"input": 1, "output": 1, "dropped": 0},
             "effectPayload": {"nativeId": "native-assigned-1"},
@@ -66,7 +74,11 @@ def setup(*, use_default_publisher=False):
 
     def invoke():
         return execute_osb_atomic_signed_command(
-            command, principal, "osb", store, mutate,
+            command,
+            principal,
+            "osb",
+            store,
+            mutate,
             publisher=None if use_default_publisher else publisher,
             clock=lambda: current[0],
         )
@@ -79,7 +91,11 @@ def test_success_commits_native_effect_and_signed_receipt_once():
     result = invoke()
     assert result["publicationMode"] == "signed"
     assert result["receipt"]["targetIdentity"] == store.native[0]["uid"]
-    assert result["receipt"]["conservationCounts"] == {"input": 1, "output": 1, "dropped": 0}
+    assert result["receipt"]["conservationCounts"] == {
+        "input": 1,
+        "output": 1,
+        "dropped": 0,
+    }
     assert result["signedReceiptEnvelope"] == store.published["signedReceiptEnvelope"]
     replay = invoke()
     assert replay["replay"] is True
@@ -117,7 +133,9 @@ def test_invalid_signature_result_rolls_back_native_writes():
 
 def test_authorization_expiry_after_signing_rolls_back_everything():
     _, store, publisher, current, invoke = setup()
-    publisher.after_sign = lambda: current.__setitem__(0, current[0] + timedelta(hours=1))
+    publisher.after_sign = lambda: current.__setitem__(
+        0, current[0] + timedelta(hours=1)
+    )
     with pytest.raises(PlatformCommandError) as error:
         invoke()
     assert error.value.code == "COMMAND_EXPIRED"
@@ -176,8 +194,12 @@ def default_signing_transport(monkeypatch, tmp_path):
     return credential, store, invoke, requests
 
 
-def test_default_publisher_sends_credential_only_in_the_transport_header(monkeypatch, tmp_path):
-    credential, store, invoke, requests = default_signing_transport(monkeypatch, tmp_path)
+def test_default_publisher_sends_credential_only_in_the_transport_header(
+    monkeypatch, tmp_path
+):
+    credential, store, invoke, requests = default_signing_transport(
+        monkeypatch, tmp_path
+    )
     token = "synthetic_osb_signing_token_" + "a" * 43
     credential.write_text(token, encoding="ascii")
 
@@ -197,9 +219,13 @@ def test_default_publisher_sends_credential_only_in_the_transport_header(monkeyp
 
 @pytest.mark.parametrize("credential_case", ["missing", "malformed", "oversized"])
 def test_default_publisher_refuses_unusable_credentials_and_rolls_back(
-    monkeypatch, tmp_path, credential_case,
+    monkeypatch,
+    tmp_path,
+    credential_case,
 ):
-    credential, store, invoke, requests = default_signing_transport(monkeypatch, tmp_path)
+    credential, store, invoke, requests = default_signing_transport(
+        monkeypatch, tmp_path
+    )
     if credential_case == "malformed":
         credential.write_text("synthetic token with spaces", encoding="ascii")
     elif credential_case == "oversized":
@@ -218,21 +244,29 @@ def test_default_publisher_refuses_unusable_credentials_and_rolls_back(
     assert requests[0].get_header("Authorization") == f"Bearer {token}"
 
 
-@pytest.mark.parametrize("custody", ["unsigned", "different_intent", "separate_preparation"])
+@pytest.mark.parametrize(
+    "custody", ["unsigned", "different_intent", "separate_preparation"]
+)
 def test_existing_custody_cannot_be_rewritten_as_new_signed_effect(custody):
     command, store, publisher, _, invoke = setup()
     if custody == "separate_preparation":
-        store.preparation = {"commandIntentHashValue": command["commandIntentHash"]["value"]}
+        store.preparation = {
+            "commandIntentHashValue": command["commandIntentHash"]["value"]
+        }
     else:
         store.published = {
-            "commandIntentHashValue": command["commandIntentHash"]["value"]
-            if custody == "unsigned" else "different",
+            "commandIntentHashValue": (
+                command["commandIntentHash"]["value"]
+                if custody == "unsigned"
+                else "different"
+            ),
             "publicationMode": "prototype_unsigned",
         }
     with pytest.raises(PlatformCommandError) as error:
         invoke()
     assert error.value.code == (
         "COMMAND_PREPARATION_ALREADY_OWNED"
-        if custody == "separate_preparation" else "COMMAND_IDEMPOTENCY_CONFLICT"
+        if custody == "separate_preparation"
+        else "COMMAND_IDEMPOTENCY_CONFLICT"
     )
     assert not store.native and publisher.calls == 0

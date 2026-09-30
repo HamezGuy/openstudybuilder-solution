@@ -133,7 +133,9 @@ from clinical_mdr_api.models.concepts.compound import Compound
 from clinical_mdr_api.models.concepts.compound_alias import CompoundAlias
 from clinical_mdr_api.models.concepts.concept import Concept, SimpleNumericValueWithUnit
 from clinical_mdr_api.models.concepts.medicinal_product import MedicinalProduct
-from clinical_mdr_api.models.concepts.pharmaceutical_product import PharmaceuticalProduct
+from clinical_mdr_api.models.concepts.pharmaceutical_product import (
+    PharmaceuticalProduct,
+)
 from clinical_mdr_api.models.controlled_terminologies.ct_term import (
     SimpleCodelistTermModel,
 )
@@ -4161,11 +4163,15 @@ class StudySelectionArmCreateInput(PostInputModel):
     arm_type_uid: Annotated[str | None, Field(description=ARM_UID_DESC)] = None
     data_origin_type_uid: Annotated[
         str | None,
-        Field(description="Explicit term UID from the DDF Study Arm Data Origin codelist"),
+        Field(
+            description="Explicit term UID from the DDF Study Arm Data Origin codelist"
+        ),
     ] = None
     data_origin_description: Annotated[
         str | None,
-        Field(description="Native description supporting the selected study arm data origin"),
+        Field(
+            description="Native description supporting the selected study arm data origin"
+        ),
     ] = None
     merge_branch_for_this_arm_for_sdtm_adam: Annotated[
         bool,
@@ -4215,11 +4221,15 @@ class StudySelectionArmInput(PatchInputModel):
     arm_type_uid: Annotated[str | None, Field(description=ARM_UID_DESC)] = None
     data_origin_type_uid: Annotated[
         str | None,
-        Field(description="Explicit term UID from the DDF Study Arm Data Origin codelist"),
+        Field(
+            description="Explicit term UID from the DDF Study Arm Data Origin codelist"
+        ),
     ] = None
     data_origin_description: Annotated[
         str | None,
-        Field(description="Native description supporting the selected study arm data origin"),
+        Field(
+            description="Native description supporting the selected study arm data origin"
+        ),
     ] = None
     arm_uid: Annotated[str | None, Field(description=ARM_UID_DESC)] = None
     merge_branch_for_this_arm_for_sdtm_adam: Annotated[

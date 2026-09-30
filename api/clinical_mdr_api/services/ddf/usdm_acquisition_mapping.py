@@ -38,7 +38,8 @@ def _response_candidates(item, context, source_path):
     selected_terms = item.get("ct_terms") or []
     if codelists and selected_terms:
         context.unresolved(
-            "USDM_ACQUISITION_RESPONSE_SCOPE_CONFLICT", source_path,
+            "USDM_ACQUISITION_RESPONSE_SCOPE_CONFLICT",
+            source_path,
             "BiomedicalConceptProperty/responseCodes",
             "The native item has both whole-codelist and selected-term relationships.",
             "Resolve the conflicting native relationships. Neither scope can authorize a union of response candidates.",
@@ -61,11 +62,14 @@ def _response_candidates(item, context, source_path):
         term_uid = (entry.get("term") or {}).get("uid")
         codelist = entry.get("codelist") or {}
         matches = [
-            member for member in codelist.get("terms", [])
+            member
+            for member in codelist.get("terms", [])
             if term_uid and (member.get("term") or {}).get("uid") == term_uid
         ]
         if (
-            not term_uid or not codelist.get("uid") or len(matches) != 1
+            not term_uid
+            or not codelist.get("uid")
+            or len(matches) != 1
             or codelist.get("unresolvedMemberships")
         ):
             # Unresolved membership evidence may lack its term identity, so it
@@ -90,11 +94,14 @@ def project_acquisition(mapper, row, definition, version, design):
     context, identifier = mapper._context, mapper._id_manager.get_id
     selection_uid = row.study_activity_instance_uid
     concept_id = identifier("BiomedicalConcept", selection_uid)
-    concept_path = f"/study/versions/0/biomedicalConcepts/{len(version.biomedicalConcepts)}"
+    concept_path = (
+        f"/study/versions/0/biomedicalConcepts/{len(version.biomedicalConcepts)}"
+    )
     snapshot = definition.get("nativeSnapshot")
     if snapshot is None or snapshot.get("issues"):
         context.unresolved(
-            "USDM_ACTIVITY_NESTED_SOURCE_REQUIRED", f"study-activity-instances/{selection_uid}",
+            "USDM_ACTIVITY_NESTED_SOURCE_REQUIRED",
+            f"study-activity-instances/{selection_uid}",
             "BiomedicalConcept/properties",
             "The selected instance has nested native values whose exact history is unresolved.",
             "Resolve the displayed class, CT, grouping and unit history. Current library metadata cannot replace a selected snapshot.",
@@ -107,10 +114,16 @@ def project_acquisition(mapper, row, definition, version, design):
         return value if value.code else None
 
     def alias(code, source_path):
-        return context.build(
-            AliasCode, source_path, id=identifier("AliasCode"),
-            standardCode=code,
-        ) if code is not None else None
+        return (
+            context.build(
+                AliasCode,
+                source_path,
+                id=identifier("AliasCode"),
+                standardCode=code,
+            )
+            if code is not None
+            else None
+        )
 
     properties = []
     for index, item in enumerate(items):
@@ -119,77 +132,133 @@ def project_acquisition(mapper, row, definition, version, design):
         class_source = native_class.get("source") if snapshot is not None else None
         class_properties = _properties(class_source)
         item_identity = item.get("nativeIdentity")
-        property_id = identifier("BiomedicalConceptProperty", f"{selection_uid}:{item_identity or index}")
+        property_id = identifier(
+            "BiomedicalConceptProperty", f"{selection_uid}:{item_identity or index}"
+        )
         property_path = concept_path + f"/properties/{index}"
         review: NativeExecutionReview = {
-            "kind": "property-acquisition", "state": "requires-review",
+            "kind": "property-acquisition",
+            "state": "requires-review",
             "sourceScope": {
-                "studyUid": mapper._study_uid, "studyValueVersion": mapper._study_value_version,
+                "studyUid": mapper._study_uid,
+                "studyValueVersion": mapper._study_value_version,
                 "studyActivityInstanceUid": selection_uid,
-                "activityInstanceUid": definition["uid"], "activityInstanceVersion": definition["version"],
-                "activityItemIdentity": item_identity, "sourceIndex": index,
+                "activityInstanceUid": definition["uid"],
+                "activityInstanceVersion": definition["version"],
+                "activityItemIdentity": item_identity,
+                "sourceIndex": index,
                 "activityItemClassUid": native_class.get("uid"),
                 "activityItemClassVersion": (class_source or {}).get("version"),
                 "nativeAsOf": (snapshot or {}).get("asOf"),
             },
             "canonicalScope": {
                 "activityId": identifier("Activity", "instance:" + selection_uid),
-                "biomedicalConceptId": concept_id, "propertyId": property_id,
+                "biomedicalConceptId": concept_id,
+                "propertyId": property_id,
             },
             "draftTargets": {
-                "versionId": version.id, "designId": design.id,
-                "biomedicalConceptId": concept_id, "propertyId": property_id,
+                "versionId": version.id,
+                "designId": design.id,
+                "biomedicalConceptId": concept_id,
+                "propertyId": property_id,
             },
             "documentPointers": {
                 "property": property_path,
-                **{field: property_path + "/" + field for field in
-                   ("name", "datatype", "isRequired", "isEnabled", "code", "responseCodes")},
+                **{
+                    field: property_path + "/" + field
+                    for field in (
+                        "name",
+                        "datatype",
+                        "isRequired",
+                        "isEnabled",
+                        "code",
+                        "responseCodes",
+                    )
+                },
             },
             "requiredBindings": [
-                "reviewed-acquisition-role", "exact-native-class-and-value-scope",
-                "required-and-enabled-facts", "canonical-code-and-datatype",
-                "reviewed-response-codes-and-units", "exact-form-field-or-reviewed-omission",
+                "reviewed-acquisition-role",
+                "exact-native-class-and-value-scope",
+                "required-and-enabled-facts",
+                "canonical-code-and-datatype",
+                "reviewed-response-codes-and-units",
+                "exact-form-field-or-reviewed-omission",
             ],
         }
         context.unresolved(
-            "USDM_PROPERTY_ACQUISITION_REVIEW_REQUIRED", source_path,
+            "USDM_PROPERTY_ACQUISITION_REVIEW_REQUIRED",
+            source_path,
             "BiomedicalConceptProperty/isRequired",
             "Native item metadata supplies candidates, not clinical requiredness, enabled state or form applicability.",
             "Review the exact class/role and value relationships, author missing property facts, and bind the intended field or a reviewed omission.",
             execution_review=review,
         )
-        candidates = _response_candidates(item, context, source_path) if snapshot is not None else {}
+        candidates = (
+            _response_candidates(item, context, source_path)
+            if snapshot is not None
+            else {}
+        )
         responses = []
         for (codelist_uid, member_id), member in candidates.items():
             term = member["term"]
             attributes = _properties(term.get("attributes"))
-            responses.append(context.build(
-                ResponseCode, source_path,
-                id=identifier("ResponseCode", f"{selection_uid}:{item_identity or index}:{codelist_uid}:{member_id}"),
-                name=_properties(term.get("name")).get("name"),
-                code=standard_code(attributes.get("concept_id")),
-                # Membership/constant metadata does not imply clinical enabled.
-                extensionAttributes=[mapper._native_extension(
-                    "acquisitionResponseCandidate", f"{property_id}:{codelist_uid}:{member_id}", member,
-                )],
-            ))
-        properties.append(context.build(
-            BiomedicalConceptProperty, source_path, id=property_id,
-            name=class_properties.get("name"),
-            label=class_properties.get("display_name"),
-            datatype=_datatype(native_class.get("dataType")) if class_source is not None else None,
-            code=alias(standard_code(class_properties.get("nci_concept_id")), source_path),
-            responseCodes=responses,
-            extensionAttributes=[mapper._native_extension("acquisitionPropertySource", property_id, item)],
-            # isRequired/isEnabled have no native acquisition authority.
-        ))
+            responses.append(
+                context.build(
+                    ResponseCode,
+                    source_path,
+                    id=identifier(
+                        "ResponseCode",
+                        f"{selection_uid}:{item_identity or index}:{codelist_uid}:{member_id}",
+                    ),
+                    name=_properties(term.get("name")).get("name"),
+                    code=standard_code(attributes.get("concept_id")),
+                    # Membership/constant metadata does not imply clinical enabled.
+                    extensionAttributes=[
+                        mapper._native_extension(
+                            "acquisitionResponseCandidate",
+                            f"{property_id}:{codelist_uid}:{member_id}",
+                            member,
+                        )
+                    ],
+                )
+            )
+        properties.append(
+            context.build(
+                BiomedicalConceptProperty,
+                source_path,
+                id=property_id,
+                name=class_properties.get("name"),
+                label=class_properties.get("display_name"),
+                datatype=(
+                    _datatype(native_class.get("dataType"))
+                    if class_source is not None
+                    else None
+                ),
+                code=alias(
+                    standard_code(class_properties.get("nci_concept_id")), source_path
+                ),
+                responseCodes=responses,
+                extensionAttributes=[
+                    mapper._native_extension(
+                        "acquisitionPropertySource", property_id, item
+                    )
+                ],
+                # isRequired/isEnabled have no native acquisition authority.
+            )
+        )
     concept = context.build(
-        BiomedicalConcept, f"study-activity-instances/{selection_uid}",
-        id=concept_id, name=definition.get("name"),
+        BiomedicalConcept,
+        f"study-activity-instances/{selection_uid}",
+        id=concept_id,
+        name=definition.get("name"),
         reference=f"urn:openstudybuilder:activity-instance:{definition['uid']}:version:{definition['version']}",
         code=alias(standard_code(definition.get("nci_concept_id")), concept_path),
         properties=properties,
-        extensionAttributes=[mapper._native_extension("activity-instance-definition", selection_uid, definition)],
+        extensionAttributes=[
+            mapper._native_extension(
+                "activity-instance-definition", selection_uid, definition
+            )
+        ],
     )
     version.biomedicalConcepts.append(concept)
     return concept_id

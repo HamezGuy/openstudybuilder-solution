@@ -12,7 +12,6 @@ from clinical_mdr_api.services.studies.study_visibility import (
 )
 from common.auth.dependencies import security
 
-
 # These are the study-root parameters used by the registered study routers.
 # Child IDs such as study_standard_version_uid and study_visit_uid belong to
 # objects inside that study and must not be looked up as StudyRoot identities.
@@ -25,8 +24,7 @@ def enforce_visible_study(request: Request, _auth=security) -> None:
     study_path_values = {
         str(value).strip()
         for key, value in request.path_params.items()
-        if key in STUDY_ROOT_PATH_PARAMETERS
-        and str(value).strip()
+        if key in STUDY_ROOT_PATH_PARAMETERS and str(value).strip()
     }
     if study_path_values:
         for study_uid in sorted(study_path_values):

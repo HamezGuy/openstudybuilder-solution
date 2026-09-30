@@ -663,14 +663,14 @@ class ProposalReviewService:
         ):
             raise ValueError("OSB_PROPOSAL_SOURCE_DOCUMENT_IDENTITY_INVALID")
         source_build_content = {
-                "tenantId": proposal.get("tenantId"),
-                "studyId": proposal.get("studyId"),
-                "projectId": proposal.get("projectId"),
-                "authorityMode": proposal.get("authorityMode"),
-                "sourceRunIds": proposal.get("sourceRunIds") or [],
-                "sourceDocuments": source_documents,
-                "sourceFactRefs": source_refs,
-            }
+            "tenantId": proposal.get("tenantId"),
+            "studyId": proposal.get("studyId"),
+            "projectId": proposal.get("projectId"),
+            "authorityMode": proposal.get("authorityMode"),
+            "sourceRunIds": proposal.get("sourceRunIds") or [],
+            "sourceDocuments": source_documents,
+            "sourceFactRefs": source_refs,
+        }
         if source_authority:
             source_build_content["sourceAuthority"] = source_authority
         expected_source_build_hash = _canonical_hash(source_build_content)
@@ -1427,8 +1427,12 @@ class ProposalReviewService:
                         for item in review_objects
                         if item.capability_kind == "governed_library_reference"
                         and item.proposal_object_id not in dependency_object_ids
-                        and not (item.proposed_resource_type in NATIVE_CREATE_REQUEST_RESOURCE_TYPES
-                                 and item.latest_decision and item.latest_decision.action == "create_request")
+                        and not (
+                            item.proposed_resource_type
+                            in NATIVE_CREATE_REQUEST_RESOURCE_TYPES
+                            and item.latest_decision
+                            and item.latest_decision.action == "create_request"
+                        )
                     ],
                     *[
                         f"OSB_RELEASE_NON_NATIVE_TARGET:"
