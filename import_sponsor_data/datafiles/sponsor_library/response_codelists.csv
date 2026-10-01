@@ -1,4 +1,4 @@
-﻿library_name,concept_id,submission_value,is_categoric_response_codelist
+library_name,concept_id,submission_value,is_categoric_response_codelist
 CDISC,C101834,NORMABNM,TRUE
 CDISC,C101866,TRPROPRS,TRUE
 CDISC,C101868,LVEFMRE,TRUE
