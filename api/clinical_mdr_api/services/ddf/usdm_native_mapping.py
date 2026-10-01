@@ -6,11 +6,10 @@ version and raw imported carriers never resolve native selections.
 
 import json
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import Any, cast
 
 from usdm_model import (
     Activity,
-    AliasCode,
     BiomedicalConceptSurrogate,
     Quantity,
     ScheduledActivityInstance,
@@ -32,6 +31,10 @@ from clinical_mdr_api.services.ddf.usdm_mapping_context import (
     native_json,
 )
 
+# Fail-closed contract checks list every required property in one condition;
+# splitting them would hide the rule they enforce.
+# pylint: disable=too-many-boolean-expressions
+
 SCHEDULE_FOOTNOTE_SCOPE_URL = (
     "https://openstudybuilder.org/usdm/extensions/schedule-footnote-scope"
 )
@@ -43,6 +46,7 @@ class NativeStudyMapping:
         self.mapper = mapper
         self.context = mapper._context
         self.rows = mapper._native_rows
+        self._activity_targets: dict[Any, Any] = {}
 
     def identifier(self, kind: str, source: str) -> str:
         return self.mapper._id_manager.get_id(kind, source)
@@ -143,12 +147,12 @@ class NativeStudyMapping:
                 )
             # Branches define native treatment paths. USDM uses StudyArm for
             # each path; preserve its explicit parent link as scoped metadata.
-            values = dict(
-                id=self.identifier("StudyArm", "branch:" + uid),
-                name=row.name,
-                label=row.short_name,
-                description=row.description,
-                extensionAttributes=[
+            values = {
+                "id": self.identifier("StudyArm", "branch:" + uid),
+                "name": row.name,
+                "label": row.short_name,
+                "description": row.description,
+                "extensionAttributes": [
                     self.extension("studyBranchArm", uid, row),
                     self.extension(
                         "branch-parent",
@@ -156,7 +160,7 @@ class NativeStudyMapping:
                         {"studyArmId": parent.id if parent else None},
                     ),
                 ],
-            )
+            }
             # The native parent supplies the arm type, but not a missing data
             # origin. Keep required unsupported values absent in a draft.
             parent_source = arms.get(parent_uid, {})
@@ -242,6 +246,8 @@ class NativeStudyMapping:
                         target.populationIds.append(cohort.id)
 
     def _activities(self, study, design, version) -> None:
+        # Part of the shared signature; not needed here.
+        del study
         suppliers = {
             row.study_data_supplier_uid: row
             for row in self.rows.get("studyDataSupplier", [])
@@ -655,7 +661,6 @@ class NativeStudyMapping:
                 "Resolve this exact selected schedule's visit and activity-instance targets. "
                 "Keep the note scoped to that occurrence; do not substitute a whole activity or visit.",
             )
-            return None
 
         readings = [
             entry
@@ -766,6 +771,8 @@ class NativeStudyMapping:
         )
 
     def _history(self, study, document, version) -> None:
+        # Part of the shared signature; not needed here.
+        del document, version
         from clinical_mdr_api.services.ddf.usdm_mapper import _items
 
         reader = self.mapper._get_snapshot_history
@@ -902,15 +909,17 @@ class NativeStudyMapping:
                     "Complete the native design cell selections.",
                 )
                 continue
-            key = (arm_key, epoch_uid)
-            if key not in groups:
-                groups[key] = StudyCell(
+            # Membership in the known native selections above proves these UIDs.
+            epoch_uid, element_uid = cast(str, epoch_uid), cast(str, element_uid)
+            cell_key = (arm_key, epoch_uid)
+            if cell_key not in groups:
+                groups[cell_key] = StudyCell(
                     id=self.identifier("StudyCell", f"arm:{arm_key}:epoch:{epoch_uid}"),
                     armId=self.identifier("StudyArm", arm_key),
                     epochId=self.identifier("StudyEpoch", epoch_uid),
                     elementIds=[],
                 )
-            cell = groups[key]
+            cell = groups[cell_key]
             element_id = self.identifier("StudyElement", element_uid)
             if element_id not in cell.elementIds:
                 cell.elementIds.append(element_id)
@@ -920,7 +929,7 @@ class NativeStudyMapping:
                 "epochId": cell.epochId,
                 "elementId": element_id,
                 **(
-                    {"parentArmId": self.identifier("StudyArm", parent_uid)}
+                    {"parentArmId": self.identifier("StudyArm", cast(str, parent_uid))}
                     if branch_uid is not None
                     else {}
                 ),
@@ -1100,10 +1109,10 @@ class NativeStudyMapping:
                     "The native timeline has not resolved an exact anchor for this timing.",
                     "Resolve the native visit time reference; a global anchor is not a fallback for a different reference.",
                 )
-            timing_values = dict(
-                id=self.identifier("Timing", visit.uid),
-                name=f"Timing {visit.uid}",
-                type=(
+            timing_values = {
+                "id": self.identifier("Timing", visit.uid),
+                "name": f"Timing {visit.uid}",
+                "type": (
                     self.mapper.get_ddf_timing_type_code_fixed()
                     if fixed
                     else (
@@ -1112,13 +1121,12 @@ class NativeStudyMapping:
                         else self.mapper.get_ddf_timing_type_code_after()
                     )
                 ),
-                value=get_ddf_timing_iso_duration_value(value, unit),
-                valueLabel=f"{abs(value)} {unit}",
-                relativeToFrom=self.mapper.get_ddf_timing_relative_to_from(),
-                # Official USDM4 orientation: from=scheduled target, to=anchor.
-                relativeFromScheduledInstanceId=ids[visit.uid],
-                relativeToScheduledInstanceId=ids.get(anchor_uid),
-            )
+                "value": get_ddf_timing_iso_duration_value(value, unit),
+                "valueLabel": f"{abs(value)} {unit}",
+                "relativeToFrom": self.mapper.get_ddf_timing_relative_to_from(),
+                "relativeFromScheduledInstanceId": ids[visit.uid],
+                "relativeToScheduledInstanceId": ids.get(anchor_uid),
+            }
             lower, upper = visit.min_visit_window_value, visit.max_visit_window_value
             lower = None if lower == -9999 else lower
             upper = None if upper == 9999 else upper

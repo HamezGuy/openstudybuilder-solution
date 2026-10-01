@@ -390,12 +390,10 @@ def test_singleton_readers_pass_exact_version_and_preserve_absence(monkeypatch):
     class DesignService:
         def get_existing_study_design_class(self, study_uid, *, study_value_version):
             calls.append(("design", study_uid, study_value_version))
-            return None
 
     class VariableService:
         def get_study_source_variable(self, study_uid, *, study_value_version):
             calls.append(("variable", study_uid, study_value_version))
-            return None
 
     monkeypatch.setattr(
         "clinical_mdr_api.services.ddf.usdm_service.StudyDesignClassService",

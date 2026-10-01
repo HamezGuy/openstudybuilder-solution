@@ -30,5 +30,7 @@ NATIVE_CREATE_REQUEST_RESOURCE_TYPES = resource_types_where("osbCreateRequest")
 NATIVE_DECLINABLE_RESOURCE_TYPES = resource_types_where("osbDeclinable")
 
 
-def target_capability(resource_type: str) -> str | None:
+def target_capability(resource_type: str | None) -> str | None:
+    if resource_type is None:
+        return None
     return TARGET_CAPABILITIES.get(resource_type)

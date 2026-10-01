@@ -74,7 +74,9 @@ class NullAdjudication(NullAdjudicationField):
 
 class StudyNullAdjudicationRequest(NullAdjudicationModel):
     contract_version: Literal["StudyNullAdjudicationV1@1.0.0"]
-    adjudications: list[NullAdjudication] = Field(min_length=1, max_length=128)
+    adjudications: Annotated[
+        list[NullAdjudication], Field(min_length=1, max_length=128)
+    ]
 
     @model_validator(mode="after")
     def distinct_fields(self):

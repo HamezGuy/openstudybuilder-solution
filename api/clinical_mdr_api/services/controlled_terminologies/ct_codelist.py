@@ -48,6 +48,7 @@ from common.exceptions import (
     BusinessLogicException,
     NotFoundException,
 )
+from common.utils import is_exact_int
 
 _AggregateRootType = TypeVar("_AggregateRootType")
 
@@ -685,7 +686,7 @@ class CTCodelistService:
             msg="Initial CT membership requires current 0.1 drafts in the same editable library.",
         )
         BusinessLogicException.raise_if(
-            type(order) is not int
+            not is_exact_int(order)
             or order < 1
             or not isinstance(submission_value, str)
             or not submission_value.strip(),

@@ -1,6 +1,7 @@
 """Exact terminology reads for the native arm-origin contract."""
 
 from datetime import date, datetime, timezone
+from typing import Any
 
 from neomodel import db
 
@@ -17,7 +18,9 @@ from common.exceptions import ValidationException
 
 class StudyArmOriginRepository:
     @staticmethod
-    def selected_uid(memberships: list[dict], description: str | None) -> str | None:
+    def selected_uid(
+        memberships: list[dict[str, Any]], description: str | None
+    ) -> str | None:
         """Validate the complete native relationship before exposing its UID."""
         if not isinstance(memberships, list) or len(memberships) > 1:
             raise ValidationException(msg="STUDY_ARM_DATA_ORIGIN_CONTEXT_AMBIGUOUS")

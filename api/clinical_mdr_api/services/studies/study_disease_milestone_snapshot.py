@@ -108,7 +108,7 @@ def read_disease_milestone_snapshot(
     ):
         raise StudyDiseaseMilestoneSourceError("STUDY_MILESTONE_SNAPSHOT_DATE_MISMATCH")
     items = []
-    seen = {}
+    seen: dict[Any, Any] = {}
     for row in selected_rows:
         if row["selection_identity"] is None:
             continue
@@ -138,7 +138,7 @@ def read_disease_milestone_snapshot(
                 f"STUDY_MILESTONE_SELECTION_AFTER_SNAPSHOT: {uid}"
             )
         term = CTTermRoot.nodes.get_or_none(uid=row["term_uid"])
-        issues = []
+        issues: list[Any] = []
         name = _term_value(
             reader,
             term,
@@ -190,8 +190,10 @@ def read_disease_milestone_snapshot(
                 order=selection.get("order"),
                 status=selection.get("status"),
                 start_date=action["date"],
-                author_username=UserInfoService.get_author_username_from_id(
-                    action.get("author_id")
+                author_username=(
+                    UserInfoService.get_author_username_from_id(author_id)
+                    if (author_id := action.get("author_id")) is not None
+                    else None
                 ),
                 disease_milestone_type=row["term_uid"],
                 disease_milestone_type_name=name_text,

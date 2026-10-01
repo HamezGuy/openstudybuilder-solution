@@ -1,5 +1,8 @@
 """Real ODM/CT services against an explicitly disposable, empty Neo4j graph."""
 
+# pytest fixtures are injected by parameter name
+# pylint: disable=redefined-outer-name
+
 import os
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
@@ -199,8 +202,8 @@ def test_real_stage_expiry_rolls_back_native_objects_and_receipt_then_retries_an
         expire_on_save = True
         wrote_receipt = False
 
-        def save_receipt(self, receipt, reference):
-            super().save_receipt(receipt, reference)
+        def save_receipt(self, payload, artifact):
+            super().save_receipt(payload, artifact)
             self.wrote_receipt = True
             if self.expire_on_save:
                 clock[0] = datetime.fromisoformat(

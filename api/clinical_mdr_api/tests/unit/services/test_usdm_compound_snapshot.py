@@ -145,7 +145,7 @@ def test_direct_value_selection_is_distinct_from_the_value_effective_at_the_snap
 def test_unresolved_native_library_scope_never_falls_back_to_latest(mutation):
     source, graph = source_and_graph()
     root = source.roots["unitDefinition", "Unit_mg"]
-    value, relation = root.has_version.rows[0]
+    _, relation = root.has_version.rows[0]
     if mutation == "missing":
         root.has_version.rows = []
         root.has_version.nodes = []
@@ -502,21 +502,21 @@ def test_scoped_repository_query_preserves_distinct_selected_value_identities(
 @pytest.mark.parametrize("mode", ["missing", "duplicate", "missing-name"])
 def test_strict_dated_codelist_read_cannot_fall_back_or_select_first(monkeypatch, mode):
     calls = []
-    row = dict(
-        term_uid="Term_1",
-        term_name="Selected name",
-        preferred_term="Term",
-        submission_value="SOURCE",
-        order=0,
-        codelist_name="Selected codelist",
-        codelist_uid="Codelist_1",
-        codelist_submission_value="SOURCE-CL",
-        membership_identity="membership:1",
-        codelist_attributes_identity="cl-attrs:1",
-        codelist_name_identity="cl-name:1",
-        term_name_identity="name:1",
-        term_attributes_identity="attrs:1",
-    )
+    row = {
+        "term_uid": "Term_1",
+        "term_name": "Selected name",
+        "preferred_term": "Term",
+        "submission_value": "SOURCE",
+        "order": 0,
+        "codelist_name": "Selected codelist",
+        "codelist_uid": "Codelist_1",
+        "codelist_submission_value": "SOURCE-CL",
+        "membership_identity": "membership:1",
+        "codelist_attributes_identity": "cl-attrs:1",
+        "codelist_name_identity": "cl-name:1",
+        "term_name_identity": "name:1",
+        "term_attributes_identity": "attrs:1",
+    }
     if mode == "missing-name":
         row["term_name"] = None
     rows = [] if mode == "missing" else [row]

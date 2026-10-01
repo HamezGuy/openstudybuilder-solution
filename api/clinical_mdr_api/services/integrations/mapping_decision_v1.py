@@ -44,6 +44,10 @@ from clinical_mdr_api.services.integrations.study_metadata_mapping import (
     apply_metadata_selections,
 )
 
+# Fail-closed contract checks list every required property in one condition;
+# splitting them would hide the rule they enforce.
+# pylint: disable=too-many-boolean-expressions
+
 DECISION_MEDIA_TYPE = "application/vnd.accuratrials.study-mapping-decision-v1+json"
 EVIDENCE_SET_MEDIA_TYPE = "application/vnd.accuratrials.osb-native-evidence-set-v1+json"
 
@@ -179,7 +183,12 @@ def _csl_entity_field(source_intent: dict[str, Any], field: str) -> str | None:
 def native_readback_envelope_v1(observed: dict[str, Any]) -> dict[str, Any]:
     """Hash an unchanged native observation under its explicit read-back profile."""
     metadata = observed.get("resourceFamily") == "study_metadata"
-    identity_fields = ("resourceFamily", "resourceType", "uid", "version")
+    identity_fields: tuple[str, ...] = (
+        "resourceFamily",
+        "resourceType",
+        "uid",
+        "version",
+    )
     fields = {*identity_fields, "label"}
     if metadata:
         fields.update(("metadataPath", "metadataValue"))
@@ -360,7 +369,7 @@ def _verify_artifact(
         )
 
 
-def apply_mapping_decision(
+def apply_mapping_decision(  # pylint: disable=too-many-locals
     *,
     tenant_id: str,
     platform_study_id: str,
@@ -657,67 +666,62 @@ def apply_mapping_decision(
                     f"Native {family} creation requires a source-backed domain-service executor.",
                     422,
                 )
-            else:
-                created, _ = db.cypher_query(
-                    """MATCH (study:StudyRoot {uid: $study_uid})
-                       MERGE (concept:PlatformManagedStudyConcept {managed_key: $managed_key})
-                       ON CREATE SET concept.tenant_id=$tenant_id,concept.platform_study_id=$platform_study_id,
-                         concept.study_uid=$study_uid,concept.fact_id=$fact_id,concept.revision=$revision,
-                         concept.target_key=$target_key,concept.action=$action,concept.resource_family=$resource_family,
-                         concept.payload_json=$payload_json,concept.content_hash=$content_hash,
-                         concept.csl_entity_id=$csl_entity_id,concept.csl_entity_type=$csl_entity_type,
-                         concept.csl_revision_id=$csl_revision_id,
-                         concept.version=1,concept.created_at=datetime(),concept.created_by=$actor
-                       MERGE (study)-[:HAS_PLATFORM_MANAGED_CONCEPT]->(concept)
-                       RETURN concept.payload_json,concept.content_hash,concept.version""",
-                    {
-                        "study_uid": native_study_id,
-                        "managed_key": managed_key,
-                        "tenant_id": tenant_id,
-                        "platform_study_id": platform_study_id,
-                        "fact_id": selection["factId"],
-                        "revision": selection["revision"],
-                        "target_key": selection["targetKey"],
-                        "action": action,
-                        "resource_family": family,
-                        "payload_json": canonical_json(target_payload),
-                        "content_hash": target_hash["value"],
-                        # A5: the CSL entity the fact materialised (candidate request 1.4.0); absent on older requests.
-                        "csl_entity_id": _csl_entity_field(source_intent, "entityId"),
-                        "csl_entity_type": _csl_entity_field(
-                            source_intent, "entityType"
-                        ),
-                        "csl_revision_id": _csl_entity_field(
-                            source_intent, "revisionId"
-                        ),
-                        "actor": actor,
-                    },
+            created, _ = db.cypher_query(
+                """MATCH (study:StudyRoot {uid: $study_uid})
+                   MERGE (concept:PlatformManagedStudyConcept {managed_key: $managed_key})
+                   ON CREATE SET concept.tenant_id=$tenant_id,concept.platform_study_id=$platform_study_id,
+                     concept.study_uid=$study_uid,concept.fact_id=$fact_id,concept.revision=$revision,
+                     concept.target_key=$target_key,concept.action=$action,concept.resource_family=$resource_family,
+                     concept.payload_json=$payload_json,concept.content_hash=$content_hash,
+                     concept.csl_entity_id=$csl_entity_id,concept.csl_entity_type=$csl_entity_type,
+                     concept.csl_revision_id=$csl_revision_id,
+                     concept.version=1,concept.created_at=datetime(),concept.created_by=$actor
+                   MERGE (study)-[:HAS_PLATFORM_MANAGED_CONCEPT]->(concept)
+                   RETURN concept.payload_json,concept.content_hash,concept.version""",
+                {
+                    "study_uid": native_study_id,
+                    "managed_key": managed_key,
+                    "tenant_id": tenant_id,
+                    "platform_study_id": platform_study_id,
+                    "fact_id": selection["factId"],
+                    "revision": selection["revision"],
+                    "target_key": selection["targetKey"],
+                    "action": action,
+                    "resource_family": family,
+                    "payload_json": canonical_json(target_payload),
+                    "content_hash": target_hash["value"],
+                    # A5: the CSL entity the fact materialised (candidate request 1.4.0); absent on older requests.
+                    "csl_entity_id": _csl_entity_field(source_intent, "entityId"),
+                    "csl_entity_type": _csl_entity_field(source_intent, "entityType"),
+                    "csl_revision_id": _csl_entity_field(source_intent, "revisionId"),
+                    "actor": actor,
+                },
+            )
+            if (
+                not created
+                or str(created[0][0]) != canonical_json(target_payload)
+                or str(created[0][1]) != target_hash["value"]
+            ):
+                raise OsbCandidateSetError(
+                    "OSB_NATIVE_OPERATION_CONFLICT",
+                    f"Managed concept {key} differs.",
                 )
-                if (
-                    not created
-                    or str(created[0][0]) != canonical_json(target_payload)
-                    or str(created[0][1]) != target_hash["value"]
-                ):
-                    raise OsbCandidateSetError(
-                        "OSB_NATIVE_OPERATION_CONFLICT",
-                        f"Managed concept {key} differs.",
-                    )
-                observed_payload, observed_hash, post_version = (
-                    target_payload,
-                    target_hash,
-                    str(created[0][2]),
-                )
-                native_target_identity = {
-                    "resourceType": "PlatformManagedStudyConcept",
-                    "resourceFamily": target_payload["resourceFamily"],
-                    "managedKey": target_payload["managedKey"],
-                    "nativeStudyId": target_payload["nativeStudyId"],
-                    "version": post_version,
-                }
-                managed_keys.append(managed_key)
+            observed_payload, observed_hash, post_version = (
+                target_payload,
+                target_hash,
+                str(created[0][2]),
+            )
+            native_target_identity = {
+                "resourceType": "PlatformManagedStudyConcept",
+                "resourceFamily": target_payload["resourceFamily"],
+                "managedKey": target_payload["managedKey"],
+                "nativeStudyId": target_payload["nativeStudyId"],
+                "version": post_version,
+            }
+            managed_keys.append(managed_key)
+            disposition = "governed_extension"
+            if family in BLOCKER_ONLY_FAMILIES:
                 disposition = "governed_extension"
-                if family in BLOCKER_ONLY_FAMILIES:
-                    disposition = "governed_extension"
         else:
             observed_payload, observed_hash, post_version = None, None, None
             native_target_identity = None

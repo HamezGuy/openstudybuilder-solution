@@ -1,5 +1,8 @@
 """Current native heads through identity, candidate and package producers."""
 
+# exact == [] / == {} comparisons are the assertion
+# pylint: disable=use-implicit-booleaness-not-comparison
+
 from copy import deepcopy
 
 import pytest

@@ -230,6 +230,8 @@ def resolve_study_metadata_unit(
             persisted = create_duration_object_from_api_input(
                 amount, source.uid, lambda uid: source if uid == source.uid else None
             )
+            if persisted is None:
+                raise TypeError("the native writer produced no duration")
             observed_amount, canonical = from_duration_object_to_value_and_unit(
                 persisted, read_units
             )
@@ -249,6 +251,8 @@ def resolve_study_metadata_unit(
                 canonical.uid,
                 lambda uid: canonical if uid == canonical.uid else None,
             )
+            if canonical_persisted is None:
+                raise TypeError("the native writer produced no duration")
             repeated_amount, repeated_unit = from_duration_object_to_value_and_unit(
                 canonical_persisted, read_units
             )

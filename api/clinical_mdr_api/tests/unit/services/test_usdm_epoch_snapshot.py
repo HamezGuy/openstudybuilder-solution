@@ -45,11 +45,14 @@ def fixture():
     package.extends_package = "opaque-published-package"
     stored = package.model_dump(mode="json")
     published = {**stored, "uid": "opaque-published-package", "extends_package": None}
-    term = lambda: SimpleCTTermNameWithConflictFlag(
-        term_uid="FLOAT",
-        sponsor_preferred_name="UNSELECTED query fallback",
-        date_conflict=True,
-    )
+
+    def term():
+        return SimpleCTTermNameWithConflictFlag(
+            term_uid="FLOAT",
+            sponsor_preferred_name="UNSELECTED query fallback",
+            date_conflict=True,
+        )
+
     epoch = StudyEpochVO(
         uid="Epoch_1",
         study_uid=STUDY_UID,

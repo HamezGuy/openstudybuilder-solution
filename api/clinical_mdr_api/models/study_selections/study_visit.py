@@ -93,7 +93,8 @@ class StudyVisitCreateInput(VisitTimingInput, PostInputModel):
 
 
 class StudyVisitEditInput(VisitTimingInput, PatchInputModel):
-    timing_mode: VisitTimingMode | None = None
+    # A patch may omit the timing mode; the base input requires one.
+    timing_mode: VisitTimingMode | None = None  # type: ignore[assignment]
     uid: Annotated[str, Field(description="Uid of the Visit")]
     study_epoch_uid: Annotated[str | None, Field()] = None
     visit_type: Annotated[
@@ -441,7 +442,8 @@ class StudyVisitDetailed(StudyVisitLite):
             possible_actions=visit.possible_actions,
             visit_class=visit.visit_class,  # type: ignore[arg-type]
             timing_mode=visit.timing_mode,
-            untimed_timing=visit.untimed_timing,
+            # The value object keeps the stored JSON; pydantic validates it here.
+            untimed_timing=visit.untimed_timing,  # type: ignore[arg-type]
             visit_subclass=visit.visit_subclass if visit.visit_subclass else None,
             is_global_anchor_visit=visit.is_global_anchor_visit,
             is_soa_milestone=visit.is_soa_milestone,

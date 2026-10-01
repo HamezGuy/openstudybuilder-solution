@@ -3,6 +3,7 @@
 from decimal import Decimal, InvalidOperation
 from enum import Enum
 from fractions import Fraction
+from typing import Any
 
 from neomodel import db
 
@@ -74,7 +75,7 @@ def _enum(value):
 
 def project_visit_timing(visit, *, read_units, issue):
     """Return supported portable facts and the exact unit evidence, if needed."""
-    result = {}
+    result: dict[str, Any] = {}
     if _enum(visit.get("timing_mode")) == "UNTIMED":
         # Exact nominal/calendar rules remain in the native visit record. They
         # cannot supply an enrollment-relative day or an executable window.

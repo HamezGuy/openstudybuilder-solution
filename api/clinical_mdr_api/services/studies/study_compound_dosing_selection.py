@@ -73,6 +73,8 @@ class StudyCompoundDosingSelectionService(StudySelectionMixin):
         history_date: datetime.datetime | None = None,
     ) -> StudySelectionCompound:
 
+        # Part of the shared signature; not needed here.
+        del compound_alias_uid, compound_uid, medicinal_product_uid
         if history_date is None:
             (
                 study_compound,
@@ -217,7 +219,8 @@ class StudyCompoundDosingSelectionService(StudySelectionMixin):
             find_codelist_term_by_uid_and_submval=(
                 dose_snapshot.codelist_term
                 if dose_snapshot is not None
-                else lambda *args, **kwargs: (
+                # Deferred: the repository is only created if a lookup happens.
+                else lambda *args, **kwargs: (  # pylint: disable=unnecessary-lambda
                     self._repos.ct_codelist_name_repository.get_codelist_term_by_uid_and_submval(
                         *args, **kwargs
                     )

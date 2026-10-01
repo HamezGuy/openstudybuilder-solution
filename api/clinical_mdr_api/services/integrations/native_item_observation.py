@@ -10,7 +10,7 @@ import json
 import time
 from datetime import UTC, datetime
 from threading import Event
-from typing import Any, Callable
+from typing import Any, Callable, cast
 from uuid import NAMESPACE_URL, uuid5
 
 from clinical_mdr_api.domain_repositories.integrations.native_item_observation import (
@@ -42,6 +42,7 @@ from clinical_mdr_api.services.integrations.osb_candidate_request_versions impor
     SELECTED_CAPTURE_REQUEST_CONTRACT_VERSIONS,
 )
 from common.auth.user import auth
+from common.utils import is_exact_int
 
 
 class NativeItemObservationError(ValueError):
@@ -67,16 +68,16 @@ def _require(condition: bool, code: str = "OSB_ITEM_CUSTODY_MISMATCH") -> None:
         )
 
 
-def _one(rows: list, code: str) -> Any:
+def _one(rows: list[Any], code: str) -> Any:
     _require(len(rows) == 1, code)
     return rows[0]
 
 
-def _hash(payload: Any, schema: str, media: str = "application/json") -> dict:
+def _hash(payload: Any, schema: str, media: str = "application/json") -> dict[str, Any]:
     return canonical_json_hash_ref(payload, schema_version=schema, media_type=media)
 
 
-def _json(text: str) -> dict:
+def _json(text: str) -> dict[str, Any]:
     def pairs(values):
         result = {}
         for key, value in values:
@@ -123,14 +124,14 @@ class NativeItemObservationService:
             "OSB_ITEM_AUTH_REQUIRED",
         )
         expiry = original.access_token_claims.exp
-        _require(type(expiry) is int, "OSB_ITEM_AUTH_REQUIRED")
+        _require(is_exact_int(expiry), "OSB_ITEM_AUTH_REQUIRED")
         budget = min(15.0, expiry - self.clock())
         _require(budget > 0, "OSB_ITEM_AUTH_EXPIRED")
         return budget
 
-    def observe(
+    def observe(  # pylint: disable=too-many-locals
         self, request: NativeItemObservationRequest, cancellation: Event | None = None
-    ) -> dict:
+    ) -> dict[str, Any]:
         started, wall_started = self.monotonic(), self.clock()
         original = self.auth_reader()
         authority_pin = None
@@ -152,9 +153,8 @@ class NativeItemObservationService:
             claims, caller = current.access_token_claims, current.user
             now = self.clock()
             _require(
-                type(claims.exp) is int
-                and now < claims.exp
-                and claims.iat <= now
+                is_exact_int(claims.exp)
+                and claims.iat <= now < claims.exp
                 and (claims.nbf is None or claims.nbf <= now)
                 and now >= wall_started
                 and self.monotonic() - started < 15,
@@ -239,7 +239,7 @@ class NativeItemObservationService:
             _require(0 < len(heads) < 5, "OSB_ITEM_NATIVE_VERSION_UNAVAILABLE")
             _require(
                 all(
-                    isinstance(row, (list, tuple))
+                    isinstance(row, list | tuple)
                     and len(row) == 6
                     and row[0] in {"LATEST_DRAFT", "LATEST_LOCKED", "LATEST_RELEASED"}
                     for row in heads
@@ -306,7 +306,7 @@ class NativeItemObservationService:
                 if key in {"length", "significantDigits"}:
                     _require(
                         value is None
-                        or (type(value) is int and 0 <= value <= 2_147_483_647),
+                        or (is_exact_int(value) and 0 <= value <= 2_147_483_647),
                         "OSB_ITEM_TYPED_FIELDS_UNAVAILABLE",
                     )
                 else:
@@ -445,7 +445,10 @@ class NativeItemObservationService:
             and artifact.get("byteSize")
             == len(canonical_json(evidence_set).encode("utf-8"))
         )
-        key = lambda row: (row.get("factId"), row.get("revision"), row.get("targetKey"))
+
+        def key(row):
+            return row.get("factId"), row.get("revision"), row.get("targetKey")
+
         selected_key = (request.factId, request.revision, request.targetKey)
         selections = statement.get("selections", [])
         _require(
@@ -618,7 +621,8 @@ class NativeItemObservationService:
             "contextAssurance": "retained-exact-context",
             "studySelectionVerified": False,
             "semanticApprovalVerified": False,
-            "observedAt": datetime.fromtimestamp(last_item_observed, UTC)
+            # snapshot() read the item above, which set this clock reading.
+            "observedAt": datetime.fromtimestamp(cast(float, last_item_observed), UTC)
             .isoformat(timespec="milliseconds")
             .replace("+00:00", "Z"),
             "authorityCheckedAt": datetime.fromtimestamp(self.clock(), UTC)

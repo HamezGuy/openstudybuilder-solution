@@ -77,7 +77,10 @@ class NativeObservationTests(unittest.TestCase):
             result = collect_native_observation(
                 "S1",
                 native_study={"uid": "S1"},
-                readers={"study_arms": (lambda **_: [], lambda **_: audits)},
+                readers={
+                    # pylint: disable-next=cell-var-from-loop
+                    "study_arms": (lambda **_: [], lambda **_: audits)
+                },
             )
             observed = [entry["record"]["revision"] for entry in result["auditRecords"]]
             if expected is None:
@@ -151,7 +154,7 @@ class NativeObservationTests(unittest.TestCase):
         ]:
 
             def fail(**_):
-                raise failure
+                raise failure  # pylint: disable=cell-var-from-loop
 
             with self.assertRaises(type(failure)):
                 collect_native_observation(
@@ -251,7 +254,10 @@ class NativeObservationTests(unittest.TestCase):
                 collect_native_observation(
                     "S1",
                     native_study={"uid": "S1"},
-                    readers={"study_arms": (lambda **_: rows, lambda **_: [])},
+                    readers={
+                        # pylint: disable-next=cell-var-from-loop
+                        "study_arms": (lambda **_: rows, lambda **_: [])
+                    },
                 )
         with self.assertRaises(NativeObservationError):
             collect_native_observation(

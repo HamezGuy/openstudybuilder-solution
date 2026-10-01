@@ -1,5 +1,8 @@
 """Actual native review/association services with explicitly authored repositories."""
 
+# pytest fixtures requested for their side effects
+# pylint: disable=unused-argument
+
 import copy
 import time
 from types import SimpleNamespace

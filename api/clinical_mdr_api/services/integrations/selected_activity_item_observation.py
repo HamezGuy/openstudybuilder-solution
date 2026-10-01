@@ -117,7 +117,9 @@ class SelectedActivityItemService:
                 **{
                     key: value
                     for key, value in request.model_dump().items()
-                    if key in NativeItemObservationRequest.model_fields
+                    # pydantic's model_fields is a mapping on the class.
+                    if key
+                    in NativeItemObservationRequest.model_fields  # pylint: disable=unsupported-membership-test
                 },
                 "contractVersion": "OsbNativeItemObservationRequestV1@1.0.0",
                 "scope": "library-item",
@@ -180,11 +182,14 @@ class SelectedActivityItemService:
 
         first_selection, _ = selection_observation()
         final_library = library.observe(library_request, cancellation)
-        stable_library = lambda value: {
-            k: v
-            for k, v in value.items()
-            if k not in {"observedAt", "authorityCheckedAt", "expiresAt"}
-        }
+
+        def stable_library(value):
+            return {
+                k: v
+                for k, v in value.items()
+                if k not in {"observedAt", "authorityCheckedAt", "expiresAt"}
+            }
+
         require(
             stable_library(first_library) == stable_library(final_library),
             "OSB_SELECTED_LIBRARY_CHANGED",

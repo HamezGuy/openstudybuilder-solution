@@ -1218,8 +1218,8 @@ class StudyEndpointSelectionService(StudySelectionMixin):
         effective_dates: Sequence[datetime | None],
     ) -> list[StudySelectionEndpoint]:
         result = []
-        objective_history = None
-        objective_models = {}
+        objective_history: dict[Any, Any] | None = None
+        objective_models: dict[Any, Any] = {}
 
         def memoized_copy(reader):
             cache = {}
@@ -1240,65 +1240,73 @@ class StudyEndpointSelectionService(StudySelectionMixin):
             self._repos.ct_codelist_name_repository.get_codelist_term_by_uid_and_submval
         )
 
-        def objective_at_revision(
-            study_uid, study_selection_uid, terms_at_specific_datetime=None
-        ):
-            nonlocal objective_history
-            # An endpoint audit row references the objective that existed at
-            # that endpoint revision, which may since have been edited/deleted.
-            # Never resolve an audit relationship through the current aggregate.
-            # Fetch this study's full objective history once per read. An audit
-            # may contain thousands of endpoint rows referring to a few exact
-            # objective revisions; rendering those revisions is also cached.
-            if objective_history is None:
-                objective_history = {}
-                for (
-                    row
-                ) in self._repos.study_objective_repository.find_selection_history(
-                    study_uid
-                ):
-                    objective_history.setdefault(row.study_selection_uid, []).append(
-                        row
-                    )
-            candidates = [
-                row
-                for row in objective_history.get(study_selection_uid, [])
-                if row.start_date <= history.start_date
-                and (row.end_date is None or history.start_date < row.end_date)
-            ]
-            if len(candidates) != 1:
-                raise exceptions.NotFoundException(
-                    msg=(
-                        f"Historical Study Objective '{study_selection_uid}' at {history.start_date.isoformat()} "
-                        f"has {len(candidates)} matching revisions; an exact historical reference is required."
-                    )
-                )
-            revision = candidates[0]
-            if (
-                not isinstance(revision.objective_version, str)
-                or not revision.objective_version.strip()
+        def objective_reader(endpoint_row, reading_date):
+            """Read objectives as of one endpoint audit row and its effective date."""
+
+            def objective_at_revision(
+                study_uid, study_selection_uid, terms_at_specific_datetime=None
             ):
-                raise exceptions.NotFoundException(
-                    msg=f"Historical Study Objective '{study_selection_uid}' has no exact library version."
-                )
-            key = (
-                study_selection_uid,
-                revision.start_date,
-                revision.end_date,
-                revision.objective_version,
-                effective_date,
-            )
-            if key not in objective_models:
-                objective_models[key] = (
-                    StudySelectionObjective.from_study_selection_history(
-                        study_selection_history=revision,
-                        study_uid=study_uid,
-                        get_objective_by_uid_version_callback=self._transform_objective_model,
-                        find_codelist_term_by_uid_and_submval=term_at_date,
-                        effective_date=effective_date,
+                nonlocal objective_history
+                # The audit reads the objective revision, not a terms date.
+                del terms_at_specific_datetime
+                action_date = endpoint_row.start_date
+                # An endpoint audit row references the objective that existed at
+                # that endpoint revision, which may since have been edited/deleted.
+                # Never resolve an audit relationship through the current aggregate.
+                # Fetch this study's full objective history once per read. An audit
+                # may contain thousands of endpoint rows referring to a few exact
+                # objective revisions; rendering those revisions is also cached.
+                if objective_history is None:
+                    objective_history = {}
+                    for (
+                        row
+                    ) in self._repos.study_objective_repository.find_selection_history(
+                        study_uid
+                    ):
+                        objective_history.setdefault(
+                            row.study_selection_uid, []
+                        ).append(row)
+                candidates = [
+                    row
+                    for row in objective_history.get(study_selection_uid, [])
+                    if row.start_date <= action_date
+                    and (row.end_date is None or action_date < row.end_date)
+                ]
+                if len(candidates) != 1:
+                    raise exceptions.NotFoundException(
+                        msg=(
+                            f"Historical Study Objective '{study_selection_uid}' at {action_date.isoformat()} "
+                            f"has {len(candidates)} matching revisions; an exact historical reference is required."
+                        )
                     )
+                revision = candidates[0]
+                if (
+                    not isinstance(revision.objective_version, str)
+                    or not revision.objective_version.strip()
+                ):
+                    raise exceptions.NotFoundException(
+                        msg=f"Historical Study Objective '{study_selection_uid}' has no exact library version."
+                    )
+                key = (
+                    study_selection_uid,
+                    revision.start_date,
+                    revision.end_date,
+                    revision.objective_version,
+                    reading_date,
                 )
-            return deepcopy(objective_models[key])
+                if key not in objective_models:
+                    objective_models[key] = (
+                        StudySelectionObjective.from_study_selection_history(
+                            study_selection_history=revision,
+                            study_uid=study_uid,
+                            get_objective_by_uid_version_callback=self._transform_objective_model,
+                            find_codelist_term_by_uid_and_submval=term_at_date,
+                            effective_date=reading_date,
+                        )
+                    )
+                return deepcopy(objective_models[key])
+
+            return objective_at_revision
 
         for history, effective_date in zip(study_selection_history, effective_dates):
             result.append(
@@ -1307,7 +1315,9 @@ class StudyEndpointSelectionService(StudySelectionMixin):
                     study_uid=study_uid,
                     get_endpoint_by_uid=endpoint_at_version,
                     get_timeframe_by_uid=timeframe_at_version,
-                    get_study_objective_by_uid=objective_at_revision,
+                    get_study_objective_by_uid=objective_reader(
+                        history, effective_date
+                    ),
                     find_codelist_term_by_uid_and_submval=term_at_date,
                     effective_date=effective_date,
                 )

@@ -1,12 +1,25 @@
 import ast
 import os
+import re
 import sys
+import tomllib
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from typing import Callable, final
 
 from rich import console
 from rich import print as rptint
+
+
+def _excluded_paths() -> list[re.Pattern[str]]:
+    """`[tool.sblint] exclude` regexes from pyproject.toml in the working directory."""
+    try:
+        with open("pyproject.toml", "rb") as handle:
+            config = tomllib.load(handle)
+    except FileNotFoundError:
+        return []
+    patterns = config.get("tool", {}).get("sblint", {}).get("exclude", [])
+    return [re.compile(pattern) for pattern in patterns]
 
 
 class SBLinter(ABC):
@@ -131,12 +144,16 @@ class SBLinter(ABC):
             dict[str, list]: A dictionary where the keys are the validator functions (as strings) and the values are sets of file paths that failed the corresponding validation.
         """
         invalid_files: dict[str, list] = defaultdict(list)
+        excluded = _excluded_paths()
 
         for directory in directories:
             for root, _, files in os.walk(directory):
                 for file in files:
                     if file.endswith(extension):
                         file_path = os.path.join(root, file)
+                        posix_path = file_path.replace(os.sep, "/")
+                        if any(pattern.search(posix_path) for pattern in excluded):
+                            continue
                         with open(file_path, "r", encoding="utf-8") as f:
                             if content := f.read():
                                 tree = ast.parse(content)

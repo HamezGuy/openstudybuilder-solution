@@ -1,5 +1,8 @@
 """Authored complete native wire input; original schemas are the conformance oracle."""
 
+# pytest fixtures are injected by parameter name
+# pylint: disable=redefined-outer-name
+
 import copy
 import json
 from pathlib import Path
@@ -204,8 +207,6 @@ def test_complete_original_inputs_before_observer():
 
 
 def test_retained_legacy_scalar_operation_is_not_current_companion_evidence():
-    import pytest
-
     from clinical_mdr_api.services.integrations.native_item_observation import (
         NativeItemObservationError,
     )

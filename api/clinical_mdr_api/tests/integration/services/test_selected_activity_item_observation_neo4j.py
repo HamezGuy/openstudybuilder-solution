@@ -1,5 +1,8 @@
 """Exact selected graph fixtures; no real draft creation or native approval claim."""
 
+# pytest fixtures are injected by parameter name
+# pylint: disable=redefined-outer-name
+
 import pytest
 from neomodel import db
 
@@ -12,8 +15,10 @@ from clinical_mdr_api.services.integrations.native_item_observation import (
 from clinical_mdr_api.services.integrations.selected_activity_item_observation import (
     SelectedActivityItemService,
 )
+
+# pylint: disable-next=unused-import
 from clinical_mdr_api.tests.integration.services.test_native_item_observation_neo4j import (
-    native,
+    native,  # pytest fixture
 )
 from clinical_mdr_api.tests.unit.services.test_selected_activity_item_observation import (
     selection_request,
@@ -89,7 +94,11 @@ def test_actual_one_current_selected_full_path(selected):
         "MATCH (a:ActivityItem) CREATE (a)-[:HAS_UNIT_DEFINITION]->(:UnitDefinitionRoot {fixture:$fixture,uid:'unit-1'})",
         "MATCH (sv:StudyValue)-[:HAS_STUDY_ACTIVITY_INSTANCE]->(s) CREATE (sv)-[:HAS_STUDY_ACTIVITY_INSTANCE]->(s)",
         "MATCH (s:StudyActivityInstance)-[:HAS_SELECTED_ACTIVITY_INSTANCE]->(a) CREATE (s)-[:HAS_SELECTED_ACTIVITY_INSTANCE]->(a)",
-        "MATCH (a:ActivityInstanceValue)-[:CONTAINS_ACTIVITY_ITEM]->(i:ActivityItem), (c:ActivityItemClassRoot)-[:HAS_ACTIVITY_ITEM]->(i), (item:OdmItemValue)-[l:LINKS_TO_ACTIVITY_ITEM]->(i) CREATE (copy:ActivityItem) SET copy=properties(i) CREATE (a)-[:CONTAINS_ACTIVITY_ITEM]->(copy) CREATE (c)-[:HAS_ACTIVITY_ITEM]->(copy) CREATE (item)-[l2:LINKS_TO_ACTIVITY_ITEM]->(copy) SET l2=properties(l)",
+        "MATCH (a:ActivityInstanceValue)-[:CONTAINS_ACTIVITY_ITEM]->(i:ActivityItem),"
+        " (c:ActivityItemClassRoot)-[:HAS_ACTIVITY_ITEM]->(i),"
+        " (item:OdmItemValue)-[l:LINKS_TO_ACTIVITY_ITEM]->(i)"
+        " CREATE (copy:ActivityItem) SET copy=properties(i)"
+        " CREATE (a)-[:CONTAINS_ACTIVITY_ITEM]->(copy) CREATE (c)-[:HAS_ACTIVITY_ITEM]->(copy) CREATE (item)-[l2:LINKS_TO_ACTIVITY_ITEM]->(copy) SET l2=properties(l)",
         "MATCH (r:ActivityItemClassRoot)-[:LATEST]->(v) CREATE (r)-[:HAS_VERSION {version:'1.0',status:'Final'}]->(v)",
         "MATCH (s:DomainStudyScope) SET s.status='quarantined'",
     ],

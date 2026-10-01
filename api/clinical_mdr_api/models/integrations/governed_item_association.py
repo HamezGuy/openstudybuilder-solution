@@ -75,9 +75,9 @@ class NativeAssociationReviewAssurance(Closed):
     subject: Text
     humanSubject: Text
     tenantId: Text
-    roles: list[Text] = Field(max_length=256)
-    studyIds: list[Text] = Field(max_length=4096)
-    capabilities: list[Text] = Field(max_length=256)
+    roles: Annotated[list[Text], Field(max_length=256)]
+    studyIds: Annotated[list[Text], Field(max_length=4096)]
+    capabilities: Annotated[list[Text], Field(max_length=256)]
     purpose: Literal["interactive-domain-access", "workflow-orchestration"]
     sessionHash: Hash64
     credentialIssuedAt: int

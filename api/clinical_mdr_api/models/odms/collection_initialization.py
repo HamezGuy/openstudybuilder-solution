@@ -1,6 +1,6 @@
 """Exact native snapshots for an empty-or-identical collection initialization."""
 
-from typing import Self
+from typing import Annotated, Self
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
@@ -12,7 +12,7 @@ class OdmCollectionInitializationInput(BaseModel):
 
     expected_parent: dict[str, JsonValue]
     expected_children: dict[str, dict[str, JsonValue]]
-    children: list[dict[str, JsonValue]] = Field(min_length=1)
+    children: Annotated[list[dict[str, JsonValue]], Field(min_length=1)]
 
     @model_validator(mode="after")
     def exact_child_inventory(self) -> Self:

@@ -1,5 +1,7 @@
 """Editable pending study/epoch control flow, preserving each native scope."""
 
+from typing import Any
+
 from usdm_model.extension import ExtensionAttribute
 from usdm_model.schedule_timeline import ScheduleTimeline
 from usdm_model.scheduled_instance import ConditionAssignment, ScheduledDecisionInstance
@@ -20,7 +22,7 @@ def project_scoped_transitions(mapper, study, version, design):
     )
 
     metadata = getattr(study.current_metadata, "high_level_study_design", None)
-    rules = [
+    rules: list[Any] = [
         (
             "study-stop",
             study.uid,

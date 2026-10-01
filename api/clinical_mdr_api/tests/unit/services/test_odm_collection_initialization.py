@@ -4,6 +4,10 @@ The transaction port commits or rolls back its staged graph. This is not a
 Neo4j concurrency test; native root-lock behavior needs the isolated DB check.
 """
 
+# pytest fixtures are injected by parameter name
+# pytest fixtures requested for their side effects
+# pylint: disable=redefined-outer-name,unused-argument
+
 import json
 from copy import deepcopy
 from types import SimpleNamespace
@@ -265,7 +269,10 @@ def native(monkeypatch):
     store = StagedStore()
     monkeypatch.setattr(db, "_active_transaction", None)
     monkeypatch.setattr(
-        _utils, "TransactionProxy", lambda database: store.transaction(database)
+        _utils,
+        "TransactionProxy",
+        # pylint: disable-next=unnecessary-lambda
+        lambda database: store.transaction(database),
     )
     return store
 

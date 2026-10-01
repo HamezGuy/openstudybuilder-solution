@@ -112,7 +112,7 @@ def test_retains_exact_item_ct_versions_names_memberships_and_units_once():
 
 
 def test_failed_version_lookup_never_retries_latest_or_accepts_a_different_identity():
-    readers, calls = readers_and_calls()
+    readers, _ = readers_and_calls()
     readers["unitDefinition"] = lambda uid, version: {"uid": uid, "version": "wrong"}
     readers["ctCodelistAttributes"] = lambda uid, version: {
         "codelist_uid": "foreign",

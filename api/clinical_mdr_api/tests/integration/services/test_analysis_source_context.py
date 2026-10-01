@@ -1,5 +1,8 @@
 """The analysis listings must preserve native source records before analysis coding."""
 
+# pytest fixtures are injected by parameter name
+# pylint: disable=redefined-outer-name
+
 import os
 from urllib.parse import urlsplit
 from uuid import uuid4

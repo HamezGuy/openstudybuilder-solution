@@ -4,6 +4,9 @@ Only native persistence and library reads are replaced. These tests do not
 create signatures, access a database or change any client study.
 """
 
+# pytest fixtures requested for their side effects
+# pylint: disable=unused-argument
+
 from copy import deepcopy
 from types import SimpleNamespace
 

@@ -50,7 +50,11 @@ class NativeStudyRecordsTests(unittest.TestCase):
         for source in ({"uid": "Epoch_1", "study_uid": "Other"}, {"uid": "Epoch_1"}):
             with self.subTest(source=source), self.assertRaises(NativeStudyRecordError):
                 collect_study_native_records(
-                    "Study_1", readers={"studyEpoch": lambda **_: [source]}
+                    "Study_1",
+                    readers={
+                        # pylint: disable-next=cell-var-from-loop
+                        "studyEpoch": lambda **_: [source]
+                    },
                 )
         with self.assertRaises(NativeStudyRecordError):
             collect_study_native_records("", readers={})
@@ -171,7 +175,6 @@ class NativeStudyRecordsTests(unittest.TestCase):
 
         def read_absent_source(**kwargs):
             calls.append(("source", kwargs))
-            return None
 
         records, census = collect_study_native_records(
             "Study_1",

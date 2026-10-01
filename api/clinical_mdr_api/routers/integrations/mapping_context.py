@@ -1,5 +1,7 @@
 """Bounded live OSB mapping context for constrained Proposal V2 retrieval."""
 
+from typing import Any
+
 from fastapi import APIRouter, Request
 
 from clinical_mdr_api.models.integrations.mapping_context import (
@@ -19,7 +21,7 @@ from common.auth.dependencies import security
 router = APIRouter()
 
 
-def canonical_openapi_hash(openapi: dict) -> str:
+def canonical_openapi_hash(openapi: dict[str, Any]) -> str:
     return canonical_hash(openapi)
 
 

@@ -1,8 +1,13 @@
+# pytest fixtures requested for their side effects
+# exact == [] / == {} comparisons are the assertion
+# pylint: disable=unused-argument,use-implicit-booleaness-not-comparison
+
 from __future__ import annotations
 
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -23,7 +28,7 @@ TENANT_ID = "11111111-1111-4111-8111-111111111111"
 STUDY_ID = "22222222-2222-4222-8222-222222222222"
 
 
-def _fixture() -> tuple[dict, dict, dict, dict]:
+def _fixture() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
     now = datetime.now(UTC).replace(microsecond=0)
     source_hash = canonical_json_hash_ref(
         {"source": True}, schema_version="SourceFactPackageV1@1.0.0"
@@ -238,13 +243,15 @@ def _fixture() -> tuple[dict, dict, dict, dict]:
     return payload, artifact, envelope, verification
 
 
-def _code(values: tuple[dict, dict, dict, dict]) -> str:
+def _code(
+    values: tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]],
+) -> str:
     with pytest.raises(OsbCandidateSetError) as caught:
         verify_candidate_request_artifact(*values[:2], TENANT_ID, STUDY_ID, *values[2:])
     return caught.value.code
 
 
-def _refresh(values: list[dict]) -> None:
+def _refresh(values: list[dict[str, Any]]) -> None:
     values[1]["payloadHash"] = canonical_json_hash_ref(
         values[0],
         schema_version=values[0]["contractVersion"],
@@ -364,7 +371,7 @@ def test_expired_mutated_and_unsigned_requests_fail() -> None:
     assert _code(tuple(unsigned)) == "OSB_CANDIDATE_REQUEST_SIGNATURE_UNVERIFIED"
 
 
-def _set_contract_version(values: list[dict], minor: str) -> None:
+def _set_contract_version(values: list[dict[str, Any]], minor: str) -> None:
     values[0]["contractVersion"] = f"OsbCandidateRequestV1@{minor}"
     values[1]["payloadContractVersion"] = minor
     values[2]["signingStatement"]["payloadContractVersion"] = minor

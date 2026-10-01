@@ -1,6 +1,6 @@
 """OpenStudyBuilder-authoritative study-definition integration endpoints."""
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Query
 
@@ -26,7 +26,7 @@ router = APIRouter(dependencies=[Depends(enforce_visible_study)])
 )
 def get_native_observation(
     study_uid: Annotated[str, Path(description="The unique OSB study uid")],
-) -> dict:
+) -> dict[str, Any]:
     from clinical_mdr_api.services.integrations.native_observation import (
         collect_native_observation,
     )

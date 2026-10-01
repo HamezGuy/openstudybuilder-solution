@@ -1,5 +1,9 @@
 """Transaction boundaries for native mutations that assign their own IDs."""
 
+# pytest fixtures requested for their side effects
+# exact == [] / == {} comparisons are the assertion
+# pylint: disable=unused-argument,use-implicit-booleaness-not-comparison
+
 import json
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta

@@ -11,13 +11,13 @@ MAX_JSON_CHARS = 65_536
 
 
 class NativeItemObservationRepository:
-    def query(self, text: str, params: dict[str, Any], timeout: float) -> list:
+    def query(self, text: str, params: dict[str, Any], timeout: float) -> list[Any]:
         # The route has no ambient mutation transaction. A per-query driver
         # deadline complements the total observation deadline in the service.
         rows, _ = db.cypher_query(Query(text, timeout=timeout), params)
         return rows or []
 
-    def scope(self, p: dict, timeout: float) -> list:
+    def scope(self, p: dict[str, Any], timeout: float) -> list[Any]:
         return self.query(
             """
           MATCH (binding:PlatformNativeStudyBinding {tenant_id:$tenantId,
@@ -33,7 +33,7 @@ class NativeItemObservationRepository:
             timeout,
         )
 
-    def study_heads(self, p: dict, timeout: float) -> list:
+    def study_heads(self, p: dict[str, Any], timeout: float) -> list[Any]:
         return self.query(
             """
           MATCH (study:StudyRoot {uid:$nativeStudyId})
@@ -46,7 +46,7 @@ class NativeItemObservationRepository:
             timeout,
         )
 
-    def custody(self, p: dict, timeout: float) -> list:
+    def custody(self, p: dict[str, Any], timeout: float) -> list[Any]:
         return self.query(
             """
           MATCH (evidence:OsbNativeEvidenceSetV1 {tenant_id:$tenantId,
@@ -73,7 +73,7 @@ class NativeItemObservationRepository:
             timeout,
         )
 
-    def item(self, p: dict, timeout: float) -> list:
+    def item(self, p: dict[str, Any], timeout: float) -> list[Any]:
         # The datatype is the item's CODMDT term submission value (a
         # HAS_DATA_TYPE relationship since OpenStudyBuilder 2.10).
         return self.query(

@@ -678,8 +678,12 @@ def test_get_compound_doings_data_for_specific_study_version(api_client):
         res_old["items"][i]["study_version"] = mock.ANY
         res_old["items"][i]["study_element"]["study_version"] = mock.ANY
         res_old["items"][i]["study_compound"]["study_version"] = mock.ANY
-    assert res_v1 == res_old
-    assert res_v1 != res_new
+    assert TestUtils.without_reading_provenance(
+        res_v1
+    ) == TestUtils.without_reading_provenance(res_old)
+    assert TestUtils.without_reading_provenance(
+        res_v1
+    ) != TestUtils.without_reading_provenance(res_new)
 
 
 @pytest.mark.parametrize(

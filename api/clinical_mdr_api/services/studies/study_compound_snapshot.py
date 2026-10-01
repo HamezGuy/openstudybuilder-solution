@@ -111,7 +111,7 @@ class StudyCompoundSnapshotReader:
         self.as_of = _utc(as_of or datetime.now(timezone.utc))
         self.terms_as_of = _utc(terms_at_specific_datetime) or self.as_of
         self.bindings: list[dict[str, Any]] = []
-        self._cache = {}
+        self._cache: dict[Any, Any] = {}
         self._selected_values: dict[tuple[str, str], str] = {}
         self._selection_uid: str | None = None
 
@@ -291,6 +291,8 @@ class StudyCompoundSnapshotReader:
     ):
         # The selected study standard's effective date is independent of the
         # clinical snapshot date; pass it explicitly at this native boundary.
+        # Part of the shared signature; not needed here.
+        del at_specific_date_time
         result = (
             self.repos.ct_codelist_name_repository.get_codelist_term_by_uid_and_submval(
                 term_uid,

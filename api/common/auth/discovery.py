@@ -10,7 +10,8 @@ async def reconfigure_with_openid_discovery():
 
     try:
         metadata = await oidc_client.load_server_metadata()
-    except Exception as exc:  # discovery is retried by JWK validation on requests
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        # Discovery is retried by JWK validation on requests.
         # This function configures Swagger URLs only. Crashing the entire API when
         # the identity provider starts a few seconds later creates a restart loop.
         # Protected requests remain fail-closed in JWKService.validate_jwt().

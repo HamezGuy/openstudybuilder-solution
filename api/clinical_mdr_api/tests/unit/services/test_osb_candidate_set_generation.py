@@ -1,3 +1,6 @@
+# exact == [] / == {} comparisons are the assertion
+# pylint: disable=use-implicit-booleaness-not-comparison
+
 from __future__ import annotations
 
 import json

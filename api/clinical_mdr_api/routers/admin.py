@@ -102,10 +102,15 @@ def get_users() -> list[UserInfo]:
     dependencies=[security, rbac.ADMIN_WRITE],
     summary="User identity projection is read-only",
     description="Identity fields are synchronized from the authoritative Command Center/EDC principal. Edit users there; OpenStudyBuilder keeps only a local authorship projection.",
-    status_code=409,
+    # The projection is never edited here: every call is answered with 409.
+    status_code=200,
     responses={
         403: _generic_descriptions.ERROR_403,
         404: _generic_descriptions.ERROR_404,
+        409: {
+            **_generic_descriptions.ERROR_409,
+            "description": "Always: the user is an identity projection of the authoritative principal.",
+        },
     },
 )
 def patch_user(user_id: str, payload: UserInfoPatchInput) -> UserInfo:

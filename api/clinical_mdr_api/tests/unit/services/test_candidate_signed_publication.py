@@ -12,7 +12,6 @@ from clinical_mdr_api.generated.platform_contracts.hash_signing_v1 import (
     canonical_json_hash_ref,
 )
 from clinical_mdr_api.generated.platform_contracts.platform_command_v1 import (
-    PlatformCommandError,
     command_intent,
 )
 from clinical_mdr_api.routers.integrations import native_identity as routes
@@ -126,7 +125,10 @@ def setup_publication(monkeypatch, *, generate=False):
     )
     request = SimpleNamespace(app=SimpleNamespace(openapi=lambda: {}))
     control.command = command
-    invoke = lambda: routes.execute_candidate_set_command(command, request)["data"]
+
+    def invoke():
+        return routes.execute_candidate_set_command(command, request)["data"]
+
     return generated, native, control, publisher, reads, invoke
 
 

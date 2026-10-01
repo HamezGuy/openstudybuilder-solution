@@ -41,6 +41,10 @@ from clinical_mdr_api.services.integrations.study_metadata_mapping import (
     prepare_metadata_offers,
 )
 
+# Fail-closed contract checks list every required property in one condition;
+# splitting them would hide the rule they enforce.
+# pylint: disable=too-many-boolean-expressions
+
 CANDIDATE_REQUEST_MEDIA_TYPE = (
     "application/vnd.accuratrials.osb-candidate-request-v1+json"
 )
@@ -359,6 +363,8 @@ def _assert_signed_request(
 def _assert_request_projection(
     payload: dict[str, Any], artifact: dict[str, Any]
 ) -> None:
+    # Part of the shared signature; not needed here.
+    del artifact
     source = _record(
         payload.get("sourceFactPackage"), "OSB_CANDIDATE_REQUEST_SOURCE_REQUIRED"
     )
@@ -447,7 +453,8 @@ def _assert_request_projection(
     # first synthetic package with prefix-related ids refused here with
     # OSB_CANDIDATE_REQUEST_MEMBER_MISMATCH against a correctly-built request.
     member_tuples = [
-        (str(member.get("sourceFactId")), int(member.get("revision")))
+        # _fact_key above proved every revision is a positive integer.
+        (str(member.get("sourceFactId")), int(member["revision"]))
         for member in members
     ]
     if member_tuples != sorted(member_tuples) or not set(intent_keys) <= set(
@@ -654,11 +661,10 @@ def _assert_request_projection(
             isinstance(upstream_hash, str)
             and re.fullmatch(r"sha256:[0-9a-f]{64}", upstream_hash)
         )
+        counts = [upstream.get(name) for name in ("excludedSigned", "quarantined")]
         if not hash_ok or any(
-            not isinstance(upstream.get(name), int)
-            or isinstance(upstream.get(name), bool)
-            or upstream.get(name) < 0
-            for name in ("excludedSigned", "quarantined")
+            not isinstance(count, int) or isinstance(count, bool) or count < 0
+            for count in counts
         ):
             raise OsbCandidateSetError(
                 "OSB_CANDIDATE_REQUEST_CENSUS_MISMATCH",
@@ -864,7 +870,7 @@ def store_candidate_request_bytes(
     try:
         payload = json.loads(
             bytes_value.decode("utf-8"),
-            object_pairs_hook=lambda pairs: _unique_object(pairs),
+            object_pairs_hook=_unique_object,
         )
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise OsbCandidateSetError(
@@ -1496,7 +1502,7 @@ def _assert_readable_or_create(record: dict[str, Any]) -> str:
     )
 
 
-def generate_candidate_set(
+def generate_candidate_set(  # pylint: disable=too-many-locals
     *,
     request_payload: dict[str, Any],
     artifact: dict[str, Any],

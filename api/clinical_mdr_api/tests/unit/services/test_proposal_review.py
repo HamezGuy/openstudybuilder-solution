@@ -1,7 +1,11 @@
 """OSB-owned Proposal V2 intake and item-level decision semantics."""
 
+# test doubles are lambdas accepting **kwargs
+# pylint: disable=unexpected-keyword-arg
+
 from copy import deepcopy
 from datetime import datetime, timezone
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -67,7 +71,9 @@ def _service_principal() -> ProposalReviewPrincipal:
     )
 
 
-def _set_authority_mode(proposal: dict, authority_mode: str) -> dict:
+def _set_authority_mode(
+    proposal: dict[str, Any], authority_mode: str
+) -> dict[str, Any]:
     proposal = deepcopy(proposal)
     proposal["authorityMode"] = authority_mode
     proposal["sourceBuildHash"] = _canonical_hash(

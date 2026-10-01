@@ -1,5 +1,8 @@
 """Resolve consumers' schema references against the actual registered routes."""
 
+# pytest fixtures are injected by parameter name
+# pylint: disable=redefined-outer-name
+
 import pytest
 from fastapi import FastAPI
 

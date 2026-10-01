@@ -1,6 +1,8 @@
 """Registered HTTP route; authenticated provider context remains an authored seam."""
 
-import json
+# pytest fixtures requested for their side effects
+# pylint: disable=unused-argument
+
 from unittest.mock import patch
 
 import pytest
@@ -8,9 +10,6 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from clinical_mdr_api.routers.integrations.native_item_observation import router
-from clinical_mdr_api.services.integrations.native_item_observation import (
-    NativeItemObservationService,
-)
 from clinical_mdr_api.tests.unit.services.test_native_item_observation import fixture
 from common.auth.dependencies import validate_token
 

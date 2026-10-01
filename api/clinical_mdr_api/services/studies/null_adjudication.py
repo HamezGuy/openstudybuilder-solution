@@ -181,7 +181,7 @@ def metadata_identity(value: Any) -> Any:
 
 def _current_state(
     metadata, field: _Field, companion: bool, find_all_units: Callable
-) -> tuple[dict, Any]:
+) -> tuple[dict[str, Any], Any]:
     parent = metadata
     for part in field.group.split("."):
         parent = getattr(parent, part, None)
@@ -235,7 +235,7 @@ def prepare_guarded_null_patch(
             )
         empty_value = (
             raw_value is None
-            or isinstance(raw_value, (str, list, tuple, set, frozenset))
+            or isinstance(raw_value, str | list | tuple | set | frozenset)
             and len(raw_value) == 0
         )
         if not empty_value or raw_companion is not None:

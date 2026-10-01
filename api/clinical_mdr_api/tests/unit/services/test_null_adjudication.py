@@ -1,6 +1,8 @@
 """Offline public StudyService/DTO tests; real Neo4j race proof is separate."""
 
-import json
+# pylint cannot infer the returned collection
+# pylint: disable=not-an-iterable
+
 from copy import deepcopy
 from dataclasses import replace
 

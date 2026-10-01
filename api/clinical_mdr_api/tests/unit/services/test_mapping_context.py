@@ -1,5 +1,10 @@
 """Bounded deterministic mapping-context tests."""
 
+# fixture values are plain JSON dicts pylint cannot infer
+# pytest fixtures requested for their side effects
+# exact == [] / == {} comparisons are the assertion
+# pylint: disable=unsubscriptable-object,unused-argument,use-implicit-booleaness-not-comparison
+
 import hashlib
 from datetime import datetime, timezone
 from types import SimpleNamespace

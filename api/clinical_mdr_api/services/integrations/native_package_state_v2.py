@@ -698,7 +698,7 @@ def _verify_metadata_reference_state(selections, intents, candidates, native, co
             )
 
 
-def load_checkpoint_native_state(
+def load_checkpoint_native_state(  # pylint: disable=too-many-locals
     *, tenant_id: str, platform_study_id: str, checkpoint: dict[str, Any]
 ) -> dict[str, Any]:
     """Retain and re-read the exact checkpoint inventory; this grants no release."""

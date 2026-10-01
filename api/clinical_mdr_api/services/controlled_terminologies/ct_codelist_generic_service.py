@@ -109,6 +109,8 @@ class CTCodelistGenericService(Generic[_AggregateRootType], abc.ABC):
 
         return header_values
 
+    # Typed as upstream's @db.transaction exposed it: each subclass returns its
+    # concrete model, which callers pass on as that model.
     @ensure_transaction(db)
     def get_by_uid(
         self,
@@ -116,7 +118,7 @@ class CTCodelistGenericService(Generic[_AggregateRootType], abc.ABC):
         version: str | None = None,
         at_specific_date: datetime | None = None,
         status: LibraryItemStatus | None = None,
-    ) -> BaseModel:
+    ) -> Any:
         item = self._find_by_uid_or_raise_not_found(
             codelist_uid=codelist_uid,
             version=version,

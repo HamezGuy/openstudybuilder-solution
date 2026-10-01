@@ -13,6 +13,10 @@ from clinical_mdr_api.services.ddf.usdm_mapping_context import (
     native_json,
 )
 
+# Fail-closed contract checks list every required property in one condition;
+# splitting them would hide the rule they enforce.
+# pylint: disable=too-many-boolean-expressions
+
 # CDISC DDF-RA v4.0.0's published Pilot uses this URI and a terminology release
 # date. Native package UIDs and sponsor package dates are separate source facts.
 CDISC_CODE_SYSTEM = "http://www.cdisc.org"
@@ -47,7 +51,7 @@ def _source_json(value):
         return str(value)
     if isinstance(value, dict):
         return {key: _source_json(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         return [_source_json(item) for item in value]
     return native_json(value)
 

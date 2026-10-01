@@ -1,5 +1,8 @@
 """Independent actual lock race; only an explicit disposable Community graph."""
 
+# pytest fixtures are injected by parameter name
+# pylint: disable=redefined-outer-name
+
 import json
 import os
 import threading
@@ -18,8 +21,10 @@ from clinical_mdr_api.domain_repositories.integrations.governed_item_association
 from clinical_mdr_api.services.integrations.native_item_observation import (
     NativeItemObservationError,
 )
+
+# pylint: disable-next=unused-import
 from clinical_mdr_api.tests.integration.services.test_governed_item_association_neo4j import (
-    associated_native,
+    associated_native,  # pytest fixture
 )
 
 # Needs an explicitly owned disposable Neo4j fixture from the evidence harness,
@@ -40,9 +45,9 @@ def test_actual_append_rechecks_native_scope_after_waiting_for_original_review_l
     entered = threading.Event()
 
     class Entered(GovernedItemAssociationRepository):
-        def append_association(self, params, timeout):
+        def append_association(self, p, timeout):
             entered.set()
-            return super().append_association(params, timeout)
+            return super().append_association(p, timeout)
 
     f.service.repository = Entered()
 
@@ -53,7 +58,7 @@ def test_actual_append_rechecks_native_scope_after_waiting_for_original_review_l
         try:
             try:
                 return {"result": f.service.observe(f.review)}
-            except Exception as error:
+            except Exception as error:  # pylint: disable=broad-exception-caught
                 return {"error": type(error).__name__, "message": str(error)}
         finally:
             db.close_connection()
@@ -177,9 +182,9 @@ def test_current_authority_pins_are_reread_after_own_node_lock(
     entered = threading.Event()
 
     class Entered(GovernedItemAssociationRepository):
-        def append_association(self, params, timeout):
+        def append_association(self, p, timeout):
             entered.set()
-            return super().append_association(params, timeout)
+            return super().append_association(p, timeout)
 
     f.service.repository = Entered()
 
@@ -188,7 +193,7 @@ def test_current_authority_pins_are_reread_after_own_node_lock(
         try:
             try:
                 return {"result": f.service.observe(f.review)}
-            except Exception as error:
+            except Exception as error:  # pylint: disable=broad-exception-caught
                 return {"error": type(error).__name__, "message": str(error)}
         finally:
             db.close_connection()
@@ -255,11 +260,11 @@ def test_duplicate_current_authority_created_after_initial_read_refuses_before_r
     f = associated_native
 
     class Duplicate(GovernedItemAssociationRepository):
-        def append_association(self, params, timeout):
+        def append_association(self, p, timeout):
             db.cypher_query(
                 f"MATCH (n:{node}) CREATE (duplicate:{node}) SET duplicate=properties(n)"
             )
-            return super().append_association(params, timeout)
+            return super().append_association(p, timeout)
 
     f.service.repository = Duplicate()
     with pytest.raises(NativeItemObservationError, match="APPEND_CONFLICT"):

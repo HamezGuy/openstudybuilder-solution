@@ -1,5 +1,8 @@
 """Actual registered routes and strict DTOs; authentication is an authored seam."""
 
+# pytest fixtures requested for their side effects
+# pylint: disable=unused-argument
+
 from unittest.mock import patch
 
 import pytest

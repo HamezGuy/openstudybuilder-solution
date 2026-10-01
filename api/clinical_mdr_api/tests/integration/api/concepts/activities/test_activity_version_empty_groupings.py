@@ -1,5 +1,8 @@
 """Version-specific groupings distinguish an empty definition from missing/broken data."""
 
+# pytest fixtures requested for their side effects
+# pylint: disable=unused-argument
+
 # pylint: disable=redefined-outer-name
 
 import pytest

@@ -1,4 +1,5 @@
 from copy import deepcopy
+from typing import Any
 
 import pytest
 
@@ -21,7 +22,7 @@ def _hash(value, schema: str):
 def _intent(
     fact_id: str = "fact-1",
     family: str = "controlled_terminology",
-    extra: dict | None = None,
+    extra: dict[str, Any] | None = None,
 ):
     source = {
         "assertionType": None,
@@ -67,8 +68,8 @@ def _routed(
 def _census_row(
     member_index: int,
     intent_index: int,
-    member: dict,
-    intent: dict,
+    member: dict[str, Any],
+    intent: dict[str, Any],
     snapshot_version_id: str,
     request_id: str,
 ):
@@ -104,7 +105,10 @@ def _census_row(
 
 
 def _routed_census_row(
-    member_index: int, member: dict, item: dict, snapshot_version_id: str
+    member_index: int,
+    member: dict[str, Any],
+    item: dict[str, Any],
+    snapshot_version_id: str,
 ):
     return {
         "unitId": f'{item["factId"]}@{item["revision"]}:primary',
@@ -144,7 +148,7 @@ _COUNT_KEYS = {
 }
 
 
-def _counts(rows: list[dict]) -> dict:
+def _counts(rows: list[dict[str, Any]]) -> dict[str, Any]:
     counts = {
         "rows": len(rows),
         "native": 0,
@@ -159,7 +163,7 @@ def _counts(rows: list[dict]) -> dict:
     return counts
 
 
-def _refresh_census_hash(payload: dict) -> None:
+def _refresh_census_hash(payload: dict[str, Any]) -> None:
     census = payload["inputConservation"]
     census["rowSetHash"] = _hash(census["rows"], "ConservationCensusRowsV1@1.0.0")
 
@@ -487,7 +491,9 @@ def test_stale_snapshot_checkpoint_is_rejected():
     assert error.value.code == "OSB_CANDIDATE_REQUEST_CHECKPOINT_MISMATCH"
 
 
-def _signed_transfer_envelope(payload: dict, payload_hash: str) -> dict:
+def _signed_transfer_envelope(
+    payload: dict[str, Any], payload_hash: str
+) -> dict[str, Any]:
     contract_version = payload.get("contractVersion", "OsbCandidateRequestV1@1.0.0")
     hash_ref = {
         "algorithm": "sha-256",

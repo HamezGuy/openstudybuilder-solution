@@ -1,5 +1,8 @@
 """Registered native routes with authored token provider; no IdP/crypto claim."""
 
+# pydantic model_fields is a mapping on the class
+# pylint: disable=unsupported-membership-test
+
 import asyncio
 import threading
 import time

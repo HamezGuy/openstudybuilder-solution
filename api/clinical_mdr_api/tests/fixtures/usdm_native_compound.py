@@ -5,6 +5,9 @@ approved values, and independently versioned children change after the selected
 study timestamp. No USDM document or expected mapper output enters this fixture.
 """
 
+# pytest fixtures requested for their side effects
+# pylint: disable=unused-argument
+
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -236,45 +239,45 @@ class NativeCompoundSource:
         compound = self.root(
             "compound",
             "Compound_1",
-            dict(
-                name="Synthetic compound",
-                name_sentence_case="Synthetic compound",
-                definition="",
-                abbreviation=None,
-                is_sponsor_compound=False,
-                external_id="SYN-C",
-            ),
+            {
+                "name": "Synthetic compound",
+                "name_sentence_case": "Synthetic compound",
+                "definition": "",
+                "abbreviation": None,
+                "is_sponsor_compound": False,
+                "external_id": "SYN-C",
+            },
             later_properties={"name": "UNSELECTED compound"},
         )
         self.root(
             "compoundAlias",
             "Alias_1",
-            dict(
-                name="Selected alias",
-                name_sentence_case="Selected alias",
-                definition=None,
-                abbreviation="",
-                is_preferred_synonym=False,
-            ),
+            {
+                "name": "Selected alias",
+                "name_sentence_case": "Selected alias",
+                "definition": None,
+                "abbreviation": "",
+                "is_preferred_synonym": False,
+            },
             relations={"is_compound": [compound]},
             later_properties={"name": "UNSELECTED alias"},
             selected=True,
         )
-        unit_properties = dict(
-            name="mg",
-            definition="Explicit synthetic milligram unit",
-            si_unit=False,
-            display_unit=True,
-            master_unit=False,
-            convertible_unit=False,
-            us_conventional_unit=False,
-            use_complex_unit_conversion=False,
-            use_molecular_weight=False,
-            legacy_code=None,
-            conversion_factor_to_master=None,
-            order=0,
-            comment="",
-        )
+        unit_properties = {
+            "name": "mg",
+            "definition": "Explicit synthetic milligram unit",
+            "si_unit": False,
+            "display_unit": True,
+            "master_unit": False,
+            "convertible_unit": False,
+            "us_conventional_unit": False,
+            "use_complex_unit_conversion": False,
+            "use_molecular_weight": False,
+            "legacy_code": None,
+            "conversion_factor_to_master": None,
+            "order": 0,
+            "comment": "",
+        }
         unit_relations = {
             name: []
             for name in (
@@ -352,26 +355,26 @@ class NativeCompoundSource:
         pclass = self.root(
             "dictionaryTerm",
             "PClass_1",
-            dict(
-                name="Synthetic pharmacologic class",
-                name_sentence_case="Synthetic pharmacologic class",
-                dictionary_id="SYN-PC",
-                definition="",
-                abbreviation=None,
-            ),
+            {
+                "name": "Synthetic pharmacologic class",
+                "name_sentence_case": "Synthetic pharmacologic class",
+                "dictionary_id": "SYN-PC",
+                "definition": "",
+                "abbreviation": None,
+            },
             later_properties={"dictionary_id": "UNSELECTED-PC"},
         )
         pclass.has_term = Relations(dictionary_codelist)
         unii = self.root(
             "dictionarySubstance",
             "UNII_1",
-            dict(
-                name="Synthetic active substance",
-                name_sentence_case="Synthetic active substance",
-                dictionary_id="SYN-UNII",
-                definition=None,
-                abbreviation="",
-            ),
+            {
+                "name": "Synthetic active substance",
+                "name_sentence_case": "Synthetic active substance",
+                "dictionary_id": "SYN-UNII",
+                "definition": None,
+                "abbreviation": "",
+            },
             relations={"has_pclass": [pclass]},
             later_properties={"dictionary_id": "UNSELECTED-UNII"},
         )
@@ -379,13 +382,13 @@ class NativeCompoundSource:
         active = self.root(
             "activeSubstance",
             "ActiveSubstance_1",
-            dict(
-                analyte_number="SYN-AN",
-                short_number="SYN-S",
-                long_number="SYN-L",
-                inn="Synthetic active substance",
-                external_id=None,
-            ),
+            {
+                "analyte_number": "SYN-AN",
+                "short_number": "SYN-S",
+                "long_number": "SYN-L",
+                "inn": "Synthetic active substance",
+                "external_id": None,
+            },
             relations={"has_unii_value": [unii]},
             later_properties={"inn": "UNSELECTED substance"},
         )
@@ -415,11 +418,11 @@ class NativeCompoundSource:
         self.root(
             "medicinalProduct",
             "MedicinalProduct_1",
-            dict(
-                name="Selected medicinal product",
-                name_sentence_case="Selected medicinal product",
-                external_id="SYN-MED",
-            ),
+            {
+                "name": "Selected medicinal product",
+                "name_sentence_case": "Selected medicinal product",
+                "external_id": "SYN-MED",
+            },
             relations={
                 "is_compound": [compound],
                 "has_pharmaceutical_product": [pharmaceutical],
@@ -524,7 +527,6 @@ class NativeCompoundSource:
     ):
         assert strict_snapshot and at_specific_date_time is not None
         assert term_uid is None, "This fixture declares no selected codelist term."
-        return None
 
     @contextmanager
     def isolated(self, study):
@@ -547,6 +549,7 @@ class NativeCompoundSource:
                 "clinical_mdr_api.services.studies.study_compound_snapshot.CTTermRoot",
                 SimpleNamespace(
                     nodes=SimpleNamespace(
+                        # pylint: disable-next=unnecessary-lambda
                         get_or_none=lambda uid: self.public_terms.get(uid)
                     )
                 ),

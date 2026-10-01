@@ -4,6 +4,9 @@ This extends only the test-owned label inventory. The original empty-graph,
 container/relay/owner checks and native authentication fixture remain in force.
 """
 
+# pytest fixtures are injected by parameter name
+# pylint: disable=redefined-outer-name
+
 import json
 
 import pytest
@@ -14,7 +17,11 @@ from clinical_mdr_api.domains.study_definition_aggregates.study_metadata import 
 )
 from clinical_mdr_api.services._meta_repository import MetaRepository
 from clinical_mdr_api.services.studies.study import StudyService
-from clinical_mdr_api.tests.fixtures.null_adjudication_neo4j import native_null_graph
+
+# pylint: disable-next=unused-import
+from clinical_mdr_api.tests.fixtures.null_adjudication_neo4j import (
+    native_null_graph,  # pytest fixture
+)
 from clinical_mdr_api.tests.integration.utils.utils import TestUtils
 from common.auth.user import user
 

@@ -1,5 +1,8 @@
 """Ordinary native APIs on a reserved disposable graph, using current source."""
 
+# pytest fixtures are injected by parameter name
+# pylint: disable=redefined-outer-name
+
 import json
 import os
 from copy import deepcopy
@@ -75,19 +78,19 @@ def case(visit_library):
 
 
 def payload(case, number, timing=None, **changes):
-    values = dict(
-        study_epoch_uid=case.epoch1.uid,
-        visit_type={"term_uid": "VisitType_0003"},
-        visit_contact_mode={"term_uid": "VisitContactMode_0001"},
-        visit_name=f"Source event {number}",
-        visit_short_name=f"SRC{number}",
-        visit_number=number,
-        unique_visit_number=number * 100,
-        untimed_timing=timing or {"kind": "manual_date", "repeating": False},
-        description="Source-supported observation; no mandated intervention.",
-        start_rule="Actual dates are recorded manually.",
-        end_rule="Preserve the source clinical review hold.",
-    )
+    values = {
+        "study_epoch_uid": case.epoch1.uid,
+        "visit_type": {"term_uid": "VisitType_0003"},
+        "visit_contact_mode": {"term_uid": "VisitContactMode_0001"},
+        "visit_name": f"Source event {number}",
+        "visit_short_name": f"SRC{number}",
+        "visit_number": number,
+        "unique_visit_number": number * 100,
+        "untimed_timing": timing or {"kind": "manual_date", "repeating": False},
+        "description": "Source-supported observation; no mandated intervention.",
+        "start_rule": "Actual dates are recorded manually.",
+        "end_rule": "Preserve the source clinical review hold.",
+    }
     values.update(changes)
     return manual_input(**values)
 

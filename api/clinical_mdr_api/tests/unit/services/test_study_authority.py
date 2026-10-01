@@ -1,5 +1,8 @@
 """OSB authority boundary: native study + USDM must reconcile before release."""
 
+# exact == [] / == {} comparisons are the assertion
+# pylint: disable=use-implicit-booleaness-not-comparison
+
 from clinical_mdr_api.models.integrations.study_authority import (
     StudyAuthorityReconciliationRow,
 )

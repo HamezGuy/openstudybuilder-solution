@@ -36,6 +36,10 @@ from clinical_mdr_api.services.integrations.proposal_target_capabilities import 
 )
 from common.utils import convert_to_datetime
 
+# Fail-closed contract checks list every required property in one condition;
+# splitting them would hide the rule they enforce.
+# pylint: disable=too-many-boolean-expressions
+
 SECTION_ORDER = (
     "studySetup",
     "standards",
@@ -595,7 +599,7 @@ class ProposalReviewService:
     def _validate_proposal(
         self,
         proposal: dict[str, Any],
-        live_openapi_hash: str,
+        live_openapi_hash: str | None,
     ) -> list[dict[str, Any]]:
         if (
             proposal.get("formatVersion") != "osb-proposal/2.1"
@@ -613,6 +617,8 @@ class ProposalReviewService:
         if proposal.get("osbOpenApiHash") != live_openapi_hash:
             raise ValueError("OSB_PROPOSAL_OPENAPI_HASH_STALE")
         context_hash = proposal.get("osbMappingContextHash")
+        if not isinstance(context_hash, str):
+            raise ValueError("OSB_PROPOSAL_MAPPING_CONTEXT_UNKNOWN")
         context = self.repository.get_context(context_hash)
         if context is None:
             raise ValueError("OSB_PROPOSAL_MAPPING_CONTEXT_UNKNOWN")
@@ -873,7 +879,7 @@ class ProposalReviewService:
         expected_counts["signedExclusions"] = (
             expected_counts["notApplicable"] + expected_counts["excluded"]
         )
-        kinds_by_fact: dict[str, list[str]] = {}
+        kinds_by_fact: dict[str, list[str | None]] = {}
         for item in objects:
             resource_type = (item.get("mapping") or {}).get("proposedResourceType")
             kind = target_capability(resource_type)

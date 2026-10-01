@@ -460,7 +460,7 @@ class NativeStudyMetadataPort:
 
 
 def _resolved_value(
-    value: Any, plan: dict[str, Any], port: Any, context: Any, bindings: list
+    value: Any, plan: dict[str, Any], port: Any, context: Any, bindings: list[Any]
 ):
     if isinstance(value, list):
         return [_resolved_value(item, plan, port, context, bindings) for item in value]
@@ -537,7 +537,7 @@ def prepare_metadata_offers(
     port = port or NativeStudyMetadataPort()
     study = port.read(uid)
     _assert_draft(study, uid)
-    result = {}
+    result: dict[str, Any] = {}
     for intent in selected:
         key = f'{intent["factId"]}@{intent["revision"]}:{intent["targetKey"]}'
         plan = intent.get("nativeStudyOperation") or {}

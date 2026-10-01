@@ -15,6 +15,7 @@ from clinical_mdr_api.models.integrations.mapping_context import (
     MappingContextResponse,
     MappingContextV2Request,
     MappingContextV2Response,
+    MappingResourceFamily,
 )
 from clinical_mdr_api.services.integrations.canonical_json import canonical_hash
 from clinical_mdr_api.services.integrations.nested_transaction import (
@@ -112,7 +113,7 @@ class MappingContextService:
         for family in sorted(required_model_families - selected_model_families):
             release_blockers.append(f"MAPPING_CONTEXT_{family}_MODEL_IG_MISSING")
 
-        candidates: dict[str, list[MappingContextCandidate]] = {}
+        candidates: dict[MappingResourceFamily, list[MappingContextCandidate]] = {}
         governed = not release_blockers
         if not searches and not codes:
             warnings.append(
@@ -126,7 +127,7 @@ class MappingContextService:
             package_uids = [package.package_uid for package in packages]
             for family in families:
                 if family == "study_metadata":
-                    rows = []
+                    rows: list[Any] = []
                     release_blockers.append(
                         "MAPPING_CONTEXT_STUDY_METADATA_REQUIRES_GOVERNED_REQUEST"
                     )
@@ -450,7 +451,7 @@ class MappingContextService:
 
     def _selected_packages(
         self,
-        request: MappingContextRequest,
+        request: MappingContextRequest | MappingContextV2Request,
         warnings: list[str],
         release_blockers: list[str],
     ) -> list[MappingContextPackage]:
@@ -523,7 +524,7 @@ class MappingContextService:
 
     @staticmethod
     def _selected_data_models(
-        request: MappingContextRequest,
+        request: MappingContextRequest | MappingContextV2Request,
         release_blockers: list[str],
     ) -> list[MappingContextDataModel]:
         selected = []
@@ -649,7 +650,8 @@ class MappingContextService:
                 label=row[1],
                 code=row[2],
                 status=row[3],
-                version=str(row[4]) if row[4] is not None else None,
+                # The model requires a version: a row without one fails validation.
+                version=str(row[4]) if row[4] is not None else None,  # type: ignore[arg-type]
                 package_uid=row[5],
                 package_effective_date=str(row[6])[:10],
             )
@@ -1061,8 +1063,9 @@ class MappingContextService:
                 resource_type="UnitDefinition",
                 uid=row[0],
                 label=row[1],
-                ucum_code=row[2],
-                version=str(row[3]) if row[3] is not None else None,
+                # MappingContextCandidate has no ucum_code field; this V1 reader never
+                # carried the UCUM term (the V2 reader carries ucum_expression).
+                version=str(row[3]) if row[3] is not None else None,  # type: ignore[arg-type]
                 status="Final",
             )
             for row in result
@@ -1378,7 +1381,8 @@ class MappingContextService:
                 resource_type=resource_type,
                 uid=row[0],
                 label=row[1],
-                version=str(row[2]) if row[2] is not None else None,
+                # The model requires a version: a row without one fails validation.
+                version=str(row[2]) if row[2] is not None else None,  # type: ignore[arg-type]
                 status=row[3],
                 library_name=row[4],
             )
@@ -1389,19 +1393,19 @@ class MappingContextService:
     def _versioned_library_family_v2(family, searches, codes, limit, as_of):
         root_label, value_label, resource_type = FAMILY_NODE_MODELS[family]
         if as_of is None:
-            relationship = """
+            relationship = f"""
                 MATCH (root:{root_label})-[:LATEST_FINAL]->(value:{value_label})
                 MATCH (root)-[version:HAS_VERSION]->(value)
                 WHERE version.status = 'Final' AND version.end_date IS NULL
-            """.format(root_label=root_label, value_label=value_label)
+            """
             params = {"searches": searches, "codes": codes, "limit": limit}
         else:
-            relationship = """
+            relationship = f"""
                 MATCH (root:{root_label})-[version:HAS_VERSION]->(value:{value_label})
                 WHERE version.status = 'Final'
                   AND version.start_date <= datetime($as_of)
                   AND (version.end_date IS NULL OR version.end_date > datetime($as_of))
-            """.format(root_label=root_label, value_label=value_label)
+            """
             params = {
                 "searches": searches,
                 "codes": codes,

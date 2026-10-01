@@ -29,19 +29,11 @@ from usdm_model import ObservationalStudyDesign as USDMObservationalStudyDesign
 from usdm_model import Organization as USDMOrganization
 from usdm_model import Quantity as USDMQuantity
 from usdm_model import Range as USDMRange
-from usdm_model import (
-    ScheduledActivityInstance,
-)
-from usdm_model import ScheduleTimeline as USDMScheduleTimeline
 from usdm_model import Study as USDMStudy
 from usdm_model import (
     StudyArm,
 )
-from usdm_model import StudyCell as USDMStudyCell
 from usdm_model import StudyDefinitionDocument as USDMStudyDefinitionDocument
-from usdm_model import (
-    StudyDefinitionDocumentVersion as USDMStudyDefinitionDocumentVersion,
-)
 from usdm_model import StudyDesignPopulation as USDMStudyDesignPopulation
 from usdm_model import StudyElement as USDMStudyElement
 from usdm_model import StudyEpoch as USDMStudyEpoch
@@ -49,7 +41,6 @@ from usdm_model import StudyIdentifier as USDMStudyIdentifier
 from usdm_model import StudyIntervention as USDMStudyIntervention
 from usdm_model import StudyTitle as USDMStudyTitle
 from usdm_model import StudyVersion as USDMStudyVersion
-from usdm_model import Timing as USDMTiming
 from usdm_model import TransitionRule as USDMTransitionRule
 from usdm_model.extension import BaseAliasCode as USDMExtensionAliasCode
 from usdm_model.extension import BaseCode as USDMExtensionCode
@@ -58,9 +49,6 @@ from usdm_model.extension import ExtensionAttribute as USDMExtensionAttribute
 
 from clinical_mdr_api.domain_repositories.study_selections.study_arm_origin_repository import (
     StudyArmOriginRepository,
-)
-from clinical_mdr_api.domains.study_definition_aggregates.study_metadata import (
-    StudyStatus,
 )
 from clinical_mdr_api.domains.study_selections.study_arm_origin import (
     STUDY_ARM_ORIGIN_CATALOGUE,
@@ -143,7 +131,7 @@ def _items(value: Any) -> list[Any]:
         items, total = getattr(value, "items", value or []), getattr(
             value, "total", None
         )
-    if not isinstance(items, (list, tuple)):
+    if not isinstance(items, list | tuple):
         raise USDMMappingAuthorityRequired("USDM_COMPLETE_SOURCE_COLLECTION_REQUIRED")
     if isinstance(total, int) and total > len(items):
         raise USDMMappingAuthorityRequired("USDM_SOURCE_COLLECTION_TRUNCATED")
@@ -235,6 +223,7 @@ class USDMMapper:
         self._context = MappingContext()
         self._mapping_active = False
         self._call_cache: dict[Any, Any] = {}
+        self._study_uid: str | None = None
         self._native_readers = {
             "studyCohort": (get_osb_study_cohorts, "cohort_uid"),
             "studyBranchArm": (get_osb_study_branch_arms, "branch_arm_uid"),
@@ -312,7 +301,7 @@ class USDMMapper:
                     kind = "studyOperationalActivitySchedule"
                 records = [native_json(row) for row in _items(result)]
                 if kind == "studyOperationalActivitySchedule":
-                    schedule_scopes = {}
+                    schedule_scopes: dict[Any, Any] = {}
                     for record in records:
                         uid = record.get(identity)
                         selected_scope = (
@@ -327,9 +316,11 @@ class USDMMapper:
                                 f"USDM_OPERATIONAL_SCHEDULE_SCOPE_CONFLICT: {uid}"
                             )
                         schedule_scopes[uid] = selected_scope
+                    # The sort runs here, inside the iteration that binds identity.
                     records.sort(
                         key=lambda record: (
-                            record.get(identity) or "",
+                            record.get(identity)  # pylint: disable=cell-var-from-loop
+                            or "",
                             record.get("study_activity_instance_uid") or "",
                         )
                     )
@@ -2126,14 +2117,15 @@ class USDMMapper:
         population = study.current_metadata.study_population
         sex_term = getattr(population, "sex_of_participants_code", None)
         sex_uid = extract_c_code_from_simple_term(getattr(sex_term, "term_uid", None))
-        sex_codes = {
+        sex_codes_by_uid: dict[str | None, tuple[str, ...]] = {
             DDF_STUDY_POPULATION_SEX_BOTH: (
                 DDF_STUDY_POPULATION_SEX_FEMALE,
                 DDF_STUDY_POPULATION_SEX_MALE,
             ),
             DDF_STUDY_POPULATION_SEX_FEMALE: (DDF_STUDY_POPULATION_SEX_FEMALE,),
             DDF_STUDY_POPULATION_SEX_MALE: (DDF_STUDY_POPULATION_SEX_MALE,),
-        }.get(sex_uid, ())
+        }
+        sex_codes = sex_codes_by_uid.get(sex_uid, ())
         planned_sex = [
             self.get_ct_package_term_as_usdm_code(code) for code in sex_codes
         ]

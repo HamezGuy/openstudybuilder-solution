@@ -5,7 +5,16 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from types import GenericAlias, NoneType, UnionType
-from typing import Any, Callable, Generic, TypeVar, get_args, get_origin, overload
+from typing import (
+    Any,
+    Callable,
+    Generic,
+    TypeGuard,
+    TypeVar,
+    get_args,
+    get_origin,
+    overload,
+)
 
 import neo4j.time
 from pydantic import BaseModel
@@ -92,8 +101,9 @@ class BaseTimelineAR(Generic[StudyVisit]):
                 getattr(visit, "timing_mode", VisitTimingMode.STANDARD)
                 == VisitTimingMode.UNTIMED
             ):
-                visit.anchor_visit = visits_dict.get(
-                    (visit.untimed_timing or {}).get("anchor_visit_uid")
+                anchor_visit_uid = (visit.untimed_timing or {}).get("anchor_visit_uid")
+                visit.anchor_visit = (
+                    visits_dict.get(anchor_visit_uid) if anchor_visit_uid else None
                 )
                 continue
             # There can be multiple Visits with same VisitType that can work as TimeRef
@@ -387,6 +397,19 @@ def convert_to_datetime(
     if not isinstance(value, neo4j.time.DateTime):
         raise TypeError(f"Expected neo4j.time.DateTime, got {type(value)}")
     return value.to_native()
+
+
+def is_exact_int(value: Any) -> TypeGuard[int]:
+    """True only for an int itself: bool, IntEnum and other subclasses do not pass.
+
+    JSON evidence distinguishes 1 from true, which isinstance(value, int) does not.
+    """
+    return type(value) is int  # pylint: disable=unidiomatic-typecheck
+
+
+def is_exact_bool(value: Any) -> TypeGuard[bool]:
+    """True only for a bool itself."""
+    return type(value) is bool  # pylint: disable=unidiomatic-typecheck
 
 
 def validate_page_number_and_page_size(page_number: int, page_size: int):

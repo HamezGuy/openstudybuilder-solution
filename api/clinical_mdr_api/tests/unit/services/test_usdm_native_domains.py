@@ -1,5 +1,9 @@
 """Native model -> USDM4 mapping, with real schema and isolated source readers."""
 
+# pytest fixtures requested for their side effects
+# exact == [] / == {} comparisons are the assertion
+# pylint: disable=unused-argument,use-implicit-booleaness-not-comparison
+
 import json
 from copy import deepcopy
 from hashlib import sha256
@@ -8,18 +12,10 @@ from pathlib import Path
 import pytest
 from jsonschema import Draft202012Validator, FormatChecker
 
-from clinical_mdr_api.services.ddf.usdm_mapper import (
-    USDMMapper,
-    USDMMappingAuthorityRequired,
-)
-from clinical_mdr_api.services.ddf.usdm_mapping_context import (
-    MappingContext,
-    native_json,
-)
+from clinical_mdr_api.services.ddf.usdm_mapper import USDMMappingAuthorityRequired
+from clinical_mdr_api.services.ddf.usdm_mapping_context import native_json
 from clinical_mdr_api.tests.fixtures.usdm_native_source import NativeStudySource
 from clinical_mdr_api.tests.fixtures.usdm_native_study import (
-    AS_OF,
-    STUDY_UID,
     VERSION,
     native_study_graph,
 )
@@ -470,14 +466,17 @@ def test_pinned_model4_schema_accepts_only_explicit_test_author_resolution(monke
     )
     # This is an explicit synthetic review decision, not a native OSB default.
     mapped["population"]["plannedAge"]["isApproximate"] = False
-    code = lambda uid, text: {
-        "id": uid,
-        "instanceType": "Code",
-        "code": uid,
-        "decode": text,
-        "codeSystem": "Synthetic test author vocabulary",
-        "codeSystemVersion": "1.0",
-    }
+
+    def code(uid, text):
+        return {
+            "id": uid,
+            "instanceType": "Code",
+            "code": uid,
+            "decode": text,
+            "codeSystem": "Synthetic test author vocabulary",
+            "codeSystemVersion": "1.0",
+        }
+
     for index, arm in enumerate(mapped["arms"]):
         arm["dataOriginType"] = code(f"Origin_{index}", "Explicitly reviewed origin")
         arm["dataOriginDescription"] = "Explicit test author origin description"

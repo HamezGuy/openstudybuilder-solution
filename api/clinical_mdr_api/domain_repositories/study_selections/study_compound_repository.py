@@ -123,7 +123,6 @@ class StudySelectionCompoundRepository:
                     AND dsa.date.microsecond = $history_microsecond
                 MATCH (sr)-[:AUDIT_TRAIL]->(:StudyAction)-[:AFTER]->(sc)
             """
-            scope_identity = "elementId(sc)"
         elif study_value_version is None:
             scope = "MATCH (sr:StudyRoot {uid: $study_uid})-[:LATEST]->(sv:StudyValue)"
         else:
@@ -135,7 +134,7 @@ class StudySelectionCompoundRepository:
             scope += """
                 MATCH (sv)-[:HAS_STUDY_COMPOUND]->(sc:StudyCompound {uid: $study_compound_uid})
             """
-            scope_identity = "elementId(sv)"
+        scope_identity = "elementId(sc)" if historical else "elementId(sv)"
         query = scope + f" RETURN DISTINCT {scope_identity} AS scope_identity," + """
                 elementId(sc) AS selection_identity,
                 [(sc)-[:HAS_SELECTED_COMPOUND]->(value:CompoundAliasValue)

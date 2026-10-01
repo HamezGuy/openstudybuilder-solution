@@ -170,7 +170,8 @@ def generate(output_directory: Path):
             "Only native read boundaries, selected terminology rows, shadow-preview configuration and the export clock are substituted.",
             "Primary CDISC term subsets exercise selected package reads, not the complete terminology catalog or CORE validator.",
             "Exact selected-activity reachability supplies full versioned native ODM candidates. It does not select a clinical form version or bind it to a visit.",
-            "Native candidates ignore historical vendor field authority; the complete vendor payload remains source evidence. Reviewed assignments must come from the CSL/EDC build specification and UI.",
+            "Native candidates ignore historical vendor field authority; the complete vendor payload remains source evidence."
+            " Reviewed assignments must come from the CSL/EDC build specification and UI.",
             "The source includes the full native Unit_1@1.0 definition. Unversioned library observations are labelled current_reading and never treated as selected historical authority.",
             "Unknown required native facts remain omitted draft values; no test-only author resolutions are included.",
             "No release, acceptance, deployment, native entry or cross-project lifecycle success is claimed by fixture generation.",

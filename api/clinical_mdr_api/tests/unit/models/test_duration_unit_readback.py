@@ -1,3 +1,6 @@
+# pytest fixtures requested for their side effects
+# pylint: disable=unused-argument
+
 from types import SimpleNamespace
 
 from clinical_mdr_api.models.utils import from_duration_object_to_value_and_unit
@@ -37,6 +40,9 @@ def test_singular_unit_remains_visible_when_plural_is_not_configured():
 def test_study_time_precedence_and_plural_preference_are_preserved():
     day = SimpleNamespace(name="day", uid="a")
     days = SimpleNamespace(name="days", uid="b")
-    lookup = lambda **kwargs: ([day, days], 2)
+
+    def lookup(**kwargs):
+        return ([day, days], 2)
+
     assert from_duration_object_to_value_and_unit("P1D", lookup) == (1, day)
     assert from_duration_object_to_value_and_unit("P14D", lookup) == (14, days)

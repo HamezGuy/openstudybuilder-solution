@@ -104,6 +104,8 @@ async def upload_source_draft_stage(request: Request):
     summary="Stage native source drafts without creating clinical approval",
 )
 def execute_source_draft_stage(body: dict[str, Any], request: Request):
+    # Part of the shared signature; not needed here.
+    del request
     _enabled()
     if (
         body.get("action") != "osb.source-draft.stage"

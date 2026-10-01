@@ -1,6 +1,8 @@
 """Selected activity composition over actual library producer/observer fixtures."""
 
-import copy
+# pytest fixtures requested for their side effects
+# pylint: disable=unused-argument
+
 
 import pytest
 

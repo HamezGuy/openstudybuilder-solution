@@ -1,5 +1,7 @@
 """Expose selected native product content without authoring missing drug facts."""
 
+from typing import Any
+
 from usdm_model.administrable_product import AdministrableProduct
 from usdm_model.alias_code import AliasCode
 from usdm_model.code import Code
@@ -48,7 +50,7 @@ class NativeInterventionMapping:
             intervention = interventions.get(self.identifier("StudyIntervention", uid))
             bindings = getattr(selection, "native_library_bindings", [])
             sources = getattr(selection, "pharmaceutical_products", [])
-            by_uid = {}
+            by_uid: dict[Any, Any] = {}
             for product in sources:
                 if not product.uid or not product.version:
                     self.issue(

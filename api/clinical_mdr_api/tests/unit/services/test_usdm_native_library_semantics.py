@@ -1,5 +1,8 @@
 """Native model type, not UID spelling, determines library reference kind."""
 
+# exact == [] / == {} comparisons are the assertion
+# pylint: disable=use-implicit-booleaness-not-comparison
+
 import pytest
 
 from clinical_mdr_api.services.integrations.edc_native_library_definitions import (

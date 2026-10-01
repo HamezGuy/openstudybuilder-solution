@@ -11,6 +11,7 @@ import inspect
 import json
 import pkgutil
 from pathlib import Path
+from typing import Any
 
 import pytest
 from neomodel import StructuredNode, StructuredRel
@@ -25,7 +26,7 @@ MAP_PATH = (
 MAP = json.loads(MAP_PATH.read_text(encoding="utf-8"))
 
 
-def _canonical_hash(document: dict) -> str:
+def _canonical_hash(document: dict[str, Any]) -> str:
     normative = {
         key: document[key]
         for key in (

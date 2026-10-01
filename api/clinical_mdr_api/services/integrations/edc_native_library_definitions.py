@@ -91,8 +91,11 @@ def native_library_readers() -> dict[str, Reader]:
         )
         return service.get_by_uid(**{key: uid, "version": version})
 
+    def reader_for(kind: str) -> Reader:
+        return lambda uid, version: read(kind, uid, version)
+
     return {
-        kind: (lambda uid, version, kind=kind: read(kind, uid, version))
+        kind: reader_for(kind)
         for kind in (
             "ctCodelistAttributes",
             "ctCodelistName",
@@ -108,8 +111,8 @@ def native_library_readers() -> dict[str, Reader]:
 
 
 def collect_native_library_definitions(
-    scoped_records: list[dict], *, readers: Mapping[str, Reader] | None = None
-) -> tuple[list[dict], list[dict], list[dict]]:
+    scoped_records: list[dict[str, Any]], *, readers: Mapping[str, Reader] | None = None
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     """Return (definition records, exact associations, unresolved census rows).
 
     Names and memberships have their own version histories. An ODM term or
@@ -117,11 +120,11 @@ def collect_native_library_definitions(
     explicitly current observations. No failed version lookup retries latest.
     """
     readers = native_library_readers() if readers is None else readers
-    definitions: list[dict] = []
-    associations: list[dict] = []
-    census: list[dict] = []
+    definitions: list[dict[str, Any]] = []
+    associations: list[dict[str, Any]] = []
+    census: list[dict[str, Any]] = []
     cache: dict[tuple[str, str, str | None], tuple[dict | None, str | None]] = {}
-    retained: dict[tuple[str, str, str | None], list[dict]] = {}
+    retained: dict[tuple[str, str, str | None], list[dict[str, Any]]] = {}
 
     def model(value):
         if hasattr(value, "model_dump"):
@@ -180,7 +183,7 @@ def collect_native_library_definitions(
             else "referenced_version" if version else "current_reading"
         )
         if embedded is not None:
-            record, error = model(embedded), None
+            record, failure = model(embedded), None
         else:
             if key not in cache:
                 try:
@@ -195,11 +198,13 @@ def collect_native_library_definitions(
                     if version is not None and result.get("version") != version:
                         raise ValueError("returned version differs from reference")
                     cache[key] = (result, None)
-                except (
-                    Exception
-                ) as error:  # Keep the source reference, disclose lookup failure.
-                    cache[key] = (None, f"{type(error).__name__}: {error}")
-            record, error = cache[key]
+                except Exception as exc:  # pylint: disable=broad-exception-caught
+                    # Keep the source reference, disclose the lookup failure.
+                    cache[key] = (
+                        None,
+                        f"{type(exc).__name__}: {exc}",
+                    )
+            record, failure = cache[key]
         association = {
             "sourceKind": source["kind"],
             "sourceUid": source.get("uid"),
@@ -212,12 +217,12 @@ def collect_native_library_definitions(
             "status": "retained" if record is not None else "unresolved",
         }
         if record is None:
-            association["reason"] = error
+            association["reason"] = failure
             census.append(
                 {
                     "kind": "unresolved_native_reference",
                     "ref": f"{source['kind']}/{source.get('uid')}{path}",
-                    "detail": f"{kind}/{uid}: {error}",
+                    "detail": f"{kind}/{uid}: {failure}",
                     "association": deepcopy(association),
                 }
             )

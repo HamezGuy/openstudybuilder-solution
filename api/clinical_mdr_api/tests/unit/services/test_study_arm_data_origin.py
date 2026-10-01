@@ -45,16 +45,16 @@ RAW_ORIGIN_DESCRIPTIONS = (
 
 
 def _vo(**changes):
-    args = dict(
-        study_uid="Study_synthetic",
-        study_selection_uid="Arm_synthetic",
-        name="Synthetic arm",
-        short_name="SA",
-        author_id="reviewer-A",
-        start_date=AT,
-        data_origin_type_uid=UID,
-        data_origin_description=DESCRIPTION,
-    )
+    args = {
+        "study_uid": "Study_synthetic",
+        "study_selection_uid": "Arm_synthetic",
+        "name": "Synthetic arm",
+        "short_name": "SA",
+        "author_id": "reviewer-A",
+        "start_date": AT,
+        "data_origin_type_uid": UID,
+        "data_origin_description": DESCRIPTION,
+    }
     args.update(changes)
     with patch.object(
         UserInfoService, "get_author_username_from_id", return_value="reviewer-A"
@@ -131,13 +131,13 @@ class StudyArmOriginMutationTests(unittest.TestCase):
                 allocate.assert_not_called()
 
     def test_current_and_connected_response_factories_preserve_raw_origin(self):
-        args = dict(
-            study_uid="Study_synthetic",
-            selection=_vo(),
-            order=1,
-            find_codelist_term_arm_type=lambda *_args, **_kwargs: None,
-            terms_at_specific_datetime=None,
-        )
+        args = {
+            "study_uid": "Study_synthetic",
+            "selection": _vo(),
+            "order": 1,
+            "find_codelist_term_arm_type": lambda *_args, **_kwargs: None,
+            "terms_at_specific_datetime": None,
+        }
         with patch.object(
             UserInfoService, "get_author_username_from_id", return_value="reviewer-A"
         ):

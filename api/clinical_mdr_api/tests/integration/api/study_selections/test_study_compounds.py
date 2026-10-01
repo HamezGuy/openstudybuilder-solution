@@ -922,8 +922,12 @@ def test_get_compounds_data_for_specific_study_version(api_client):
     ).json()
     for i, _ in enumerate(res_old["items"]):
         res_old["items"][i]["study_version"] = mock.ANY
-    assert res_v1 == res_old
-    assert res_v1 != res_new
+    assert TestUtils.without_reading_provenance(
+        res_v1
+    ) == TestUtils.without_reading_provenance(res_old)
+    assert TestUtils.without_reading_provenance(
+        res_v1
+    ) != TestUtils.without_reading_provenance(res_new)
 
 
 @pytest.mark.parametrize(

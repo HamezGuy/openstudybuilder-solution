@@ -1,5 +1,8 @@
 """Selecting a term must retain its codelist identity after a native import."""
 
+# pytest fixtures are injected by parameter name
+# pylint: disable=redefined-outer-name
+
 import os
 from urllib.parse import urlsplit
 from uuid import uuid4

@@ -56,7 +56,7 @@ from clinical_mdr_api.repositories._utils import (
     validate_filters_and_add_search_string,
 )
 from common.exceptions import BusinessLogicException
-from common.utils import get_field_type, get_sub_fields
+from common.utils import get_field_type, get_sub_fields, is_exact_bool
 
 
 class OdmGenericRepository(
@@ -824,7 +824,7 @@ class OdmGenericRepository(
                 or len(result) != 1
                 or not isinstance(result[0], list)
                 or len(result[0]) != 1
-                or type(result[0][0]) is not bool,
+                or not is_exact_bool(result[0][0]),
                 msg="ODM_RELATIONSHIP_OWNERSHIP_QUERY_UNPROVEN",
             )
             return result[0][0]
@@ -922,7 +922,7 @@ class OdmGenericRepository(
         The caller owns the transaction and root locks. Do not use the ODM DTO
         projection here: it can omit unknown properties or unresolvable targets.
         """
-        kinds = {
+        kinds: dict[tuple[Any, str], tuple[str, Any]] = {
             (OdmFormRoot, "item_groups"): ("ITEM_GROUP_REF", OdmItemGroupRoot),
             (OdmItemGroupRoot, "items"): ("ITEM_REF", OdmItemRoot),
         }

@@ -3,6 +3,9 @@
 No deployment/RBAC, JWT crypto, human signature, or study-selection claim.
 """
 
+# pytest fixtures are injected by parameter name
+# pylint: disable=redefined-outer-name
+
 import os
 from uuid import uuid4
 
@@ -18,7 +21,6 @@ from clinical_mdr_api.services.integrations.native_item_observation import (
     NativeItemObservationService,
 )
 from clinical_mdr_api.tests.unit.services.test_native_item_observation import (
-    STUDY,
     TENANT,
     fixture,
 )

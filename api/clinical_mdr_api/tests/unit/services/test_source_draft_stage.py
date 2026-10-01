@@ -1,5 +1,8 @@
 """Public draft-stage behavior with synthetic IO and real contract verifiers."""
 
+# pytest fixtures requested for their side effects
+# pylint: disable=unused-argument
+
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 

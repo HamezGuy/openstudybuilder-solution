@@ -1,5 +1,8 @@
 """Exercise real approval/cascade methods with observable lifecycle operations."""
 
+# pytest fixtures are injected by parameter name
+# pylint: disable=redefined-outer-name
+
 from types import SimpleNamespace
 
 import pytest
@@ -30,7 +33,8 @@ class Aggregate:
 
 
 class Service(OdmGenericService):
-    def __init__(self, nodes, events):
+    # A test double: the base service's repositories are never touched.
+    def __init__(self, nodes, events):  # pylint: disable=super-init-not-called
         self.nodes, self.events, self.author_id = nodes, events, "Reviewer"
 
     def __del__(self):
@@ -44,9 +48,9 @@ class Service(OdmGenericService):
         self.events.append(("find", uid, kwargs))
         return self.nodes[uid]
 
-    def _transform_aggregate_root_to_pydantic_model(self, node):
-        self.events.append(("project", node.uid))
-        return Response(uid=node.uid, status=node.status)
+    def _transform_aggregate_root_to_pydantic_model(self, item_ar):
+        self.events.append(("project", item_ar.uid))
+        return Response(uid=item_ar.uid, status=item_ar.status)
 
     def _create_aggregate_root(self, *args, **kwargs):
         raise NotImplementedError

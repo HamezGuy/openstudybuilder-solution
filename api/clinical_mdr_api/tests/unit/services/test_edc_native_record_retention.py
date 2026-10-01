@@ -1,5 +1,9 @@
 """Native metadata must survive the narrower editable EDC projection."""
 
+# pytest fixtures requested for their side effects
+# exact == [] / == {} comparisons are the assertion
+# pylint: disable=unused-argument,use-implicit-booleaness-not-comparison
+
 from copy import deepcopy
 from types import SimpleNamespace
 

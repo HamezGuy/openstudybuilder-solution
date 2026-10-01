@@ -1,8 +1,14 @@
 """Real study aggregate/service with authored, offline repository boundaries."""
 
+# pytest fixtures requested for their side effects
+# pylint: disable=unused-argument
+
 from contextlib import contextmanager
 from copy import deepcopy
-from dataclasses import asdict, fields, replace
+from dataclasses import (
+    asdict,
+    fields,
+)
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -120,7 +126,7 @@ class AuthoredStudyRepository:
             assert db._active_transaction is not None
             if self.on_locked_read:
                 callback, self.on_locked_read = self.on_locked_read, None
-                callback()
+                callback()  # pylint: disable=not-callable
         return deepcopy(self.studies.get(uid))
 
     def save(self, study):

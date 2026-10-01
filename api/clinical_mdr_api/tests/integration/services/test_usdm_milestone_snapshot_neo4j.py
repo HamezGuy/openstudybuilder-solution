@@ -5,6 +5,10 @@ query, service transaction, DTO and milestone mapper run unmocked. This is a
 bounded milestone witness, not a whole-study release or UI qualification.
 """
 
+# pytest fixtures are injected by parameter name
+# exact == [] / == {} comparisons are the assertion
+# pylint: disable=redefined-outer-name,use-implicit-booleaness-not-comparison
+
 import json
 from hashlib import sha256
 from pathlib import Path
@@ -41,7 +45,7 @@ from clinical_mdr_api.services.studies.study import StudyService
 from clinical_mdr_api.services.studies.study_disease_milestone import (
     StudyDiseaseMilestoneService,
 )
-from clinical_mdr_api.tests.fixtures.null_adjudication_neo4j import (
+from clinical_mdr_api.tests.fixtures.null_adjudication_neo4j import (  # pylint: disable=unused-import  # pytest fixture
     native_null_graph,
     own_created_nodes,
 )

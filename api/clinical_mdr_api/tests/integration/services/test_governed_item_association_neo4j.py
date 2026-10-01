@@ -1,6 +1,8 @@
 """Actual native proposal intake/review/association in a uniquely owned graph."""
 
-import copy
+# pytest fixtures are injected by parameter name
+# pylint: disable=redefined-outer-name
+
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -68,7 +70,7 @@ def associated_native():
     # fixture. Native production queries and original review methods execute.
     with patch.object(base, "fixture", return_value=f):
         generator = base.native.__wrapped__()
-        f = next(generator)
+        f = next(generator)  # pylint: disable=stop-iteration-return
     try:
         selected.__wrapped__(f)
         f.native_review = ProposalReviewService()
@@ -196,7 +198,8 @@ def test_existing_supersedes_invalidates_old_association_then_explicit_new_revie
         "MATCH (i:ActivityItem) SET i.text_value='changed'",
         "MATCH (a:OsbGovernedItemAssociation) SET a.payload_json='changed'",
         "MATCH (d)-[:HAS_GOVERNED_ITEM_ASSOCIATION]->(a:OsbGovernedItemAssociation) CREATE (b:OsbGovernedItemAssociation) SET b=properties(a) CREATE (d)-[:HAS_GOVERNED_ITEM_ASSOCIATION]->(b)",
-        "MATCH (o:OsbProposalReviewObject)-[:LATEST_DECISION]->(d)-[r:HAS_GOVERNED_ITEM_ASSOCIATION]->(a) MATCH (other:OsbProposalReviewObject) WHERE other<>o DELETE r CREATE (other)-[:LATEST_DECISION]->(d) CREATE (d)-[:HAS_GOVERNED_ITEM_ASSOCIATION]->(a)",
+        "MATCH (o:OsbProposalReviewObject)-[:LATEST_DECISION]->(d)-[r:HAS_GOVERNED_ITEM_ASSOCIATION]->(a)"
+        " MATCH (other:OsbProposalReviewObject) WHERE other<>o DELETE r CREATE (other)-[:LATEST_DECISION]->(d) CREATE (d)-[:HAS_GOVERNED_ITEM_ASSOCIATION]->(a)",
     ],
 )
 def test_actual_current_custody_changes_and_ambiguity_refuse(associated_native, query):

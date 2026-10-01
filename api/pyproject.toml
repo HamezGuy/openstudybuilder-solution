@@ -94,20 +94,20 @@ extend_skip_glob = [
 # those pins without changing behaviour, so the tools leave their bytes alone.
 ignore-paths = [
     '^clinical_mdr_api/generated/platform_contracts/.*$',
-    '^clinical_mdr_api/main\.py$',
-    '^clinical_mdr_api/models/integrations/mapping_context\.py$',
-    '^clinical_mdr_api/models/integrations/proposal_review\.py$',
-    '^clinical_mdr_api/models/integrations/study_authority\.py$',
-    '^clinical_mdr_api/routers/integrations/native_identity\.py$',
-    '^clinical_mdr_api/services/integrations/edc_export\.py$',
-    '^clinical_mdr_api/services/integrations/governed_artifact_store\.py$',
-    '^clinical_mdr_api/services/integrations/native_capture_projection\.py$',
-    '^clinical_mdr_api/services/integrations/native_identity\.py$',
-    '^clinical_mdr_api/services/integrations/native_package_v2\.py$',
-    '^clinical_mdr_api/services/integrations/platform_command\.py$',
-    '^clinical_mdr_api/services/integrations/source_draft_stage\.py$',
-    '^common/config\.py$',
-    '^common/observability_privacy\.py$',
+    '^clinical_mdr_api/main[.]py$',
+    '^clinical_mdr_api/models/integrations/mapping_context[.]py$',
+    '^clinical_mdr_api/models/integrations/proposal_review[.]py$',
+    '^clinical_mdr_api/models/integrations/study_authority[.]py$',
+    '^clinical_mdr_api/routers/integrations/native_identity[.]py$',
+    '^clinical_mdr_api/services/integrations/edc_export[.]py$',
+    '^clinical_mdr_api/services/integrations/governed_artifact_store[.]py$',
+    '^clinical_mdr_api/services/integrations/native_capture_projection[.]py$',
+    '^clinical_mdr_api/services/integrations/native_identity[.]py$',
+    '^clinical_mdr_api/services/integrations/native_package_v2[.]py$',
+    '^clinical_mdr_api/services/integrations/platform_command[.]py$',
+    '^clinical_mdr_api/services/integrations/source_draft_stage[.]py$',
+    '^common/config[.]py$',
+    '^common/observability_privacy[.]py$',
 ]
 extension-pkg-allow-list = 'pydantic, lxml'
 unsafe-load-any-extension = 'yes'
@@ -146,6 +146,26 @@ max-nested-blocks = 10
 min-similarity-lines = 1000
 
 
+[tool.sblint]
+# The same Command Center-pinned sources as for mypy below (see [tool.black]).
+exclude = [
+    '^clinical_mdr_api/generated/platform_contracts/',
+    '^clinical_mdr_api/main\.py$',
+    '^clinical_mdr_api/models/integrations/mapping_context\.py$',
+    '^clinical_mdr_api/models/integrations/proposal_review\.py$',
+    '^clinical_mdr_api/models/integrations/study_authority\.py$',
+    '^clinical_mdr_api/routers/integrations/native_identity\.py$',
+    '^clinical_mdr_api/services/integrations/edc_export\.py$',
+    '^clinical_mdr_api/services/integrations/governed_artifact_store\.py$',
+    '^clinical_mdr_api/services/integrations/native_capture_projection\.py$',
+    '^clinical_mdr_api/services/integrations/native_identity\.py$',
+    '^clinical_mdr_api/services/integrations/native_package_v2\.py$',
+    '^clinical_mdr_api/services/integrations/platform_command\.py$',
+    '^clinical_mdr_api/services/integrations/source_draft_stage\.py$',
+    '^common/config\.py$',
+    '^common/observability_privacy\.py$',
+]
+
 [tool.mypy]
 # Command Center hashes these OSB sources (contract registry pins and
 # platform-verification evidence). Formatting or lint-only edits would break
@@ -172,3 +192,25 @@ check_untyped_defs = true
 disallow_untyped_defs = true
 
 disable_error_code = ["no-untyped-def","attr-defined","import-untyped","override","return-value","union-attr"]
+
+# The Command Center-pinned sources excluded above are still type-checked when
+# other modules import them; their errors are left for the change that re-pins them.
+[[tool.mypy.overrides]]
+module = [
+    "clinical_mdr_api.generated.platform_contracts.*",
+    "clinical_mdr_api.main",
+    "clinical_mdr_api.models.integrations.mapping_context",
+    "clinical_mdr_api.models.integrations.proposal_review",
+    "clinical_mdr_api.models.integrations.study_authority",
+    "clinical_mdr_api.routers.integrations.native_identity",
+    "clinical_mdr_api.services.integrations.edc_export",
+    "clinical_mdr_api.services.integrations.governed_artifact_store",
+    "clinical_mdr_api.services.integrations.native_capture_projection",
+    "clinical_mdr_api.services.integrations.native_identity",
+    "clinical_mdr_api.services.integrations.native_package_v2",
+    "clinical_mdr_api.services.integrations.platform_command",
+    "clinical_mdr_api.services.integrations.source_draft_stage",
+    "common.config",
+    "common.observability_privacy",
+]
+ignore_errors = true

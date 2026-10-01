@@ -1,5 +1,8 @@
 """Focused optional-field semantics; no database setup or mutation."""
 
+# pylint cannot infer the returned collection
+# pylint: disable=not-an-iterable
+
 from dataclasses import asdict, replace
 from unittest import TestCase
 
@@ -65,7 +68,9 @@ class ObservationalMetadataTests(TestCase):
                 value.validate(**{callback: lambda _: False})
 
     def test_null_codes_do_not_require_a_term_or_get_defaulted(self):
-        fail = lambda _: self.fail("Null is not a CT selection")
+        def fail(_):
+            return self.fail("Null is not a CT selection")
+
         HighLevelStudyDesignVO().validate(
             observational_model_exists_callback=fail,
             observational_time_perspective_exists_callback=fail,
@@ -79,7 +84,7 @@ class ObservationalMetadataTests(TestCase):
             rows = [
                 row
                 for row in config
-                if row.study_field_name == name or row.study_field_name_api == name
+                if name in (row.study_field_name, row.study_field_name_api)
             ]
             self.assertEqual(len(rows), 1, name)
             (row,) = rows

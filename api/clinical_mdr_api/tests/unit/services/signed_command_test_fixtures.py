@@ -1,5 +1,8 @@
 """Pure signed-command test ports without importing API router composition."""
 
+# pytest fixtures requested for their side effects
+# pylint: disable=unused-argument
+
 from copy import deepcopy
 from datetime import UTC, datetime
 
@@ -9,7 +12,9 @@ from clinical_mdr_api.generated.platform_contracts.hash_signing_v1 import (
 from clinical_mdr_api.generated.platform_contracts.platform_command_v1 import (
     PlatformCommandError,
 )
-from clinical_mdr_api.tests.unit.services.test_osb_candidate_set_generation import (
+
+# STUDY is re-exported for the signed-command tests.
+from clinical_mdr_api.tests.unit.services.test_osb_candidate_set_generation import (  # pylint: disable=unused-import
     STUDY,
     TENANT,
 )

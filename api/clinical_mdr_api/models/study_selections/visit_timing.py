@@ -59,7 +59,7 @@ UntimedVisitTiming = Annotated[
     ManualDateTiming | EventRelativeTiming | CalendarRepeatTiming,
     Field(discriminator="kind"),
 ]
-_TIMING_ADAPTER = TypeAdapter(UntimedVisitTiming)
+_TIMING_ADAPTER: TypeAdapter[UntimedVisitTiming] = TypeAdapter(UntimedVisitTiming)
 
 
 def parse_untimed_timing(value) -> UntimedVisitTiming:

@@ -35,8 +35,12 @@ def uncached_native_reads() -> Iterator[None]:
         _UNCACHED_NATIVE_READS.reset(token)
 
 
-def native_read_cached(*args: Any, **kwargs: Any) -> Callable[[_Function], _Function]:
+def native_read_cached(*args: Any, **kwargs: Any) -> Callable[[_Function], Any]:
     """Adapt ``cachetools.cached`` for scoped reads and native ``for_update``.
+
+    Typed like the untyped cachetools decorators it replaces: upstream code
+    passes these reads as loosely typed callbacks (for example ``find_by_uid_2``
+    as an ``exists`` check), which it was written and type-checked against.
 
     Binding the original signature recognizes positional ``for_update`` calls.
     An update read must execute its native locking path every time, including
@@ -45,7 +49,7 @@ def native_read_cached(*args: Any, **kwargs: Any) -> Callable[[_Function], _Func
     """
     cache_decorator = cached(*args, **kwargs)
 
-    def decorate(function: _Function) -> _Function:
+    def decorate(function: _Function) -> Any:
         function_signature = signature(function)
         update_parameter = function_signature.parameters.get("for_update")
         cached_function = cache_decorator(function)

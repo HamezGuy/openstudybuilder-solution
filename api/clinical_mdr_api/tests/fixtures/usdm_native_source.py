@@ -11,6 +11,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import patch
 
 from clinical_mdr_api.services.ddf.usdm_mapper import USDMMapper
@@ -56,7 +57,7 @@ COLLECTION_KEYS = {
 }
 
 
-def _odm_datatype(value: str) -> dict:
+def _odm_datatype(value: str) -> dict[str, Any]:
     """An item datatype as OpenStudyBuilder 2.10 reads it: its CODMDT term."""
     return {
         "uid": f"CODMDT_{value.upper()}",
@@ -75,7 +76,7 @@ class NativeStudySource:
 
         self.native_activity = NativeActivitySource()
         self.calls = []
-        self.terminology = json.loads(TERMINOLOGY_PATH.read_text())
+        self.terminology = json.loads(TERMINOLOGY_PATH.read_text(encoding="utf-8"))
         self.ct_package_records = []
         self.ct_sponsor_packages = {}
         self.ct_package_extensions = {}
@@ -290,7 +291,10 @@ class NativeStudySource:
         assert (uid, study_value_version) == (STUDY_UID, VERSION)
         return self.graph["study"]
 
-    def query(self, text, parameters=None):
+    # One fail-closed condition per recorded query shape.
+    def query(  # pylint: disable=too-many-boolean-expressions
+        self, text, parameters=None
+    ):
         """Native graph row fixtures, using exact primary CDISC term readings."""
         if "MATCH (study_root:StudyRoot" in text:
             assert parameters == {
@@ -608,7 +612,7 @@ class NativeStudySource:
             yield
 
     def export(self, odm):
-        self.odm = odm
+        self.odm = odm  # pylint: disable=attribute-defined-outside-init
         service = object.__new__(EdcExportService)
         service.study_service = SimpleNamespace(get_by_uid=self.study)
         service.visit_service_cls = SimpleNamespace(get_all_visits=self.read("visits"))

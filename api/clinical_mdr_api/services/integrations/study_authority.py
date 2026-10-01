@@ -8,7 +8,7 @@ EDC bundle is not an input and is never allowed to overwrite this snapshot.
 
 import hashlib
 import json
-from typing import Any
+from typing import Any, Literal
 
 from fastapi.encoders import jsonable_encoder
 from neomodel import db
@@ -190,7 +190,7 @@ def _assemble_study_odm_metadata(
                     },
                 )
 
-    def ordered(values: dict) -> list[dict[str, Any]]:
+    def ordered(values: dict[Any, dict[str, Any]]) -> list[dict[str, Any]]:
         return sorted(
             values.values(),
             key=lambda item: (
@@ -524,6 +524,7 @@ def _identity_row(
     relationship_identity: dict[str, Any] | None = None,
     blocker_code: str,
 ) -> StudyAuthorityReconciliationRow:
+    status: Literal["matched", "missing", "extra", "changed", "unresolved"]
     if not native_uid:
         status = "unresolved"
     elif usdm_item is None:
@@ -625,7 +626,7 @@ def _build_usdm_extensions(
     }
 
 
-def _build_reconciliation(
+def _build_reconciliation(  # pylint: disable=too-many-locals
     *,
     usdm: dict[str, Any],
     objectives: list[dict[str, Any]],
@@ -715,8 +716,10 @@ def _build_reconciliation(
             ),
             None,
         )
-        expected_objective_id = objective_id_by_selection_uid.get(
-            objective_selection_uid
+        expected_objective_id = (
+            objective_id_by_selection_uid.get(objective_selection_uid)
+            if objective_selection_uid
+            else None
         )
         actual_with_relationship = (
             {**actual, "objectiveId": (actual_objective or {}).get("id")}
@@ -1113,7 +1116,7 @@ def _expected_id(
     return None
 
 
-def _mapping_blockers(
+def _mapping_blockers(  # pylint: disable=too-many-locals
     *,
     authority_mode: AuthorityMode,
     native_study: dict[str, Any],
@@ -1541,16 +1544,16 @@ def _mapping_blockers(
                     )
                 )
 
-    for index, row in enumerate(reconciliation or []):
-        if row.status == "matched":
+    for index, reconciled in enumerate(reconciliation or []):
+        if reconciled.status == "matched":
             continue
         blockers.append(
             StudyAuthorityBlocker(
-                code=row.blocker_code or "USDM_IDENTITY_RECONCILIATION_FAILED",
+                code=reconciled.blocker_code or "USDM_IDENTITY_RECONCILIATION_FAILED",
                 path=f"reconciliation[{index}]",
                 detail=(
-                    f"{row.resource_class} native UID {row.native_uid or '<none>'} "
-                    f"and USDM ID {row.usdm_id or '<none>'} reconcile as {row.status}."
+                    f"{reconciled.resource_class} native UID {reconciled.native_uid or '<none>'} "
+                    f"and USDM ID {reconciled.usdm_id or '<none>'} reconcile as {reconciled.status}."
                 ),
             )
         )

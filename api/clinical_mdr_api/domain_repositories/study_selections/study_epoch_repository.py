@@ -230,7 +230,7 @@ class StudyEpochRepository:
         audit_trail: bool = False,
     ) -> tuple[str, dict[Any, Any]]:
         query = []
-        params = {"study_uid": study_uid}
+        params: dict[str, Any] = {"study_uid": study_uid}
 
         if audit_trail:
             if study_epoch_uid:

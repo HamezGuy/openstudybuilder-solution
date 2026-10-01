@@ -25,7 +25,7 @@ def canonical_hash(value: Any) -> str:
 
 
 def comparison_record(
-    record: dict, collection: str | None = None
+    record: dict[str, Any], collection: str | None = None
 ) -> tuple[dict, list[str]]:
     compared = deepcopy(record)
     ignored = []
@@ -223,7 +223,7 @@ COLLECTIONS = (
 def _json(value):
     if hasattr(value, "model_dump"):
         return value.model_dump(mode="json")
-    if is_dataclass(value):
+    if is_dataclass(value) and not isinstance(value, type):
         from fastapi.encoders import jsonable_encoder
 
         return jsonable_encoder(asdict(value))
@@ -255,7 +255,7 @@ def _rows(value, collection="unknown"):
 def _raw_action_json(value):
     if isinstance(value, dict):
         return {key: _raw_action_json(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         return [_raw_action_json(item) for item in value]
     # Neo4j temporal properties carry nanoseconds. Keep their source precision.
     if hasattr(value, "iso_format"):
@@ -265,7 +265,7 @@ def _raw_action_json(value):
     return value
 
 
-def collect_study_actions(study_uid: str) -> list[dict]:
+def collect_study_actions(study_uid: str) -> list[dict[str, Any]]:
     """Retain the exact owned action, author subject, and directly linked values.
 
     No inferred username joins or library graph walk. Native action identifiers
@@ -327,7 +327,9 @@ USER_PROJECTION_FIELDS = (
 )
 
 
-def collect_user_projection(user_ids: set[str], usernames: set[str]) -> list[dict]:
+def collect_user_projection(
+    user_ids: set[str], usernames: set[str]
+) -> list[dict[str, Any]]:
     """The User projection rows for the editors an observation names.
 
     persist_user writes, for every verified token, the platform identity the
@@ -352,7 +354,7 @@ def collect_user_projection(user_ids: set[str], usernames: set[str]) -> list[dic
     return [dict(zip(columns, values)) for values in rows]
 
 
-def _verified_user_projection(rows: list) -> list[dict]:
+def _verified_user_projection(rows: list[Any]) -> list[dict[str, Any]]:
     result, seen = [], set()
     for row in rows:
         if (
@@ -379,12 +381,12 @@ def collect_native_observation(
     study_uid: str,
     *,
     readers: dict[str, tuple[Callable, Callable | None]] | None = None,
-    native_study: dict | None = None,
-    study_audit: list | None = None,
-    raw_actions: list | None = None,
+    native_study: dict[str, Any] | None = None,
+    study_audit: list[Any] | None = None,
+    raw_actions: list[Any] | None = None,
     raw_history_readers: dict[str, Callable] | None = None,
-    user_projection: list | None = None,
-) -> dict:
+    user_projection: list[Any] | None = None,
+) -> dict[str, Any]:
     if not isinstance(study_uid, str) or not study_uid.strip():
         raise NativeObservationError("NATIVE_OBSERVATION_STUDY_REQUIRED")
     if readers is not None and set(readers) - {row.collection for row in COLLECTIONS}:
@@ -469,7 +471,7 @@ def collect_native_observation(
                 )
         else:
             current_reader, audit_reader = readers[spec.collection]
-        options = {"study_uid": study_uid}
+        options: dict[str, Any] = {"study_uid": study_uid}
         if spec.paginated:
             options["page_size"] = 0
         if spec.no_brackets:
@@ -492,7 +494,7 @@ def collect_native_observation(
                 )
             seen.add(uid)
             add_record(spec.collection, spec.resource_type, uid, row)
-        audit_options = {"study_uid": study_uid}
+        audit_options: dict[str, Any] = {"study_uid": study_uid}
         if spec.collection == "study_criteria":
             audit_options["criteria_type_uid"] = None
         audit_projection_error = None
@@ -626,7 +628,9 @@ def collect_native_observation(
         )
     editor_ids, editor_names = set(), set()
     for entry in history:
-        record = entry.get("record") if isinstance(entry.get("record"), dict) else {}
+        record = entry.get("record")
+        if not isinstance(record, dict):
+            record = {}
         for field in ("author_id", "user_id"):
             if isinstance(record.get(field), str) and record[field]:
                 editor_ids.add(record[field])

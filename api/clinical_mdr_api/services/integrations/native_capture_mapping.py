@@ -22,7 +22,6 @@ from clinical_mdr_api.generated.platform_contracts.hash_signing_v1 import (
 from clinical_mdr_api.services.integrations.native_capture_projection import (
     CAPTURE_BINDING_SCHEMA,
     CAPTURE_FAMILY_TYPES,
-    CAPTURE_READBACK_SCHEMA,
     DATATYPES,
     capture_field_receipts,
     fail,
@@ -30,6 +29,10 @@ from clinical_mdr_api.services.integrations.native_capture_projection import (
     source_values,
 )
 from clinical_mdr_api.services.odms.datatypes import odm_item_datatype_cypher
+
+# Fail-closed contract checks list every required property in one condition;
+# splitting them would hide the rule they enforce.
+# pylint: disable=too-many-boolean-expressions
 
 _ASSERTIONS = {
     "odm_forms": "STUDY_FORM",
@@ -260,6 +263,8 @@ def prepare_capture_create_offer(intent):
 class NativeCapturePort:
     """Native services write; native DTOs and relationship queries read."""
 
+    _datatype_term_uids: dict[str, str] | None = None
+
     @staticmethod
     def _odm(family):
         from clinical_mdr_api.models.odms.form import OdmFormPostInput
@@ -283,7 +288,7 @@ class NativeCapturePort:
             odm_datatype_term_uids,
         )
 
-        if getattr(self, "_datatype_term_uids", None) is None:
+        if self._datatype_term_uids is None:
             self._datatype_term_uids = odm_datatype_term_uids(MetaRepository())
         return odm_datatype_term_uid(self._datatype_term_uids, odm_datatype)
 
@@ -581,7 +586,7 @@ class NativeCapturePort:
 
         name = CTTermNameService().get_by_uid(uid)
         attributes = CTTermAttributesService().get_by_uid(uid)
-        terms = (
+        term_readings = (
             CTTermService()
             .get_all_terms(
                 codelist_uid=None,
@@ -592,7 +597,7 @@ class NativeCapturePort:
             )
             .items
         )
-        if len(terms) != 1:
+        if len(term_readings) != 1:
             fail("OSB_CAPTURE_NATIVE_INVALID", "Native term membership is ambiguous.")
         return current(
             {
@@ -600,7 +605,7 @@ class NativeCapturePort:
                 "version": attributes.version,
                 "name": name,
                 "attributes": attributes,
-                "codelists": terms[0].codelists,
+                "codelists": term_readings[0].codelists,
             }
         )
 
@@ -617,6 +622,7 @@ class NativeCapturePort:
         )
 
     def associate(self, family, uid, children):
+        from clinical_mdr_api.models.odms.common_models import OdmRefVendorPostInput
         from clinical_mdr_api.models.odms.form import OdmFormItemGroupPostInput
         from clinical_mdr_api.models.odms.item_group import OdmItemGroupItemPostInput
 
@@ -648,7 +654,10 @@ class NativeCapturePort:
         )
         operation(
             uid,
-            [model(**value, vendor={"attributes": []}) for value in children],
+            [
+                model(**value, vendor=OdmRefVendorPostInput(attributes=[]))
+                for value in children
+            ],
             preserve_order=True,
         )
 
@@ -791,7 +800,7 @@ def _read_selected_dependency(item, fields, port):
     return native
 
 
-def apply_native_capture_selections(
+def apply_native_capture_selections(  # pylint: disable=too-many-locals
     items,
     *,
     tenant_id,
@@ -841,7 +850,9 @@ def apply_native_capture_selections(
     for plan in plans.values():
         port.validate(plan)
     source_prefix = f"{tenant_id}|{platform_study_id}|"
-    identities, refs, observations = {}, {}, {}
+    identities: dict[Any, Any] = {}
+    refs: dict[Any, Any] = {}
+    observations: dict[Any, Any] = {}
     source_fields = {key: plan["fields"] for key, plan in plans.items()}
     selected = {}
     # Reference keys are family-scoped; repeated identities are never silently
@@ -899,7 +910,8 @@ def apply_native_capture_selections(
         return identities[key]
 
     def preflight_dependencies():
-        dependencies, children_by_source = {}, {}
+        dependencies: dict[Any, Any] = {}
+        children_by_source: dict[Any, Any] = {}
         for item in capture_selects:
             intent = item["intent"]
             key, binding_key = _key(intent), source_prefix + _key(intent)
@@ -1158,7 +1170,7 @@ def apply_native_capture_selections(
             port.bind(
                 _source_binding(intent, binding_key, native_study_id, native["uid"])
             )
-    children_by_parent = {}
+    children_by_parent: dict[Any, Any] = {}
     for key, plan in plans.items():
         family, fields = plan["family"], plan["fields"]
         parent_family = _PARENT_FAMILIES.get(family)

@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -22,7 +23,7 @@ if not FIXTURE_ROOT.is_dir():
     )
 
 
-def load_snapshot() -> dict:
+def load_snapshot() -> dict[str, Any]:
     return json.loads(
         (FIXTURE_ROOT / "osb-authority-snapshot-v1.json").read_text(encoding="utf-8")
     )

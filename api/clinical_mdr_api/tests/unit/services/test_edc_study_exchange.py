@@ -1,5 +1,9 @@
 """Isolated cross-language V2 contract tests; no API, auth context or database."""
 
+# test doubles are lambdas accepting **kwargs
+# pytest fixtures requested for their side effects
+# pylint: disable=unexpected-keyword-arg,unused-argument
+
 import base64
 import gzip
 import hashlib

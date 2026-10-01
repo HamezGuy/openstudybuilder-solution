@@ -4,6 +4,9 @@ Study and CT/package writers are native. The one epoch selection is an
 explicitly authored native graph fixture, not an epoch-authoring UI receipt.
 """
 
+# pytest fixtures are injected by parameter name
+# pylint: disable=redefined-outer-name
+
 import json
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -24,10 +27,12 @@ from clinical_mdr_api.services.controlled_terminologies.ct_term_name import (
     CTTermNameService,
 )
 from clinical_mdr_api.services.studies.study_epoch import StudyEpochService
-from clinical_mdr_api.tests.fixtures.null_adjudication_neo4j import (  # noqa: F401
+
+# native_library_graph requests native_null_graph, so both must resolve here.
+from clinical_mdr_api.tests.fixtures.null_adjudication_neo4j import (  # pylint: disable=unused-import
     native_null_graph,
 )
-from clinical_mdr_api.tests.fixtures.usdm_library_snapshot_neo4j import (
+from clinical_mdr_api.tests.fixtures.usdm_library_snapshot_neo4j import (  # pylint: disable=unused-import
     native_library_graph,
 )
 from clinical_mdr_api.tests.integration.utils.utils import TestUtils

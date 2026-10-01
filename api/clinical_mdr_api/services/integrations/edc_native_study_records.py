@@ -329,7 +329,11 @@ def collect_study_native_records(
                     }
                 )
             previous.add(reading)
-            entry = {"kind": collection.kind, "uid": uid, "record": record}
+            entry: dict[str, Any] = {
+                "kind": collection.kind,
+                "uid": uid,
+                "record": record,
+            }
             if collection.query_scoped_only or study_value_version is not None:
                 entry["scope"] = {
                     "studyUid": study_uid,

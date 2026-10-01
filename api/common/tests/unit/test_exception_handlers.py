@@ -16,7 +16,7 @@ class Payload(BaseModel):
 
 def invalid_payload():
     try:
-        Payload(amount="invalid")
+        Payload.model_validate({"amount": "invalid"})
     except ValidationError as exception:
         return exception
     raise AssertionError("Invalid payload unexpectedly accepted")

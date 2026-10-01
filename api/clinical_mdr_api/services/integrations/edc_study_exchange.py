@@ -20,6 +20,11 @@ from itertools import chain
 from typing import Any, Iterable
 
 from clinical_mdr_api.services.integrations.canonical_json import canonical_json
+from common.utils import is_exact_int
+
+# Fail-closed contract checks list every required property in one condition;
+# splitting them would hide the rule they enforce.
+# pylint: disable=too-many-boolean-expressions
 
 MAX_SOURCE_BYTES = 1024 * 1024 * 1024
 MAX_TRANSPORT_BYTES = 384 * 1024 * 1024
@@ -128,7 +133,7 @@ def _terminals(value, path=""):
         yield path, "number", value
     elif isinstance(value, str):
         yield path, "string", value
-    elif isinstance(value, (dict, list)):
+    elif isinstance(value, dict | list):
         if not value:
             yield path, (
                 "empty-array" if isinstance(value, list) else "empty-object"
@@ -269,8 +274,8 @@ def ledger_entries(source):
     prefix_encoding = (
         dictionary_encoding or ledger["encoding"] == "gzip-jsonl-prefix-chunks"
     )
-    hashes = []
-    path_dictionary = []
+    hashes: list[Any] = []
+    path_dictionary: list[Any] = []
     path_dictionary_bytes = 0
     payloads = _payloads(source)
     digest = hashlib.sha256()
@@ -292,7 +297,7 @@ def ledger_entries(source):
         ):
             raise StudyExchangeError("EDC_SOURCE_LEDGER_LENGTH")
         digest.update(raw)
-        previous_path = []
+        previous_path: list[Any] = []
         if prefix_encoding and (
             not isinstance(chunk.get("sourceArtifactId"), str)
             or not chunk["sourceArtifactId"]
@@ -307,7 +312,7 @@ def ledger_entries(source):
                 if (
                     not isinstance(entry, list)
                     or len(entry) not in {6, 7}
-                    or type(entry[0]) is not int
+                    or not is_exact_int(entry[0])
                     or not 0 <= entry[0] <= len(previous_path)
                     or not isinstance(entry[1], list)
                     or (
@@ -346,7 +351,7 @@ def ledger_entries(source):
                         suffix.append(part)
                     elif (
                         dictionary_encoding
-                        and type(part) is int
+                        and is_exact_int(part)
                         and 0 <= part < len(path_dictionary)
                     ):
                         suffix.append(path_dictionary[part])
@@ -366,7 +371,7 @@ def ledger_entries(source):
                     ):
                         if len(hashes) < MAX_HASH_DICTIONARY:
                             hashes.append(token)
-                    elif type(token) is int and 0 <= token < len(hashes):
+                    elif is_exact_int(token) and 0 <= token < len(hashes):
                         entry[3] = hashes[token]
                     else:
                         raise StudyExchangeError("EDC_SOURCE_LEDGER_HASH_DICTIONARY")
@@ -394,13 +399,13 @@ def ledger_entries(source):
 
 def _encode_ledger(entries: Iterable[dict]):
     chunks = []
-    parts = []
+    parts: list[Any] = []
     size = total = count = 0
     digest = hashlib.sha256()
-    previous_path = []
+    previous_path: list[Any] = []
     previous_source = None
-    hashes = {}
-    path_dictionary = {}
+    hashes: dict[Any, Any] = {}
+    path_dictionary: dict[Any, Any] = {}
     path_dictionary_bytes = 0
 
     def flush():
@@ -419,6 +424,27 @@ def _encode_ledger(entries: Iterable[dict]):
         parts, size, previous_path = [], 0, []
         if len(chunks) > 8192:
             raise StudyExchangeError("EDC_SOURCE_LEDGER_CHUNK_LIMIT")
+
+    def encode(path, path_tokens, entry, hash_token, extra):
+        # previous_path is read at call time: flush() resets it between chunks.
+        prefix = 0
+        while (
+            prefix < len(path)
+            and prefix < len(previous_path)
+            and path[prefix] == previous_path[prefix]
+        ):
+            prefix += 1
+        row = [
+            prefix,
+            path_tokens[prefix:],
+            entry["type"],
+            hash_token,
+            entry["disposition"],
+            entry["targetPointers"],
+        ]
+        if extra:
+            row.append(extra)
+        return _bytes(row) + b"\n"
 
     for entry in entries:
         if (
@@ -469,30 +495,10 @@ def _encode_ledger(entries: Iterable[dict]):
         if value_hash not in hashes and len(hashes) < MAX_HASH_DICTIONARY:
             hashes[value_hash] = len(hashes)
 
-        def encode():
-            prefix = 0
-            while (
-                prefix < len(path)
-                and prefix < len(previous_path)
-                and path[prefix] == previous_path[prefix]
-            ):
-                prefix += 1
-            row = [
-                prefix,
-                path_tokens[prefix:],
-                entry["type"],
-                hash_token,
-                entry["disposition"],
-                entry["targetPointers"],
-            ]
-            if extra:
-                row.append(extra)
-            return _bytes(row) + b"\n"
-
-        raw = encode()
+        raw = encode(path, path_tokens, entry, hash_token, extra)
         if size + len(raw) > CHUNK_BYTES:
             flush()
-            raw = encode()
+            raw = encode(path, path_tokens, entry, hash_token, extra)
         if len(raw) > CHUNK_BYTES:
             raise StudyExchangeError("EDC_SOURCE_LEDGER_ENTRY_LIMIT")
         parts.append(raw)
@@ -756,7 +762,7 @@ def build_study_exchange(
         ):
             raise StudyExchangeError("OSB_USDM_MAPPING_REPORT_INVALID")
         observations["mappingReport"] = deepcopy(mapping_report)
-    additions = [
+    additions: list[tuple[Any, str, str, str | None]] = [
         (
             observations,
             "openstudybuilder.edc-native-observations",

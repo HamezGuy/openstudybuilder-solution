@@ -1,3 +1,6 @@
+# pytest fixtures requested for their side effects
+# pylint: disable=unused-argument
+
 from clinical_mdr_api.services.studies.study_visibility import (
     caller_identities,
     catalog_item_author,
@@ -41,6 +44,7 @@ def test_assigned_study_uid_is_visible_even_when_not_author():
     investigator = _User(
         oid="edc:23", username="sandbox_ora", roles={"Study.Read", "Library.Read"}
     )
+    # pylint: disable-next=attribute-defined-outside-init
     investigator.study_ids = {"Study_000017"}
     assert (
         study_visible_to_user(investigator, "staging-admin", study_uid="Study_000017")
@@ -81,7 +85,7 @@ def test_assert_study_uid_visible_skips_admin_and_missing_user(monkeypatch):
         )()
 
     class _InvRepos:
-        class study_definition_repository:
+        class study_definition_repository:  # pylint: disable=invalid-name
             @staticmethod
             def find_by_uid(uid):
                 called["repo"] = True

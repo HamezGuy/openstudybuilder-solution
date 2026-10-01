@@ -1,5 +1,8 @@
 """The broker's existing draft capabilities must pass the OSB token profile."""
 
+# fixture values are plain JSON dicts pylint cannot infer
+# pylint: disable=unsubscriptable-object
+
 import pytest
 
 from common.auth.models import AccessTokenClaims, validate_delegated_claims

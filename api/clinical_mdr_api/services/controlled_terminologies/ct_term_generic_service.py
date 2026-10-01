@@ -135,6 +135,8 @@ class CTTermGenericService(Generic[_AggregateRootType], abc.ABC):
 
         return [dict(zip(prop_names, item)) for item in items]
 
+    # Typed as upstream's @db.transaction exposed it: each subclass returns its
+    # concrete model, which callers pass on as that model.
     @ensure_transaction(db)
     def get_by_uid(
         self,
@@ -143,7 +145,7 @@ class CTTermGenericService(Generic[_AggregateRootType], abc.ABC):
         at_specific_date: datetime | None = None,
         status: LibraryItemStatus | None = None,
         include_ts_parameters: bool = True,
-    ) -> BaseModel:
+    ) -> Any:
         item = self._find_by_uid_or_raise_not_found(
             term_uid=term_uid,
             version=version,

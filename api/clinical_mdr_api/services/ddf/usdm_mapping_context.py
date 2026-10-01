@@ -78,7 +78,7 @@ def native_json(value: Any) -> Any:
         return str(value)
     if isinstance(value, dict):
         return {key: native_json(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         return [native_json(item) for item in value]
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
@@ -214,7 +214,7 @@ def source_extension(id_manager, kind: str, uid: str, value: Any) -> ExtensionAt
             "url": root + path,
             "instanceType": "ExtensionAttribute",
         }
-        if item is None or isinstance(item, (dict, list)):
+        if item is None or isinstance(item, dict | list):
             shape = (
                 "null"
                 if item is None

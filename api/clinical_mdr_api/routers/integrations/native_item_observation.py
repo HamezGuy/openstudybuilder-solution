@@ -31,7 +31,8 @@ _slots = BoundedSemaphore(4)
 
 async def _bounded_observation(service, pins, request):
     budget = service.request_budget()
-    if not _slots.acquire(blocking=False):
+    # Non-blocking admission; the worker thread releases the slot when it ends.
+    if not _slots.acquire(blocking=False):  # pylint: disable=consider-using-with
         raise HTTPException(503, detail="OSB_ITEM_READ_CAPACITY_UNAVAILABLE")
     cancellation, context = Event(), copy_context()
 

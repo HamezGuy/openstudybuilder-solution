@@ -7,6 +7,7 @@ approval. CSL must independently establish those when consuming the result.
 import time
 from datetime import datetime
 from types import SimpleNamespace
+from typing import Any, cast
 
 from pydantic import ValidationError
 
@@ -240,8 +241,11 @@ class GovernedItemAssociationService:
                 )
                 if self.review:
                     principal.assert_can_sign(request.signatureId)
+                # Construction validates the raw proposal mapping (OSB overrides
+                # model_validate for database nodes).
                 ProposalReviewIntake(
-                    proposal=proposal, worker_id="retained-custody-validation"
+                    proposal=cast(Any, proposal),
+                    worker_id="retained-custody-validation",
                 )
                 require(
                     canonical_hash(context)
@@ -250,9 +254,13 @@ class GovernedItemAssociationService:
                     and proposal.get("osbMappingContextHash") == row[12]
                     and proposal.get("authorityMode") == "enforced"
                 )
+                # A context-only reader: the one repository call validation makes.
                 objects = ProposalReviewService(
-                    SimpleNamespace(
-                        get_context=lambda key: context if key == row[12] else None
+                    cast(
+                        Any,
+                        SimpleNamespace(
+                            get_context=lambda key: context if key == row[12] else None
+                        ),
                     )
                 )._validate_proposal(proposal, context.get("osbOpenApiHash"))
             except (ValueError, TypeError, KeyError, ValidationError) as error:

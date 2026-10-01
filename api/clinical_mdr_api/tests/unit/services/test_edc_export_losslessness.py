@@ -1,5 +1,8 @@
 """Losslessness checks for the OSB -> EDC projection."""
 
+# exact == [] / == {} comparisons are the assertion
+# pylint: disable=use-implicit-booleaness-not-comparison
+
 import base64
 import gzip
 import json

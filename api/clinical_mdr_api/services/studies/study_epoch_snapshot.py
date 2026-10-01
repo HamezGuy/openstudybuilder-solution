@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 from datetime import date, datetime, time, timezone
+from typing import Any
 
 from neomodel import db
 
@@ -15,6 +16,10 @@ from clinical_mdr_api.services.ddf.usdm_ct_package_mapping import (
 from clinical_mdr_api.services.studies.study_native_library_snapshot import (
     StudyNativeLibrarySnapshot,
 )
+
+# Fail-closed contract checks list every required property in one condition;
+# splitting them would hide the rule they enforce.
+# pylint: disable=too-many-boolean-expressions
 
 PACKAGE_SCOPE_QUERY = """
     MATCH (selected:CTPackage {uid:$uid})
@@ -49,7 +54,7 @@ def resolve_epoch_term_history(
             page_size=0,
         )
     snapshot = snapshot or StudyNativeLibrarySnapshot(study_uid, study_value_version)
-    packages = {}
+    packages: dict[Any, Any] = {}
     issues = []
     for selection in selections:
         package = selection.ct_package

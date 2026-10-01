@@ -7,9 +7,11 @@ values; ordinary ODM services retain their native validation and transaction.
 
 import json
 from copy import deepcopy
+from typing import Any, NoReturn, cast
 
 from fastapi.encoders import jsonable_encoder
 from neomodel import db
+from pydantic import BaseModel
 
 from clinical_mdr_api.domain_repositories._utils.native_read_cache import (
     uncached_native_reads,
@@ -29,13 +31,14 @@ from clinical_mdr_api.models.odms.item_group import (
 )
 from clinical_mdr_api.services._utils import ensure_transaction
 from common.exceptions import BusinessLogicException
+from common.utils import is_exact_bool, is_exact_int
 
 
 class OdmCollectionInitializationConflict(BusinessLogicException):
     status_code = 409
 
 
-def _refuse(code):
+def _refuse(code) -> NoReturn:
     raise OdmCollectionInitializationConflict(msg=code)
 
 
@@ -130,7 +133,7 @@ def _relations(value, input_model, reference_model, *, native):
         uid, order = relation["uid"], relation["order_number"]
         if not isinstance(uid, str) or not uid or uid in result:
             _refuse("ODM_COLLECTION_CHILD_ID_UNPROVEN")
-        if type(order) is not int or order < 1 or order in orders:
+        if not is_exact_int(order) or order < 1 or order in orders:
             _refuse("ODM_COLLECTION_ORDER_UNPROVEN")
         if relation["mandatory"] not in {"Yes", "No"}:
             _refuse("ODM_COLLECTION_MANDATORY_UNPROVEN")
@@ -168,7 +171,7 @@ def _stored_relations(repository, uid, collection, input_model, reference_model)
             not isinstance(properties, dict)
             or set(properties) - source_fields
             or not {"order_number", "mandatory", "vendor"}.issubset(properties)
-            or type(properties["mandatory"]) is not bool
+            or not is_exact_bool(properties["mandatory"])
             or not isinstance(properties["vendor"], str)
         ):
             _refuse("ODM_COLLECTION_STORED_PROPERTY_UNPROVEN")
@@ -196,6 +199,10 @@ def initialize_odm_collection(
     *,
     collection: str,
 ):
+    # Each collection has its own input and reference models; both are read only
+    # through the pydantic model interface here.
+    input_model: type[BaseModel]
+    reference_model: type[BaseModel]
     if collection == "item_groups":
         input_model, reference_model = OdmFormItemGroupPostInput, OdmItemGroupRefModel
         writer = parent_service.add_item_groups
@@ -213,7 +220,7 @@ def initialize_odm_collection(
             _refuse("ODM_COLLECTION_REQUEST_PROPERTY_UNPROVEN")
         # These are HTTP JSON inputs. The OSB model_validate override flattens
         # database nodes; ordinary construction validates this complete mapping.
-        model = input_model(**source)
+        model = input_model(**cast(dict[str, Any], source))
         if _json(model.model_dump(mode="json", exclude_unset=True)) != _json(source):
             _refuse("ODM_COLLECTION_REQUEST_NORMALIZATION_MISMATCH")
         parsed.append(model)
@@ -249,9 +256,10 @@ def initialize_odm_collection(
     )
     if _json(stored) != _json(current_relations):
         _refuse("ODM_COLLECTION_STORED_READBACK_DIVERGED")
-    definition = lambda value: {
-        key: child for key, child in value.items() if key != collection
-    }
+
+    def definition(value):
+        return {key: child for key, child in value.items() if key != collection}
+
     if _json(definition(current)) != _json(definition(expected)):
         _refuse("ODM_COLLECTION_PARENT_SNAPSHOT_CHANGED")
     is_exact_replay = _json(current_relations) == _json(requested)
@@ -283,7 +291,10 @@ def initialize_odm_collection(
 
     # This is initialization of the locked empty set. Never use override=True
     # or retry an incompatible set through the ordinary append operation.
-    writer(uid, parsed, override=False, preserve_order=True)
+    # _refuse raised above for any other collection, so writer is bound.
+    writer(  # pylint: disable=possibly-used-before-assignment
+        uid, parsed, override=False, preserve_order=True
+    )
     result = parent_service._transform_aggregate_root_to_pydantic_model(
         parent_service._find_by_uid_or_raise_not_found(uid)
     )

@@ -22,7 +22,7 @@ class SyntheticUser:
 @pytest.fixture(autouse=True)
 def strict_domain_scope(monkeypatch):
     monkeypatch.setattr(vis.settings, "delegated_claims_required", True)
-    monkeypatch.setattr(vis, "_request_user", lambda: SyntheticUser())
+    monkeypatch.setattr(vis, "_request_user", SyntheticUser)
     monkeypatch.setattr(
         vis,
         "_study_scope",

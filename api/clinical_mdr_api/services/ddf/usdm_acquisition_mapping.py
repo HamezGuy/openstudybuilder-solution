@@ -1,5 +1,7 @@
 """Expose native acquisition candidates as editable, explicitly incomplete USDM."""
 
+from typing import Any
+
 from usdm_model.alias_code import AliasCode
 from usdm_model.biomedical_concept import BiomedicalConcept
 from usdm_model.biomedical_concept_property import BiomedicalConceptProperty
@@ -46,7 +48,7 @@ def _response_candidates(item, context, source_path):
         )
         return {}
 
-    candidates = {}
+    candidates: dict[Any, Any] = {}
 
     def add(codelist, member):
         key = (codelist["uid"], member["memberIdentity"])

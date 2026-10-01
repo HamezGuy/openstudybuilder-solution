@@ -1,5 +1,8 @@
 """Fail-closed semantics for the authoritative native OSB to USDM mapper."""
 
+# pytest fixtures are injected by parameter name
+# pylint: disable=redefined-outer-name
+
 from types import SimpleNamespace
 
 import pytest
@@ -16,7 +19,6 @@ from clinical_mdr_api.services.ddf.usdm_mapping_context import MappingContext
 
 @pytest.mark.parametrize("observational", [True, False])
 def test_opposite_native_typed_design_attributes_require_reconciliation(observational):
-    from clinical_mdr_api.services.ddf.usdm_mapper import USDMMappingAuthorityRequired
 
     mapper = _mapper()
     term = SimpleNamespace(
@@ -99,7 +101,9 @@ def _mapper(
     compounds=None,
     dosings=None,
 ):
-    empty = lambda *_args, **_kwargs: []
+    def empty(*_args, **_kwargs):
+        return []
+
     return USDMMapper(
         get_osb_study_design_cells=empty,
         get_osb_study_arms=empty,

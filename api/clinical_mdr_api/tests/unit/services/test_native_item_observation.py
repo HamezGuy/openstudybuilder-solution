@@ -1,5 +1,8 @@
 """Actual observer and original producer, with authored native query boundaries."""
 
+# pytest fixtures requested for their side effects
+# pylint: disable=unused-argument
+
 import copy
 from contextlib import nullcontext
 from types import SimpleNamespace

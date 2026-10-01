@@ -1,5 +1,8 @@
 """Actual Community Study/CT producers, HTTP guards and a held native TX race."""
 
+# pytest fixtures are injected by parameter name
+# pylint: disable=redefined-outer-name
+
 import json
 import threading
 import time
@@ -14,7 +17,7 @@ from neomodel import db
 from clinical_mdr_api.domain_repositories.study_definitions import (
     study_definition_repository_impl,
 )
-from clinical_mdr_api.tests.fixtures.null_adjudication_neo4j import (
+from clinical_mdr_api.tests.fixtures.null_adjudication_neo4j import (  # pylint: disable=unused-import  # pytest fixture
     COMPANION_PATH,
     VALUE_PATH,
     graph_fingerprint,

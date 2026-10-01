@@ -665,9 +665,9 @@ def test_get_history_of_all_selections(api_client):
     assert res[0]["study_objective"]["objective"]["version"] == "1.0"
     assert res[0]["study_objective"]["objective_level"] is None
     assert res[0]["study_objective"]["order"] == 1
-    assert res[0]["study_objective"]["project_number"] == "123"
-    assert res[0]["study_objective"]["project_name"] == "Project ABC"
-    assert res[0]["study_objective"]["study_version"] is not None
+    # The historical revision carries no present-day project or study version.
+    for present_day_field in ("project_number", "project_name", "study_version"):
+        assert present_day_field not in res[0]["study_objective"]
     assert res[0]["study_objective"]["study_objective_uid"] == "StudyObjective_000001"
     assert res[0]["study_objective"]["study_uid"] == "study_root"
     assert res[0]["study_uid"] == "study_root"

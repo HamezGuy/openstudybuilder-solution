@@ -15,6 +15,12 @@ import re
 import zlib
 from typing import Any
 
+from common.utils import is_exact_int
+
+# Fail-closed contract checks list every required property in one condition;
+# splitting them would hide the rule they enforce.
+# pylint: disable=too-many-boolean-expressions
+
 SOURCE_SNAPSHOT_OID_PREFIX = "F.SEMANTIC.SNAPSHOT."
 SOURCE_SNAPSHOT_REF_PREFIX = "__SEMANTIC_SOURCE_SNAPSHOT__"
 MAXIMUM_SOURCE_SNAPSHOT_BYTES = 1024 * 1024 * 1024
@@ -52,7 +58,7 @@ def _strict_json(value: str | bytes) -> Any:
     )
 
 
-def _attributes(record: dict) -> dict:
+def _attributes(record: dict[str, Any]) -> dict[str, Any]:
     result = {}
     for attribute in record.get("vendor_attributes") or []:
         name = attribute.get("name")
@@ -63,7 +69,7 @@ def _attributes(record: dict) -> dict:
     return result
 
 
-def is_source_snapshot(record: dict) -> bool:
+def is_source_snapshot(record: dict[str, Any]) -> bool:
     return str(record.get("oid") or "").startswith(SOURCE_SNAPSHOT_OID_PREFIX) or any(
         attr.get("name") == "refKey"
         and str(attr.get("value") or "").startswith(SOURCE_SNAPSHOT_REF_PREFIX)
@@ -88,7 +94,7 @@ def _decode(value: str, limit: int) -> bytes:
     return raw
 
 
-def _descriptor(record: dict) -> tuple[dict, dict]:
+def _descriptor(record: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     attrs = _attributes(record)
     try:
         descriptor = _strict_json(_decode(attrs["ext"], 1024 * 1024))[
@@ -104,10 +110,10 @@ def _descriptor(record: dict) -> tuple[dict, dict]:
 
 
 def read_source_snapshot(
-    records: list[dict],
+    records: list[dict[str, Any]],
     study_uid: str | None,
     source_study_ids: set[str],
-) -> tuple[dict[str, Any], list[dict]] | None:
+) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
     """Return a verified source object and its native carrier records, or none.
 
     Hash the stored bytes, not reserialized JSON: numbers, Unicode and whitespace
@@ -143,7 +149,7 @@ def read_source_snapshot(
     ):
         raise SourceSnapshotError("Committed source snapshot identity/build mismatch")
     count = manifest.get("chunkCount")
-    if type(count) is not int or count < 1:
+    if not is_exact_int(count) or count < 1:
         raise SourceSnapshotError("Invalid snapshot chunk count")
     for key in ("snapshotHash", "encodedHash"):
         if not re.fullmatch(r"[0-9a-f]{64}", str(manifest.get(key) or "")):
@@ -161,7 +167,7 @@ def read_source_snapshot(
         raise SourceSnapshotError("Source snapshot generation hash mismatch")
     byte_length = manifest.get("byteLength")
     if byte_length is not None and (
-        type(byte_length) is not int
+        not is_exact_int(byte_length)
         or not 1 <= byte_length <= MAXIMUM_SOURCE_SNAPSHOT_BYTES
     ):
         raise SourceSnapshotError("Invalid source snapshot byte length")
@@ -192,7 +198,7 @@ def read_source_snapshot(
             or any(descriptor.get(key) != manifest[key] for key in manifest_keys)
             or descriptor.get("generationHash") != manifest.get("generationHash")
             or descriptor.get("byteLength") != byte_length
-            or type(index) is not int
+            or not is_exact_int(index)
             or not 1 <= index <= count
             or index in chunks
             or record.get("oid") != f"{prefix}{index:04d}"

@@ -1,3 +1,6 @@
+# exact == [] / == {} comparisons are the assertion
+# pylint: disable=use-implicit-booleaness-not-comparison
+
 from __future__ import annotations
 
 import json
@@ -50,8 +53,12 @@ class FakeQuery:
         self.binding = ("bind-1", "Study_990001", "0.1")
         self.links = []
         self.evidence_nodes = []
+        self.managed_params = None
 
-    def cypher_query(self, query, params=None):
+    # One branch per recorded query: a dispatcher, not business logic.
+    def cypher_query(  # pylint: disable=too-many-return-statements
+        self, query, params=None
+    ):
         params = params or {}
         if any(
             edge in query

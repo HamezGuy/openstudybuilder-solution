@@ -101,17 +101,17 @@ def test_complete_build_projection_survives_verification_generation_storage_and_
     _set_contract_version(generation, "1.3.0")
     store = FakeQuery()
     monkeypatch.setattr(module, "db", store)
-    arguments = dict(
-        request_payload=generation[0],
-        artifact=generation[1],
-        tenant_id=TENANT,
-        platform_study_id=STUDY,
-        osb_openapi_hash=OPENAPI_HASH,
-        actor="service:osb",
-        signed_envelope=generation[2],
-        signature_verification=generation[3],
-        mapping_context_service=FakeMapping(),
-    )
+    arguments = {
+        "request_payload": generation[0],
+        "artifact": generation[1],
+        "tenant_id": TENANT,
+        "platform_study_id": STUDY,
+        "osb_openapi_hash": OPENAPI_HASH,
+        "actor": "service:osb",
+        "signed_envelope": generation[2],
+        "signature_verification": generation[3],
+        "mapping_context_service": FakeMapping(),
+    }
     result = module.generate_candidate_set(**arguments)
     assert result["payload"]["candidateRecords"][0]["source"] == intent["source"]
     stored = json.loads(next(iter(store.sets.values()))[0])

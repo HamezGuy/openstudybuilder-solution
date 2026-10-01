@@ -1,5 +1,8 @@
 """Native visit DTO facts through the actual portable exporter."""
 
+# pytest fixtures requested for their side effects
+# pylint: disable=unused-argument
+
 from copy import deepcopy
 from types import SimpleNamespace
 

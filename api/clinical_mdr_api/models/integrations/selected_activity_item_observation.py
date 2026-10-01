@@ -16,8 +16,10 @@ from clinical_mdr_api.models.integrations.native_item_observation import (
 
 
 class SelectedActivityItemRequest(NativeItemObservationRequest):
-    contractVersion: Literal["OsbSelectedActivityItemRequestV1@1.0.0"]
-    scope: Literal["selected-activity-item"]
+    # This contract variant narrows the base contract and scope literals; pydantic
+    # validates the redefined fields, which mypy reports as an incompatible override.
+    contractVersion: Literal["OsbSelectedActivityItemRequestV1@1.0.0"]  # type: ignore[assignment]
+    scope: Literal["selected-activity-item"]  # type: ignore[assignment]
     studyValueVersion: Identity
     studyActivityInstanceUid: Identity
     activityInstanceUid: Identity

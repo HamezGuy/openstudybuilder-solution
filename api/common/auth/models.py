@@ -331,7 +331,8 @@ class Auth:
         self.authentication_verified = authentication_verified
 
 
-def validate_delegated_claims(
+# Each delegated-claims shape is one fail-closed rule over its required claims.
+def validate_delegated_claims(  # pylint: disable=too-many-boolean-expressions
     claims: AccessTokenClaims,
     *,
     exchanging_clients: set[str],

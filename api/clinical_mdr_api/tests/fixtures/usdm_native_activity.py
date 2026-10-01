@@ -196,13 +196,17 @@ class NativeActivitySource:
             patch(
                 "clinical_mdr_api.services.studies.study_native_library_snapshot.CTTermRoot",
                 SimpleNamespace(
-                    nodes=SimpleNamespace(get_or_none=lambda uid: self.terms.get(uid))
+                    nodes=SimpleNamespace(
+                        # pylint: disable-next=unnecessary-lambda
+                        get_or_none=lambda uid: self.terms.get(uid)
+                    )
                 ),
             ),
             patch(
                 "clinical_mdr_api.services.studies.study_native_library_snapshot.CTCodelistRoot",
                 SimpleNamespace(
                     nodes=SimpleNamespace(
+                        # pylint: disable-next=unnecessary-lambda
                         get_or_none=lambda uid: self.codelists.get(uid)
                     )
                 ),
@@ -257,7 +261,10 @@ class NativeActivitySource:
             patch(
                 "clinical_mdr_api.services.integrations.edc_native_visit_projection.UnitDefinitionRoot",
                 SimpleNamespace(
-                    nodes=SimpleNamespace(get_or_none=lambda uid: roots.get(uid))
+                    nodes=SimpleNamespace(
+                        # pylint: disable-next=unnecessary-lambda
+                        get_or_none=lambda uid: roots.get(uid)
+                    )
                 ),
             ),
         ):

@@ -3,6 +3,11 @@
 No application/database fixtures, client studies, signatures or approvals.
 """
 
+# fixture values are plain JSON dicts pylint cannot infer
+# fixture values are plain JSON dicts pylint cannot infer
+# exact == [] / == {} comparisons are the assertion
+# pylint: disable=unsubscriptable-object,unsupported-assignment-operation,use-implicit-booleaness-not-comparison
+
 from copy import deepcopy
 
 import pytest
@@ -154,8 +159,8 @@ class NativePort(NativeCapturePort):
     def lock_study(self, *scope):
         self.locked.append(scope)
 
-    def binding(self, key):
-        return deepcopy(self.bindings.get(key))
+    def binding(self, binding_key):
+        return deepcopy(self.bindings.get(binding_key))
 
     def bind(self, binding):
         assert binding["bindingKey"] not in self.bindings

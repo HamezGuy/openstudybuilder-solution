@@ -19,11 +19,7 @@ def lock_study_metadata_references(bindings: list[dict[str, Any]]) -> None:
         if "sourceUnitIdentity" in identity
     )
     uids = sorted(
-        {
-            identity.get("uid")
-            for identity in identities
-            if isinstance(identity.get("uid"), str)
-        }
+        {uid for identity in identities if isinstance(uid := identity.get("uid"), str)}
     )
     if not uids or any(not identity.get("uid") for identity in identities):
         raise OsbCandidateSetError(

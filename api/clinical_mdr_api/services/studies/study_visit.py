@@ -1098,20 +1098,18 @@ class StudyVisitService(StudySelectionMixin):
             )
 
         if study_visit_vo.visit_class == VisitClass.MANUALLY_DEFINED_VISIT:
-            ValidationException.raise_if(
-                create_input.visit_name is None
-                or not str(create_input.visit_name).strip(),
-                msg="visit_name is required for a Manually defined visit.",
-            )
-            study_visit_vo.visit_number = create_input.visit_number
+            visit_name = create_input.visit_name
+            if visit_name is None or not str(visit_name).strip():
+                raise ValidationException(
+                    msg="visit_name is required for a Manually defined visit."
+                )
+            study_visit_vo.visit_number = create_input.visit_number  # type: ignore[assignment]
             study_visit_vo.vis_unique_number = create_input.unique_visit_number
             study_visit_vo.vis_short_name = create_input.visit_short_name
             study_visit_vo.visit_name_sc = (
-                TextValue(uid="", name=create_input.visit_name)
+                TextValue(uid="", name=visit_name)
                 if preview and study_visit_vo.is_untimed
-                else self._create_visit_name_simple_concept(
-                    visit_name=create_input.visit_name
-                )
+                else self._create_visit_name_simple_concept(visit_name=visit_name)
             )
         elif study_visit_vo.has_timing and any(
             [

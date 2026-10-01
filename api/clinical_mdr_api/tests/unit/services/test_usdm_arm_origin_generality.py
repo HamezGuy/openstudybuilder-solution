@@ -32,7 +32,9 @@ from common.models.error import ErrorResponse
 
 
 def _mapper():
-    empty = lambda *_args, **_kwargs: []
+    def empty(*_args, **_kwargs):
+        return []
+
     return USDMMapper(
         get_osb_study_design_cells=empty,
         get_osb_study_arms=empty,
@@ -163,7 +165,10 @@ class NativeArmOriginGeneralityTests(unittest.TestCase):
                 row = _native_arm(description)
                 before = row.model_dump(mode="json")
                 mapper = _mapper()
-                mapper._get_osb_study_arms = lambda *_args, **_kwargs: [row]
+                mapper._get_osb_study_arms = lambda *_args, **_kwargs: [
+                    # pylint: disable-next=cell-var-from-loop
+                    row
+                ]
                 mapper.get_ct_package_term_as_usdm_code = lambda *_args, **_kwargs: (
                     _ for _ in ()
                 ).throw(AssertionError("a guessed CT origin lookup must never occur"))
@@ -200,7 +205,10 @@ class NativeArmOriginGeneralityTests(unittest.TestCase):
                 row.randomization_group = ""
                 row.number_of_subjects = 0
                 mapper = _mapper()
-                mapper._get_osb_study_arms = lambda *_args, **_kwargs: [row]
+                mapper._get_osb_study_arms = lambda *_args, **_kwargs: [
+                    # pylint: disable-next=cell-var-from-loop
+                    row
+                ]
                 mapper._ct_packages = {
                     "DDF CT": {
                         "uid": "ddfct-2024-09-27",
@@ -541,7 +549,10 @@ class NativeArmOriginGeneralityTests(unittest.TestCase):
             with self.subTest(package=package):
                 mapper = _mapper()
                 mapper._get_osb_study_standard_versions = lambda **_kwargs: [
-                    SimpleNamespace(ct_package=package)
+                    SimpleNamespace(
+                        # pylint: disable-next=cell-var-from-loop
+                        ct_package=package
+                    )
                 ]
                 with self.assertRaisesRegex(
                     USDMMappingAuthorityRequired, "SELECTION_INCOMPLETE"

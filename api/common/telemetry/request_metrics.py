@@ -106,8 +106,7 @@ def cypher_tracing(query: str, params: Mapping):
         metrics.cypher_times += delta_time
 
         # find the slowest query of the request
-        if delta_time > metrics.cypher_slowest_time:
-            metrics.cypher_slowest_time = delta_time
+        metrics.cypher_slowest_time = max(metrics.cypher_slowest_time, delta_time)
 
 
 def patch_neomodel_database():

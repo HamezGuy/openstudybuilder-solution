@@ -4,6 +4,9 @@ Repository reads are isolated. These tests do not claim native Cypher or UI
 execution; the exact source schedule/instance identities are explicit fixtures.
 """
 
+# exact == [] / == {} comparisons are the assertion
+# pylint: disable=use-implicit-booleaness-not-comparison
+
 import json
 from copy import deepcopy
 from hashlib import sha256
@@ -200,8 +203,8 @@ def test_deepcopy_preserves_native_visit_wrapper_anchor_and_shared_model_identit
     memo = {}
     copied = deepcopy([snapshot, snapshot, snapshot.value], memo)
     clone = copied[0]
-    assert type(clone) is NativeVisitSnapshot
-    assert type(clone.value) is StudyVisit
+    assert type(clone) is NativeVisitSnapshot  # pylint: disable=unidiomatic-typecheck
+    assert type(clone.value) is StudyVisit  # pylint: disable=unidiomatic-typecheck
     assert clone is not snapshot and clone.value is not snapshot.value
     assert clone is copied[1] and clone.value is copied[2]
     assert memo[id(snapshot)] is clone
@@ -330,7 +333,11 @@ def test_exact_same_schedule_uid_operational_expansion_preserves_all_instances_a
     assert_native_timing_anchors(report)
     reordered = deepcopy(graph)
     assert native_json(reordered) == before
-    assert all(type(visit) is NativeVisitSnapshot for visit in reordered["visits"])
+    assert all(
+        # pylint: disable-next=unidiomatic-typecheck
+        type(visit) is NativeVisitSnapshot
+        for visit in reordered["visits"]
+    )
     reordered["operational"].reverse()
     other, _ = map_graph(reordered, monkeypatch)
     assert_native_timing_anchors(other)
