@@ -6,6 +6,9 @@ name: Import standards — build validation
 # trigger here would just duplicate the work and burn runner minutes.
 on:
   workflow_call:
+  # The AccuraTrial fork works on main without pull requests, so the PR
+  # coordinator never runs this; dispatch it by hand after changing import_standards/.
+  workflow_dispatch:
 
 permissions: {}
 

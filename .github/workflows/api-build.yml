@@ -154,7 +154,9 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     if: ${{ !inputs.source_ref }}
-    timeout-minutes: 60
+    # Upstream allows 60; pylint over the fork's larger tree took 55 minutes on
+    # 2026-10-01 (run 36796503029). 90 matches the integration jobs.
+    timeout-minutes: 90
     defaults:
       run:
         working-directory: api

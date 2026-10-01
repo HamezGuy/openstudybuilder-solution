@@ -6,6 +6,9 @@ name: Db — build validation
 # just duplicate the work and burn runner minutes.
 on:
   workflow_call:
+  # The AccuraTrial fork works on main without pull requests, so the PR
+  # coordinator never runs this; dispatch it by hand after changing db/.
+  workflow_dispatch:
 
 permissions: {}
 
