@@ -24,6 +24,9 @@ summary = "python -m tests.summary"
 [packages]
 locust = "2.44.3"
 neomodel = "~=6.1.0"
+# Security floor for a transitive dependency (pip-audit, 2026-09-30); a lower
+# bound, so a lock refresh cannot fall back to the vulnerable release.
+urllib3 = ">=2.8.0"
 
 [dev-packages]
 isort = "~=8.0.1"
@@ -32,3 +35,4 @@ junit-xml = "~=1.9"
 typing-extensions = "~=4.15.0"
 pylint = "~=4.0.6"
 pip-audit = "~=2.10.0"
+pip = ">=26.2"
