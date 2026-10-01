@@ -2288,24 +2288,6 @@
       "note": "Term membership in a codelist with its submission value."
     },
     {
-      "osbClass": "CTConfigRoot",
-      "file": "configuration.py",
-      "base": "VersionRoot",
-      "cslObjectType": null,
-      "cslLinkType": null,
-      "correspondence": "platform",
-      "note": "Study field configuration."
-    },
-    {
-      "osbClass": "CTConfigValue",
-      "file": "configuration.py",
-      "base": "VersionValue",
-      "cslObjectType": null,
-      "cslLinkType": null,
-      "correspondence": "platform",
-      "note": "Study field configuration."
-    },
-    {
       "osbClass": "CTPackage",
       "file": "controlled_terminology.py",
       "base": "ClinicalMdrNodeWithUID",
@@ -2621,13 +2603,22 @@
       "note": "Versioned content of Endpoint; The instantiated endpoint text."
     },
     {
-      "osbClass": "FeatureFlag",
+      "osbClass": "FeatureFlagRoot",
       "file": "feature_flag.py",
-      "base": "ClinicalMdrNode",
+      "base": "VersionRoot",
       "cslObjectType": null,
       "cslLinkType": null,
       "correspondence": "platform",
-      "note": ""
+      "note": "Application feature flag (versioned Root/Value from 2.10; replaces FeatureFlag)."
+    },
+    {
+      "osbClass": "FeatureFlagValue",
+      "file": "feature_flag.py",
+      "base": "VersionValue",
+      "cslObjectType": null,
+      "cslLinkType": null,
+      "correspondence": "platform",
+      "note": "Application feature flag (versioned Root/Value from 2.10; replaces FeatureFlag)."
     },
     {
       "osbClass": "FootnotePreInstanceRoot",
@@ -2801,6 +2792,15 @@
       "note": "Formulation grouping of ingredients; CSL keeps ingredients on the product."
     },
     {
+      "osbClass": "Job",
+      "file": "job.py",
+      "base": "ClinicalMdrNodeWithUID",
+      "cslObjectType": null,
+      "cslLinkType": null,
+      "correspondence": "platform",
+      "note": "Background job record (2.10)."
+    },
+    {
       "osbClass": "LagTimeRoot",
       "file": "concepts.py",
       "base": "NumericValueRoot",
@@ -2862,6 +2862,24 @@
       "cslLinkType": null,
       "correspondence": "narrower",
       "note": "Versioned content of Code; MEDRT term; a Code of that system."
+    },
+    {
+      "osbClass": "MetaStudyField",
+      "file": "controlled_terminology.py",
+      "base": "ClinicalMdrNode",
+      "cslObjectType": null,
+      "cslLinkType": null,
+      "correspondence": "platform",
+      "note": "Study field configuration (2.10; replaces CTConfigRoot/CTConfigValue)."
+    },
+    {
+      "osbClass": "NonStandardVariableValue",
+      "file": "biomedical_concepts.py",
+      "base": "ActivityItemClassValue",
+      "cslObjectType": null,
+      "cslLinkType": null,
+      "correspondence": "none",
+      "note": "Sponsor non-standard variable (2.10): an ActivityItemClassValue specialisation for SDTM supplemental-qualifier variables; standards library, no CSL counterpart."
     },
     {
       "osbClass": "Notification",
@@ -3339,6 +3357,24 @@
       "cslLinkType": null,
       "correspondence": "none",
       "note": "Sponsor model dataset variable; standards library structure, no CSL counterpart."
+    },
+    {
+      "osbClass": "SponsorModelSchemaRoot",
+      "file": "standard_data_model.py",
+      "base": "ClinicalMdrNodeWithUID",
+      "cslObjectType": null,
+      "cslLinkType": null,
+      "correspondence": "none",
+      "note": "Sponsor model field-schema version (2.10); standards library, no CSL counterpart."
+    },
+    {
+      "osbClass": "SponsorModelSchemaValue",
+      "file": "standard_data_model.py",
+      "base": "ClinicalMdrNode",
+      "cslObjectType": null,
+      "cslLinkType": null,
+      "correspondence": "none",
+      "note": "Sponsor model field-schema version (2.10); standards library, no CSL counterpart."
     },
     {
       "osbClass": "SponsorModelValue",
@@ -4323,6 +4359,24 @@
       "note": "A catalogue release; a terminology_code_system row (system URI, version)."
     },
     {
+      "type": "CONTAINS_SPONSOR_MODEL",
+      "declaredOn": [
+        "SponsorModelValue:from:Library"
+      ],
+      "correspondence": "platform",
+      "target": null,
+      "note": "Library, catalogue, project or configuration containment (the CONTAINS_* family is one LIBRARY_REL_LABEL per library object kind)."
+    },
+    {
+      "type": "CONTAINS_SPONSOR_MODEL_SCHEMA",
+      "declaredOn": [
+        "SponsorModelSchemaRoot:from:Library"
+      ],
+      "correspondence": "platform",
+      "target": null,
+      "note": "Library, catalogue, project or configuration containment (the CONTAINS_* family is one LIBRARY_REL_LABEL per library object kind)."
+    },
+    {
       "type": "CONTAINS_SYNTAX_INSTANCE",
       "declaredOn": [
         "SyntaxInstanceRoot:from:Library"
@@ -4369,6 +4423,24 @@
       "note": "Pre-instance created from a template."
     },
     {
+      "type": "DEFAULT_ORIGIN_SOURCE",
+      "declaredOn": [
+        "NonStandardVariableValue:to:CTTermContext"
+      ],
+      "correspondence": "none",
+      "target": null,
+      "note": "Default origin source of a sponsor non-standard variable (2.10); standards library, no CSL counterpart."
+    },
+    {
+      "type": "DEFAULT_ORIGIN_TYPE",
+      "declaredOn": [
+        "NonStandardVariableValue:to:CTTermContext"
+      ],
+      "correspondence": "none",
+      "target": null,
+      "note": "Default origin type of a sponsor non-standard variable (2.10); standards library, no CSL counterpart."
+    },
+    {
       "type": "EXTENDS_PACKAGE",
       "declaredOn": [
         "CTPackage:to:CTPackage"
@@ -4386,6 +4458,16 @@
       "correspondence": "none",
       "target": null,
       "note": "Sponsor model extending an IG version; standards library."
+    },
+    {
+      "type": "FOLLOWS_SCHEMA",
+      "declaredOn": [
+        "SponsorModelSchemaValue:from:SponsorModelValue",
+        "SponsorModelValue:to:SponsorModelSchemaValue"
+      ],
+      "correspondence": "none",
+      "target": null,
+      "note": "Sponsor model field-schema link (2.10); standards library, no CSL counterpart."
     },
     {
       "type": "FORM_REF",
@@ -4463,6 +4545,15 @@
       "correspondence": "none",
       "target": null,
       "note": "Template indexing (activities, groups, indications, categories) used for library search; no CSL counterpart."
+    },
+    {
+      "type": "HAS_AE_LAG_TIME_UNIT",
+      "declaredOn": [
+        "StudyEpoch:to:UnitDefinitionRoot"
+      ],
+      "correspondence": "none",
+      "target": null,
+      "note": "Unit of an epoch's adverse-event lag-time window (2.10); CSL StudyEpoch has no lag-time window."
     },
     {
       "type": "HAS_ALIAS",
@@ -4555,6 +4646,15 @@
       "note": "Template indexing (activities, groups, indications, categories) used for library search; no CSL counterpart."
     },
     {
+      "type": "HAS_CE_LAG_TIME_UNIT",
+      "declaredOn": [
+        "StudyEpoch:to:UnitDefinitionRoot"
+      ],
+      "correspondence": "none",
+      "target": null,
+      "note": "Unit of an epoch's clinical-event lag-time window (2.10); CSL StudyEpoch has no lag-time window."
+    },
+    {
       "type": "HAS_CODELIST",
       "declaredOn": [
         "ActivityItem:to:CTCodelistRoot",
@@ -4574,24 +4674,6 @@
       "correspondence": "terminology",
       "target": "Item",
       "note": "Permitted terms of an item; terminology bindings on the Item."
-    },
-    {
-      "type": "HAS_CONFIGURED_CODELIST",
-      "declaredOn": [
-        "CTConfigValue:to:CTCodelistRoot"
-      ],
-      "correspondence": "platform",
-      "target": null,
-      "note": "Library, catalogue, project or configuration containment (the CONTAINS_* family is one LIBRARY_REL_LABEL per library object kind)."
-    },
-    {
-      "type": "HAS_CONFIGURED_TERM",
-      "declaredOn": [
-        "CTConfigValue:to:CTTermRoot"
-      ],
-      "correspondence": "platform",
-      "target": null,
-      "note": "Library, catalogue, project or configuration containment (the CONTAINS_* family is one LIBRARY_REL_LABEL per library object kind)."
     },
     {
       "type": "HAS_CONJUNCTION",
@@ -4672,11 +4754,12 @@
     {
       "type": "HAS_DATA_TYPE",
       "declaredOn": [
-        "ActivityItemClassValue:to:CTTermContext"
+        "ActivityItemClassValue:to:CTTermContext",
+        "OdmItemValue:to:CTTermContext"
       ],
       "correspondence": "property",
       "target": "BiomedicalConceptBinding",
-      "note": "Data type of an item class (CT term)."
+      "note": "Data type (CT term) of an item class, and from 2.10 of an ODM item (formerly the string OdmItemValue.datatype)."
     },
     {
       "type": "HAS_DATASET",
@@ -4778,7 +4861,6 @@
       "type": "HAS_DOSE_FREQUENCY",
       "declaredOn": [
         "MedicinalProductValue:to:CTTermContext",
-        "StudyCompound:to:CTTermContext",
         "StudyCompoundDosing:to:CTTermContext"
       ],
       "correspondence": "link",
@@ -4789,7 +4871,6 @@
       "type": "HAS_DOSE_VALUE",
       "declaredOn": [
         "MedicinalProductValue:to:NumericValueWithUnitRoot",
-        "StudyCompound:to:NumericValueWithUnitRoot",
         "StudyCompoundDosing:to:NumericValueWithUnitRoot"
       ],
       "correspondence": "link",
@@ -4870,6 +4951,15 @@
       "note": ""
     },
     {
+      "type": "HAS_EXTERNAL_QUESTION",
+      "declaredOn": [
+        "OdmItemValue:to:CTTermContext"
+      ],
+      "correspondence": "terminology",
+      "target": "Item",
+      "note": "External question term of an ODM item (2.10); a terminology binding on the Item."
+    },
+    {
       "type": "HAS_FIELD",
       "declaredOn": [
         "StudyProjectField:from:Project"
@@ -4946,6 +5036,15 @@
       "correspondence": "property",
       "target": "Ingredient.halfLife",
       "note": ""
+    },
+    {
+      "type": "HAS_HYPO_LAG_TIME_UNIT",
+      "declaredOn": [
+        "StudyEpoch:to:UnitDefinitionRoot"
+      ],
+      "correspondence": "none",
+      "target": null,
+      "note": "Unit of an epoch's hypoglycaemia lag-time window (2.10); CSL StudyEpoch has no lag-time window."
     },
     {
       "type": "HAS_INDICATION",
@@ -5042,6 +5141,15 @@
       "correspondence": "link",
       "target": "interventionProduct",
       "note": ""
+    },
+    {
+      "type": "HAS_META_STUDY_FIELD",
+      "declaredOn": [
+        "StudyField:to:MetaStudyField"
+      ],
+      "correspondence": "platform",
+      "target": null,
+      "note": "Study field configuration (2.10 MetaStudyField); platform configuration."
     },
     {
       "type": "HAS_NAME_ROOT",
@@ -5274,6 +5382,16 @@
       "note": "Route of a pharmaceutical product; CSL states the route on the regimen."
     },
     {
+      "type": "HAS_SCHEMA_VERSION",
+      "declaredOn": [
+        "SponsorModelSchemaRoot:to:SponsorModelSchemaValue",
+        "SponsorModelSchemaValue:from:SponsorModelSchemaRoot"
+      ],
+      "correspondence": "none",
+      "target": null,
+      "note": "Sponsor model field-schema link (2.10); standards library, no CSL counterpart."
+    },
+    {
       "type": "HAS_SDTM_DOMAIN",
       "declaredOn": [
         "LagTimeValue:to:CTTermContext",
@@ -5456,6 +5574,15 @@
       "correspondence": "property",
       "target": "Endpoint.timeframe",
       "note": ""
+    },
+    {
+      "type": "HAS_SEMANTIC_DATA_TYPE",
+      "declaredOn": [
+        "MetaStudyField:to:CTTermContext"
+      ],
+      "correspondence": "platform",
+      "target": null,
+      "note": "Study field configuration (2.10 MetaStudyField); platform configuration."
     },
     {
       "type": "HAS_SORT_KEY",
@@ -5825,7 +5952,7 @@
     {
       "type": "HAS_TERM",
       "declaredOn": [
-        "CTCodelistRoot:to:CTCodelistTerm",
+        "CTCodelistRoot:to:clinical_mdr_api.domain_repositories.models.controlled_terminology.CTCodelistTerm",
         "CTCodelistTerm:from:CTCodelistRoot",
         "DictionaryCodelistRoot:to:DictionaryTermRoot",
         "DictionaryTermRoot:from:DictionaryCodelistRoot"
@@ -5838,7 +5965,7 @@
       "type": "HAS_TERM_ROOT",
       "declaredOn": [
         "CTCodelistTerm:to:CTTermRoot",
-        "CTTermRoot:from:CTCodelistTerm"
+        "CTTermRoot:from:clinical_mdr_api.domain_repositories.models.controlled_terminology.CTCodelistTerm"
       ],
       "correspondence": "link",
       "target": "containsCode",
@@ -6074,7 +6201,6 @@
         "ActivityValue:from:ActivityRoot",
         "CTCodelistAttributesRoot:to:CTCodelistAttributesValue",
         "CTCodelistNameRoot:to:CTCodelistNameValue",
-        "CTConfigRoot:to:CTConfigValue",
         "CTTermAttributesRoot:to:CTTermAttributesValue",
         "CTTermNameRoot:to:CTTermNameValue",
         "CompoundAliasRoot:to:CompoundAliasValue",
@@ -6088,6 +6214,7 @@
         "DatasetVariableInstance:from:DatasetVariable",
         "DictionaryCodelistRoot:to:DictionaryCodelistValue",
         "DictionaryTermRoot:to:DictionaryTermValue",
+        "FeatureFlagRoot:to:FeatureFlagValue",
         "FootnoteTemplateValue:from:FootnoteTemplateRoot",
         "FootnoteValue:from:FootnoteRoot",
         "LagTimeRoot:to:LagTimeValue",
@@ -6258,6 +6385,16 @@
       "note": "Alias or product to its compound; identity property of the product."
     },
     {
+      "type": "IS_SPECIALIZATION_OF",
+      "declaredOn": [
+        "CTTermRoot:from:CTTermRoot",
+        "CTTermRoot:to:CTTermRoot"
+      ],
+      "correspondence": "none",
+      "target": null,
+      "note": "CT term specialisation hierarchy (2.10, e.g. the datatype terms); CSL CodeList has no hierarchy."
+    },
+    {
       "type": "ITEM_GROUP_REF",
       "declaredOn": [
         "OdmFormValue:to:OdmItemGroupValue",
@@ -6298,7 +6435,6 @@
         "ActivityValue:from:ActivityRoot",
         "CTCodelistAttributesRoot:to:CTCodelistAttributesValue",
         "CTCodelistNameRoot:to:CTCodelistNameValue",
-        "CTConfigRoot:to:CTConfigValue",
         "CTTermAttributesRoot:to:CTTermAttributesValue",
         "CTTermNameRoot:to:CTTermNameValue",
         "CompoundAliasRoot:to:CompoundAliasValue",
@@ -6309,6 +6445,7 @@
         "DataSupplierRoot:to:DataSupplierValue",
         "DictionaryCodelistRoot:to:DictionaryCodelistValue",
         "DictionaryTermRoot:to:DictionaryTermValue",
+        "FeatureFlagRoot:to:FeatureFlagValue",
         "LagTimeRoot:to:LagTimeValue",
         "MEDRTTermRoot:to:MEDRTTermValue",
         "MedicinalProductRoot:to:MedicinalProductValue",
@@ -6326,6 +6463,7 @@
         "ParameterTemplateRoot:to:ParameterTemplateValue",
         "PharmaceuticalProductRoot:to:PharmaceuticalProductValue",
         "SnomedTermRoot:to:SnomedTermValue",
+        "SponsorModelSchemaRoot:to:SponsorModelSchemaValue",
         "StudyDayRoot:to:StudyDayValue",
         "StudyDurationDaysRoot:to:StudyDurationDaysValue",
         "StudyDurationWeeksRoot:to:StudyDurationWeeksValue",
@@ -6366,7 +6504,6 @@
         "ActivityValue:from:ActivityRoot",
         "CTCodelistAttributesRoot:to:CTCodelistAttributesValue",
         "CTCodelistNameRoot:to:CTCodelistNameValue",
-        "CTConfigRoot:to:CTConfigValue",
         "CTTermAttributesRoot:to:CTTermAttributesValue",
         "CTTermNameRoot:to:CTTermNameValue",
         "CompoundAliasRoot:to:CompoundAliasValue",
@@ -6433,7 +6570,6 @@
         "ActivityValue:from:ActivityRoot",
         "CTCodelistAttributesRoot:to:CTCodelistAttributesValue",
         "CTCodelistNameRoot:to:CTCodelistNameValue",
-        "CTConfigRoot:to:CTConfigValue",
         "CTTermAttributesRoot:to:CTTermAttributesValue",
         "CTTermNameRoot:to:CTTermNameValue",
         "CompoundAliasRoot:to:CompoundAliasValue",
@@ -6444,6 +6580,7 @@
         "DataSupplierRoot:to:DataSupplierValue",
         "DictionaryCodelistRoot:to:DictionaryCodelistValue",
         "DictionaryTermRoot:to:DictionaryTermValue",
+        "FeatureFlagRoot:to:FeatureFlagValue",
         "LagTimeRoot:to:LagTimeValue",
         "MEDRTTermRoot:to:MEDRTTermValue",
         "MedicinalProductRoot:to:MedicinalProductValue",
@@ -6517,7 +6654,6 @@
         "ActivityValue:from:ActivityRoot",
         "CTCodelistAttributesRoot:to:CTCodelistAttributesValue",
         "CTCodelistNameRoot:to:CTCodelistNameValue",
-        "CTConfigRoot:to:CTConfigValue",
         "CTTermAttributesRoot:to:CTTermAttributesValue",
         "CTTermNameRoot:to:CTTermNameValue",
         "CompoundAliasRoot:to:CompoundAliasValue",
@@ -6528,6 +6664,7 @@
         "DataSupplierRoot:to:DataSupplierValue",
         "DictionaryCodelistRoot:to:DictionaryCodelistValue",
         "DictionaryTermRoot:to:DictionaryTermValue",
+        "FeatureFlagRoot:to:FeatureFlagValue",
         "LagTimeRoot:to:LagTimeValue",
         "MEDRTTermRoot:to:MEDRTTermValue",
         "MedicinalProductRoot:to:MedicinalProductValue",
@@ -6726,13 +6863,23 @@
       "note": "Term a variable references."
     },
     {
+      "type": "RELATED_STUDY_FIELD_SELECTION",
+      "declaredOn": [
+        "CTTermNameValue:to:MetaStudyField"
+      ],
+      "correspondence": "platform",
+      "target": null,
+      "note": "Study field configuration (2.10 MetaStudyField); platform configuration."
+    },
+    {
       "type": "REPLACED_BY",
       "declaredOn": [
-        "DatasetVariableInstance:to:DatasetVariableInstance"
+        "DatasetVariableInstance:to:DatasetVariableInstance",
+        "StudyActivity:to:StudyActivity"
       ],
       "correspondence": "none",
       "target": null,
-      "note": "Variable replacement across IG versions; standards library, no CSL counterpart."
+      "note": "Variable replacement across IG versions, and (2.10) a study activity replaced by another; no CSL counterpart."
     },
     {
       "type": "REPLACED_BY_ACTIVITY",
@@ -6752,6 +6899,24 @@
       "correspondence": "platform",
       "target": null,
       "note": ""
+    },
+    {
+      "type": "RESPONSE_CODELIST",
+      "declaredOn": [
+        "CTTermNameValue:to:CTCodelistRoot"
+      ],
+      "correspondence": "none",
+      "target": null,
+      "note": "Codelist of allowed responses to a CT term (2.10); CSL Code has no response codelist."
+    },
+    {
+      "type": "RESPONSE_DICTIONARY",
+      "declaredOn": [
+        "CTTermNameValue:to:clinical_mdr_api.domain_repositories.models.dictionary.DictionaryCodelistRoot"
+      ],
+      "correspondence": "none",
+      "target": null,
+      "note": "Dictionary of allowed responses to a CT term (2.10); CSL Code has no response codelist."
     },
     {
       "type": "STUDY_ACTIVITY_HAS_INSTRUCTION",
@@ -6961,6 +7126,15 @@
       "correspondence": "none",
       "target": null,
       "note": "Template parameter machinery (PARAMETERS_LABEL per syntax level, RELATION_LABEL); CSL keeps the instantiated text."
+    },
+    {
+      "type": "VALID_NULL_FLAVOR",
+      "declaredOn": [
+        "CTTermNameValue:to:CTTermContext"
+      ],
+      "correspondence": "none",
+      "target": null,
+      "note": "Null flavours valid for a CT term used as a parameter (2.10); CSL Code has no null-flavour list."
     }
   ],
   "osbPlatformNodes": [
@@ -7135,5 +7309,5 @@
       "note": "Domain audit export bundle; no CSL table."
     }
   ],
-  "mapHash": "sha256:851cba67fa509ba00f583374ce9d0b2d59a3f251764a0e9f0b562ca73ec62be6"
+  "mapHash": "sha256:8a2c75eb0944f2fb5011b7a14c749996c4f7b40e8fa38ba873116ba5a2f154ae"
 }
