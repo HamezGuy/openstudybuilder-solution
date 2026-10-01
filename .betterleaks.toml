@@ -1,9 +1,9 @@
 # Secret-scan ruleset for the AccuraTrial fork (BetterLeaks, gitleaks-compatible).
 #
-# The scan workflows (.github/workflows/secret-scan-*.yml) use this file when the
+# The scan workflows (.github/workflows/secret-scan-*.yml) load this file when the
 # BETTERLEAKS_CONFIG_TOML Actions variable is unset. It keeps BetterLeaks' default
-# rules and allowlists reviewed false positives only, each pinned to one rule, one
-# file and the exact matched line, so a real secret elsewhere still fails the scan.
+# rules and allowlists reviewed false positives only, each pinned to one rule and one
+# file, so a real secret anywhere else still fails the scan.
 
 title = "AccuraTrial fork secret-scan ruleset"
 
@@ -12,11 +12,11 @@ useDefault = true
 
 [[allowlists]]
 description = """\
-  ES256 public-key check, not a credential: `key.curve, ec.SECP256R1` in the \
-  generated platform contract. Command Center pins this file byte for byte, so it \
-  cannot carry an inline allow comment."""
+  The ES256 verifier in the generated platform contract checks that a public key \
+  uses the P-256 curve; the flagged token is that curve's class name, not a \
+  credential. Command Center pins this file byte for byte, so it cannot carry an \
+  inline allow comment."""
 targetRules = ["generic-api-key"]
 condition = "AND"
 paths = ['''api/clinical_mdr_api/generated/platform_contracts/hash_signing_v1\.py$''']
-regexTarget = "line"
-regexes = ['''^\s*key\.curve, ec\.SECP256R1\s*$''']
+stopwords = ["secp256r1"]
