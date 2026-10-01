@@ -28,11 +28,7 @@ function formatUserInfo(payload) {
   if (!payload || typeof payload !== 'object') return null
   return {
     ...payload,
-    name:
-      payload.name ||
-      payload.preferred_username ||
-      payload.username ||
-      '',
+    name: payload.name || payload.preferred_username || payload.username || '',
     roles: Array.isArray(payload.roles) ? payload.roles : [],
   }
 }

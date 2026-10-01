@@ -44,7 +44,13 @@
               {{ $t('StudyStructureOverview.planned_subjects') }}
             </div>
             <div class="text-headline-small font-weight-bold mt-1">
-              {{ populationLoading ? 'Loading…' : populationError ? 'Unavailable' : plannedNumberOfSubjects ?? 'Not configured' }}
+              {{
+                populationLoading
+                  ? 'Loading…'
+                  : populationError
+                    ? 'Unavailable'
+                    : (plannedNumberOfSubjects ?? 'Not configured')
+              }}
             </div>
           </v-col>
           <v-col>

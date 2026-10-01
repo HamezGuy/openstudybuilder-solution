@@ -80,8 +80,13 @@
             v-if="!hasMetadataValue(metadata?.[item.key])"
             class="text-medium-emphasis"
           >
-            {{ !metadata || Object.keys(metadata).length === 0 ? 'Loading…' :
-              metadata[item.null_value_key] ? 'Not provided' : 'Not configured' }}
+            {{
+              !metadata || Object.keys(metadata).length === 0
+                ? 'Loading…'
+                : metadata[item.null_value_key]
+                  ? 'Not provided'
+                  : 'Not configured'
+            }}
           </span>
           <MetadataValueDisplay
             v-else

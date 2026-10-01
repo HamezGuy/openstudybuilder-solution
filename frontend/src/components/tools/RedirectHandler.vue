@@ -20,7 +20,12 @@
       </v-btn>
     </template>
   </ConfirmDialog>
-  <v-dialog v-model="showSelectForm" persistent max-width="600px" z-index="4000">
+  <v-dialog
+    v-model="showSelectForm"
+    persistent
+    max-width="600px"
+    z-index="4000"
+  >
     <StudyQuickSelectForm
       @close="showSelectForm = false"
       @selected="goToNextUrl"

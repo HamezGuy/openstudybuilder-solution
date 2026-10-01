@@ -3,7 +3,9 @@ export function termDisplayName(term) {
   for (const value of [term?.sponsor_preferred_name, term?.name]) {
     if (typeof value === 'string' && value.trim()) return value
   }
-  return term?.term_uid ? `Term unavailable (${term.term_uid})` : 'Not configured'
+  return term?.term_uid
+    ? `Term unavailable (${term.term_uid})`
+    : 'Not configured'
 }
 
 export function hasMetadataValue(value) {

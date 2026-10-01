@@ -36,8 +36,9 @@
 
         <template v-if="bundle && review">
           <v-alert type="info" class="mt-4">
-            USDM 4.0.0 draft for the selected study version. Mapping completeness,
-            clinical approval and EDC activation have separate review steps.
+            USDM 4.0.0 draft for the selected study version. Mapping
+            completeness, clinical approval and EDC activation have separate
+            review steps.
           </v-alert>
           <v-table class="mt-6" density="compact">
             <tbody>
@@ -71,14 +72,11 @@
               </tr>
             </tbody>
           </v-table>
-          <v-alert
-            v-if="!review.selectionComplete"
-            type="warning"
-            class="mt-4"
-          >
+          <v-alert v-if="!review.selectionComplete" type="warning" class="mt-4">
             This document retains {{ review.counts.versions }} versions and
             {{ review.counts.designs }} designs. Select the intended version and
-            design during EDC build review; the export has not selected the first.
+            design during EDC build review; the export has not selected the
+            first.
           </v-alert>
           <v-alert
             v-if="review.mappingReport?.issues?.length"
@@ -92,9 +90,14 @@
                 v-for="(issue, index) in review.mappingReport.issues"
                 :key="index"
               >
-                <strong>{{ issue.code }}</strong>: {{ issue.message }}
-                <div v-if="issue.sourcePath">Source: {{ issue.sourcePath }}</div>
-                <div v-if="issue.targetPath">Study field: {{ issue.targetPath }}</div>
+                <strong>{{ issue.code }}</strong
+                >: {{ issue.message }}
+                <div v-if="issue.sourcePath">
+                  Source: {{ issue.sourcePath }}
+                </div>
+                <div v-if="issue.targetPath">
+                  Study field: {{ issue.targetPath }}
+                </div>
                 <div v-if="issue.resolution">{{ issue.resolution }}</div>
               </li>
             </ul>
@@ -108,11 +111,15 @@
                 </p>
                 <v-table density="compact">
                   <thead>
-                    <tr><th scope="col">Study element</th><th scope="col">Count</th></tr>
+                    <tr>
+                      <th scope="col">Study element</th>
+                      <th scope="col">Count</th>
+                    </tr>
                   </thead>
                   <tbody>
                     <tr v-for="entity in review.entities" :key="entity.name">
-                      <td>{{ entity.name }}</td><td>{{ entity.count }}</td>
+                      <td>{{ entity.name }}</td>
+                      <td>{{ entity.count }}</td>
                     </tr>
                   </tbody>
                 </v-table>
@@ -128,11 +135,14 @@
           />
           <v-alert v-else type="warning" class="mt-4">
             <div class="mb-2">
-              {{ $t('EdcExport.census_warnings', { count: censusRows.length }) }}
+              {{
+                $t('EdcExport.census_warnings', { count: censusRows.length })
+              }}
             </div>
             <ul>
               <li v-for="(row, index) in censusRows" :key="index">
-                <strong>{{ row.kind }}</strong> — {{ row.ref }}: {{ row.detail }}
+                <strong>{{ row.kind }}</strong> — {{ row.ref }}:
+                {{ row.detail }}
               </li>
             </ul>
           </v-alert>
@@ -154,9 +164,9 @@
           {{ $t('EdcExport.dry_run_action') }}
         </v-btn>
         <p class="mt-4">
-          This endpoint supports a comparison dry run in an explicitly configured
-          migration environment. Release and deployment use the native study
-          approval workflow.
+          This endpoint supports a comparison dry run in an explicitly
+          configured migration environment. Release and deployment use the
+          native study approval workflow.
         </p>
 
         <v-alert v-if="sendError" type="error" class="mt-4" :text="sendError" />
@@ -171,7 +181,9 @@
                   ? $t('EdcExport.dry_run_result', {
                       status: sendResult.statusCode,
                     })
-                  : $t('EdcExport.send_result', { status: sendResult.statusCode })
+                  : $t('EdcExport.send_result', {
+                      status: sendResult.statusCode,
+                    })
               }}
             </div>
             <div v-if="quarantineStudyId" class="mt-2">
@@ -245,7 +257,10 @@ async function loadBundle() {
   sendResult.value = null
   sendError.value = null
   try {
-    const resp = await edcExport.getStudyBundle(studyUid.value, studyVersion.value)
+    const resp = await edcExport.getStudyBundle(
+      studyUid.value,
+      studyVersion.value
+    )
     const projection = edcStudyReview(resp.data)
     if (generation !== requestGeneration) return
     bundle.value = resp.data
@@ -278,11 +293,7 @@ async function send(dryRun) {
   sendingDryRun.value = true
   sendError.value = null
   try {
-    const resp = await edcExport.send(
-      studyUid.value,
-      true,
-      studyVersion.value
-    )
+    const resp = await edcExport.send(studyUid.value, true, studyVersion.value)
     if (generation !== requestGeneration) return
     sendResult.value = resp.data
   } catch (error) {

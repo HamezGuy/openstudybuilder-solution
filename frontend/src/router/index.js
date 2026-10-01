@@ -1290,10 +1290,7 @@ async function saveStudyUid(studyUid) {
   const store = useStudiesGeneralStore()
   store.hydrateSelectedStudy()
   const currentlySelectedStudy = store.selectedStudy
-  if (
-    !currentlySelectedStudy ||
-    currentlySelectedStudy.uid !== studyUid
-  ) {
+  if (!currentlySelectedStudy || currentlySelectedStudy.uid !== studyUid) {
     try {
       const resp = await study.getStudy(studyUid)
       await store.selectStudy(resp.data)
@@ -1380,7 +1377,11 @@ router.beforeEach(async (to, from, next) => {
         .map((record) => record.meta.requiredPermission)
         .filter(Boolean)
       const callerRoles = authStore.userInfo?.roles
-      if (needed.length && Array.isArray(callerRoles) && callerRoles.length > 0) {
+      if (
+        needed.length &&
+        Array.isArray(callerRoles) &&
+        callerRoles.length > 0
+      ) {
         if (needed.some((permission) => !callerRoles.includes(permission))) {
           go({ name: 'Home' })
           return
@@ -1388,7 +1389,11 @@ router.beforeEach(async (to, from, next) => {
       }
     }
 
-    if (to.meta && to.meta.studyRequired && !studiesGeneralStore.selectedStudy) {
+    if (
+      to.meta &&
+      to.meta.studyRequired &&
+      !studiesGeneralStore.selectedStudy
+    ) {
       go({ name: 'SelectOrAddStudy' })
       return
     }

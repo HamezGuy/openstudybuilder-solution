@@ -712,7 +712,10 @@ export const useAppStore = defineStore('app', {
       } catch {
         $config = null
       }
-      const baseUrl = String($config?.DOC_BASE_URL || '/doc').replace(/\/+$/, '')
+      const baseUrl = String($config?.DOC_BASE_URL || '/doc').replace(
+        /\/+$/,
+        ''
+      )
       if (state.helpPath) {
         return `${baseUrl}/guides/${state.helpPath}`
       }
