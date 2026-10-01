@@ -26,10 +26,14 @@ def mapping_authority_mode() -> str:
 
 def deployment_environment() -> str:
     return (
-        os.environ.get("DEPLOYMENT_ENVIRONMENT")
-        or os.environ.get("ENVIRONMENT")
-        or "development"
-    ).strip().lower()
+        (
+            os.environ.get("DEPLOYMENT_ENVIRONMENT")
+            or os.environ.get("ENVIRONMENT")
+            or "development"
+        )
+        .strip()
+        .lower()
+    )
 
 
 def assert_legacy_comparison_allowed(operation: str) -> None:
@@ -49,9 +53,7 @@ def assert_unsafe_legacy_mutation_allowed(operation: str) -> None:
             "requires a verified Package V2 release"
         )
     if deployment_environment() in {"prod", "production"}:
-        raise RuntimeError(
-            f"LEGACY_HELPER_PRODUCTION_PROHIBITED:{operation}"
-        )
+        raise RuntimeError(f"LEGACY_HELPER_PRODUCTION_PROHIBITED:{operation}")
     if os.environ.get("ALLOW_UNSAFE_LEGACY_EDC_HELPERS") != "1":
         raise RuntimeError(
             f"LEGACY_HELPER_EXPLICIT_OPT_IN_REQUIRED:{operation}: set "

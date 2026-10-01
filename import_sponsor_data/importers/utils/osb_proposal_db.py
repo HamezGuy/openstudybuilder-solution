@@ -21,6 +21,10 @@ from psycopg.rows import dict_row
 
 from ..functions.utils import load_env
 
+# pylint cannot infer the psycopg connection that psycopg.connect() returns
+# pylint: disable=no-member
+
+
 PROPOSAL_FORMAT_VERSION = "osb-proposal/2.1"
 CANONICAL_JSON_VERSION = "canonical-json/1.0"
 MAX_PROPOSAL_BYTES = 128 * 1024 * 1024
@@ -666,7 +670,9 @@ class OsbProposalDb:
         try:
             package = json.loads(package_bytes)
         except (UnicodeDecodeError, json.JSONDecodeError) as error:
-            raise OsbProposalIntegrityError("OSB_SEMANTIC_SOURCE_INVALID_JSON") from error
+            raise OsbProposalIntegrityError(
+                "OSB_SEMANTIC_SOURCE_INVALID_JSON"
+            ) from error
         if not isinstance(package, dict):
             raise OsbProposalIntegrityError("OSB_SEMANTIC_SOURCE_INVALID_JSON")
         package_content = {
@@ -692,7 +698,8 @@ class OsbProposalDb:
                 or not isinstance(selection.get("studyClaimCount"), int)
                 or not isinstance(selection.get("excludedClaimCount"), int)
                 or selection.get("studyClaimCount")
-                != selection.get("includedClaimCount") + selection.get("excludedClaimCount")
+                != selection.get("includedClaimCount")
+                + selection.get("excludedClaimCount")
                 or not isinstance(selection.get("excludedClaimIdsHash"), str)
                 or not selection.get("excludedClaimIdsHash").startswith("sha256:")
                 or len(selection.get("excludedClaimIdsHash")) != 71
@@ -713,7 +720,9 @@ class OsbProposalDb:
                 raise OsbProposalIntegrityError("OSB_SEMANTIC_SOURCE_CLAIM_INVALID")
             carried = extensions.get("edcprotocoltoecrf/fact")
             if carried is None:
-                raise OsbProposalIntegrityError("OSB_SEMANTIC_SOURCE_FACT_EXTENSION_MISSING")
+                raise OsbProposalIntegrityError(
+                    "OSB_SEMANTIC_SOURCE_FACT_EXTENSION_MISSING"
+                )
             if (
                 not isinstance(carried, dict)
                 or carried.get("factId") != claim.get("claimId")

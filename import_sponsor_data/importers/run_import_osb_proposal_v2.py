@@ -13,15 +13,13 @@ import os
 import socket
 import sys
 import threading
-from copy import deepcopy
 from contextlib import contextmanager
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from urllib.parse import quote
 
 import requests
-
-_MISSING_READBACK = object()
 
 from .mappings.proposal_v2_capture_operations import (
     CAPTURE_COLLECTIONS,
@@ -41,6 +39,8 @@ from .utils.osb_proposal_db import (
     OsbProposalIntegrityError,
     _stable_hash,
 )
+
+_MISSING_READBACK = object()
 
 
 class NativeOperationBlocked(RuntimeError):
@@ -207,7 +207,11 @@ class ImportOsbProposalV2(BaseImporter):
     def _path_value(value, path):
         current = value
         for part in path.split("."):
-            if isinstance(current, list) and part.isdigit() and int(part) < len(current):
+            if (
+                isinstance(current, list)
+                and part.isdigit()
+                and int(part) < len(current)
+            ):
                 current = current[int(part)]
                 continue
             if not isinstance(current, dict) or part not in current:
@@ -228,16 +232,27 @@ class ImportOsbProposalV2(BaseImporter):
                 "OSB_NATIVE_V2_READ_BACK_COLLECTION_INVALID"
             )
         relation_keys = {
-            "unit_definitions": ("uid",), "terms": ("uid",), "aliases": ("context", "name"),
+            "unit_definitions": ("uid",),
+            "terms": ("uid",),
+            "aliases": ("context", "name"),
             "translated_texts": ("language", "text_type", "text"),
             "activity_instances": ("activity_instance_uid", "activity_item_class_uid"),
-            "vendor_elements": ("uid",), "vendor_element_attributes": ("uid",), "vendor_attributes": ("uid",),
-            "items": ("uid",), "item_groups": ("uid",),
-            "formal_expressions": ("context",), "attributes": ("uid",), "sdtm_domains": ("term_uid",),
+            "vendor_elements": ("uid",),
+            "vendor_element_attributes": ("uid",),
+            "vendor_attributes": ("uid",),
+            "items": ("uid",),
+            "item_groups": ("uid",),
+            "formal_expressions": ("context",),
+            "attributes": ("uid",),
+            "sdtm_domains": ("term_uid",),
         }
+
         def supplied_properties_match(actual, wanted, field=None):
             if isinstance(wanted, dict):
-                return isinstance(actual, dict) and all(key in actual and supplied_properties_match(actual[key], child, key) for key, child in wanted.items())
+                return isinstance(actual, dict) and all(
+                    key in actual and supplied_properties_match(actual[key], child, key)
+                    for key, child in wanted.items()
+                )
             if isinstance(wanted, list):
                 if not isinstance(actual, list) or len(actual) != len(wanted):
                     return False
@@ -247,22 +262,39 @@ class ImportOsbProposalV2(BaseImporter):
                     # every other relation property are still compared by identity.
                     remaining = list(actual)
                     for desired in wanted:
-                        matches = [row for row in remaining if all(row.get(key) == desired.get(key) for key in keys)]
-                        if len(matches) != 1 or not supplied_properties_match(matches[0], desired):
+                        matches = [
+                            row
+                            for row in remaining
+                            if all(row.get(key) == desired.get(key) for key in keys)
+                        ]
+                        if len(matches) != 1 or not supplied_properties_match(
+                            matches[0], desired
+                        ):
                             return False
                         remaining.remove(matches[0])
                     return not remaining
-                return all(supplied_properties_match(a, b) for a, b in zip(actual, wanted))
+                return all(
+                    supplied_properties_match(a, b) for a, b in zip(actual, wanted)
+                )
             # bool and int are equal in Python; they are different JSON values.
-            if isinstance(actual, (int, float)) and not isinstance(actual, bool) and isinstance(wanted, (int, float)) and not isinstance(wanted, bool):
+            if (
+                isinstance(actual, (int, float))
+                and not isinstance(actual, bool)
+                and isinstance(wanted, (int, float))
+                and not isinstance(wanted, bool)
+            ):
                 return actual == wanted
             return type(actual) is type(wanted) and actual == wanted
+
         return [
             record
             for record in records
             if isinstance(record, dict)
             and all(
-                supplied_properties_match(cls._path_value(record, key), value, key.split('.')[-1]) for key, value in expected.items()
+                supplied_properties_match(
+                    cls._path_value(record, key), value, key.split(".")[-1]
+                )
+                for key, value in expected.items()
             )
         ]
 
@@ -427,19 +459,34 @@ class ImportOsbProposalV2(BaseImporter):
                 continue
             if reference.get("path_parameter"):
                 placeholder = "{" + reference["path_parameter"] + "}"
-                if placeholder not in resolved["path"] or placeholder not in resolved["read_after_write"]["path"]:
-                    raise NativeOperationReconciliationError("OSB_NATIVE_V2_PATH_REFERENCE_INVALID")
-                resolved["path"] = resolved["path"].replace(placeholder, quote(native_uid, safe=""))
-                resolved["read_after_write"]["path"] = resolved["read_after_write"]["path"].replace(placeholder, quote(native_uid, safe=""))
+                if (
+                    placeholder not in resolved["path"]
+                    or placeholder not in resolved["read_after_write"]["path"]
+                ):
+                    raise NativeOperationReconciliationError(
+                        "OSB_NATIVE_V2_PATH_REFERENCE_INVALID"
+                    )
+                resolved["path"] = resolved["path"].replace(
+                    placeholder, quote(native_uid, safe="")
+                )
+                resolved["read_after_write"]["path"] = resolved["read_after_write"][
+                    "path"
+                ].replace(placeholder, quote(native_uid, safe=""))
             else:
                 self._set_nested(resolved["body"], reference["body_path"], native_uid)
             # Reconciliation predicates intentionally use flat dotted-path
             # keys; `_matching_records` resolves each key against the native
             # response.  Only request bodies are nested DTO structures.
             if reference.get("read_match_nested_path"):
-                self._set_nested(resolved["read_after_write"]["match"], reference["read_match_nested_path"], native_uid)
+                self._set_nested(
+                    resolved["read_after_write"]["match"],
+                    reference["read_match_nested_path"],
+                    native_uid,
+                )
             else:
-                resolved["read_after_write"]["match"][reference["read_match_path"]] = native_uid
+                resolved["read_after_write"]["match"][
+                    reference["read_match_path"]
+                ] = native_uid
         return resolved
 
     @staticmethod
@@ -460,10 +507,14 @@ class ImportOsbProposalV2(BaseImporter):
             "StudySelectionCompound": "study_compound_uid",
             "StudyCompoundDosing": "study_compound_dosing_uid",
             "StudyActivityInstruction": "study_activity_instruction_uid",
-            "OdmForm": "uid", "OdmItemGroup": "uid", "OdmItem": "uid",
-            "OdmMethod": "uid", "OdmCondition": "uid",
+            "OdmForm": "uid",
+            "OdmItemGroup": "uid",
+            "OdmItem": "uid",
+            "OdmMethod": "uid",
+            "OdmCondition": "uid",
             "OdmItemActivityBinding": "uid",
-            "OdmFormItemGroupLink": "uid", "OdmItemGroupItemLink": "uid",
+            "OdmFormItemGroupLink": "uid",
+            "OdmItemGroupItemLink": "uid",
             "StudySelectionActivityInstance": "study_activity_instance_uid",
         }[operation["family"]]
         return record.get(key)
@@ -508,7 +559,9 @@ class ImportOsbProposalV2(BaseImporter):
         collection = {"OdmForm": "item_groups", "OdmItemGroup": "items"}.get(family)
         # Child collections have their own exact operation/receipt. Every
         # other native field remains pinned across the authorized link write.
-        return _stable_hash({key: value for key, value in record.items() if key != collection})
+        return _stable_hash(
+            {key: value for key, value in record.items() if key != collection}
+        )
 
     @staticmethod
     def _capture_parent_backlink(parent):
@@ -519,18 +572,28 @@ class ImportOsbProposalV2(BaseImporter):
             or not {"uid", "oid", "name"}.issubset(parent)
             or not isinstance(parent["uid"], str)
             or not parent["uid"]
-            or any(parent[key] is not None and not isinstance(parent[key], str) for key in ("oid", "name"))
+            or any(
+                parent[key] is not None and not isinstance(parent[key], str)
+                for key in ("oid", "name")
+            )
         ):
-            raise NativeOperationReconciliationError("OSB_NATIVE_V2_CAPTURE_CHILD_BACKLINK_UNPROVEN")
+            raise NativeOperationReconciliationError(
+                "OSB_NATIVE_V2_CAPTURE_CHILD_BACKLINK_UNPROVEN"
+            )
         return {key: deepcopy(parent[key]) for key in ("uid", "oid", "name")}
 
-    def _capture_prior_definition_matches(self, operation, record, receipt, capture_state=None):
+    def _capture_prior_definition_matches(
+        self, operation, record, receipt, capture_state=None
+    ):
         expected_hash = receipt.get("capture_definition_hash")
         if self._capture_definition_hash(operation["family"], record) == expected_hash:
             return True
         # The declared capture-create producer uses a match-scoped native
         # receipt plus a separate complete definition hash. Preserve both.
-        if operation["family"] != "OdmItem" or operation.get("record_hash_scope", "record") != "match":
+        if (
+            operation["family"] != "OdmItem"
+            or operation.get("record_hash_scope", "record") != "match"
+        ):
             return False
         state = capture_state or {}
         entry = state.get(operation["proposal_object_id"])
@@ -545,7 +608,8 @@ class ImportOsbProposalV2(BaseImporter):
             or record.get("uid") != receipt.get("native_uid")
             or "odm_item_group" not in record
             or _stable_hash(record["odm_item_group"]) != _stable_hash(proof["value"])
-            or _stable_hash(proof["value"]) != _stable_hash(self._capture_parent_backlink(parent))
+            or _stable_hash(proof["value"])
+            != _stable_hash(self._capture_parent_backlink(parent))
         ):
             return False
         # This is the inverse of one proved native transition, not a projection
@@ -562,10 +626,13 @@ class ImportOsbProposalV2(BaseImporter):
         if (
             not isinstance(record, dict)
             or record.get("uid") != uid
-            or not self._matching_records(record, operation["read_after_write"]["match"], collection=False)
+            or not self._matching_records(
+                record, operation["read_after_write"]["match"], collection=False
+            )
         ):
             raise NativeOperationReconciliationError(
-                "OSB_NATIVE_V2_CAPTURE_SOURCE_CHANGED:" + operation["proposal_object_id"]
+                "OSB_NATIVE_V2_CAPTURE_SOURCE_CHANGED:"
+                + operation["proposal_object_id"]
             )
         return deepcopy(record)
 
@@ -576,25 +643,40 @@ class ImportOsbProposalV2(BaseImporter):
             raise OsbProposalIntegrityError("OSB_NATIVE_V2_RECEIPT_NATIVE_UID_REQUIRED")
         if operation["family"] in CAPTURE_CONTRACTS:
             record = self._capture_snapshot(operation, uid)
-            if not self._capture_prior_definition_matches(operation, record, receipt, capture_state):
-                raise OsbProposalIntegrityError("OSB_NATIVE_V2_CAPTURE_PRIOR_SNAPSHOT_DIVERGED")
+            if not self._capture_prior_definition_matches(
+                operation, record, receipt, capture_state
+            ):
+                raise OsbProposalIntegrityError(
+                    "OSB_NATIVE_V2_CAPTURE_PRIOR_SNAPSHOT_DIVERGED"
+                )
         else:
             read = operation["read_after_write"]
             payload = self.api.proposal_v2_get(read["path"], params=read.get("params"))
-            records = self._matching_records(payload, {}, collection=read.get("collection", True))
-            matches = [value for value in records if self._native_uid(operation, value) == uid]
+            records = self._matching_records(
+                payload, {}, collection=read.get("collection", True)
+            )
+            matches = [
+                value for value in records if self._native_uid(operation, value) == uid
+            ]
             if len(matches) != 1:
-                raise OsbProposalIntegrityError("OSB_NATIVE_V2_RECEIPT_NATIVE_UID_DIVERGED")
+                raise OsbProposalIntegrityError(
+                    "OSB_NATIVE_V2_RECEIPT_NATIVE_UID_DIVERGED"
+                )
             record = matches[0]
-        if (
-            self._native_uid(operation, record) != uid
-            or not self._matching_records(record, operation["read_after_write"]["match"], collection=False)
+        if self._native_uid(operation, record) != uid or not self._matching_records(
+            record, operation["read_after_write"]["match"], collection=False
         ):
-            raise OsbProposalIntegrityError("OSB_NATIVE_V2_RECEIPT_NATIVE_SOURCE_DIVERGED")
+            raise OsbProposalIntegrityError(
+                "OSB_NATIVE_V2_RECEIPT_NATIVE_SOURCE_DIVERGED"
+            )
         return record
 
     def _preflight_capture_collections(self, plan, prior_receipts):
-        links = [operation for operation in plan["operations"] if operation["family"] in CAPTURE_COLLECTIONS]
+        links = [
+            operation
+            for operation in plan["operations"]
+            if operation["family"] in CAPTURE_COLLECTIONS
+        ]
         if not links:
             return {}
         state = {}
@@ -605,49 +687,75 @@ class ImportOsbProposalV2(BaseImporter):
             if prior:
                 uid = prior.get("native_uid")
                 if not isinstance(uid, str) or not uid:
-                    raise OsbProposalIntegrityError("OSB_NATIVE_V2_RECEIPT_NATIVE_UID_REQUIRED")
+                    raise OsbProposalIntegrityError(
+                        "OSB_NATIVE_V2_RECEIPT_NATIVE_UID_REQUIRED"
+                    )
                 # Collect exact identities first. No operation is admitted
                 # until all source hashes and complete link bindings below pass.
                 snapshot = self._capture_snapshot(operation, uid)
             else:
                 matches = self._read_operation_matches(operation)
                 if len(matches) > 1:
-                    raise NativeOperationReconciliationError("OSB_NATIVE_V2_CAPTURE_IDENTITY_AMBIGUOUS")
-                snapshot = self._capture_snapshot(operation, matches[0]["uid"]) if matches else None
-            state[operation["proposal_object_id"]] = {"operation": operation, "snapshot": snapshot}
+                    raise NativeOperationReconciliationError(
+                        "OSB_NATIVE_V2_CAPTURE_IDENTITY_AMBIGUOUS"
+                    )
+                snapshot = (
+                    self._capture_snapshot(operation, matches[0]["uid"])
+                    if matches
+                    else None
+                )
+            state[operation["proposal_object_id"]] = {
+                "operation": operation,
+                "snapshot": snapshot,
+            }
         for operation in links:
             guard = operation.get("capture_collection") or {}
             if guard.get("contract") != COLLECTION_INITIALIZATION_CONTRACT:
-                raise NativeOperationPlanError("OSB_NATIVE_V2_CAPTURE_INITIALIZATION_REQUIRED")
+                raise NativeOperationPlanError(
+                    "OSB_NATIVE_V2_CAPTURE_INITIALIZATION_REQUIRED"
+                )
             parent = state.get(guard["parent_object_id"])
             children = [state.get(key) for key in guard["child_object_ids"]]
             if parent is None or any(child is None for child in children):
-                raise NativeOperationPlanError("OSB_NATIVE_V2_CAPTURE_CREATE_OPERATION_REQUIRED")
+                raise NativeOperationPlanError(
+                    "OSB_NATIVE_V2_CAPTURE_CREATE_OPERATION_REQUIRED"
+                )
             snapshot = parent["snapshot"]
             if snapshot is None:
                 if guard["collection"] == "items" and any(
-                    child["snapshot"] is not None and (
+                    child["snapshot"] is not None
+                    and (
                         "odm_item_group" not in child["snapshot"]
                         or child["snapshot"]["odm_item_group"] is not None
                     )
                     for child in children
                 ):
-                    raise NativeOperationReconciliationError("OSB_NATIVE_V2_CAPTURE_CHILD_BACKLINK_UNPROVEN")
+                    raise NativeOperationReconciliationError(
+                        "OSB_NATIVE_V2_CAPTURE_CHILD_BACKLINK_UNPROVEN"
+                    )
                 continue
             actual = snapshot.get(guard["collection"])
             if not isinstance(actual, list):
-                raise NativeOperationReconciliationError("OSB_NATIVE_V2_CAPTURE_COLLECTION_UNPROVEN")
+                raise NativeOperationReconciliationError(
+                    "OSB_NATIVE_V2_CAPTURE_COLLECTION_UNPROVEN"
+                )
             if actual:
                 if any(child["snapshot"] is None for child in children):
-                    raise NativeOperationReconciliationError("OSB_NATIVE_V2_CAPTURE_EXISTING_CHILDREN_CONFLICT")
+                    raise NativeOperationReconciliationError(
+                        "OSB_NATIVE_V2_CAPTURE_EXISTING_CHILDREN_CONFLICT"
+                    )
                 expected = [
                     {**relation, "uid": child["snapshot"]["uid"]}
                     for relation, child in zip(operation["body"], children)
                 ]
                 if not capture_collection_matches(actual, expected):
-                    raise NativeOperationReconciliationError("OSB_NATIVE_V2_CAPTURE_EXISTING_CHILDREN_CONFLICT")
+                    raise NativeOperationReconciliationError(
+                        "OSB_NATIVE_V2_CAPTURE_EXISTING_CHILDREN_CONFLICT"
+                    )
             elif prior_receipts.get(operation["idempotency_key"]):
-                raise OsbProposalIntegrityError("OSB_NATIVE_V2_CAPTURE_PRIOR_COLLECTION_REMOVED")
+                raise OsbProposalIntegrityError(
+                    "OSB_NATIVE_V2_CAPTURE_PRIOR_COLLECTION_REMOVED"
+                )
             if guard["collection"] == "items":
                 parent_ref = self._capture_parent_backlink(snapshot)
                 for child in children:
@@ -655,13 +763,19 @@ class ImportOsbProposalV2(BaseImporter):
                     if child_snapshot is None:
                         continue
                     if "odm_item_group" not in child_snapshot:
-                        raise NativeOperationReconciliationError("OSB_NATIVE_V2_CAPTURE_CHILD_BACKLINK_UNPROVEN")
+                        raise NativeOperationReconciliationError(
+                            "OSB_NATIVE_V2_CAPTURE_CHILD_BACKLINK_UNPROVEN"
+                        )
                     backlink = child_snapshot["odm_item_group"]
                     if actual:
                         # The full current collection already matched the
                         # reviewed relations above, including all qualifiers.
-                        if _stable_hash(backlink) != _stable_hash(parent_ref) or child.get("derived_backlink"):
-                            raise NativeOperationReconciliationError("OSB_NATIVE_V2_CAPTURE_CHILD_BACKLINK_UNPROVEN")
+                        if _stable_hash(backlink) != _stable_hash(
+                            parent_ref
+                        ) or child.get("derived_backlink"):
+                            raise NativeOperationReconciliationError(
+                                "OSB_NATIVE_V2_CAPTURE_CHILD_BACKLINK_UNPROVEN"
+                            )
                         child["derived_backlink"] = {
                             "contract": "odm-item-parent-backlink/1",
                             "parent_object_id": guard["parent_object_id"],
@@ -671,47 +785,86 @@ class ImportOsbProposalV2(BaseImporter):
                             "value": deepcopy(parent_ref),
                         }
                     elif backlink is not None:
-                        raise NativeOperationReconciliationError("OSB_NATIVE_V2_CAPTURE_CHILD_BACKLINK_UNPROVEN")
+                        raise NativeOperationReconciliationError(
+                            "OSB_NATIVE_V2_CAPTURE_CHILD_BACKLINK_UNPROVEN"
+                        )
         for entry in state.values():
             operation, snapshot = entry["operation"], entry["snapshot"]
             prior = prior_receipts.get(operation["idempotency_key"])
             if prior and (
                 snapshot is None
                 or prior.get("native_uid") != snapshot["uid"]
-                or not self._capture_prior_definition_matches(operation, snapshot, prior, state)
+                or not self._capture_prior_definition_matches(
+                    operation, snapshot, prior, state
+                )
             ):
-                raise OsbProposalIntegrityError("OSB_NATIVE_V2_CAPTURE_PRIOR_SNAPSHOT_DIVERGED")
+                raise OsbProposalIntegrityError(
+                    "OSB_NATIVE_V2_CAPTURE_PRIOR_SNAPSHOT_DIVERGED"
+                )
         return state
 
     def _execute_capture_collection(
-        self, job, proposal, operation, prior_receipt, authorization_content_hash, capture_state
+        self,
+        job,
+        proposal,
+        operation,
+        prior_receipt,
+        authorization_content_hash,
+        capture_state,
     ):
         guard = operation.get("capture_collection") or {}
         if guard.get("contract") != COLLECTION_INITIALIZATION_CONTRACT:
-            raise NativeOperationPlanError("OSB_NATIVE_V2_CAPTURE_INITIALIZATION_REQUIRED")
+            raise NativeOperationPlanError(
+                "OSB_NATIVE_V2_CAPTURE_INITIALIZATION_REQUIRED"
+            )
         parent = capture_state.get(guard["parent_object_id"])
         children = [capture_state.get(key) for key in guard["child_object_ids"]]
-        if parent is None or parent["snapshot"] is None or any(child is None or child["snapshot"] is None for child in children):
-            raise NativeOperationReconciliationError("OSB_NATIVE_V2_CAPTURE_SNAPSHOT_REQUIRED")
+        if (
+            parent is None
+            or parent["snapshot"] is None
+            or any(child is None or child["snapshot"] is None for child in children)
+        ):
+            raise NativeOperationReconciliationError(
+                "OSB_NATIVE_V2_CAPTURE_SNAPSHOT_REQUIRED"
+            )
         expected_parent = deepcopy(parent["snapshot"])
-        expected_children = {child["snapshot"]["uid"]: deepcopy(child["snapshot"]) for child in children}
+        expected_children = {
+            child["snapshot"]["uid"]: deepcopy(child["snapshot"]) for child in children
+        }
         if len(expected_children) != len(children):
-            raise NativeOperationReconciliationError("OSB_NATIVE_V2_CAPTURE_CHILD_IDENTITY_AMBIGUOUS")
+            raise NativeOperationReconciliationError(
+                "OSB_NATIVE_V2_CAPTURE_CHILD_IDENTITY_AMBIGUOUS"
+            )
         before = (
-            [self._read_receipted_operation(operation, prior_receipt, capture_state=capture_state)]
-            if prior_receipt is not None else self._read_operation_matches(operation)
+            [
+                self._read_receipted_operation(
+                    operation, prior_receipt, capture_state=capture_state
+                )
+            ]
+            if prior_receipt is not None
+            else self._read_operation_matches(operation)
         )
         if prior_receipt is not None:
-            self._validate_prior_receipt(proposal, operation, prior_receipt, authorization_content_hash)
+            self._validate_prior_receipt(
+                proposal, operation, prior_receipt, authorization_content_hash
+            )
             if (
-                prior_receipt.get("collection_initialization_contract") != COLLECTION_INITIALIZATION_CONTRACT
+                prior_receipt.get("collection_initialization_contract")
+                != COLLECTION_INITIALIZATION_CONTRACT
                 or len(before) != 1
-                or self._native_record_hash(operation, before[0]) != prior_receipt.get("native_record_hash")
+                or self._native_record_hash(operation, before[0])
+                != prior_receipt.get("native_record_hash")
             ):
-                raise OsbProposalIntegrityError("OSB_NATIVE_V2_CAPTURE_PRIOR_COLLECTION_DIVERGED")
+                raise OsbProposalIntegrityError(
+                    "OSB_NATIVE_V2_CAPTURE_PRIOR_COLLECTION_DIVERGED"
+                )
         response = self.api.proposal_v2_post(
             operation["path"],
-            {"expected_parent": expected_parent, "expected_children": expected_children, "children": deepcopy(operation["body"])},
+            {
+                "expected_parent": expected_parent,
+                "expected_children": expected_children,
+                "children": deepcopy(operation["body"]),
+            },
             params=None,
             idempotency_key=operation["idempotency_key"],
             proposal_object_id=operation["proposal_object_id"],
@@ -721,27 +874,50 @@ class ImportOsbProposalV2(BaseImporter):
             len(after) != 1
             or not isinstance(response, dict)
             or _stable_hash(after[0]) != _stable_hash(response)
-            or not capture_collection_matches(after[0].get(guard["collection"]), operation["body"])
+            or not capture_collection_matches(
+                after[0].get(guard["collection"]), operation["body"]
+            )
             or self._capture_definition_hash(parent["operation"]["family"], after[0])
-            != self._capture_definition_hash(parent["operation"]["family"], expected_parent)
+            != self._capture_definition_hash(
+                parent["operation"]["family"], expected_parent
+            )
         ):
-            raise NativeOperationReconciliationError("OSB_NATIVE_V2_CAPTURE_INITIALIZATION_READBACK_DIVERGED")
+            raise NativeOperationReconciliationError(
+                "OSB_NATIVE_V2_CAPTURE_INITIALIZATION_READBACK_DIVERGED"
+            )
         # Only the exact guarded after-state advances a snapshot used by a
         # later form -> group link in this same reviewed plan.
         parent["snapshot"] = deepcopy(after[0])
         if prior_receipt is not None:
-            if self._native_record_hash(operation, after[0]) != prior_receipt["native_record_hash"]:
-                raise OsbProposalIntegrityError("OSB_NATIVE_V2_CAPTURE_PRIOR_COLLECTION_DIVERGED")
+            if (
+                self._native_record_hash(operation, after[0])
+                != prior_receipt["native_record_hash"]
+            ):
+                raise OsbProposalIntegrityError(
+                    "OSB_NATIVE_V2_CAPTURE_PRIOR_COLLECTION_DIVERGED"
+                )
             return prior_receipt
         return self._append_native_receipt(
-            job, proposal, operation, after[0], authorization_content_hash,
-            "already_present" if before else "created", response,
+            job,
+            proposal,
+            operation,
+            after[0],
+            authorization_content_hash,
+            "already_present" if before else "created",
+            response,
             collection_initialization_contract=COLLECTION_INITIALIZATION_CONTRACT,
         )
 
     def _append_native_receipt(
-        self, job, proposal, operation, record, authorization_content_hash,
-        write_disposition, write_response, **extra,
+        self,
+        job,
+        proposal,
+        operation,
+        record,
+        authorization_content_hash,
+        write_disposition,
+        write_response,
+        **extra,
     ):
         receipt = {
             "kind": "native_operation",
@@ -758,7 +934,9 @@ class ImportOsbProposalV2(BaseImporter):
             "native_uid": self._native_uid(operation, record),
             "native_record_hash_scope": operation.get("record_hash_scope", "record"),
             "native_record_hash": self._native_record_hash(operation, record),
-            "write_response_hash": _stable_hash(write_response) if write_response is not None else None,
+            "write_response_hash": (
+                _stable_hash(write_response) if write_response is not None else None
+            ),
             "match": operation["read_after_write"]["match"],
             **extra,
         }
@@ -777,11 +955,21 @@ class ImportOsbProposalV2(BaseImporter):
         capture_state = {} if capture_state is None else capture_state
         if operation["family"] in CAPTURE_COLLECTIONS:
             return self._execute_capture_collection(
-                job, proposal, operation, prior_receipt, authorization_content_hash, capture_state
+                job,
+                proposal,
+                operation,
+                prior_receipt,
+                authorization_content_hash,
+                capture_state,
             )
         before = (
-            [self._read_receipted_operation(operation, prior_receipt, capture_state=capture_state)]
-            if prior_receipt is not None else self._read_operation_matches(operation)
+            [
+                self._read_receipted_operation(
+                    operation, prior_receipt, capture_state=capture_state
+                )
+            ]
+            if prior_receipt is not None
+            else self._read_operation_matches(operation)
         )
         if len(before) > 1:
             raise NativeOperationReconciliationError(
@@ -789,9 +977,13 @@ class ImportOsbProposalV2(BaseImporter):
             )
         capture = capture_state.get(operation["proposal_object_id"])
         if capture is not None:
-            current = self._capture_snapshot(operation, before[0]["uid"]) if before else None
+            current = (
+                self._capture_snapshot(operation, before[0]["uid"]) if before else None
+            )
             if _stable_hash(current) != _stable_hash(capture["snapshot"]):
-                raise NativeOperationReconciliationError("OSB_NATIVE_V2_CAPTURE_PREFLIGHT_CHANGED")
+                raise NativeOperationReconciliationError(
+                    "OSB_NATIVE_V2_CAPTURE_PREFLIGHT_CHANGED"
+                )
         if prior_receipt is not None:
             self._validate_prior_receipt(
                 proposal,
@@ -847,15 +1039,29 @@ class ImportOsbProposalV2(BaseImporter):
             # object returned by this create, or the exact object read before it.
             origin = before[0] if before else write_response
             origin_uid = origin.get("uid") if isinstance(origin, dict) else None
-            if not isinstance(origin_uid, str) or not origin_uid or record.get("uid") != origin_uid:
-                raise NativeOperationReconciliationError("OSB_NATIVE_V2_CAPTURE_WRITE_IDENTITY_DIVERGED")
+            if (
+                not isinstance(origin_uid, str)
+                or not origin_uid
+                or record.get("uid") != origin_uid
+            ):
+                raise NativeOperationReconciliationError(
+                    "OSB_NATIVE_V2_CAPTURE_WRITE_IDENTITY_DIVERGED"
+                )
             record = self._capture_snapshot(operation, origin_uid)
-            extra["capture_definition_hash"] = self._capture_definition_hash(operation["family"], record)
+            extra["capture_definition_hash"] = self._capture_definition_hash(
+                operation["family"], record
+            )
         if capture is not None:
             capture["snapshot"] = deepcopy(record)
         return self._append_native_receipt(
-            job, proposal, operation, record, authorization_content_hash,
-            write_disposition, write_response, **extra,
+            job,
+            proposal,
+            operation,
+            record,
+            authorization_content_hash,
+            write_disposition,
+            write_response,
+            **extra,
         )
 
     def _execute_reviewed_native_job(self, job):
@@ -887,7 +1093,9 @@ class ImportOsbProposalV2(BaseImporter):
             for operation in plan["operations"]:
                 prior = prior_receipts.get(operation["idempotency_key"])
                 if prior is not None:
-                    self._validate_prior_receipt(proposal, operation, prior, authorization_content_hash)
+                    self._validate_prior_receipt(
+                        proposal, operation, prior, authorization_content_hash
+                    )
             capture_state = self._preflight_capture_collections(plan, prior_receipts)
             receipts = []
             for operation in plan["operations"]:
@@ -925,7 +1133,9 @@ class ImportOsbProposalV2(BaseImporter):
 
             # Rebuild exact read-only link evidence after execution as well as
             # on a cold retry. Original create receipts remain immutable.
-            final_capture_state = self._preflight_capture_collections(plan, self._receipt_index(receipts))
+            final_capture_state = self._preflight_capture_collections(
+                plan, self._receipt_index(receipts)
+            )
             reconciliation_rows = []
             for operation in plan["operations"]:
                 resolved_operation = self._resolve_operation_references(
@@ -937,9 +1147,13 @@ class ImportOsbProposalV2(BaseImporter):
                     for item in receipts
                     if item["idempotency_key"] == operation["idempotency_key"]
                 )
-                matches = [self._read_receipted_operation(
-                    resolved_operation, receipt, capture_state=final_capture_state,
-                )]
+                matches = [
+                    self._read_receipted_operation(
+                        resolved_operation,
+                        receipt,
+                        capture_state=final_capture_state,
+                    )
+                ]
                 if self._native_record_hash(
                     resolved_operation, matches[0]
                 ) != receipt.get("native_record_hash"):

@@ -6,9 +6,8 @@ import pytest
 
 from ..utils.osb_proposal_db import (
     CANONICAL_JSON_VERSION,
-    _canonical_json as worker_canonical_json,
 )
-
+from ..utils.osb_proposal_db import _canonical_json as worker_canonical_json
 
 FIXTURE = json.loads(
     (Path(__file__).parent / "fixtures" / "canonical-json-v1.json").read_text(
@@ -20,7 +19,9 @@ FIXTURE = json.loads(
 def test_worker_matches_every_cross_language_vector():
     assert FIXTURE["canonicalizationVersion"] == CANONICAL_JSON_VERSION
     for vector in FIXTURE["vectors"]:
-        assert worker_canonical_json(vector["input"]) == vector["canonical"], vector["name"]
+        assert worker_canonical_json(vector["input"]) == vector["canonical"], vector[
+            "name"
+        ]
 
 
 @pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf])

@@ -1,5 +1,8 @@
 """OpenStudyBuilder 2.10 ODM item datatypes at the importer transport."""
 
+# exact == [] / == {} comparisons are the assertion
+# pylint: disable=use-implicit-booleaness-not-comparison
+
 import pytest
 
 from importers.utils.api_bindings import ApiBinding
@@ -10,11 +13,15 @@ class _Binding(ApiBinding):
 
     def __init__(self, terms=None):  # pylint: disable=super-init-not-called
         self.calls = []
-        self._terms = terms if terms is not None else [
-            {"submission_value": "integer", "term_uid": "CODMDT_INTEGER"},
-            {"submission_value": "text", "term_uid": "CODMDT_TEXT"},
-            {"submission_value": "float", "term_uid": "CODMDT_FLOAT"},
-        ]
+        self._terms = (
+            terms
+            if terms is not None
+            else [
+                {"submission_value": "integer", "term_uid": "CODMDT_INTEGER"},
+                {"submission_value": "text", "term_uid": "CODMDT_TEXT"},
+                {"submission_value": "float", "term_uid": "CODMDT_FLOAT"},
+            ]
+        )
 
     def get_codelist_uid(self, codelist_submval):
         self.calls.append(("codelist", codelist_submval))
@@ -45,7 +52,12 @@ def test_write_sends_the_codmdt_term_uid_instead_of_the_string():
     api = _Binding()
     body = {"name": "Age", "oid": "I.AGE", "datatype": "Integer", "length": None}
     sent = api.odm_item_request_body("/odms/items", body)
-    assert sent == {"name": "Age", "oid": "I.AGE", "datatype_uid": "CODMDT_INTEGER", "length": None}
+    assert sent == {
+        "name": "Age",
+        "oid": "I.AGE",
+        "datatype_uid": "CODMDT_INTEGER",
+        "length": None,
+    }
     # The reviewed body itself is not mutated.
     assert body["datatype"] == "Integer" and "datatype_uid" not in body
     # The codelist is read once per binding.
@@ -70,7 +82,12 @@ def test_unknown_datatype_or_missing_codelist_fails_closed():
 
 
 def test_read_back_carries_the_odm_datatype_string():
-    term = {"uid": "C170000", "name": "Integer", "codelist_uid": "C1", "submission_value": "integer"}
+    term = {
+        "uid": "C170000",
+        "name": "Integer",
+        "codelist_uid": "C1",
+        "submission_value": "integer",
+    }
     record = {"uid": "OdmItem_1", "oid": "I.AGE", "datatype": term}
     assert ApiBinding.odm_item_response(record)["datatype"] == "integer"
     assert ApiBinding.odm_item_response([record])[0]["datatype"] == "integer"
@@ -81,6 +98,9 @@ def test_read_back_carries_the_odm_datatype_string():
     }
     legacy = {"uid": "OdmItem_2", "oid": "I.X", "datatype": "text"}
     assert ApiBinding.odm_item_response(legacy) == legacy
-    assert ApiBinding.odm_item_response({"uid": "OdmItem_3", "datatype": None})["datatype"] is None
+    assert (
+        ApiBinding.odm_item_response({"uid": "OdmItem_3", "datatype": None})["datatype"]
+        is None
+    )
     # The original record is not mutated.
     assert record["datatype"] is term

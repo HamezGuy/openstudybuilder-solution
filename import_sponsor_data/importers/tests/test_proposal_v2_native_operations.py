@@ -1,3 +1,7 @@
+# exact == [] / == {} comparisons are the assertion
+# unpacking the planned operations asserts their exact count
+# pylint: disable=use-implicit-booleaness-not-comparison,unbalanced-tuple-unpacking
+
 import pytest
 
 from ..mappings.proposal_v2_native_operations import (
@@ -95,8 +99,7 @@ def receipt(objects, candidates, **overrides):
 
 def mark_create_request(review, object_id):
     item = next(
-        value for value in review["objects"]
-        if value["proposal_object_id"] == object_id
+        value for value in review["objects"] if value["proposal_object_id"] == object_id
     )
     item["candidates"] = []
     item["latest_decision"] = {
@@ -183,89 +186,116 @@ def test_activity_operation_uses_existing_ui_backed_route_and_complete_dto():
 def test_soa_activity_visit_and_schedule_create_a_receipt_resolved_native_graph():
     activity_candidate = candidate("activity-candidate", "Activity", "Activity_1")
     flowchart = candidate(
-        "flowchart-candidate", "CTTerm", "FlowchartGroup_Safety",
+        "flowchart-candidate",
+        "CTTerm",
+        "FlowchartGroup_Safety",
         parentSubmissionValue="Flowchart Group",
     )
     epoch_subtype = candidate(
-        "epoch-subtype", "CTTerm", "EpochSubtype_Treatment",
+        "epoch-subtype",
+        "CTTerm",
+        "EpochSubtype_Treatment",
         parentSubmissionValue="Epoch Sub Type",
     )
     visit_type = candidate(
-        "visit-type", "CTTerm", "VisitType_Treatment",
+        "visit-type",
+        "CTTerm",
+        "VisitType_Treatment",
         parentSubmissionValue="VisitType",
     )
     contact_mode = candidate(
-        "contact-mode", "CTTerm", "VisitContact_OnSite",
+        "contact-mode",
+        "CTTerm",
+        "VisitContact_OnSite",
         parentSubmissionValue="Visit Contact Mode",
     )
     time_reference = candidate(
-        "time-reference", "CTTerm", "TimeReference_GlobalAnchor",
+        "time-reference",
+        "CTTerm",
+        "TimeReference_GlobalAnchor",
         parentSubmissionValue="Time Point Reference",
     )
     day_unit = candidate("day-unit", "UnitDefinition", "UnitDefinition_day")
     placeholder = candidate("create", "CreateRequest", "not-selected")
 
     activity = proposal_object(
-        "activity-object", "soa-activity", "StudySelectionActivity",
-        activity_candidate, dependencies=["soa-activity-flowchart-group"],
+        "activity-object",
+        "soa-activity",
+        "StudySelectionActivity",
+        activity_candidate,
+        dependencies=["soa-activity-flowchart-group"],
     )
     activity["mapping"]["factIds"] = ["fact-activity"]
-    activity["source"] = {"values": [
-        {"name": "activityId", "value": "soa-activity-bp"},
-        {"name": "name", "value": "Blood pressure"},
-    ]}
+    activity["source"] = {
+        "values": [
+            {"name": "activityId", "value": "soa-activity-bp"},
+            {"name": "name", "value": "Blood pressure"},
+        ]
+    }
     flowchart_object = proposal_object(
         "flowchart-object", "soa-activity-flowchart-group", "CTTerm", flowchart
     )
     flowchart_object["mapping"]["factIds"] = ["fact-activity"]
 
     epoch = proposal_object(
-        "epoch-object", "study-epoch", "StudyEpoch", placeholder,
+        "epoch-object",
+        "study-epoch",
+        "StudyEpoch",
+        placeholder,
         dependencies=["epoch-subtype"],
     )
     epoch["mapping"]["factIds"] = ["fact-epoch"]
     epoch["mapping"]["candidates"] = []
-    epoch["source"] = {"values": [
-        {"name": "epochId", "value": "epoch-treatment"},
-        {"name": "name", "value": "Treatment"},
-        {"name": "order", "value": 1},
-    ]}
+    epoch["source"] = {
+        "values": [
+            {"name": "epochId", "value": "epoch-treatment"},
+            {"name": "name", "value": "Treatment"},
+            {"name": "order", "value": 1},
+        ]
+    }
     epoch_subtype_object = proposal_object(
         "epoch-subtype-object", "epoch-subtype", "CTTerm", epoch_subtype
     )
     epoch_subtype_object["mapping"]["factIds"] = ["fact-epoch"]
 
     visit = proposal_object(
-        "visit-object", "study-visit", "StudyVisit", placeholder,
+        "visit-object",
+        "study-visit",
+        "StudyVisit",
+        placeholder,
         dependencies=[
-            "visit-type", "visit-contact-mode", "visit-time-reference",
+            "visit-type",
+            "visit-contact-mode",
+            "visit-time-reference",
             "visit-time-unit",
         ],
     )
     visit["mapping"]["factIds"] = ["fact-visit"]
     visit["mapping"]["candidates"] = []
-    visit["source"] = {"values": [
-        {"name": "visitId", "value": "visit-day-1"},
-        {"name": "epochId", "value": "epoch-treatment"},
-        {"name": "name", "value": "Day 1"},
-        {"name": "visitClass", "value": "MANUALLY_DEFINED_VISIT"},
-        {"name": "showVisit", "value": True},
-        {"name": "isGlobalAnchorVisit", "value": True},
-        {"name": "sequenceOrder", "value": 1},
-        {"name": "visitName", "value": "Day 1"},
-        {"name": "visitShortName", "value": "Day 1"},
-        {"name": "visitNumber", "value": 1},
-        {"name": "uniqueVisitNumber", "value": 100},
-        {"name": "timeValue", "value": 0},
-        {"name": "nativeTimingReady", "value": True},
-    ]}
+    visit["source"] = {
+        "values": [
+            {"name": "visitId", "value": "visit-day-1"},
+            {"name": "epochId", "value": "epoch-treatment"},
+            {"name": "name", "value": "Day 1"},
+            {"name": "visitClass", "value": "MANUALLY_DEFINED_VISIT"},
+            {"name": "showVisit", "value": True},
+            {"name": "isGlobalAnchorVisit", "value": True},
+            {"name": "sequenceOrder", "value": 1},
+            {"name": "visitName", "value": "Day 1"},
+            {"name": "visitShortName", "value": "Day 1"},
+            {"name": "visitNumber", "value": 1},
+            {"name": "uniqueVisitNumber", "value": 100},
+            {"name": "timeValue", "value": 0},
+            {"name": "nativeTimingReady", "value": True},
+        ]
+    }
     visit_dependency_objects = [
         proposal_object("visit-type-object", "visit-type", "CTTerm", visit_type),
+        proposal_object("contact-object", "visit-contact-mode", "CTTerm", contact_mode),
         proposal_object(
-            "contact-object", "visit-contact-mode", "CTTerm", contact_mode
-        ),
-        proposal_object(
-            "time-reference-object", "visit-time-reference", "CTTerm",
+            "time-reference-object",
+            "visit-time-reference",
+            "CTTerm",
             time_reference,
         ),
         proposal_object(
@@ -280,19 +310,34 @@ def test_soa_activity_visit_and_schedule_create_a_receipt_resolved_native_graph(
     )
     schedule["mapping"]["factIds"] = ["fact-schedule"]
     schedule["mapping"]["candidates"] = []
-    schedule["source"] = {"values": [
-        {"name": "scheduleId", "value": "sf-1"},
-        {"name": "activityId", "value": "soa-activity-bp"},
-        {"name": "visitId", "value": "visit-day-1"},
-    ]}
+    schedule["source"] = {
+        "values": [
+            {"name": "scheduleId", "value": "sf-1"},
+            {"name": "activityId", "value": "soa-activity-bp"},
+            {"name": "visitId", "value": "visit-day-1"},
+        ]
+    }
 
     objects = [
-        activity, flowchart_object, epoch, epoch_subtype_object, visit,
-        *visit_dependency_objects, schedule,
+        activity,
+        flowchart_object,
+        epoch,
+        epoch_subtype_object,
+        visit,
+        *visit_dependency_objects,
+        schedule,
     ]
     candidates = [
-        activity_candidate, flowchart, placeholder, epoch_subtype, placeholder,
-        visit_type, contact_mode, time_reference, day_unit, placeholder,
+        activity_candidate,
+        flowchart,
+        placeholder,
+        epoch_subtype,
+        placeholder,
+        visit_type,
+        contact_mode,
+        time_reference,
+        day_unit,
+        placeholder,
     ]
     review = receipt(objects, candidates)
     for object_id in ("epoch-object", "visit-object", "schedule-object"):
@@ -303,7 +348,9 @@ def test_soa_activity_visit_and_schedule_create_a_receipt_resolved_native_graph(
     assert plan["blockers"] == []
     assert plan["deferred_objects"] == []
     assert [operation["family"] for operation in plan["operations"]] == [
-        "StudyEpoch", "StudySelectionActivity", "StudyVisit",
+        "StudyEpoch",
+        "StudySelectionActivity",
+        "StudyVisit",
         "StudyActivitySchedule",
     ]
     activity_operation = plan["operations"][1]
@@ -312,8 +359,7 @@ def test_soa_activity_visit_and_schedule_create_a_receipt_resolved_native_graph(
         "activityId": "soa-activity-bp",
         "factId": "fact-activity",
     }
-    assert schedule_operation["path"] == \
-        "/studies/Study_1/study-activity-schedules"
+    assert schedule_operation["path"] == "/studies/Study_1/study-activity-schedules"
     assert schedule_operation["body"] == {}
     assert schedule_operation["source_identity"] == {"scheduleId": "sf-1"}
     assert schedule_operation["record_hash_scope"] == "match"
@@ -402,9 +448,7 @@ def test_endpoint_operation_uses_template_level_and_timeframe_dto():
         objective_template,
         dependencies=["objective-level"],
     )
-    objective["source"] = {
-        "values": [{"name": "objectiveId", "value": "OBJ-1"}]
-    }
+    objective["source"] = {"values": [{"name": "objectiveId", "value": "OBJ-1"}]}
     template = candidate(
         "endpoint-template",
         "EndpointTemplate",
@@ -426,9 +470,7 @@ def test_endpoint_operation_uses_template_level_and_timeframe_dto():
         template,
         dependencies=["endpoint-level", "endpoint-timeframe"],
     )
-    endpoint["source"] = {
-        "values": [{"name": "objectiveId", "value": "OBJ-1"}]
-    }
+    endpoint["source"] = {"values": [{"name": "objectiveId", "value": "OBJ-1"}]}
     objects = [
         objective,
         proposal_object(
@@ -476,29 +518,45 @@ def test_endpoint_operation_uses_template_level_and_timeframe_dto():
 
 def test_endpoint_objective_link_resolves_through_prior_native_receipt_identity():
     objective_template = candidate(
-        "objective-template", "ObjectiveTemplate", "ObjectiveTemplate_1",
-        parameterCount=0, libraryName="Sponsor",
+        "objective-template",
+        "ObjectiveTemplate",
+        "ObjectiveTemplate_1",
+        parameterCount=0,
+        libraryName="Sponsor",
     )
     objective_level = candidate(
-        "objective-level", "CTTerm", "ObjectiveLevel_1",
+        "objective-level",
+        "CTTerm",
+        "ObjectiveLevel_1",
         parentSubmissionValue="Objective Level",
     )
     endpoint_template = candidate(
-        "endpoint-template", "EndpointTemplate", "EndpointTemplate_1",
-        parameterCount=0, libraryName="Sponsor",
+        "endpoint-template",
+        "EndpointTemplate",
+        "EndpointTemplate_1",
+        parameterCount=0,
+        libraryName="Sponsor",
     )
     endpoint_level = candidate(
-        "endpoint-level", "CTTerm", "EndpointLevel_1",
+        "endpoint-level",
+        "CTTerm",
+        "EndpointLevel_1",
         parentSubmissionValue="Endpoint Level",
     )
     objective = proposal_object(
-        "objective-object", "objective-template", "StudySelectionObjective",
-        objective_template, dependencies=["objective-level"],
+        "objective-object",
+        "objective-template",
+        "StudySelectionObjective",
+        objective_template,
+        dependencies=["objective-level"],
     )
     objective["source"] = {"values": [{"name": "objectiveId", "value": "OBJ-1"}]}
     endpoint = proposal_object(
-        "endpoint-object", "endpoint-selection", "StudySelectionEndpoint",
-        endpoint_template, dependencies=["endpoint-level"],
+        "endpoint-object",
+        "endpoint-selection",
+        "StudySelectionEndpoint",
+        endpoint_template,
+        dependencies=["endpoint-level"],
     )
     endpoint["source"] = {"values": [{"name": "objectiveId", "value": "OBJ-1"}]}
     objects = [
@@ -541,20 +599,26 @@ def test_endpoint_objective_link_resolves_through_prior_native_receipt_identity(
 
 def test_endpoint_objective_link_blocks_when_objective_identity_is_missing():
     endpoint_template = candidate(
-        "endpoint-template", "EndpointTemplate", "EndpointTemplate_1",
-        parameterCount=0, libraryName="Sponsor",
+        "endpoint-template",
+        "EndpointTemplate",
+        "EndpointTemplate_1",
+        parameterCount=0,
+        libraryName="Sponsor",
     )
     endpoint_level = candidate(
-        "endpoint-level", "CTTerm", "EndpointLevel_1",
+        "endpoint-level",
+        "CTTerm",
+        "EndpointLevel_1",
         parentSubmissionValue="Endpoint Level",
     )
     endpoint = proposal_object(
-        "endpoint-object", "endpoint-selection", "StudySelectionEndpoint",
-        endpoint_template, dependencies=["endpoint-level"],
+        "endpoint-object",
+        "endpoint-selection",
+        "StudySelectionEndpoint",
+        endpoint_template,
+        dependencies=["endpoint-level"],
     )
-    endpoint["source"] = {
-        "values": [{"name": "objectiveId", "value": "OBJ-MISSING"}]
-    }
+    endpoint["source"] = {"values": [{"name": "objectiveId", "value": "OBJ-MISSING"}]}
     objects = [
         endpoint,
         proposal_object(
@@ -576,16 +640,24 @@ def test_endpoint_objective_link_blocks_when_objective_identity_is_missing():
 
 def test_endpoint_without_objective_identity_is_blocked_before_native_write():
     endpoint_template = candidate(
-        "endpoint-template", "EndpointTemplate", "EndpointTemplate_1",
-        parameterCount=0, libraryName="Sponsor",
+        "endpoint-template",
+        "EndpointTemplate",
+        "EndpointTemplate_1",
+        parameterCount=0,
+        libraryName="Sponsor",
     )
     endpoint_level = candidate(
-        "endpoint-level", "CTTerm", "EndpointLevel_1",
+        "endpoint-level",
+        "CTTerm",
+        "EndpointLevel_1",
         parentSubmissionValue="Endpoint Level",
     )
     endpoint = proposal_object(
-        "endpoint-object", "endpoint-selection", "StudySelectionEndpoint",
-        endpoint_template, dependencies=["endpoint-level"],
+        "endpoint-object",
+        "endpoint-selection",
+        "StudySelectionEndpoint",
+        endpoint_template,
+        dependencies=["endpoint-level"],
     )
     objects = [
         endpoint,
@@ -649,17 +721,13 @@ def test_metadata_create_request_builds_typed_patch_and_single_record_readback()
     assert operation["method"] == "PATCH"
     assert operation["path"] == "/studies/Study_1"
     assert operation["body"] == {
-        "current_metadata": {
-            "study_population": {"number_of_expected_subjects": 120}
-        }
+        "current_metadata": {"study_population": {"number_of_expected_subjects": 120}}
     }
     assert operation["read_after_write"] == {
         "method": "GET",
         "path": "/studies/Study_1",
         "params": {"page_size": 0},
-        "match": {
-            "current_metadata.study_population.number_of_expected_subjects": 120
-        },
+        "match": {"current_metadata.study_population.number_of_expected_subjects": 120},
         "collection": False,
     }
 
@@ -667,68 +735,88 @@ def test_metadata_create_request_builds_typed_patch_and_single_record_readback()
 def test_epoch_and_visit_create_requests_use_native_routes_and_receipt_reference():
     epoch_placeholder = candidate("epoch-create", "StudyEpoch", "not-selected")
     epoch_subtype = candidate(
-        "epoch-subtype", "CTTerm", "EpochSubtype_Treatment",
+        "epoch-subtype",
+        "CTTerm",
+        "EpochSubtype_Treatment",
         parentSubmissionValue="Epoch Sub Type",
     )
     visit_placeholder = candidate("visit-create", "StudyVisit", "not-selected")
     visit_type = candidate(
-        "visit-type", "CTTerm", "VisitType_Treatment",
+        "visit-type",
+        "CTTerm",
+        "VisitType_Treatment",
         parentSubmissionValue="VisitType",
     )
     contact_mode = candidate(
-        "contact", "CTTerm", "VisitContact_OnSite",
+        "contact",
+        "CTTerm",
+        "VisitContact_OnSite",
         parentSubmissionValue="Visit Contact Mode",
     )
     time_reference = candidate(
-        "time-reference", "CTTerm", "TimeReference_GlobalAnchor",
+        "time-reference",
+        "CTTerm",
+        "TimeReference_GlobalAnchor",
         parentSubmissionValue="Time Point Reference",
     )
     day_unit = candidate("day-unit", "UnitDefinition", "UnitDefinition_day")
 
     epoch = proposal_object(
-        "epoch-object", "study-epoch", "StudyEpoch", epoch_placeholder,
+        "epoch-object",
+        "study-epoch",
+        "StudyEpoch",
+        epoch_placeholder,
         dependencies=["epoch-subtype"],
     )
     epoch["mapping"]["candidates"] = []
-    epoch["source"] = {"values": [
-        {"name": "epochId", "value": "epoch-treatment"},
-        {"name": "name", "value": "Treatment Period"},
-        {"name": "order", "value": 1},
-    ]}
+    epoch["source"] = {
+        "values": [
+            {"name": "epochId", "value": "epoch-treatment"},
+            {"name": "name", "value": "Treatment Period"},
+            {"name": "order", "value": 1},
+        ]
+    }
     subtype_object = proposal_object(
         "epoch-subtype-object", "epoch-subtype", "CTTerm", epoch_subtype
     )
     visit = proposal_object(
-        "visit-object", "study-visit", "StudyVisit", visit_placeholder,
+        "visit-object",
+        "study-visit",
+        "StudyVisit",
+        visit_placeholder,
         dependencies=[
-            "visit-type", "visit-contact-mode", "visit-time-reference",
+            "visit-type",
+            "visit-contact-mode",
+            "visit-time-reference",
             "visit-time-unit",
         ],
     )
     visit["mapping"]["factIds"] = ["fact-visit"]
     visit["mapping"]["candidates"] = []
-    visit["source"] = {"values": [
-        {"name": "visitId", "value": "visit-day-1"},
-        {"name": "epochId", "value": "epoch-treatment"},
-        {"name": "name", "value": "Day 1"},
-        {"name": "visitClass", "value": "MANUALLY_DEFINED_VISIT"},
-        {"name": "showVisit", "value": True},
-        {"name": "isGlobalAnchorVisit", "value": True},
-        {"name": "sequenceOrder", "value": 1},
-        {"name": "visitName", "value": "Day 1"},
-        {"name": "visitShortName", "value": "Day 1"},
-        {"name": "visitNumber", "value": 1},
-        {"name": "uniqueVisitNumber", "value": 100},
-        {"name": "timeValue", "value": 0},
-        {"name": "nativeTimingReady", "value": True},
-    ]}
+    visit["source"] = {
+        "values": [
+            {"name": "visitId", "value": "visit-day-1"},
+            {"name": "epochId", "value": "epoch-treatment"},
+            {"name": "name", "value": "Day 1"},
+            {"name": "visitClass", "value": "MANUALLY_DEFINED_VISIT"},
+            {"name": "showVisit", "value": True},
+            {"name": "isGlobalAnchorVisit", "value": True},
+            {"name": "sequenceOrder", "value": 1},
+            {"name": "visitName", "value": "Day 1"},
+            {"name": "visitShortName", "value": "Day 1"},
+            {"name": "visitNumber", "value": 1},
+            {"name": "uniqueVisitNumber", "value": 100},
+            {"name": "timeValue", "value": 0},
+            {"name": "nativeTimingReady", "value": True},
+        ]
+    }
     dependency_objects = [
         proposal_object("visit-type-object", "visit-type", "CTTerm", visit_type),
+        proposal_object("contact-object", "visit-contact-mode", "CTTerm", contact_mode),
         proposal_object(
-            "contact-object", "visit-contact-mode", "CTTerm", contact_mode
-        ),
-        proposal_object(
-            "time-reference-object", "visit-time-reference", "CTTerm",
+            "time-reference-object",
+            "visit-time-reference",
+            "CTTerm",
             time_reference,
         ),
         proposal_object(
@@ -739,8 +827,13 @@ def test_epoch_and_visit_create_requests_use_native_routes_and_receipt_reference
         item["mapping"]["factIds"] = ["fact-visit"]
     objects = [epoch, subtype_object, visit, *dependency_objects]
     candidates = [
-        epoch_placeholder, epoch_subtype, visit_placeholder, visit_type,
-        contact_mode, time_reference, day_unit,
+        epoch_placeholder,
+        epoch_subtype,
+        visit_placeholder,
+        visit_type,
+        contact_mode,
+        time_reference,
+        day_unit,
     ]
     review = receipt(objects, candidates)
     mark_create_request(review, "epoch-object")
@@ -751,7 +844,8 @@ def test_epoch_and_visit_create_requests_use_native_routes_and_receipt_reference
     assert plan["blockers"] == []
     assert plan["deferred_objects"] == []
     assert [operation["family"] for operation in plan["operations"]] == [
-        "StudyEpoch", "StudyVisit"
+        "StudyEpoch",
+        "StudyVisit",
     ]
     epoch_operation, visit_operation = plan["operations"]
     assert epoch_operation["path"] == "/studies/Study_1/study-epochs"
@@ -761,9 +855,7 @@ def test_epoch_and_visit_create_requests_use_native_routes_and_receipt_reference
         "order": 1,
         "description": "Treatment Period",
     }
-    assert epoch_operation["source_identity"] == {
-        "epochId": "epoch-treatment"
-    }
+    assert epoch_operation["source_identity"] == {"epochId": "epoch-treatment"}
     assert epoch_operation["record_hash_scope"] == "match"
     assert visit_operation["path"] == "/studies/Study_1/study-visits"
     assert visit_operation["body"] == {
@@ -782,38 +874,53 @@ def test_epoch_and_visit_create_requests_use_native_routes_and_receipt_reference
         "visit_number": 1,
         "unique_visit_number": 100,
     }
-    assert visit_operation["body_references"] == [{
-        "family": "StudyEpoch",
-        "identity_name": "epochId",
-        "identity_value": "epoch-treatment",
-        "body_path": "study_epoch_uid",
-        "read_match_path": "study_epoch_uid",
-        "proposal_object_id": "epoch-object",
-    }]
+    assert visit_operation["body_references"] == [
+        {
+            "family": "StudyEpoch",
+            "identity_name": "epochId",
+            "identity_value": "epoch-treatment",
+            "body_path": "study_epoch_uid",
+            "read_match_path": "study_epoch_uid",
+            "proposal_object_id": "epoch-object",
+        }
+    ]
     assert visit_operation["record_hash_scope"] == "match"
 
 
-def _arm_origin_request(origin="Historical Data", description="  External cohort.\nRetain source wording.  ", **candidate_overrides):
+def _arm_origin_request(
+    origin="Historical Data",
+    description="  External cohort.\nRetain source wording.  ",
+    **candidate_overrides
+):
     placeholder = candidate("arm-create", "StudySelectionArm", "not-selected")
     origin_candidate = candidate(
-        "origin-choice", "CTTerm", "C188864_HISTORICAL",
-        parentResourceType="CTCodelist", parentUid="C188727",
+        "origin-choice",
+        "CTTerm",
+        "C188864_HISTORICAL",
+        parentResourceType="CTCodelist",
+        parentUid="C188727",
         parentSubmissionValue="Study Arm Data Origin Type Value Set Terminology",
-        catalogueName="DDF CT", packageUid="ddfct-2024-09-27",
+        catalogueName="DDF CT",
+        packageUid="ddfct-2024-09-27",
         packageEffectiveDate="2024-09-27",
     )
     origin_candidate.update(candidate_overrides)
     arm = proposal_object(
-        "arm-object", "study-arm", "StudySelectionArm", placeholder,
+        "arm-object",
+        "study-arm",
+        "StudySelectionArm",
+        placeholder,
         dependencies=["arm-data-origin"],
     )
     arm["mapping"]["candidates"] = []
-    arm["source"] = {"values": [
-        {"name": "armId", "value": "arm-a"},
-        {"name": "name", "value": "Historical control"},
-        {"name": "dataOriginType", "value": origin},
-        {"name": "dataOriginDescription", "value": description},
-    ]}
+    arm["source"] = {
+        "values": [
+            {"name": "armId", "value": "arm-a"},
+            {"name": "name", "value": "Historical control"},
+            {"name": "dataOriginType", "value": origin},
+            {"name": "dataOriginDescription", "value": description},
+        ]
+    }
     origin_object = proposal_object(
         "origin-object", "arm-data-origin", "CTTerm", origin_candidate
     )
@@ -823,11 +930,18 @@ def _arm_origin_request(origin="Historical Data", description="  External cohort
     return envelope(objects), review
 
 
-@pytest.mark.parametrize("origin", [
-    "Historical Data",
-    {"code": "C188864", "codeSystem": "CDISC",
-     "codeSystemVersion": "ddfct-2024-09-27", "decode": "Historical Data"},
-])
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "Historical Data",
+        {
+            "code": "C188864",
+            "codeSystem": "CDISC",
+            "codeSystemVersion": "ddfct-2024-09-27",
+            "decode": "Historical Data",
+        },
+    ],
+)
 def test_explicit_reviewed_arm_origin_is_persisted_and_required_in_readback(origin):
     description = "  External cohort.\nRetain source wording.  "
     proposal, review = _arm_origin_request(origin=origin, description=description)
@@ -837,89 +951,121 @@ def test_explicit_reviewed_arm_origin_is_persisted_and_required_in_readback(orig
     operation = plan["operations"][0]
     assert operation["body"]["data_origin_type_uid"] == "C188864_HISTORICAL"
     assert operation["body"]["data_origin_description"] == description
-    assert operation["read_after_write"]["match"]["data_origin_type_uid"] == "C188864_HISTORICAL"
-    assert operation["read_after_write"]["match"]["data_origin_description"] == description
+    assert (
+        operation["read_after_write"]["match"]["data_origin_type_uid"]
+        == "C188864_HISTORICAL"
+    )
+    assert (
+        operation["read_after_write"]["match"]["data_origin_description"] == description
+    )
 
 
-@pytest.mark.parametrize("change", [
-    {"parentUid": "OTHER"},
-    {"catalogueName": "SDTM CT"},
-    {"packageUid": None},
-    {"packageEffectiveDate": None},
-    {"resourceType": "Activity"},
-])
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"parentUid": "OTHER"},
+        {"catalogueName": "SDTM CT"},
+        {"packageUid": None},
+        {"packageEffectiveDate": None},
+        {"resourceType": "Activity"},
+    ],
+)
 def test_wrong_scope_or_unpinned_arm_origin_prevents_native_creation(change):
     proposal, review = _arm_origin_request(**change)
     plan = native_operation_plan(proposal, review, "Study_1", "DRAFT")
     assert plan["operations"] == []
-    assert any(row["code"] == "OSB_NATIVE_V2_ARM_DATA_ORIGIN_CT_REQUIRED" for row in plan["blockers"])
+    assert any(
+        row["code"] == "OSB_NATIVE_V2_ARM_DATA_ORIGIN_CT_REQUIRED"
+        for row in plan["blockers"]
+    )
 
 
-@pytest.mark.parametrize(("origin", "description"), [
-    (None, "External cohort."),
-    ("Historical Data", None),
-    ("Historical Data", " \n"),
-    ({"code": "C188864"}, "External cohort."),
-])
-def test_partial_origin_source_prevents_silent_drop_into_native_arm(origin, description):
+@pytest.mark.parametrize(
+    ("origin", "description"),
+    [
+        (None, "External cohort."),
+        ("Historical Data", None),
+        ("Historical Data", " \n"),
+        ({"code": "C188864"}, "External cohort."),
+    ],
+)
+def test_partial_origin_source_prevents_silent_drop_into_native_arm(
+    origin, description
+):
     proposal, review = _arm_origin_request(origin=origin, description=description)
     plan = native_operation_plan(proposal, review, "Study_1", "DRAFT")
     assert plan["operations"] == []
-    assert any(row["code"] == "OSB_NATIVE_V2_ARM_DATA_ORIGIN_SOURCE_INCOMPLETE" for row in plan["blockers"])
+    assert any(
+        row["code"] == "OSB_NATIVE_V2_ARM_DATA_ORIGIN_SOURCE_INCOMPLETE"
+        for row in plan["blockers"]
+    )
 
 
 def test_arm_element_epoch_and_design_cell_create_native_relationship_graph():
     arm_placeholder = candidate("arm-create", "StudySelectionArm", "not-selected")
     arm_type = candidate(
-        "arm-type", "CTTerm", "ArmType_Experimental",
+        "arm-type",
+        "CTTerm",
+        "ArmType_Experimental",
         parentSubmissionValue="Arm Type",
     )
     element_placeholder = candidate(
         "element-create", "StudySelectionElement", "not-selected"
     )
     element_subtype = candidate(
-        "element-subtype", "CTTerm", "ElementSubtype_Treatment",
+        "element-subtype",
+        "CTTerm",
+        "ElementSubtype_Treatment",
         parentSubmissionValue="Element Sub Type",
     )
     week_unit = candidate("week-unit", "UnitDefinition", "UnitDefinition_week")
     epoch_placeholder = candidate("epoch-create", "StudyEpoch", "not-selected")
     epoch_subtype = candidate(
-        "epoch-subtype", "CTTerm", "EpochSubtype_Treatment",
+        "epoch-subtype",
+        "CTTerm",
+        "EpochSubtype_Treatment",
         parentSubmissionValue="Epoch Sub Type",
     )
     cell_placeholder = candidate("cell-create", "StudyDesignCell", "not-selected")
 
     arm = proposal_object(
-        "arm-object", "study-arm", "StudySelectionArm", arm_placeholder,
+        "arm-object",
+        "study-arm",
+        "StudySelectionArm",
+        arm_placeholder,
         dependencies=["arm-type"],
     )
     arm["mapping"]["factIds"] = ["fact-arm"]
     arm["mapping"]["candidates"] = []
-    arm["source"] = {"values": [
-        {"name": "armId", "value": "arm-a"},
-        {"name": "name", "value": "Arm A"},
-        {"name": "shortName", "value": "A"},
-        {"name": "description", "value": "Experimental arm"},
-        {"name": "numberOfSubjects", "value": 20},
-    ]}
-    arm_type_object = proposal_object(
-        "arm-type-object", "arm-type", "CTTerm", arm_type
-    )
+    arm["source"] = {
+        "values": [
+            {"name": "armId", "value": "arm-a"},
+            {"name": "name", "value": "Arm A"},
+            {"name": "shortName", "value": "A"},
+            {"name": "description", "value": "Experimental arm"},
+            {"name": "numberOfSubjects", "value": 20},
+        ]
+    }
+    arm_type_object = proposal_object("arm-type-object", "arm-type", "CTTerm", arm_type)
     arm_type_object["mapping"]["factIds"] = ["fact-arm"]
 
     element = proposal_object(
-        "element-object", "study-element", "StudySelectionElement",
+        "element-object",
+        "study-element",
+        "StudySelectionElement",
         element_placeholder,
         dependencies=["element-subtype", "element-duration-unit"],
     )
     element["mapping"]["factIds"] = ["fact-element"]
     element["mapping"]["candidates"] = []
-    element["source"] = {"values": [
-        {"name": "elementId", "value": "element-active"},
-        {"name": "name", "value": "Active treatment"},
-        {"name": "plannedDurationValue", "value": 12},
-        {"name": "startRule", "value": "After randomization"},
-    ]}
+    element["source"] = {
+        "values": [
+            {"name": "elementId", "value": "element-active"},
+            {"name": "name", "value": "Active treatment"},
+            {"name": "plannedDurationValue", "value": 12},
+            {"name": "startRule", "value": "After randomization"},
+        ]
+    }
     element_subtype_object = proposal_object(
         "element-subtype-object", "element-subtype", "CTTerm", element_subtype
     )
@@ -930,19 +1076,24 @@ def test_arm_element_epoch_and_design_cell_create_native_relationship_graph():
     element_unit_object["mapping"]["factIds"] = ["fact-element"]
 
     epoch = proposal_object(
-        "epoch-object", "study-epoch", "StudyEpoch", epoch_placeholder,
+        "epoch-object",
+        "study-epoch",
+        "StudyEpoch",
+        epoch_placeholder,
         dependencies=["epoch-subtype"],
     )
     epoch["mapping"]["factIds"] = ["fact-epoch"]
     epoch["mapping"]["candidates"] = []
-    epoch["source"] = {"values": [
-        {"name": "epochId", "value": "epoch-treatment"},
-        {"name": "name", "value": "Treatment"},
-        {"name": "order", "value": 1},
-        {"name": "durationValue", "value": 12},
-        {"name": "durationUnit", "value": "week"},
-        {"name": "endRule", "value": "End of treatment"},
-    ]}
+    epoch["source"] = {
+        "values": [
+            {"name": "epochId", "value": "epoch-treatment"},
+            {"name": "name", "value": "Treatment"},
+            {"name": "order", "value": 1},
+            {"name": "durationValue", "value": 12},
+            {"name": "durationUnit", "value": "week"},
+            {"name": "endRule", "value": "End of treatment"},
+        ]
+    }
     epoch_subtype_object = proposal_object(
         "epoch-subtype-object", "epoch-subtype", "CTTerm", epoch_subtype
     )
@@ -953,24 +1104,38 @@ def test_arm_element_epoch_and_design_cell_create_native_relationship_graph():
     )
     cell["mapping"]["factIds"] = ["fact-cell"]
     cell["mapping"]["candidates"] = []
-    cell["source"] = {"values": [
-        {"name": "designCellId", "value": "cell-a-treatment"},
-        {"name": "armId", "value": "arm-a"},
-        {"name": "epochId", "value": "epoch-treatment"},
-        {"name": "elementId", "value": "element-active"},
-        {"name": "transitionRule", "value": "Proceed after randomization"},
-        {"name": "order", "value": 1},
-    ]}
+    cell["source"] = {
+        "values": [
+            {"name": "designCellId", "value": "cell-a-treatment"},
+            {"name": "armId", "value": "arm-a"},
+            {"name": "epochId", "value": "epoch-treatment"},
+            {"name": "elementId", "value": "element-active"},
+            {"name": "transitionRule", "value": "Proceed after randomization"},
+            {"name": "order", "value": 1},
+        ]
+    }
 
     objects = [
-        arm, arm_type_object, element, element_subtype_object,
-        element_unit_object, epoch, epoch_subtype_object, cell,
+        arm,
+        arm_type_object,
+        element,
+        element_subtype_object,
+        element_unit_object,
+        epoch,
+        epoch_subtype_object,
+        cell,
     ]
     review = receipt(
         objects,
         [
-            arm_placeholder, arm_type, element_placeholder, element_subtype,
-            week_unit, epoch_placeholder, epoch_subtype, cell_placeholder,
+            arm_placeholder,
+            arm_type,
+            element_placeholder,
+            element_subtype,
+            week_unit,
+            epoch_placeholder,
+            epoch_subtype,
+            cell_placeholder,
         ],
     )
     for object_id in ("arm-object", "element-object", "epoch-object", "cell-object"):
@@ -981,9 +1146,14 @@ def test_arm_element_epoch_and_design_cell_create_native_relationship_graph():
     assert plan["blockers"] == []
     assert plan["deferred_objects"] == []
     assert [operation["family"] for operation in plan["operations"]] == [
-        "StudySelectionArm", "StudySelectionElement", "StudyEpoch", "StudyDesignCell"
+        "StudySelectionArm",
+        "StudySelectionElement",
+        "StudyEpoch",
+        "StudyDesignCell",
     ]
-    arm_operation, element_operation, epoch_operation, cell_operation = plan["operations"]
+    arm_operation, element_operation, epoch_operation, cell_operation = plan[
+        "operations"
+    ]
     assert arm_operation["body"] == {
         "name": "Arm A",
         "short_name": "A",
@@ -1016,9 +1186,10 @@ def test_arm_element_epoch_and_design_cell_create_native_relationship_graph():
         "transition_rule": "Proceed after randomization",
         "order": 1,
     }
-    assert [reference["proposal_object_id"] for reference in cell_operation["body_references"]] == [
-        "arm-object", "epoch-object", "element-object"
-    ]
+    assert [
+        reference["proposal_object_id"]
+        for reference in cell_operation["body_references"]
+    ] == ["arm-object", "epoch-object", "element-object"]
 
 
 def test_criteria_operation_requires_template_native_type_to_match_reviewed_ct():
@@ -1049,7 +1220,10 @@ def test_criteria_operation_requires_template_native_type_to_match_reviewed_ct()
     objects = [criterion, type_object]
 
     plan = native_operation_plan(
-        envelope(objects), receipt(objects, [template, criteria_type]), "Study_1", "DRAFT"
+        envelope(objects),
+        receipt(objects, [template, criteria_type]),
+        "Study_1",
+        "DRAFT",
     )
 
     assert plan["blockers"] == []
@@ -1224,10 +1398,15 @@ def test_standard_version_create_request_builds_the_typed_body():
         "standard-object", "study-standard-version", "StudyStandardVersion", placeholder
     )
     standard["mapping"]["candidates"] = []
-    standard["source"] = {"values": [
-        {"name": "ctPackageUid", "value": "SDTM__CT__2023-12-15"},
-        {"name": "description", "value": "SDTM CT 2023-12-15 per protocol section 12"},
-    ]}
+    standard["source"] = {
+        "values": [
+            {"name": "ctPackageUid", "value": "SDTM__CT__2023-12-15"},
+            {
+                "name": "description",
+                "value": "SDTM CT 2023-12-15 per protocol section 12",
+            },
+        ]
+    }
     review = receipt([standard], [placeholder])
     mark_create_request(review, "standard-object")
 
@@ -1270,22 +1449,31 @@ def test_standard_version_without_a_package_is_a_named_blocker():
 
 def _compound_graph(dose_candidate=True, stated_dose="100"):
     product = candidate(
-        "product-candidate", "MedicinalProduct", "MedicinalProduct_1",
+        "product-candidate",
+        "MedicinalProduct",
+        "MedicinalProduct_1",
         compoundAliasUid="CompoundAlias_1",
     )
     treatment_type = candidate(
-        "treatment-type", "CTTerm", "TypeOfTreatment_Investigational",
+        "treatment-type",
+        "CTTerm",
+        "TypeOfTreatment_Investigational",
         parentSubmissionValue="Type of Treatment",
     )
     compound = proposal_object(
-        "compound-object", "medicinal-product", "StudySelectionCompound", product,
+        "compound-object",
+        "medicinal-product",
+        "StudySelectionCompound",
+        product,
         dependencies=["type-of-treatment"],
     )
     compound["mapping"]["factIds"] = ["fact-product"]
-    compound["source"] = {"values": [
-        {"name": "productName", "value": "Remdesivir"},
-        {"name": "description", "value": "Lyophilized formulation"},
-    ]}
+    compound["source"] = {
+        "values": [
+            {"name": "productName", "value": "Remdesivir"},
+            {"name": "description", "value": "Lyophilized formulation"},
+        ]
+    }
     treatment_object = proposal_object(
         "treatment-type-object", "type-of-treatment", "CTTerm", treatment_type
     )
@@ -1295,43 +1483,67 @@ def _compound_graph(dose_candidate=True, stated_dose="100"):
         "element-create", "StudySelectionElement", "not-selected"
     )
     element_subtype = candidate(
-        "element-subtype", "CTTerm", "ElementSubtype_Treatment",
+        "element-subtype",
+        "CTTerm",
+        "ElementSubtype_Treatment",
         parentSubmissionValue="Element Sub Type",
     )
     element = proposal_object(
-        "element-object", "study-element", "StudySelectionElement",
-        element_placeholder, dependencies=["element-subtype"],
+        "element-object",
+        "study-element",
+        "StudySelectionElement",
+        element_placeholder,
+        dependencies=["element-subtype"],
     )
     element["mapping"]["factIds"] = ["fact-element"]
     element["mapping"]["candidates"] = []
-    element["source"] = {"values": [
-        {"name": "elementId", "value": "element-remdesivir"},
-        {"name": "name", "value": "Remdesivir treatment"},
-    ]}
+    element["source"] = {
+        "values": [
+            {"name": "elementId", "value": "element-remdesivir"},
+            {"name": "name", "value": "Remdesivir treatment"},
+        ]
+    }
     element_subtype_object = proposal_object(
         "element-subtype-object", "element-subtype", "CTTerm", element_subtype
     )
     element_subtype_object["mapping"]["factIds"] = ["fact-element"]
 
-    dose = candidate("dose-candidate", "NumericValueWithUnit", "NumericValueWithUnit_100mg")
-    dosing_placeholder = candidate("dosing-create", "StudyCompoundDosing", "not-selected")
+    dose = candidate(
+        "dose-candidate", "NumericValueWithUnit", "NumericValueWithUnit_100mg"
+    )
+    dosing_placeholder = candidate(
+        "dosing-create", "StudyCompoundDosing", "not-selected"
+    )
     dosing = proposal_object(
-        "dosing-object", "dosing-regimen", "StudyCompoundDosing", dosing_placeholder,
+        "dosing-object",
+        "dosing-regimen",
+        "StudyCompoundDosing",
+        dosing_placeholder,
         dependencies=["dose-value"] if dose_candidate else [],
     )
     dosing["mapping"]["factIds"] = ["fact-dosing"]
     dosing["mapping"]["candidates"] = []
-    dosing["source"] = {"values": [
-        {"name": "drugName", "value": "Remdesivir"},
-        {"name": "elementRef", "value": "element-remdesivir"},
-        *([{"name": "dose", "value": stated_dose}] if stated_dose else []),
-        {"name": "unit", "value": "mg"},
-    ]}
-    dose_object = proposal_object("dose-object", "dose-value", "NumericValueWithUnit", dose)
+    dosing["source"] = {
+        "values": [
+            {"name": "drugName", "value": "Remdesivir"},
+            {"name": "elementRef", "value": "element-remdesivir"},
+            *([{"name": "dose", "value": stated_dose}] if stated_dose else []),
+            {"name": "unit", "value": "mg"},
+        ]
+    }
+    dose_object = proposal_object(
+        "dose-object", "dose-value", "NumericValueWithUnit", dose
+    )
     dose_object["mapping"]["factIds"] = ["fact-dosing"]
 
     objects = [compound, treatment_object, element, element_subtype_object, dosing]
-    candidates = [product, treatment_type, element_placeholder, element_subtype, dosing_placeholder]
+    candidates = [
+        product,
+        treatment_type,
+        element_placeholder,
+        element_subtype,
+        dosing_placeholder,
+    ]
     if dose_candidate:
         objects.append(dose_object)
         candidates.append(dose)
@@ -1415,15 +1627,23 @@ def test_compound_dosing_without_a_stated_dose_writes_no_dose_value():
 def test_activity_instruction_from_a_template_batches_under_its_activity():
     activity = candidate("activity-candidate", "Activity", "Activity_1")
     flowchart = candidate(
-        "flowchart-candidate", "CTTerm", "FlowchartGroup_1",
+        "flowchart-candidate",
+        "CTTerm",
+        "FlowchartGroup_1",
         parentSubmissionValue="Flowchart Group",
     )
     template = candidate(
-        "template-candidate", "ActivityInstructionTemplate",
-        "ActivityInstructionTemplate_1", name="If phone call only", parameterCount=0,
+        "template-candidate",
+        "ActivityInstructionTemplate",
+        "ActivityInstructionTemplate_1",
+        name="If phone call only",
+        parameterCount=0,
     )
     activity_object = proposal_object(
-        "activity-object", "activity", "StudySelectionActivity", activity,
+        "activity-object",
+        "activity",
+        "StudySelectionActivity",
+        activity,
         dependencies=["flowchart-group"],
     )
     activity_object["mapping"]["factIds"] = ["fact-conditional"]
@@ -1432,26 +1652,35 @@ def test_activity_instruction_from_a_template_batches_under_its_activity():
     )
     flowchart_object["mapping"]["factIds"] = ["fact-conditional"]
     instruction = proposal_object(
-        "instruction-object", "activity-instruction", "StudyActivityInstruction",
+        "instruction-object",
+        "activity-instruction",
+        "StudyActivityInstruction",
         template,
     )
     instruction["mapping"]["factIds"] = ["fact-conditional"]
-    instruction["source"] = {"values": [
-        {"name": "name", "value": "mortality"},
-        {"name": "triggerCondition", "value": "If phone call only"},
-    ]}
+    instruction["source"] = {
+        "values": [
+            {"name": "name", "value": "mortality"},
+            {"name": "triggerCondition", "value": "If phone call only"},
+        ]
+    }
     objects = [activity_object, flowchart_object, instruction]
 
     plan = native_operation_plan(
-        envelope(objects), receipt(objects, [activity, flowchart, template]),
-        "Study_1", "DRAFT",
+        envelope(objects),
+        receipt(objects, [activity, flowchart, template]),
+        "Study_1",
+        "DRAFT",
     )
 
     assert plan["blockers"] == []
     activity_operation, instruction_operation = plan["operations"]
     assert activity_operation["source_identity"] == {"factId": "fact-conditional"}
     assert instruction_operation["family"] == "StudyActivityInstruction"
-    assert instruction_operation["path"] == "/studies/Study_1/study-activity-instructions/batch"
+    assert (
+        instruction_operation["path"]
+        == "/studies/Study_1/study-activity-instructions/batch"
+    )
     assert instruction_operation["read_after_write"]["path"] == (
         "/studies/Study_1/study-activity-instructions"
     )
@@ -1484,7 +1713,8 @@ def test_activity_instruction_from_a_template_batches_under_its_activity():
 def test_a_declined_optional_family_is_deferred_on_the_record_not_blocked():
     objects, review = _compound_graph()
     declined = next(
-        item for item in review["objects"]
+        item
+        for item in review["objects"]
         if item["proposal_object_id"] == "dosing-object"
     )
     declined["latest_decision"] = {

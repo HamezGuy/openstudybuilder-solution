@@ -1,8 +1,11 @@
 """Governed native Schedule of Activities mapping and reconciliation tests."""
 
-import copy
+# exact == [] / == {} comparisons are the assertion
+# tests exercise private helpers directly
+# minimal test doubles implement only the methods under test
+# pylint: disable=use-implicit-booleaness-not-comparison,protected-access,too-few-public-methods
 
-import pytest
+import copy
 
 from ..mappings import payload_to_osb as mapping
 from ..run_import_360i import Import360i, ImportCensus
@@ -155,8 +158,11 @@ def test_native_soa_plan_blocks_unjoined_cells_and_rejects_duplicate_cells():
         sourceScheduleCells=2, joinedScheduleCells=2
     )
     duplicate_plan = mapping.native_soa_plan(duplicated, [_library_activity()])
-    assert duplicate_plan['schedules'] == []
-    assert duplicate_plan['blocked'][0]['reason'] == 'OSB_NATIVE_SOA_SCHEDULE_OCCURRENCE_CONFLICT'
+    assert duplicate_plan["schedules"] == []
+    assert (
+        duplicate_plan["blocked"][0]["reason"]
+        == "OSB_NATIVE_SOA_SCHEDULE_OCCURRENCE_CONFLICT"
+    )
 
 
 class _SoaApi:
@@ -204,9 +210,7 @@ class _SoaApi:
             row = {
                 "study_activity_uid": f"StudyActivity_{len(self.selected) + 1}",
                 "activity": {"uid": body["activity_uid"]},
-                "study_soa_group": {
-                    "soa_group_term_uid": body["soa_group_term_uid"]
-                },
+                "study_soa_group": {"soa_group_term_uid": body["soa_group_term_uid"]},
             }
             self.selected.append(row)
             return row
@@ -224,9 +228,7 @@ class _SoaApi:
         uid = path.rsplit("/", 1)[-1]
         self.deletes.append(uid)
         self.schedules = [
-            row
-            for row in self.schedules
-            if row["study_activity_schedule_uid"] != uid
+            row for row in self.schedules if row["study_activity_schedule_uid"] != uid
         ]
         return True
 
@@ -268,9 +270,7 @@ def test_native_soa_create_replay_and_owned_stale_schedule_removal():
 
     assert api.deletes == ["Schedule_2"]
     assert len(api.schedules) == 1
-    assert importer.uid_map["native_soa_schedules"] == {
-        "ACT-DEMO::V1": "Schedule_1"
-    }
+    assert importer.uid_map["native_soa_schedules"] == {"ACT-DEMO::V1": "Schedule_1"}
     assert importer.uid_map["native_soa_owned_schedules"] == {
         "ACT-DEMO::V1": "Schedule_1"
     }

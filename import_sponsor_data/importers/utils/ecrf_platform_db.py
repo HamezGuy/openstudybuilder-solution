@@ -29,6 +29,9 @@ Env:
     ECRF_TENANT_ID  the 360i tenant whose payloads to read (RLS scope)
 """
 
+# pylint cannot infer the psycopg connection that psycopg.connect() returns
+# pylint: disable=no-member
+
 import gzip
 import json
 import uuid

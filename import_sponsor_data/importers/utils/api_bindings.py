@@ -120,7 +120,10 @@ class ApiBinding:
         # execute the check if called methods is not db_schema_migration repository
         # (named db-schema-migration before the 2.10 restructure)
         module_path = inspect.currentframe().f_code.co_filename
-        if "db_schema_migration" not in module_path and "db-schema-migration" not in module_path:
+        if (
+            "db_schema_migration" not in module_path
+            and "db-schema-migration" not in module_path
+        ):
             self.check_for_ct_packages()
 
     def update_headers(self, api_headers):
@@ -464,7 +467,10 @@ class ApiBinding:
             if isinstance(payload.get("items"), list) and "oid" not in payload:
                 return {**payload, "items": cls.odm_item_response(payload["items"])}
             if "datatype" in payload:
-                return {**payload, "datatype": cls.odm_item_datatype_value(payload["datatype"])}
+                return {
+                    **payload,
+                    "datatype": cls.odm_item_datatype_value(payload["datatype"]),
+                }
         return payload
 
     def proposal_v2_get(self, path, params=None):

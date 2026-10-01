@@ -79,11 +79,20 @@ TARGET_CAPABILITIES = {
     "OdmItem": ("governed_library_reference", "/odms/items"),
     "OdmMethod": ("governed_library_reference", "/odms/methods"),
     "OdmCondition": ("governed_library_reference", "/odms/conditions"),
-    "StudySelectionActivityInstance": ("native_study_mutation", "/studies/{study_uid}/study-activity-instances"),
+    "StudySelectionActivityInstance": (
+        "native_study_mutation",
+        "/studies/{study_uid}/study-activity-instances",
+    ),
     "ActivityItemClass": ("governed_library_reference", "/activity-item-classes"),
     "OdmItemActivityBinding": ("governed_library_reference", "/odms/items/{uid}"),
-    "OdmFormItemGroupLink": ("governed_library_reference", "/odms/forms/{uid}/item-groups"),
-    "OdmItemGroupItemLink": ("governed_library_reference", "/odms/item-groups/{uid}/items"),
+    "OdmFormItemGroupLink": (
+        "governed_library_reference",
+        "/odms/forms/{uid}/item-groups",
+    ),
+    "OdmItemGroupItemLink": (
+        "governed_library_reference",
+        "/odms/item-groups/{uid}/items",
+    ),
     "IntegrationExtension": ("governed_extension", None),
     "RetainedNarrative": ("retained_narrative", None),
     "Unresolved": ("unresolved", None),

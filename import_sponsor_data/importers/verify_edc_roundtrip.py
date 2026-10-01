@@ -43,9 +43,7 @@ def _diff(expected, actual, path="$"):
         for index, (expected_item, actual_item) in enumerate(
             zip(expected, actual, strict=False)
         ):
-            differences.extend(
-                _diff(expected_item, actual_item, f"{path}[{index}]")
-            )
+            differences.extend(_diff(expected_item, actual_item, f"{path}[{index}]"))
         return differences
     if expected != actual:
         differences.append(
@@ -97,7 +95,9 @@ def main():
     response = requests.get(url, timeout=900)
     response.raise_for_status()
     actual = response.json()
-    export_census_document = actual.get("extensions", {}).get("_osbExport", {}).get("census", {})
+    export_census_document = (
+        actual.get("extensions", {}).get("_osbExport", {}).get("census", {})
+    )
     export_census = (
         export_census_document.get("rows", [])
         if isinstance(export_census_document, dict)
@@ -105,7 +105,9 @@ def main():
     )
 
     if expected.get("formatVersion") != "2.0" or actual.get("formatVersion") != "2.0":
-        raise SystemExit("Current parity requires canonical V2 input and output; historical source requires the private decoder.")
+        raise SystemExit(
+            "Current parity requires canonical V2 input and output; historical source requires the private decoder."
+        )
     differences = _diff(expected["definition"], actual["definition"], "$.definition")
     differences += _diff(expected["execution"], actual["execution"], "$.execution")
     actual_extensions = actual.get("extensions", {})
@@ -124,12 +126,22 @@ def main():
     for collection, identity in (("artifacts", "artifactId"), ("payloads", "sha256")):
         for source in expected["source"].get(collection, []):
             path = "$.source." + collection + "." + source[identity]
-            matches = [row for row in actual["source"].get(collection, []) if row[identity] == source[identity]]
+            matches = [
+                row
+                for row in actual["source"].get(collection, [])
+                if row[identity] == source[identity]
+            ]
             if len(matches) != 1:
-                differences.append({"path": path, "kind": "missing" if not matches else "duplicate"})
+                differences.append(
+                    {"path": path, "kind": "missing" if not matches else "duplicate"}
+                )
             else:
                 differences += _diff(source, matches[0], path)
-    differences += _diff(expected["source"]["normalizations"], actual["source"]["normalizations"], "$.source.normalizations")
+    differences += _diff(
+        expected["source"]["normalizations"],
+        actual["source"]["normalizations"],
+        "$.source.normalizations",
+    )
     report = {
         "studyId": args.study,
         "osbStudyUid": args.osb_study,

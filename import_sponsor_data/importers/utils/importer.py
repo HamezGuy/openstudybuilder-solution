@@ -108,7 +108,9 @@ class BaseImporter:
         # so refresh at 3 minutes while the revocable workflow grant is alive.
         # Existing client-credentials/static-token imports keep their 25-minute
         # cadence for backwards compatibility.
-        refresh_interval = 3 * 60 if load_env("COMMAND_CENTER_WORKFLOW_GRANT", "") else 25 * 60
+        refresh_interval = (
+            3 * 60 if load_env("COMMAND_CENTER_WORKFLOW_GRANT", "") else 25 * 60
+        )
         self._start_auth_refresh(interval=refresh_interval)
 
     def _start_auth_refresh(self, interval=25 * 60):
@@ -153,7 +155,9 @@ class BaseImporter:
             payload = response.json()
             access_token = payload.get("access_token")
             if not access_token:
-                raise RuntimeError("Command Center workflow-token response is missing access_token")
+                raise RuntimeError(
+                    "Command Center workflow-token response is missing access_token"
+                )
             headers["Authorization"] = f"Bearer {access_token}"
 
         elif api_token:

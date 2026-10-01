@@ -1,20 +1,27 @@
 """Complete source retention is independent of native clinical mapping holds."""
+
 import base64
-from copy import deepcopy
 import gzip
 import hashlib
 import json
 import random
 import string
 import unittest
+from copy import deepcopy
 from unittest.mock import Mock, patch
 
-from importers.run_import_360i import Import360i, ImportCensus, SOURCE_SNAPSHOT_OID_PREFIX
 from importers.mappings import payload_to_osb as mapping
+from importers.run_import_360i import (
+    SOURCE_SNAPSHOT_OID_PREFIX,
+    Import360i,
+    ImportCensus,
+)
 from importers.utils.ecrf_platform_db import IMPORTER_VERSION
 
-
-ATTRS = {name: f"attr-{name}" for name in ("refKey", "studyId", "buildHash", "ext", "bundleMeta")}
+ATTRS = {
+    name: f"attr-{name}"
+    for name in ("refKey", "studyId", "buildHash", "ext", "bundleMeta")
+}
 
 
 class SnapshotApi:
@@ -33,7 +40,12 @@ class SnapshotApi:
         assert path == "/odms/forms"
         assert body["oid"].startswith(SOURCE_SNAPSHOT_OID_PREFIX)
         self.posts.append(deepcopy(body))
-        record = {**deepcopy(body), "uid": f"Form_{len(self.posts)}", "status": "Draft", "item_groups": []}
+        record = {
+            **deepcopy(body),
+            "uid": f"Form_{len(self.posts)}",
+            "status": "Draft",
+            "item_groups": [],
+        }
         for attr in record["vendor_attributes"]:
             attr["name"] = next(key for key, uid in ATTRS.items() if uid == attr["uid"])
             if attr["name"] == "bundleMeta" and self.corrupt_new_chunks:
@@ -61,20 +73,62 @@ def worker(api):
 def payload(large=False):
     text = "  Full semantic text\nwith qualifiers, 😀 and 0/false/null.  "
     if large:
-        text += "".join(random.Random(42).choices(string.ascii_letters + string.digits, k=450000))
-    return {"source": {"studyId": "semantic-study", "buildHash": "sha256:" + "a" * 64},
-            "odm": {"forms": [{"refKey": "F_1", "itemGroups": [{"refKey": "G_1", "items": [
-                {"refKey": "FIELD", "datatype": "text", "name": "Missing native maximum length"}]}]}]},
-            "sourceBundle": {"study": {"name": "Semantic study"}, "visits": [{"refKey": "V_1", "metadata": False}],
-                "forms": {"forms": [{"refKey": f"F_{index}", "fields": [
-                    {"refKey": "FIELD", "label": "exact", "future": {"empty": "", "zero": 0, "nullable": None}}]} for index in range(14)]},
-                "_sourceEvidence": {"fullText": text}},
-            "sourceCustody": {"payload": {"original": text, "associations": [{"resolved": False}]}}}
+        text += "".join(
+            random.Random(42).choices(string.ascii_letters + string.digits, k=450000)
+        )
+    return {
+        "source": {"studyId": "semantic-study", "buildHash": "sha256:" + "a" * 64},
+        "odm": {
+            "forms": [
+                {
+                    "refKey": "F_1",
+                    "itemGroups": [
+                        {
+                            "refKey": "G_1",
+                            "items": [
+                                {
+                                    "refKey": "FIELD",
+                                    "datatype": "text",
+                                    "name": "Missing native maximum length",
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ]
+        },
+        "sourceBundle": {
+            "study": {"name": "Semantic study"},
+            "visits": [{"refKey": "V_1", "metadata": False}],
+            "forms": {
+                "forms": [
+                    {
+                        "refKey": f"F_{index}",
+                        "fields": [
+                            {
+                                "refKey": "FIELD",
+                                "label": "exact",
+                                "future": {"empty": "", "zero": 0, "nullable": None},
+                            }
+                        ],
+                    }
+                    for index in range(14)
+                ]
+            },
+            "_sourceEvidence": {"fullText": text},
+        },
+        "sourceCustody": {
+            "payload": {"original": text, "associations": [{"resolved": False}]}
+        },
+    }
 
 
 def metadata(form):
-    attrs = {attr.get("name") or next(key for key, uid in ATTRS.items() if uid == attr["uid"]): attr["value"]
-             for attr in form["vendor_attributes"]}
+    attrs = {
+        attr.get("name")
+        or next(key for key, uid in ATTRS.items() if uid == attr["uid"]): attr["value"]
+        for attr in form["vendor_attributes"]
+    }
     return attrs, json.loads(attrs["ext"])["semanticSourceSnapshot"]
 
 
@@ -83,24 +137,52 @@ def read_snapshot(api):
     chunks = []
     for index in range(1, head["chunkCount"] + 1):
         generation_hash = head.get("generationHash", head["snapshotHash"])
-        attrs, descriptor = metadata(api.forms[f"F.SEMANTIC.SNAPSHOT.Study_1.{generation_hash}.{index:04d}"])
+        attrs, descriptor = metadata(
+            api.forms[f"F.SEMANTIC.SNAPSHOT.Study_1.{generation_hash}.{index:04d}"]
+        )
         assert descriptor["index"] == index
         chunks.append(attrs["bundleMeta"])
     encoded = "".join(chunks)
-    raw = gzip.decompress(base64.b64decode(encoded[len("gzip+base64:"):])).decode() if encoded.startswith("gzip+base64:") else encoded
+    raw = (
+        gzip.decompress(base64.b64decode(encoded[len("gzip+base64:") :])).decode()
+        if encoded.startswith("gzip+base64:")
+        else encoded
+    )
     return json.loads(raw)
 
 
 class SemanticSourceSnapshotTests(unittest.TestCase):
-    def test_v2_snapshot_and_form_carriers_keep_definition_execution_and_custody_scope(self):
+    def test_v2_snapshot_and_form_carriers_keep_definition_execution_and_custody_scope(
+        self,
+    ):
         source = payload()
         historical = source["sourceBundle"]
-        current = {"formatVersion": "2.0", "profile": {"id": "edc-study-exchange/2", "mode": "draft", "modelVersion": "4.0.0"},
-                   "definition": {"document": {"study": {"versions": [{"id": "one"}, {"id": "two"}], "future": {"empty": [], "missing": None}}},
-                                  "selection": {"versionId": "two", "designId": None}},
-                   "execution": {"forms": historical["forms"], "visits": historical["visits"], "studyTasks": [], "deviationSpec": None, "extensions": {}},
-                   "source": {"artifacts": [], "valueLedger": [], "normalizations": []},
-                   "extensions": {"_sourceEvidence": historical["_sourceEvidence"]}}
+        current = {
+            "formatVersion": "2.0",
+            "profile": {
+                "id": "edc-study-exchange/2",
+                "mode": "draft",
+                "modelVersion": "4.0.0",
+            },
+            "definition": {
+                "document": {
+                    "study": {
+                        "versions": [{"id": "one"}, {"id": "two"}],
+                        "future": {"empty": [], "missing": None},
+                    }
+                },
+                "selection": {"versionId": "two", "designId": None},
+            },
+            "execution": {
+                "forms": historical["forms"],
+                "visits": historical["visits"],
+                "studyTasks": [],
+                "deviationSpec": None,
+                "extensions": {},
+            },
+            "source": {"artifacts": [], "valueLedger": [], "normalizations": []},
+            "extensions": {"_sourceEvidence": historical["_sourceEvidence"]},
+        }
         source["sourceBundle"] = current
         before = deepcopy(source)
         api = SnapshotApi()
@@ -114,20 +196,41 @@ class SemanticSourceSnapshotTests(unittest.TestCase):
         self.assertEqual(snapshot["semanticSourceCustody"], source["sourceCustody"])
         self.assertNotIn("semanticSourceCustody", retained)
         self.assertEqual(json.loads(mapping.bundle_meta_value(source)), snapshot)
-        self.assertEqual(json.loads(mapping.source_form_value(source, "F_0")), current["execution"]["forms"]["forms"][0])
-        self.assertEqual(json.loads(mapping.source_field_value(source, "F_0", "FIELD")), current["execution"]["forms"]["forms"][0]["fields"][0])
+        self.assertEqual(
+            json.loads(mapping.source_form_value(source, "F_0")),
+            current["execution"]["forms"]["forms"][0],
+        )
+        self.assertEqual(
+            json.loads(mapping.source_field_value(source, "F_0", "FIELD")),
+            current["execution"]["forms"]["forms"][0]["fields"][0],
+        )
         self.assertEqual(source, before)
 
     def test_complete_large_source_survives_all_clinical_form_holds(self):
         api, source = SnapshotApi(), payload(large=True)
         importer = worker(api)
         self.assertTrue(importer.ensure_source_snapshot(source, "Study_1"))
-        self.assertEqual(read_snapshot(api), {**source["sourceBundle"], "semanticSourceCustody": source["sourceCustody"]})
+        self.assertEqual(
+            read_snapshot(api),
+            {
+                **source["sourceBundle"],
+                "semanticSourceCustody": source["sourceCustody"],
+            },
+        )
         self.assertEqual(importer.uid_map["forms"], {})
         self.assertGreater(len(api.forms), 2)
-        self.assertTrue(all(form["status"] == "Draft" and form["item_groups"] == [] for form in api.forms.values()))
-        with self.assertRaisesRegex(ValueError, "OSB_CAPTURE_TEXT_LENGTH_AUTHORITY_REQUIRED"):
-            mapping.odm_item_body(source["odm"]["forms"][0]["itemGroups"][0]["items"][0], {}, {})
+        self.assertTrue(
+            all(
+                form["status"] == "Draft" and form["item_groups"] == []
+                for form in api.forms.values()
+            )
+        )
+        with self.assertRaisesRegex(
+            ValueError, "OSB_CAPTURE_TEXT_LENGTH_AUTHORITY_REQUIRED"
+        ):
+            mapping.odm_item_body(
+                source["odm"]["forms"][0]["itemGroups"][0]["items"][0], {}, {}
+            )
 
     def test_replay_is_idempotent_and_head_commits_only_after_all_chunks_verify(self):
         api, source = SnapshotApi(), payload()
@@ -142,7 +245,9 @@ class SemanticSourceSnapshotTests(unittest.TestCase):
         self.assertEqual(read_snapshot(api)["study"]["name"], "Semantic study")
         self.assertEqual(api.patches, [])
 
-    def test_new_verified_generation_replaces_head_and_keeps_previous_full_snapshot(self):
+    def test_new_verified_generation_replaces_head_and_keeps_previous_full_snapshot(
+        self,
+    ):
         api, source = SnapshotApi(), payload()
         self.assertTrue(worker(api).ensure_source_snapshot(source, "Study_1"))
         old_forms = set(api.forms)
@@ -177,7 +282,9 @@ class SemanticSourceSnapshotTests(unittest.TestCase):
                 api, source = SnapshotApi(), payload()
                 self.assertTrue(worker(api).ensure_source_snapshot(source, "Study_1"))
                 head = api.forms["F.SEMANTIC.SNAPSHOT.HEAD.Study_1"]
-                next(attr for attr in head["vendor_attributes"] if attr["name"] == name)["value"] = "foreign-reading"
+                next(
+                    attr for attr in head["vendor_attributes"] if attr["name"] == name
+                )["value"] = "foreign-reading"
                 before, posts = deepcopy(api.forms), len(api.posts)
                 source["sourceBundle"]["study"]["name"] = "Next reading"
                 importer = worker(api)
@@ -186,7 +293,9 @@ class SemanticSourceSnapshotTests(unittest.TestCase):
                 self.assertEqual(len(api.posts), posts)
                 self.assertEqual(api.patches, [])
 
-    def test_nonfinite_source_is_refused_before_storage_without_rewriting_clinical_values(self):
+    def test_nonfinite_source_is_refused_before_storage_without_rewriting_clinical_values(
+        self,
+    ):
         for value in (float("nan"), float("inf"), float("-inf")):
             with self.subTest(value=value):
                 api, source = SnapshotApi(), payload()
@@ -198,25 +307,58 @@ class SemanticSourceSnapshotTests(unittest.TestCase):
         api, source = SnapshotApi(), payload()
         self.assertTrue(worker(api).ensure_source_snapshot(source, "Study_1"))
         head = api.forms["F.SEMANTIC.SNAPSHOT.HEAD.Study_1"]
-        head["vendor_attributes"].append({"uid": "independent-note", "name": "auditNote", "value": "Full native note"})
-        head["vendor_elements"] = [{"uid": "independent-element", "name": "Audit", "value": "Complete association"}]
-        head["vendor_element_attributes"] = [{"uid": "independent-child", "name": "Detail", "value": "All qualifiers"}]
+        head["vendor_attributes"].append(
+            {
+                "uid": "independent-note",
+                "name": "auditNote",
+                "value": "Full native note",
+            }
+        )
+        head["vendor_elements"] = [
+            {
+                "uid": "independent-element",
+                "name": "Audit",
+                "value": "Complete association",
+            }
+        ]
+        head["vendor_element_attributes"] = [
+            {"uid": "independent-child", "name": "Detail", "value": "All qualifiers"}
+        ]
         source["sourceBundle"]["study"]["name"] = "Next reading"
         self.assertTrue(worker(api).ensure_source_snapshot(source, "Study_1"))
         patched = api.forms["F.SEMANTIC.SNAPSHOT.HEAD.Study_1"]
-        self.assertIn({"uid": "independent-note", "value": "Full native note"}, patched["vendor_attributes"])
-        self.assertEqual(patched["vendor_elements"], [{"uid": "independent-element", "value": "Complete association"}])
-        self.assertEqual(patched["vendor_element_attributes"], [{"uid": "independent-child", "value": "All qualifiers"}])
+        self.assertIn(
+            {"uid": "independent-note", "value": "Full native note"},
+            patched["vendor_attributes"],
+        )
+        self.assertEqual(
+            patched["vendor_elements"],
+            [{"uid": "independent-element", "value": "Complete association"}],
+        )
+        self.assertEqual(
+            patched["vendor_element_attributes"],
+            [{"uid": "independent-child", "value": "All qualifiers"}],
+        )
 
-    def test_invalid_or_duplicate_manifest_identity_refuses_before_new_native_writes(self):
+    def test_invalid_or_duplicate_manifest_identity_refuses_before_new_native_writes(
+        self,
+    ):
         for mutation in ("nonobject", "duplicate"):
             with self.subTest(mutation=mutation):
                 api, source = SnapshotApi(), payload()
                 self.assertTrue(worker(api).ensure_source_snapshot(source, "Study_1"))
                 head = api.forms["F.SEMANTIC.SNAPSHOT.HEAD.Study_1"]
-                ext = next(attr for attr in head["vendor_attributes"] if attr["name"] == "ext")
-                ext["value"] = "[]" if mutation == "nonobject" else ext["value"].replace(
-                    '"sourceStudyId":"semantic-study"', '"sourceStudyId":"foreign","sourceStudyId":"semantic-study"')
+                ext = next(
+                    attr for attr in head["vendor_attributes"] if attr["name"] == "ext"
+                )
+                ext["value"] = (
+                    "[]"
+                    if mutation == "nonobject"
+                    else ext["value"].replace(
+                        '"sourceStudyId":"semantic-study"',
+                        '"sourceStudyId":"foreign","sourceStudyId":"semantic-study"',
+                    )
+                )
                 before = deepcopy(api.forms)
                 source["sourceBundle"]["study"]["name"] = "Revised"
                 self.assertFalse(worker(api).ensure_source_snapshot(source, "Study_1"))
@@ -233,7 +375,9 @@ class SemanticSourceSnapshotTests(unittest.TestCase):
         self.assertEqual(api.forms, before)
         self.assertEqual(api.patches, [])
 
-    def test_identical_source_in_new_payload_build_has_distinct_immutable_generation(self):
+    def test_identical_source_in_new_payload_build_has_distinct_immutable_generation(
+        self,
+    ):
         api, source = SnapshotApi(), payload()
         self.assertTrue(worker(api).ensure_source_snapshot(source, "Study_1"))
         old_forms = deepcopy(api.forms)
@@ -243,14 +387,31 @@ class SemanticSourceSnapshotTests(unittest.TestCase):
         _attrs, head = metadata(api.forms["F.SEMANTIC.SNAPSHOT.HEAD.Study_1"])
         self.assertEqual(head["snapshotHash"], old_head["snapshotHash"])
         self.assertNotEqual(head["generationHash"], old_head["generationHash"])
-        self.assertEqual(head["generationHash"], hashlib.sha256(
-            (head["snapshotHash"] + "\n" + source["source"]["buildHash"]).encode()).hexdigest())
+        self.assertEqual(
+            head["generationHash"],
+            hashlib.sha256(
+                (head["snapshotHash"] + "\n" + source["source"]["buildHash"]).encode()
+            ).hexdigest(),
+        )
         for oid, original in old_forms.items():
             if oid != "F.SEMANTIC.SNAPSHOT.HEAD.Study_1":
                 self.assertEqual(api.forms[oid], original)
         restored = read_snapshot(api)
-        self.assertEqual(head["byteLength"], len(json.dumps(restored, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")))
-        self.assertEqual(restored, {**source["sourceBundle"], "semanticSourceCustody": source["sourceCustody"]})
+        self.assertEqual(
+            head["byteLength"],
+            len(
+                json.dumps(
+                    restored, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+                ).encode("utf-8")
+            ),
+        )
+        self.assertEqual(
+            restored,
+            {
+                **source["sourceBundle"],
+                "semanticSourceCustody": source["sourceCustody"],
+            },
+        )
 
     def test_oversized_source_is_refused_before_any_native_carrier_write(self):
         api = SnapshotApi()
@@ -258,42 +419,81 @@ class SemanticSourceSnapshotTests(unittest.TestCase):
         with patch("importers.run_import_360i.SOURCE_SNAPSHOT_MAX_BYTES", 64):
             self.assertFalse(importer.ensure_source_snapshot(payload(), "Study_1"))
         self.assertEqual(api.posts, [])
-        self.assertEqual(importer.census.stopped[0]["reason"], "SEMANTIC_SOURCE_SNAPSHOT_SIZE_EXCEEDED")
+        self.assertEqual(
+            importer.census.stopped[0]["reason"],
+            "SEMANTIC_SOURCE_SNAPSHOT_SIZE_EXCEEDED",
+        )
 
-    def test_literal_reference_capacity_is_retained_without_deriving_answer_limits(self):
-        item = {"refKey": "R", "name": "Literal reference", "datatype": "text", "length": 7,
-                "lengthBasis": "literalReferenceCapacity", "vendorExtensions": {"readonly": True}}
+    def test_literal_reference_capacity_is_retained_without_deriving_answer_limits(
+        self,
+    ):
+        item = {
+            "refKey": "R",
+            "name": "Literal reference",
+            "datatype": "text",
+            "length": 7,
+            "lengthBasis": "literalReferenceCapacity",
+            "vendorExtensions": {"readonly": True},
+        }
         self.assertEqual(mapping.odm_item_body(item, {}, {})["length"], 7)
-        self.assertEqual(json.loads(mapping.vendor_ext_value(item))["lengthBasis"], "literalReferenceCapacity")
+        self.assertEqual(
+            json.loads(mapping.vendor_ext_value(item))["lengthBasis"],
+            "literalReferenceCapacity",
+        )
         self.assertEqual(item["vendorExtensions"], {"readonly": True})
         del item["length"]
-        with self.assertRaisesRegex(ValueError, "OSB_CAPTURE_TEXT_LENGTH_AUTHORITY_REQUIRED"):
+        with self.assertRaisesRegex(
+            ValueError, "OSB_CAPTURE_TEXT_LENGTH_AUTHORITY_REQUIRED"
+        ):
             mapping.odm_item_body(item, {}, {})
 
-    def test_pre_strict_retention_success_revalidates_identical_payload_before_clinical_work(self):
+    def test_pre_strict_retention_success_revalidates_identical_payload_before_clinical_work(
+        self,
+    ):
         api, source = SnapshotApi(), payload()
         importer = worker(api)
-        previous = {"payload_hash": "identical", "status": "succeeded", "import_id": "old-import",
-                    "importer_version": "360i-importer/1.16", "osb_study_uid": "Study_1", "uid_map": {}}
+        previous = {
+            "payload_hash": "identical",
+            "status": "succeeded",
+            "import_id": "old-import",
+            "importer_version": "360i-importer/1.16",
+            "osb_study_uid": "Study_1",
+            "uid_map": {},
+        }
         self.assertEqual(IMPORTER_VERSION, "360i-importer/1.17")
         self.assertNotEqual(IMPORTER_VERSION, previous["importer_version"])
         importer.db = Mock()
-        importer.db.read_latest_payload.return_value = {"payload": source, "payload_hash": "identical",
-                                                       "build_hash": "same-build", "census": {"unmapped": 0}}
+        importer.db.read_latest_payload.return_value = {
+            "payload": source,
+            "payload_hash": "identical",
+            "build_hash": "same-build",
+            "census": {"unmapped": 0},
+        }
         importer.db.read_current_crosswalk.return_value = previous
         original_get = api.get_all_from_api
-        api.get_all_from_api = lambda path, params=None: ([{"uid": "Study_1"}] if path == "/studies"
-                                                        else original_get(path, params))
+        api.get_all_from_api = lambda path, params=None: (
+            [{"uid": "Study_1"}] if path == "/studies" else original_get(path, params)
+        )
         importer.log = Mock()
         importer.ensure_programme_and_project = Mock(return_value="project")
         importer.ensure_units = Mock(return_value={})
         importer.ensure_codelists = Mock(return_value={})
         importer.ensure_study = Mock(return_value="Study_1")
-        importer.ensure_epochs = Mock(side_effect=RuntimeError("clinical phase reached after source backfill"))
+        importer.ensure_epochs = Mock(
+            side_effect=RuntimeError("clinical phase reached after source backfill")
+        )
         with patch("importers.run_import_360i.assert_unsafe_legacy_mutation_allowed"):
-            with self.assertRaisesRegex(RuntimeError, "clinical phase reached after source backfill"):
+            with self.assertRaisesRegex(
+                RuntimeError, "clinical phase reached after source backfill"
+            ):
                 importer.run("semantic-study")
-        self.assertEqual(read_snapshot(api), {**source["sourceBundle"], "semanticSourceCustody": source["sourceCustody"]})
+        self.assertEqual(
+            read_snapshot(api),
+            {
+                **source["sourceBundle"],
+                "semanticSourceCustody": source["sourceCustody"],
+            },
+        )
         self.assertTrue(importer.same_payload_replay)
 
 

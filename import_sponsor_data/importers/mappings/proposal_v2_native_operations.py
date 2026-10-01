@@ -187,7 +187,8 @@ def _metadata_operation_value(item, dependencies):
             {
                 value.get("uid")
                 for value in selected_dependencies
-                if value.get("resourceType") in ("CTTerm", "DictionaryTerm") and value.get("uid")
+                if value.get("resourceType") in ("CTTerm", "DictionaryTerm")
+                and value.get("uid")
             }
         )
         if not term_uids:
@@ -376,7 +377,8 @@ def _arm_operation_values(item, dependencies):
             or selected_origin.get("parentUid") != "C188727"
             or selected_origin.get("catalogueName") != "DDF CT"
             or any(
-                not isinstance(selected_origin.get(key), str) or not selected_origin[key].strip()
+                not isinstance(selected_origin.get(key), str)
+                or not selected_origin[key].strip()
                 for key in ("uid", "packageUid", "packageEffectiveDate")
             )
         ):
@@ -443,8 +445,6 @@ def _element_operation_values(item, dependencies):
         {"elementId": element_id},
         None,
     )
-
-
 
 
 def _design_cell_operation_values(item):
@@ -789,12 +789,8 @@ def _compound_operation_values(item, candidate, dependencies):
 
 def _compound_dosing_operation_values(item, dependencies):
     values = _source_values(item)
-    product_name = _string(values.get("productName")) or _string(
-        values.get("drugName")
-    )
-    element_id = _string(values.get("elementId")) or _string(
-        values.get("elementRef")
-    )
+    product_name = _string(values.get("productName")) or _string(values.get("drugName"))
+    element_id = _string(values.get("elementId")) or _string(values.get("elementRef"))
     if not (product_name and element_id):
         return None, None, None, None, "OSB_NATIVE_V2_COMPOUND_DOSING_DTO_INCOMPLETE"
     body = {}
@@ -842,12 +838,25 @@ def _activity_instruction_operation_values(item, candidate):
     values = _source_values(item)
     resource_type = candidate.get("resourceType")
     uid = _string(candidate.get("uid"))
-    stated = [_string(values.get(key)) for key in ("triggerCondition", "collectionInstruction") if _string(values.get(key))]
+    stated = [
+        _string(values.get(key))
+        for key in ("triggerCondition", "collectionInstruction")
+        if _string(values.get(key))
+    ]
     rendered = _string(candidate.get("renderedText")) or _string(candidate.get("name"))
-    normalize = lambda text: " ".join(text.split())
-    if not stated or not rendered or any(normalize(text) != normalize(rendered) for text in stated):
+
+    def normalize(text):
+        return " ".join(text.split())
+
+    if (
+        not stated
+        or not rendered
+        or any(normalize(text) != normalize(rendered) for text in stated)
+    ):
         return None, None, None, "OSB_NATIVE_V2_INSTRUCTION_RENDERED_CONTENT_MISMATCH"
-    if resource_type == "ActivityInstructionTemplate" and candidate.get("parameterCount") != len(candidate.get("parameterTerms") or []):
+    if resource_type == "ActivityInstructionTemplate" and candidate.get(
+        "parameterCount"
+    ) != len(candidate.get("parameterTerms") or []):
         return None, None, None, "OSB_NATIVE_V2_INSTRUCTION_PARAMETERS_UNVERIFIED"
     if resource_type == "ActivityInstructionTemplate" and uid:
         data = {
@@ -1082,7 +1091,14 @@ def native_operation_plan(
         "StudyActivityInstruction",
     }
     executable_resource_types.update(CAPTURE_CONTRACTS)
-    executable_resource_types.update({"StudySelectionActivityInstance", "OdmItemActivityBinding", "OdmFormItemGroupLink", "OdmItemGroupItemLink"})
+    executable_resource_types.update(
+        {
+            "StudySelectionActivityInstance",
+            "OdmItemActivityBinding",
+            "OdmFormItemGroupLink",
+            "OdmItemGroupItemLink",
+        }
+    )
     required_governed_dependencies = {
         (fact_id, dependency_target_key)
         for item in proposal_objects.values()
@@ -1135,10 +1151,18 @@ def native_operation_plan(
             "StudyActivityInstruction",
         }
         decision_action = decisions.get(object_id, {}).get("action")
-        if resource_type in CAPTURE_CONTRACTS and decision_action == "selected_candidate":
+        if (
+            resource_type in CAPTURE_CONTRACTS
+            and decision_action == "selected_candidate"
+        ):
             # Selecting an existing library definition is a reference, not a create.
-            deferred_objects.append({"proposal_object_id": object_id, "resource_type": resource_type,
-                                     "capability_kind": "governed_library_reference"})
+            deferred_objects.append(
+                {
+                    "proposal_object_id": object_id,
+                    "resource_type": resource_type,
+                    "capability_kind": "governed_library_reference",
+                }
+            )
             continue
         if (
             resource_type in NATIVE_DECLINABLE_RESOURCE_TYPES
@@ -1180,18 +1204,56 @@ def native_operation_plan(
             values = _source_values(item)
             parent = values.get("parentProposalObjectId")
             children = values.get("children")
-            parent_family, child_family, root_path, collection = ("OdmForm", "OdmItemGroup", "/odms/forms", "item_groups") if resource_type == "OdmFormItemGroupLink" else ("OdmItemGroup", "OdmItem", "/odms/item-groups", "items")
-            if not isinstance(parent, str) or parent not in proposal_objects or (proposal_objects[parent].get("mapping") or {}).get("proposedResourceType") != parent_family or not isinstance(children, list) or not children:
-                blockers.append({"proposal_object_id": object_id, "code": "OSB_NATIVE_V2_CAPTURE_PARENT_OR_CHILDREN_UNRESOLVED", "details": []})
+            parent_family, child_family, root_path, collection = (
+                ("OdmForm", "OdmItemGroup", "/odms/forms", "item_groups")
+                if resource_type == "OdmFormItemGroupLink"
+                else ("OdmItemGroup", "OdmItem", "/odms/item-groups", "items")
+            )
+            if (
+                not isinstance(parent, str)
+                or parent not in proposal_objects
+                or (proposal_objects[parent].get("mapping") or {}).get(
+                    "proposedResourceType"
+                )
+                != parent_family
+                or not isinstance(children, list)
+                or not children
+            ):
+                blockers.append(
+                    {
+                        "proposal_object_id": object_id,
+                        "code": "OSB_NATIVE_V2_CAPTURE_PARENT_OR_CHILDREN_UNRESOLVED",
+                        "details": [],
+                    }
+                )
                 continue
             if parent in capture_link_parents:
-                blockers.append({"proposal_object_id": object_id, "code": "OSB_NATIVE_V2_CAPTURE_PARENT_COLLECTION_AMBIGUOUS", "details": [parent]})
+                blockers.append(
+                    {
+                        "proposal_object_id": object_id,
+                        "code": "OSB_NATIVE_V2_CAPTURE_PARENT_COLLECTION_AMBIGUOUS",
+                        "details": [parent],
+                    }
+                )
                 continue
             capture_link_parents.add(parent)
             if decisions.get(parent, {}).get("action") != "create_request":
-                blockers.append({"proposal_object_id": object_id, "code": "OSB_NATIVE_V2_CAPTURE_PARENT_CREATE_RECEIPT_REQUIRED", "details": [parent]})
+                blockers.append(
+                    {
+                        "proposal_object_id": object_id,
+                        "code": "OSB_NATIVE_V2_CAPTURE_PARENT_CREATE_RECEIPT_REQUIRED",
+                        "details": [parent],
+                    }
+                )
                 continue
-            references = [{"family": parent_family, "proposal_object_id": parent, "path_parameter": "parent_uid", "read_match_path": "uid"}]
+            references = [
+                {
+                    "family": parent_family,
+                    "proposal_object_id": parent,
+                    "path_parameter": "parent_uid",
+                    "read_match_path": "uid",
+                }
+            ]
             body = []
             invalid = False
             child_ids = []
@@ -1202,11 +1264,22 @@ def native_operation_plan(
                     break
                 child_id = child.get("proposalObjectId")
                 relation = child.get("relation")
-                if not isinstance(child_id, str) or child_id not in proposal_objects or child_id in child_ids or (proposal_objects[child_id].get("mapping") or {}).get("proposedResourceType") != child_family or decisions.get(child_id, {}).get("action") != "create_request":
+                if (
+                    not isinstance(child_id, str)
+                    or child_id not in proposal_objects
+                    or child_id in child_ids
+                    or (proposal_objects[child_id].get("mapping") or {}).get(
+                        "proposedResourceType"
+                    )
+                    != child_family
+                    or decisions.get(child_id, {}).get("action") != "create_request"
+                ):
                     invalid = True
                     break
                 try:
-                    complete_relation = complete_capture_relation(resource_type, relation)
+                    complete_relation = complete_capture_relation(
+                        resource_type, relation
+                    )
                 except ValueError:
                     invalid = True
                     break
@@ -1216,16 +1289,42 @@ def native_operation_plan(
                 orders.add(complete_relation["order_number"])
                 child_ids.append(child_id)
                 body.append(complete_relation)
-                references.append({"family": child_family, "proposal_object_id": child_id,
-                    "body_path": f"{index}.uid", "read_match_nested_path": f"{collection}.{index}.uid"})
+                references.append(
+                    {
+                        "family": child_family,
+                        "proposal_object_id": child_id,
+                        "body_path": f"{index}.uid",
+                        "read_match_nested_path": f"{collection}.{index}.uid",
+                    }
+                )
             if invalid:
-                blockers.append({"proposal_object_id": object_id, "code": "OSB_NATIVE_V2_CAPTURE_REFERENCE_DTO_INVALID", "details": []})
+                blockers.append(
+                    {
+                        "proposal_object_id": object_id,
+                        "code": "OSB_NATIVE_V2_CAPTURE_REFERENCE_DTO_INVALID",
+                        "details": [],
+                    }
+                )
                 continue
             read_match = {collection: [dict(row) for row in body]}
-            operation = _operation(proposal_hash, object_id, resource_type,
-                root_path + "/{parent_uid}/" + collection.replace('_','-') + "/initialize",
-                body, None, read_match, target_study_uid, target_study_version, read_collection=False,
-                read_path=root_path + "/{parent_uid}", body_references=references, record_hash_scope="match")
+            operation = _operation(
+                proposal_hash,
+                object_id,
+                resource_type,
+                root_path
+                + "/{parent_uid}/"
+                + collection.replace("_", "-")
+                + "/initialize",
+                body,
+                None,
+                read_match,
+                target_study_uid,
+                target_study_version,
+                read_collection=False,
+                read_path=root_path + "/{parent_uid}",
+                body_references=references,
+                record_hash_scope="match",
+            )
             operation["capture_collection"] = {
                 "contract": COLLECTION_INITIALIZATION_CONTRACT,
                 "parent_object_id": parent,
@@ -1236,59 +1335,211 @@ def native_operation_plan(
         elif resource_type == "StudySelectionActivityInstance":
             values = _source_values(item)
             activity_id = _string(values.get("activityId"))
-            if candidate.get("resourceType") != "ActivityInstance" or not candidate.get("uid") or not activity_id:
-                blockers.append({"proposal_object_id": object_id, "code": "OSB_NATIVE_V2_ACTIVITY_INSTANCE_AUTHORITY_INCOMPLETE", "details": []})
+            if (
+                candidate.get("resourceType") != "ActivityInstance"
+                or not candidate.get("uid")
+                or not activity_id
+            ):
+                blockers.append(
+                    {
+                        "proposal_object_id": object_id,
+                        "code": "OSB_NATIVE_V2_ACTIVITY_INSTANCE_AUTHORITY_INCOMPLETE",
+                        "details": [],
+                    }
+                )
                 continue
             body = {"activity_instance_uid": candidate["uid"]}
             reconcile = {"activity_instance.uid": candidate["uid"]}
-            references = [{"family": "StudySelectionActivity", "identity_name": "activityId", "identity_value": activity_id,
-                "body_path": "study_activity_uid", "read_match_path": "study_activity_uid"}]
-            operations.append(_operation(proposal_hash, object_id, resource_type, path + "/study-activity-instances", body, None,
-                reconcile, target_study_uid, target_study_version, source_identity={"activityInstanceUid": candidate["uid"]},
-                body_references=references, record_hash_scope="match"))
+            references = [
+                {
+                    "family": "StudySelectionActivity",
+                    "identity_name": "activityId",
+                    "identity_value": activity_id,
+                    "body_path": "study_activity_uid",
+                    "read_match_path": "study_activity_uid",
+                }
+            ]
+            operations.append(
+                _operation(
+                    proposal_hash,
+                    object_id,
+                    resource_type,
+                    path + "/study-activity-instances",
+                    body,
+                    None,
+                    reconcile,
+                    target_study_uid,
+                    target_study_version,
+                    source_identity={"activityInstanceUid": candidate["uid"]},
+                    body_references=references,
+                    record_hash_scope="match",
+                )
+            )
         elif resource_type == "OdmItemActivityBinding":
             values = _source_values(item)
             body = values.get("nativeBody")
-            odm = next((dep for dep in dependencies.values() if dep.get("resourceType") == "OdmItem"), None)
-            instances = {dep["uid"] for dep in dependencies.values() if dep.get("resourceType") == "ActivityInstance"}
-            classes = {dep["uid"] for dep in dependencies.values() if dep.get("resourceType") == "ActivityItemClass"}
-            relations = body.get("activity_instances") if isinstance(body, dict) else None
-            if not odm or not isinstance(relations, list) or not relations or any(
-                row.get("activity_instance_uid") not in instances or row.get("activity_item_class_uid") not in classes for row in relations):
-                blockers.append({"proposal_object_id": object_id, "code": "OSB_NATIVE_V2_ODM_ACTIVITY_BINDING_AUTHORITY_INCOMPLETE", "details": []})
+            odm = next(
+                (
+                    dep
+                    for dep in dependencies.values()
+                    if dep.get("resourceType") == "OdmItem"
+                ),
+                None,
+            )
+            instances = {
+                dep["uid"]
+                for dep in dependencies.values()
+                if dep.get("resourceType") == "ActivityInstance"
+            }
+            classes = {
+                dep["uid"]
+                for dep in dependencies.values()
+                if dep.get("resourceType") == "ActivityItemClass"
+            }
+            relations = (
+                body.get("activity_instances") if isinstance(body, dict) else None
+            )
+            if (
+                not odm
+                or not isinstance(relations, list)
+                or not relations
+                or any(
+                    row.get("activity_instance_uid") not in instances
+                    or row.get("activity_item_class_uid") not in classes
+                    for row in relations
+                )
+            ):
+                blockers.append(
+                    {
+                        "proposal_object_id": object_id,
+                        "code": "OSB_NATIVE_V2_ODM_ACTIVITY_BINDING_AUTHORITY_INCOMPLETE",
+                        "details": [],
+                    }
+                )
                 continue
             if not body.get("change_description"):
-                blockers.append({"proposal_object_id": object_id, "code": "OSB_NATIVE_V2_ODM_ACTIVITY_BINDING_CHANGE_REASON_REQUIRED", "details": []})
+                blockers.append(
+                    {
+                        "proposal_object_id": object_id,
+                        "code": "OSB_NATIVE_V2_ODM_ACTIVITY_BINDING_CHANGE_REASON_REQUIRED",
+                        "details": [],
+                    }
+                )
                 continue
-            replacement_fields = {"name", "oid", "datatype", "prompt", "length", "significant_digits", "sas_field_name", "sds_var_name",
-                "origin", "comment", "translated_texts", "aliases", "unit_definitions", "codelist", "terms", "vendor_elements",
-                "vendor_element_attributes", "vendor_attributes", "activity_instances", "change_description"}
+            replacement_fields = {
+                "name",
+                "oid",
+                "datatype",
+                "prompt",
+                "length",
+                "significant_digits",
+                "sas_field_name",
+                "sds_var_name",
+                "origin",
+                "comment",
+                "translated_texts",
+                "aliases",
+                "unit_definitions",
+                "codelist",
+                "terms",
+                "vendor_elements",
+                "vendor_element_attributes",
+                "vendor_attributes",
+                "activity_instances",
+                "change_description",
+            }
             if not replacement_fields.issubset(body):
-                blockers.append({"proposal_object_id": object_id, "code": "OSB_NATIVE_V2_ODM_ACTIVITY_BINDING_COMPLETE_REPLACEMENT_REQUIRED", "details": sorted(replacement_fields - set(body))})
+                blockers.append(
+                    {
+                        "proposal_object_id": object_id,
+                        "code": "OSB_NATIVE_V2_ODM_ACTIVITY_BINDING_COMPLETE_REPLACEMENT_REQUIRED",
+                        "details": sorted(replacement_fields - set(body)),
+                    }
+                )
                 continue
-            instance_operations = {value.get("uid"): candidate_object_id for candidate_object_id, value in selected.items()
-                if (proposal_objects[candidate_object_id].get("mapping") or {}).get("proposedResourceType") == "StudySelectionActivityInstance"}
+            instance_operations = {
+                value.get("uid"): candidate_object_id
+                for candidate_object_id, value in selected.items()
+                if (proposal_objects[candidate_object_id].get("mapping") or {}).get(
+                    "proposedResourceType"
+                )
+                == "StudySelectionActivityInstance"
+            }
             if not instances.issubset(instance_operations):
-                blockers.append({"proposal_object_id": object_id, "code": "OSB_NATIVE_V2_STUDY_ACTIVITY_INSTANCE_REACHABILITY_UNRESOLVED", "details": sorted(instances - set(instance_operations))})
+                blockers.append(
+                    {
+                        "proposal_object_id": object_id,
+                        "code": "OSB_NATIVE_V2_STUDY_ACTIVITY_INSTANCE_REACHABILITY_UNRESOLVED",
+                        "details": sorted(instances - set(instance_operations)),
+                    }
+                )
                 continue
-            allowed_patch = CAPTURE_CONTRACTS["OdmItem"][1] | {"activity_instances", "change_description"}
+            allowed_patch = CAPTURE_CONTRACTS["OdmItem"][1] | {
+                "activity_instances",
+                "change_description",
+            }
             if set(body) - allowed_patch:
-                blockers.append({"proposal_object_id": object_id, "code": "OSB_NATIVE_V2_ODM_ACTIVITY_BINDING_UNKNOWN_PROPERTY", "details": sorted(set(body) - allowed_patch)})
+                blockers.append(
+                    {
+                        "proposal_object_id": object_id,
+                        "code": "OSB_NATIVE_V2_ODM_ACTIVITY_BINDING_UNKNOWN_PROPERTY",
+                        "details": sorted(set(body) - allowed_patch),
+                    }
+                )
                 continue
-            references = [{"family": "StudySelectionActivityInstance", "proposal_object_id": instance_operations[uid],
-                "require_receipt_only": True} for uid in sorted(instances)]
+            references = [
+                {
+                    "family": "StudySelectionActivityInstance",
+                    "proposal_object_id": instance_operations[uid],
+                    "require_receipt_only": True,
+                }
+                for uid in sorted(instances)
+            ]
             # Complete PATCH body is review-bound. The native API validates exact
             # item class membership and creates LINKS_TO_ACTIVITY_ITEM edges.
-            reconcile = {key: value for key, value in body.items() if key != "change_description"}
-            operations.append(_operation(proposal_hash, object_id, resource_type, f"/odms/items/{odm['uid']}", body, None,
-                reconcile, target_study_uid, target_study_version, method="PATCH", read_collection=False, record_hash_scope="match", body_references=references))
+            reconcile = {
+                key: value for key, value in body.items() if key != "change_description"
+            }
+            operations.append(
+                _operation(
+                    proposal_hash,
+                    object_id,
+                    resource_type,
+                    f"/odms/items/{odm['uid']}",
+                    body,
+                    None,
+                    reconcile,
+                    target_study_uid,
+                    target_study_version,
+                    method="PATCH",
+                    read_collection=False,
+                    record_hash_scope="match",
+                    body_references=references,
+                )
+            )
         elif resource_type in CAPTURE_CONTRACTS:
-            capture_path, body, reconcile, error = capture_operation_values(resource_type, _source_values(item))
+            capture_path, body, reconcile, error = capture_operation_values(
+                resource_type, _source_values(item)
+            )
             if error:
-                blockers.append({"proposal_object_id": object_id, "code": error, "details": []})
+                blockers.append(
+                    {"proposal_object_id": object_id, "code": error, "details": []}
+                )
                 continue
-            operations.append(_operation(proposal_hash, object_id, resource_type, capture_path,
-                body, None, reconcile, target_study_uid, target_study_version, record_hash_scope="match"))
+            operations.append(
+                _operation(
+                    proposal_hash,
+                    object_id,
+                    resource_type,
+                    capture_path,
+                    body,
+                    None,
+                    reconcile,
+                    target_study_uid,
+                    target_study_version,
+                    record_hash_scope="match",
+                )
+            )
         elif resource_type == "StudyMetadata":
             value, reconcile, error = _metadata_operation_value(item, dependencies)
             if error:

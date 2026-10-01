@@ -5,6 +5,9 @@ migrations 001-046 applied. The worker DSN must use the non-owner osb_importer
 role; fixture setup is the only code that uses owner credentials.
 """
 
+# pylint cannot infer the psycopg connection that psycopg.connect() returns
+# pylint: disable=no-member
+
 import json
 import os
 import uuid

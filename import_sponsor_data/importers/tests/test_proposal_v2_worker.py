@@ -1,3 +1,8 @@
+# exact == [] / == {} comparisons are the assertion
+# tests exercise private helpers directly
+# minimal test doubles implement only the methods under test
+# pylint: disable=use-implicit-booleaness-not-comparison,protected-access,too-few-public-methods
+
 import json
 import logging
 
@@ -30,11 +35,9 @@ class FakeDb:
 
     def claim_review_required(self, owner, study_id=None):
         self.claimed_studies.append(("review", study_id))
-        return None
 
     def claim_review_complete(self, owner, study_id=None):
         self.claimed_studies.append(("native", study_id))
-        return None
 
     def renew_lease(self, outbox_id, owner, generation, lease_seconds):
         self.generations.append(("renew", generation))
@@ -220,11 +223,9 @@ def test_requested_study_scopes_intake_and_review_claims():
     class EmptyDb(FakeDb):
         def claim_next(self, owner, study_id=None):
             self.claimed_studies.append(("intake", study_id))
-            return None
 
         def claim_review_required(self, owner, study_id=None):
             self.claimed_studies.append(("review", study_id))
-            return None
 
     db = EmptyDb(proposal("expected-hash"))
     scoped_worker = worker(db)
@@ -265,7 +266,6 @@ class FakeReviewDb(FakeDb):
 
     def claim_next(self, owner, study_id=None):
         self.claimed_studies.append(("intake", study_id))
-        return None
 
     def claim_review_required(self, owner, study_id=None):
         self.claimed_studies.append(("review", study_id))
@@ -509,79 +509,87 @@ def native_epoch_visit_proposal():
     return {
         "proposalHash": "epoch-visit-proposal-hash",
         "studyId": "source-study",
-        "sections": {"study": [
-            {
-                "proposalObjectId": "epoch-object",
-                "targetKey": "study-epoch",
-                "dependencyTargetKeys": ["epoch-subtype"],
-                "source": {"values": [
-                    {"name": "epochId", "value": "epoch-treatment"},
-                    {"name": "name", "value": "Treatment Period"},
-                    {"name": "order", "value": 1},
-                ]},
-                "mapping": {
-                    "factIds": ["epoch-fact"],
-                    "proposedResourceType": "StudyEpoch",
-                    "candidates": [],
-                },
-            },
-            {
-                "proposalObjectId": "epoch-subtype-object",
-                "targetKey": "epoch-subtype",
-                "dependencyTargetKeys": [],
-                "mapping": {
-                    "factIds": ["epoch-fact"],
-                    "proposedResourceType": "CTTerm",
-                    "candidates": [epoch_subtype],
-                },
-            },
-            {
-                "proposalObjectId": "visit-object",
-                "targetKey": "study-visit",
-                "dependencyTargetKeys": [
-                    "visit-type", "visit-contact-mode", "visit-time-reference",
-                    "visit-time-unit",
-                ],
-                "source": {"values": [
-                    {"name": "visitId", "value": "visit-day-1"},
-                    {"name": "epochId", "value": "epoch-treatment"},
-                    {"name": "name", "value": "Day 1"},
-                    {"name": "visitClass", "value": "MANUALLY_DEFINED_VISIT"},
-                    {"name": "showVisit", "value": True},
-                    {"name": "isGlobalAnchorVisit", "value": True},
-                    {"name": "sequenceOrder", "value": 1},
-                    {"name": "visitName", "value": "Day 1"},
-                    {"name": "visitShortName", "value": "Day 1"},
-                    {"name": "visitNumber", "value": 1},
-                    {"name": "uniqueVisitNumber", "value": 100},
-                    {"name": "timeValue", "value": 0},
-                    {"name": "nativeTimingReady", "value": True},
-                ]},
-                "mapping": {
-                    "factIds": ["visit-fact"],
-                    "proposedResourceType": "StudyVisit",
-                    "candidates": [],
-                },
-            },
-            *[
+        "sections": {
+            "study": [
                 {
-                    "proposalObjectId": f"{target_key}-object",
-                    "targetKey": target_key,
+                    "proposalObjectId": "epoch-object",
+                    "targetKey": "study-epoch",
+                    "dependencyTargetKeys": ["epoch-subtype"],
+                    "source": {
+                        "values": [
+                            {"name": "epochId", "value": "epoch-treatment"},
+                            {"name": "name", "value": "Treatment Period"},
+                            {"name": "order", "value": 1},
+                        ]
+                    },
+                    "mapping": {
+                        "factIds": ["epoch-fact"],
+                        "proposedResourceType": "StudyEpoch",
+                        "candidates": [],
+                    },
+                },
+                {
+                    "proposalObjectId": "epoch-subtype-object",
+                    "targetKey": "epoch-subtype",
                     "dependencyTargetKeys": [],
                     "mapping": {
-                        "factIds": ["visit-fact"],
-                        "proposedResourceType": resource_type,
-                        "candidates": [candidate_value],
+                        "factIds": ["epoch-fact"],
+                        "proposedResourceType": "CTTerm",
+                        "candidates": [epoch_subtype],
                     },
-                }
-                for target_key, resource_type, candidate_value in [
-                    ("visit-type", "CTTerm", visit_type),
-                    ("visit-contact-mode", "CTTerm", contact),
-                    ("visit-time-reference", "CTTerm", time_reference),
-                    ("visit-time-unit", "UnitDefinition", day),
-                ]
-            ],
-        ]},
+                },
+                {
+                    "proposalObjectId": "visit-object",
+                    "targetKey": "study-visit",
+                    "dependencyTargetKeys": [
+                        "visit-type",
+                        "visit-contact-mode",
+                        "visit-time-reference",
+                        "visit-time-unit",
+                    ],
+                    "source": {
+                        "values": [
+                            {"name": "visitId", "value": "visit-day-1"},
+                            {"name": "epochId", "value": "epoch-treatment"},
+                            {"name": "name", "value": "Day 1"},
+                            {"name": "visitClass", "value": "MANUALLY_DEFINED_VISIT"},
+                            {"name": "showVisit", "value": True},
+                            {"name": "isGlobalAnchorVisit", "value": True},
+                            {"name": "sequenceOrder", "value": 1},
+                            {"name": "visitName", "value": "Day 1"},
+                            {"name": "visitShortName", "value": "Day 1"},
+                            {"name": "visitNumber", "value": 1},
+                            {"name": "uniqueVisitNumber", "value": 100},
+                            {"name": "timeValue", "value": 0},
+                            {"name": "nativeTimingReady", "value": True},
+                        ]
+                    },
+                    "mapping": {
+                        "factIds": ["visit-fact"],
+                        "proposedResourceType": "StudyVisit",
+                        "candidates": [],
+                    },
+                },
+                *[
+                    {
+                        "proposalObjectId": f"{target_key}-object",
+                        "targetKey": target_key,
+                        "dependencyTargetKeys": [],
+                        "mapping": {
+                            "factIds": ["visit-fact"],
+                            "proposedResourceType": resource_type,
+                            "candidates": [candidate_value],
+                        },
+                    }
+                    for target_key, resource_type, candidate_value in [
+                        ("visit-type", "CTTerm", visit_type),
+                        ("visit-contact-mode", "CTTerm", contact),
+                        ("visit-time-reference", "CTTerm", time_reference),
+                        ("visit-time-unit", "UnitDefinition", day),
+                    ]
+                ],
+            ]
+        },
     }
 
 
@@ -599,47 +607,53 @@ def native_soa_schedule_proposal():
         "uid": "FlowchartGroup_Safety",
         "parentSubmissionValue": "Flowchart Group",
     }
-    value["sections"]["study"].extend([
-        {
-            "proposalObjectId": "activity-object",
-            "targetKey": "soa-activity",
-            "dependencyTargetKeys": ["soa-activity-flowchart-group"],
-            "source": {"values": [
-                {"name": "activityId", "value": "soa-activity-bp"},
-                {"name": "name", "value": "Blood pressure"},
-            ]},
-            "mapping": {
-                "factIds": ["activity-fact"],
-                "proposedResourceType": "StudySelectionActivity",
-                "candidates": [activity],
+    value["sections"]["study"].extend(
+        [
+            {
+                "proposalObjectId": "activity-object",
+                "targetKey": "soa-activity",
+                "dependencyTargetKeys": ["soa-activity-flowchart-group"],
+                "source": {
+                    "values": [
+                        {"name": "activityId", "value": "soa-activity-bp"},
+                        {"name": "name", "value": "Blood pressure"},
+                    ]
+                },
+                "mapping": {
+                    "factIds": ["activity-fact"],
+                    "proposedResourceType": "StudySelectionActivity",
+                    "candidates": [activity],
+                },
             },
-        },
-        {
-            "proposalObjectId": "flowchart-object",
-            "targetKey": "soa-activity-flowchart-group",
-            "dependencyTargetKeys": [],
-            "mapping": {
-                "factIds": ["activity-fact"],
-                "proposedResourceType": "CTTerm",
-                "candidates": [flowchart],
+            {
+                "proposalObjectId": "flowchart-object",
+                "targetKey": "soa-activity-flowchart-group",
+                "dependencyTargetKeys": [],
+                "mapping": {
+                    "factIds": ["activity-fact"],
+                    "proposedResourceType": "CTTerm",
+                    "candidates": [flowchart],
+                },
             },
-        },
-        {
-            "proposalObjectId": "schedule-object",
-            "targetKey": "activity-schedule",
-            "dependencyTargetKeys": [],
-            "source": {"values": [
-                {"name": "scheduleId", "value": "sf-1"},
-                {"name": "activityId", "value": "soa-activity-bp"},
-                {"name": "visitId", "value": "visit-day-1"},
-            ]},
-            "mapping": {
-                "factIds": ["schedule-fact"],
-                "proposedResourceType": "StudyActivitySchedule",
-                "candidates": [],
+            {
+                "proposalObjectId": "schedule-object",
+                "targetKey": "activity-schedule",
+                "dependencyTargetKeys": [],
+                "source": {
+                    "values": [
+                        {"name": "scheduleId", "value": "sf-1"},
+                        {"name": "activityId", "value": "soa-activity-bp"},
+                        {"name": "visitId", "value": "visit-day-1"},
+                    ]
+                },
+                "mapping": {
+                    "factIds": ["schedule-fact"],
+                    "proposedResourceType": "StudyActivitySchedule",
+                    "candidates": [],
+                },
             },
-        },
-    ])
+        ]
+    )
     return value
 
 
@@ -749,78 +763,88 @@ def native_design_graph_proposal():
     return {
         "proposalHash": "design-graph-proposal-hash",
         "studyId": "source-study",
-        "sections": {"study": [
-            {
-                "proposalObjectId": "arm-object",
-                "targetKey": "study-arm",
-                "dependencyTargetKeys": [],
-                "source": {"values": [
-                    {"name": "armId", "value": "arm-a"},
-                    {"name": "name", "value": "Arm A"},
-                ]},
-                "mapping": {
-                    "factIds": ["arm-fact"],
-                    "proposedResourceType": "StudySelectionArm",
-                    "candidates": [],
+        "sections": {
+            "study": [
+                {
+                    "proposalObjectId": "arm-object",
+                    "targetKey": "study-arm",
+                    "dependencyTargetKeys": [],
+                    "source": {
+                        "values": [
+                            {"name": "armId", "value": "arm-a"},
+                            {"name": "name", "value": "Arm A"},
+                        ]
+                    },
+                    "mapping": {
+                        "factIds": ["arm-fact"],
+                        "proposedResourceType": "StudySelectionArm",
+                        "candidates": [],
+                    },
                 },
-            },
-            {
-                "proposalObjectId": "element-object",
-                "targetKey": "study-element",
-                "dependencyTargetKeys": [],
-                "source": {"values": [
-                    {"name": "elementId", "value": "element-active"},
-                    {"name": "name", "value": "Active treatment"},
-                ]},
-                "mapping": {
-                    "factIds": ["element-fact"],
-                    "proposedResourceType": "StudySelectionElement",
-                    "candidates": [],
+                {
+                    "proposalObjectId": "element-object",
+                    "targetKey": "study-element",
+                    "dependencyTargetKeys": [],
+                    "source": {
+                        "values": [
+                            {"name": "elementId", "value": "element-active"},
+                            {"name": "name", "value": "Active treatment"},
+                        ]
+                    },
+                    "mapping": {
+                        "factIds": ["element-fact"],
+                        "proposedResourceType": "StudySelectionElement",
+                        "candidates": [],
+                    },
                 },
-            },
-            {
-                "proposalObjectId": "epoch-object",
-                "targetKey": "study-epoch",
-                "dependencyTargetKeys": ["epoch-subtype"],
-                "source": {"values": [
-                    {"name": "epochId", "value": "epoch-treatment"},
-                    {"name": "name", "value": "Treatment"},
-                    {"name": "order", "value": 1},
-                ]},
-                "mapping": {
-                    "factIds": ["epoch-fact"],
-                    "proposedResourceType": "StudyEpoch",
-                    "candidates": [],
+                {
+                    "proposalObjectId": "epoch-object",
+                    "targetKey": "study-epoch",
+                    "dependencyTargetKeys": ["epoch-subtype"],
+                    "source": {
+                        "values": [
+                            {"name": "epochId", "value": "epoch-treatment"},
+                            {"name": "name", "value": "Treatment"},
+                            {"name": "order", "value": 1},
+                        ]
+                    },
+                    "mapping": {
+                        "factIds": ["epoch-fact"],
+                        "proposedResourceType": "StudyEpoch",
+                        "candidates": [],
+                    },
                 },
-            },
-            {
-                "proposalObjectId": "epoch-subtype-object",
-                "targetKey": "epoch-subtype",
-                "dependencyTargetKeys": [],
-                "mapping": {
-                    "factIds": ["epoch-fact"],
-                    "proposedResourceType": "CTTerm",
-                    "candidates": [epoch_subtype],
+                {
+                    "proposalObjectId": "epoch-subtype-object",
+                    "targetKey": "epoch-subtype",
+                    "dependencyTargetKeys": [],
+                    "mapping": {
+                        "factIds": ["epoch-fact"],
+                        "proposedResourceType": "CTTerm",
+                        "candidates": [epoch_subtype],
+                    },
                 },
-            },
-            {
-                "proposalObjectId": "cell-object",
-                "targetKey": "study-design-cell",
-                "dependencyTargetKeys": [],
-                "source": {"values": [
-                    {"name": "designCellId", "value": "cell-a-treatment"},
-                    {"name": "armId", "value": "arm-a"},
-                    {"name": "epochId", "value": "epoch-treatment"},
-                    {"name": "elementId", "value": "element-active"},
-                    {"name": "order", "value": 1},
-                ]},
-                "mapping": {
-                    "factIds": ["cell-fact"],
-                    "proposedResourceType": "StudyDesignCell",
-                    "candidates": [],
+                {
+                    "proposalObjectId": "cell-object",
+                    "targetKey": "study-design-cell",
+                    "dependencyTargetKeys": [],
+                    "source": {
+                        "values": [
+                            {"name": "designCellId", "value": "cell-a-treatment"},
+                            {"name": "armId", "value": "arm-a"},
+                            {"name": "epochId", "value": "epoch-treatment"},
+                            {"name": "elementId", "value": "element-active"},
+                            {"name": "order", "value": 1},
+                        ]
+                    },
+                    "mapping": {
+                        "factIds": ["cell-fact"],
+                        "proposedResourceType": "StudyDesignCell",
+                        "candidates": [],
+                    },
                 },
-            },
-        ]},
+            ]
+        },
     }
 
 
@@ -832,11 +856,9 @@ class FakeNativeDb(FakeDb):
 
     def claim_next(self, owner, study_id=None):
         self.claimed_studies.append(("intake", study_id))
-        return None
 
     def claim_review_required(self, owner, study_id=None):
         self.claimed_studies.append(("review", study_id))
-        return None
 
     def claim_review_complete(self, owner, study_id=None):
         self.claimed_studies.append(("native", study_id))
@@ -960,9 +982,7 @@ class FakeNativeApi:
             record = {
                 "study_endpoint_uid": "StudyEndpoint_1",
                 "endpoint": {
-                    "template": {
-                        "uid": body["endpoint_data"]["endpoint_template_uid"]
-                    }
+                    "template": {"uid": body["endpoint_data"]["endpoint_template_uid"]}
                 },
                 "endpoint_level": {"term_uid": body["endpoint_level_uid"]},
             }
@@ -996,9 +1016,7 @@ class FakeNativeApi:
                 **body,
             }
             if body.get("element_subtype_uid"):
-                record["element_subtype"] = {
-                    "term_uid": body["element_subtype_uid"]
-                }
+                record["element_subtype"] = {"term_uid": body["element_subtype_uid"]}
             collection = self.elements
         elif path.endswith("/study-epochs"):
             record = {
@@ -1180,9 +1198,7 @@ def test_endpoint_resolves_objective_uid_from_prior_native_receipt(monkeypatch):
     proposal_value = native_template_proposal("objective")
     proposal_value["proposalHash"] = "objective-endpoint-proposal-hash"
     objective = proposal_value["sections"]["study"][0]
-    objective["source"] = {
-        "values": [{"name": "objectiveId", "value": "OBJ-1"}]
-    }
+    objective["source"] = {"values": [{"name": "objectiveId", "value": "OBJ-1"}]}
     endpoint_template = {
         "candidateKey": "endpoint-template-candidate",
         "resourceType": "EndpointTemplate",
@@ -1202,9 +1218,7 @@ def test_endpoint_resolves_objective_uid_from_prior_native_receipt(monkeypatch):
                 "proposalObjectId": "endpoint-object",
                 "targetKey": "endpoint-selection",
                 "dependencyTargetKeys": ["endpoint-level"],
-                "source": {
-                    "values": [{"name": "objectiveId", "value": "OBJ-1"}]
-                },
+                "source": {"values": [{"name": "objectiveId", "value": "OBJ-1"}]},
                 "mapping": {
                     "factIds": ["endpoint-fact"],
                     "proposedResourceType": "StudySelectionEndpoint",
@@ -1232,7 +1246,9 @@ def test_endpoint_resolves_objective_uid_from_prior_native_receipt(monkeypatch):
 
     assert result["status"] == "succeeded"
     assert result["planned_operations"] == 2
-    endpoint_call = next(call for call in api.post_calls if call[0].endswith("study-endpoints"))
+    endpoint_call = next(
+        call for call in api.post_calls if call[0].endswith("study-endpoints")
+    )
     assert endpoint_call[1]["study_objective_uid"] == "StudyObjective_1"
     assert api.endpoints[0]["study_objective"] == {
         "study_objective_uid": "StudyObjective_1"
@@ -1257,9 +1273,7 @@ def test_visit_resolves_epoch_uid_from_prior_native_receipt(monkeypatch):
     ]
     assert api.post_calls[1][1]["study_epoch_uid"] == "StudyEpoch_1"
     assert api.visits[0]["study_epoch_uid"] == "StudyEpoch_1"
-    receipts = [
-        item for _, _, item in db.results if item["kind"] == "native_operation"
-    ]
+    receipts = [item for _, _, item in db.results if item["kind"] == "native_operation"]
     assert [(item["family"], item["native_uid"]) for item in receipts] == [
         ("StudyEpoch", "StudyEpoch_1"),
         ("StudyVisit", "StudyVisit_1"),
@@ -1291,14 +1305,14 @@ def test_soa_schedule_resolves_activity_and_visit_uids_and_persists_relationship
         "study_activity_uid": "StudyActivity_1",
         "study_visit_uid": "StudyVisit_1",
     }
-    assert api.schedules == [{
-        "study_activity_schedule_uid": "StudyActivitySchedule_1",
-        "study_activity_uid": "StudyActivity_1",
-        "study_visit_uid": "StudyVisit_1",
-    }]
-    receipts = [
-        item for _, _, item in db.results if item["kind"] == "native_operation"
+    assert api.schedules == [
+        {
+            "study_activity_schedule_uid": "StudyActivitySchedule_1",
+            "study_activity_uid": "StudyActivity_1",
+            "study_visit_uid": "StudyVisit_1",
+        }
     ]
+    receipts = [item for _, _, item in db.results if item["kind"] == "native_operation"]
     assert [(item["family"], item["native_uid"]) for item in receipts] == [
         ("StudyEpoch", "StudyEpoch_1"),
         ("StudySelectionActivity", "StudyActivity_1"),
@@ -1337,9 +1351,7 @@ def test_design_cell_resolves_arm_epoch_and_element_uids_from_native_receipts(
     assert api.design_cells[0]["study_arm_uid"] == "StudyArm_1"
     assert api.design_cells[0]["study_epoch_uid"] == "StudyEpoch_1"
     assert api.design_cells[0]["study_element_uid"] == "StudyElement_1"
-    receipts = [
-        item for _, _, item in db.results if item["kind"] == "native_operation"
-    ]
+    receipts = [item for _, _, item in db.results if item["kind"] == "native_operation"]
     assert [(item["family"], item["native_uid"]) for item in receipts] == [
         ("StudySelectionArm", "StudyArm_1"),
         ("StudySelectionElement", "StudyElement_1"),
@@ -1601,7 +1613,10 @@ def test_nested_body_paths_index_batch_envelopes():
     assert body == [
         {
             "method": "POST",
-            "content": {"activity_instruction_uid": "AI_1", "study_activity_uid": "SA_1"},
+            "content": {
+                "activity_instruction_uid": "AI_1",
+                "study_activity_uid": "SA_1",
+            },
         }
     ]
     mapping = {}

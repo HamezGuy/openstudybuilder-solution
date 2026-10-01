@@ -54,7 +54,7 @@ import sys
 
 from .functions.utils import load_env
 from .mappings import payload_to_osb as mapping
-from .utils.ecrf_platform_db import EcrfPlatformDb, IMPORTER_VERSION
+from .utils.ecrf_platform_db import IMPORTER_VERSION, EcrfPlatformDb
 from .utils.importer import BaseImporter
 from .utils.mapping_authority import assert_unsafe_legacy_mutation_allowed
 from .utils.metrics import Metrics
@@ -241,7 +241,6 @@ class ImportCensus:
         return "partial" if self.stopped or self.release_blockers else "succeeded"
 
 
-
 # Fields that OSB requires on an ODM *Patch* input but not on the matching
 # *Post* input (computed from the live OpenAPI: the union of required keys on
 # every Odm*PatchInput minus the union on every Odm*PostInput). _reconcile
@@ -267,6 +266,7 @@ PATCH_ONLY_REQUIRED_FIELDS = (
     "terms",
     "value_regex",
 )
+
 
 class Import360i(BaseImporter):
     logging_name = "import_360i"
@@ -342,19 +342,26 @@ class Import360i(BaseImporter):
         )
         wanted_key = self._semantic_key(wanted)
         codelist_uid = NATIVE_CODELIST_UIDS[codelist_name]
-        terms = self.api.get_all_from_api(
-            "/ct/terms", params={"codelist_uid": codelist_uid, "page_size": 0}
-        ) or []
+        terms = (
+            self.api.get_all_from_api(
+                "/ct/terms", params={"codelist_uid": codelist_uid, "page_size": 0}
+            )
+            or []
+        )
         matches = [
             term
             for term in terms
-            if self._semantic_key((term.get("name") or {}).get("sponsor_preferred_name"))
+            if self._semantic_key(
+                (term.get("name") or {}).get("sponsor_preferred_name")
+            )
             == wanted_key
             and str((term.get("name") or {}).get("status") or "").lower() == "final"
             and str((term.get("attributes") or {}).get("status") or "").lower()
             == "final"
         ]
-        unique = {term.get("term_uid"): term for term in matches if term.get("term_uid")}
+        unique = {
+            term.get("term_uid"): term for term in matches if term.get("term_uid")
+        }
         if len(unique) != 1:
             return None, (
                 f"expected one Final OSB term named '{wanted}' in codelist "
@@ -370,9 +377,10 @@ class Import360i(BaseImporter):
 
     def _lookup_final_ct_term(self, codelist_name, term_name):
         """Resolve one unique exact Final term from one live OSB codelist."""
-        codelists = self.api.get_all_from_api(
-            "/ct/codelists/names", params={"page_size": 0}
-        ) or []
+        codelists = (
+            self.api.get_all_from_api("/ct/codelists/names", params={"page_size": 0})
+            or []
+        )
         matches = [
             item
             for item in codelists
@@ -386,14 +394,19 @@ class Import360i(BaseImporter):
                 f"found {len(unique_codelists)}"
             )
         codelist_uid = next(iter(unique_codelists))
-        terms = self.api.get_all_from_api(
-            "/ct/terms", params={"codelist_uid": codelist_uid, "page_size": 0}
-        ) or []
+        terms = (
+            self.api.get_all_from_api(
+                "/ct/terms", params={"codelist_uid": codelist_uid, "page_size": 0}
+            )
+            or []
+        )
         wanted = self._semantic_key(term_name)
         term_matches = [
             term
             for term in terms
-            if self._semantic_key((term.get("name") or {}).get("sponsor_preferred_name"))
+            if self._semantic_key(
+                (term.get("name") or {}).get("sponsor_preferred_name")
+            )
             == wanted
             and str((term.get("name") or {}).get("status") or "").lower() == "final"
             and str((term.get("attributes") or {}).get("status") or "").lower()
@@ -452,9 +465,7 @@ class Import360i(BaseImporter):
 
         def named(label):
             return [
-                unit
-                for unit in unique
-                if self._semantic_key(unit.get("name")) == label
+                unit for unit in unique if self._semantic_key(unit.get("name")) == label
             ]
 
         for label in ("years", "year"):
@@ -494,9 +505,13 @@ class Import360i(BaseImporter):
                 )
                 return None
             programme_uid = res["uid"]
-            self.census.created.append({"kind": "clinical_programme", "ref": OSB_CLINICAL_PROGRAMME})
+            self.census.created.append(
+                {"kind": "clinical_programme", "ref": OSB_CLINICAL_PROGRAMME}
+            )
         else:
-            self.census.unchanged.append({"kind": "clinical_programme", "ref": OSB_CLINICAL_PROGRAMME})
+            self.census.unchanged.append(
+                {"kind": "clinical_programme", "ref": OSB_CLINICAL_PROGRAMME}
+            )
 
         project_number = mapping.project_number_for(payload)
         projects = self.api.get_all_from_api("/projects")
@@ -555,7 +570,9 @@ class Import360i(BaseImporter):
                 if not self.api.simple_approve(
                     f"/concepts/unit-definitions/{uid}/approvals"
                 ):
-                    self.census.stop("unit", unit_name, "unit-definition approval failed")
+                    self.census.stop(
+                        "unit", unit_name, "unit-definition approval failed"
+                    )
                     continue
                 self.census.created.append({"kind": "unit", "ref": unit_name})
             unit_uid_by_name[unit_name.lower()] = uid
@@ -681,7 +698,11 @@ class Import360i(BaseImporter):
                     )
                     continue
                 terms.append(
-                    {"term_uid": term_uid, "name": term["name"], "order": term.get("order")}
+                    {
+                        "term_uid": term_uid,
+                        "name": term["name"],
+                        "order": term.get("order"),
+                    }
                 )
                 self.census.created.append(
                     {"kind": "codelist_term", "ref": f"{name}/{term['name']}"}
@@ -736,13 +757,25 @@ class Import360i(BaseImporter):
                 self.census.stop("study_native_metadata", target_field, error)
                 return
             patch_sections.setdefault(section_name, {})[target_field] = term
-            expected.append(((section_name, target_field, "term_uid"), term["term_uid"]))
+            expected.append(
+                ((section_name, target_field, "term_uid"), term["term_uid"])
+            )
 
         high = native.get("highLevelStudyDesign") or {}
         population = native.get("studyPopulation") or {}
         intervention = native.get("studyIntervention") or {}
-        add_term("high_level_study_design", "observational_model_code", high.get("observationalModel"), CODELIST_OBSERVATIONAL_MODEL)
-        add_term("high_level_study_design", "observational_time_perspective_code", high.get("observationalTimePerspective"), CODELIST_OBSERVATIONAL_TIME_PERSPECTIVE)
+        add_term(
+            "high_level_study_design",
+            "observational_model_code",
+            high.get("observationalModel"),
+            CODELIST_OBSERVATIONAL_MODEL,
+        )
+        add_term(
+            "high_level_study_design",
+            "observational_time_perspective_code",
+            high.get("observationalTimePerspective"),
+            CODELIST_OBSERVATIONAL_TIME_PERSPECTIVE,
+        )
         add_term(
             "high_level_study_design",
             "study_type_code",
@@ -795,7 +828,9 @@ class Import360i(BaseImporter):
             expected.append((("study_population", "healthy_subject_indicator"), value))
 
         expected_subjects = population.get("numberOfExpectedSubjects")
-        if isinstance(expected_subjects, int) and not isinstance(expected_subjects, bool):
+        if isinstance(expected_subjects, int) and not isinstance(
+            expected_subjects, bool
+        ):
             patch_sections.setdefault("study_population", {})[
                 "number_of_expected_subjects"
             ] = expected_subjects
@@ -804,17 +839,11 @@ class Import360i(BaseImporter):
             )
 
         age_values = {
-            "planned_minimum_age_of_subjects": population.get(
-                "plannedMinimumAgeYears"
-            ),
-            "planned_maximum_age_of_subjects": population.get(
-                "plannedMaximumAgeYears"
-            ),
+            "planned_minimum_age_of_subjects": population.get("plannedMinimumAgeYears"),
+            "planned_maximum_age_of_subjects": population.get("plannedMaximumAgeYears"),
         }
         requested_ages = {
-            key: value
-            for key, value in age_values.items()
-            if value is not None
+            key: value for key, value in age_values.items() if value is not None
         }
         for key, value in requested_ages.items():
             if not isinstance(value, int) or isinstance(value, bool) or value < 0:
@@ -868,10 +897,7 @@ class Import360i(BaseImporter):
         if not patch_sections:
             return False
 
-        if all(
-            self._at(current_metadata, path) == wanted
-            for path, wanted in expected
-        ):
+        if all(self._at(current_metadata, path) == wanted for path, wanted in expected):
             self.census.unchanged.append(
                 {
                     "kind": "study_native_metadata",
@@ -887,7 +913,9 @@ class Import360i(BaseImporter):
         }
         if self.api.patch_to_api(body, "/studies/", params={"dry": True}) is None:
             self.census.stop(
-                "study_native_metadata", study_uid, "OSB dry validation rejected the patch"
+                "study_native_metadata",
+                study_uid,
+                "OSB dry validation rejected the patch",
             )
             return False
         if self.api.patch_to_api(body, "/studies/") is None:
@@ -896,16 +924,19 @@ class Import360i(BaseImporter):
             )
             return False
 
-        read_back = self.api.get_all_from_api(
-            f"/studies/{study_uid}",
-            params={
-                "include_sections": [
-                    "high_level_study_design",
-                    "study_population",
-                    "study_intervention",
-                ]
-            },
-        ) or {}
+        read_back = (
+            self.api.get_all_from_api(
+                f"/studies/{study_uid}",
+                params={
+                    "include_sections": [
+                        "high_level_study_design",
+                        "study_population",
+                        "study_intervention",
+                    ]
+                },
+            )
+            or {}
+        )
         actual_metadata = read_back.get("current_metadata") or {}
         mismatches = [
             {
@@ -948,28 +979,31 @@ class Import360i(BaseImporter):
         current_metadata = (current or {}).get("current_metadata", {})
         current_ident = current_metadata.get("identification_metadata") or {}
         current_desc = current_metadata.get("study_description") or {}
-        changed = self._sync_native_study_metadata(
-            payload, study_uid, current_metadata
-        ) or changed
+        changed = (
+            self._sync_native_study_metadata(payload, study_uid, current_metadata)
+            or changed
+        )
 
         reg = payload.get("study", {}).get("registryIdentifiers", {})
         non_null = {key: value for key, value in reg.items() if value is not None}
         current_registry = current_ident.get("registry_identifiers") or {}
-        if non_null and any(current_registry.get(key) != value for key, value in non_null.items()):
+        if non_null and any(
+            current_registry.get(key) != value for key, value in non_null.items()
+        ):
             result = self.api.patch_to_api(
                 {
                     "uid": study_uid,
                     "current_metadata": {
-                        "identification_metadata": {
-                            "registry_identifiers": non_null
-                        }
+                        "identification_metadata": {"registry_identifiers": non_null}
                     },
                 },
                 "/studies/",
             )
             if result is None:
                 self.census.stop(
-                    "registry_identifiers", study_uid, "registry identifier patch failed"
+                    "registry_identifiers",
+                    study_uid,
+                    "registry identifier patch failed",
                 )
             else:
                 changed = True
@@ -1107,9 +1141,7 @@ class Import360i(BaseImporter):
         existing_numbers = set()
         existing_acronyms = set()
         studies = self.api.get_all_from_api("/studies") or []
-        studies += (
-            self.api.get_all_from_api("/studies", params={"deleted": True}) or []
-        )
+        studies += self.api.get_all_from_api("/studies", params={"deleted": True}) or []
         for s in studies:
             ident = s.get("current_metadata", {}).get("identification_metadata", {})
             if ident.get("study_number"):
@@ -1140,7 +1172,9 @@ class Import360i(BaseImporter):
         self.log.info("Creating study number %s", study_number)
         res = self.api.simple_post_to_api("/studies", body, "/studies")
         if res is None:
-            self.census.stop("study", payload["source"]["studyId"], "study create failed")
+            self.census.stop(
+                "study", payload["source"]["studyId"], "study create failed"
+            )
             return None
         study_uid = res["uid"]
         self.census.created.append({"kind": "study", "ref": study_uid})
@@ -1157,7 +1191,9 @@ class Import360i(BaseImporter):
         """
         plans, is_scaffolding = mapping.epochs_plan(payload)
         if not plans:
-            self.census.block_release("epoch", "*", "OSB_STUDY_EPOCH_AUTHORITY_REQUIRED")
+            self.census.block_release(
+                "epoch", "*", "OSB_STUDY_EPOCH_AUTHORITY_REQUIRED"
+            )
             # A held source fact never authorizes deletion of existing structure.
             return {}, False, []
         epoch_uid_by_ref = {}
@@ -1171,9 +1207,9 @@ class Import360i(BaseImporter):
             # Retain the carrier that the most visits currently use; this lets
             # a repair converge without trying to move the whole calendar to
             # an empty later duplicate (which OSB's epoch chronology rejects).
-            visits = self.api.get_all_from_api(
-                f"/studies/{study_uid}/study-visits"
-            ) or []
+            visits = (
+                self.api.get_all_from_api(f"/studies/{study_uid}/study-visits") or []
+            )
             use_count = {}
             for visit in visits:
                 epoch_uid = visit.get("study_epoch_uid") or (
@@ -1181,9 +1217,7 @@ class Import360i(BaseImporter):
                 ).get("uid")
                 if epoch_uid:
                     use_count[epoch_uid] = use_count.get(epoch_uid, 0) + 1
-            mapped_carrier_uid = self.uid_map["epochs"].get(
-                mapping.CARRIER_EPOCH_NAME
-            )
+            mapped_carrier_uid = self.uid_map["epochs"].get(mapping.CARRIER_EPOCH_NAME)
             carriers = [
                 epoch
                 for epoch in existing
@@ -1197,9 +1231,7 @@ class Import360i(BaseImporter):
                         epoch.get("uid") == mapped_carrier_uid,
                     ),
                 )
-                self.uid_map["epochs"][
-                    mapping.CARRIER_EPOCH_NAME
-                ] = retained["uid"]
+                self.uid_map["epochs"][mapping.CARRIER_EPOCH_NAME] = retained["uid"]
         stale_epochs = [
             {"ref": ref, "uid": uid}
             for ref, uid in self.uid_map["epochs"].items()
@@ -1214,9 +1246,7 @@ class Import360i(BaseImporter):
             )
             if found:
                 description = (
-                    name
-                    if not plan["scaffolding"]
-                    else CARRIER_EPOCH_DESCRIPTION
+                    name if not plan["scaffolding"] else CARRIER_EPOCH_DESCRIPTION
                 )
                 changed = []
                 if found.get("order") != plan["order"]:
@@ -1274,8 +1304,8 @@ class Import360i(BaseImporter):
                 "epoch_subtype": subtype_uid,
                 "epoch": preview.get("epoch"),
                 "order": plan["order"],
-                "description": name if not plan["scaffolding"] else (
-                    CARRIER_EPOCH_DESCRIPTION
+                "description": (
+                    name if not plan["scaffolding"] else (CARRIER_EPOCH_DESCRIPTION)
                 ),
             }
             res = self.api.simple_post_to_api(
@@ -1303,7 +1333,9 @@ class Import360i(BaseImporter):
             if len(candidates) == 1:
                 ref_to_epoch_uid[visit_ref] = next(iter(candidates))
             else:
-                reason = "OSB_VISIT_EPOCH_BINDING_AMBIGUOUS:" + json.dumps(sorted(candidates))
+                reason = "OSB_VISIT_EPOCH_BINDING_AMBIGUOUS:" + json.dumps(
+                    sorted(candidates)
+                )
                 self.census.stop("visit", visit_ref, reason)
                 self.census.block_release("visit", visit_ref, reason)
         desired_uids = set(epoch_uid_by_ref.values())
@@ -1337,14 +1369,10 @@ class Import360i(BaseImporter):
                 "/study-epochs",
             )
             if not ok:
-                self.census.stop(
-                    "epoch", entry["ref"], "removed epoch delete failed"
-                )
+                self.census.stop("epoch", entry["ref"], "removed epoch delete failed")
                 continue
             self.uid_map["epochs"].pop(entry["ref"], None)
-            self.census.updated.append(
-                {"kind": "epoch_removed", "ref": entry["ref"]}
-            )
+            self.census.updated.append({"kind": "epoch_removed", "ref": entry["ref"]})
 
     def _current_visits_by_ref(self, study_uid):
         """Snapshot of OSB's current study-visits keyed by our stamped refKey.
@@ -1358,7 +1386,9 @@ class Import360i(BaseImporter):
         """
         osb_by_uid = {
             v["uid"]: v
-            for v in (self.api.get_all_from_api(f"/studies/{study_uid}/study-visits") or [])
+            for v in (
+                self.api.get_all_from_api(f"/studies/{study_uid}/study-visits") or []
+            )
         }
         current = {}
         for ref, uid in self.uid_map["visits"].items():
@@ -1418,7 +1448,9 @@ class Import360i(BaseImporter):
             "description": plan.get("description"),
         }
         if plan.get("visit_contact_mode_name"):
-            contact_uid = self._lookup_ct_term(CODELIST_VISIT_CONTACT_MODE, plan["visit_contact_mode_name"])
+            contact_uid = self._lookup_ct_term(
+                CODELIST_VISIT_CONTACT_MODE, plan["visit_contact_mode_name"]
+            )
             if contact_uid is None:
                 return None, "OSB_VISIT_CONTACT_MODE_AUTHORITY_UNRESOLVED"
             body["visit_contact_mode"] = {"term_uid": contact_uid}
@@ -1566,11 +1598,14 @@ class Import360i(BaseImporter):
                 if not error and term:
                     return term["term_uid"]
             if plan.get("arm_type_names"):
-                self.census.carried.append({
-                    "kind": "arm_type_unresolved", "ref": plan["name"],
-                    "reason": "no Final term for "
-                              f"{plan['arm_type_names']} in '{CODELIST_ARM_TYPE}'",
-                })
+                self.census.carried.append(
+                    {
+                        "kind": "arm_type_unresolved",
+                        "ref": plan["name"],
+                        "reason": "no Final term for "
+                        f"{plan['arm_type_names']} in '{CODELIST_ARM_TYPE}'",
+                    }
+                )
             return None
 
         for plan in diff["create"]:
@@ -1617,16 +1652,26 @@ class Import360i(BaseImporter):
             # An arm created before arm types were resolved carries none, and
             # `arm_diff` cannot see that (it compares name/short_name only). Set
             # it here so an existing study gains the type without a rebuild.
-            plan = next((p for p in mapping.arms_plan(payload)
-                         if p["name"] == entry["ref"]), None)
+            plan = next(
+                (p for p in mapping.arms_plan(payload) if p["name"] == entry["ref"]),
+                None,
+            )
             current = current_by_ref.get(entry["ref"]) or {}
             if plan and not current.get("arm_type"):
                 arm_type_uid = _arm_type_uid(plan)
-                if arm_type_uid and self.api.patch_to_api(
-                    {"uid": entry["uid"], "name": plan["name"],
-                     "short_name": plan["short_name"], "arm_type_uid": arm_type_uid},
-                    f"/studies/{study_uid}/study-arms",
-                ) is not None:
+                if (
+                    arm_type_uid
+                    and self.api.patch_to_api(
+                        {
+                            "uid": entry["uid"],
+                            "name": plan["name"],
+                            "short_name": plan["short_name"],
+                            "arm_type_uid": arm_type_uid,
+                        },
+                        f"/studies/{study_uid}/study-arms",
+                    )
+                    is not None
+                ):
                     self.census.updated.append(
                         {"kind": "arm_type", "ref": entry["ref"]}
                     )
@@ -1672,13 +1717,16 @@ class Import360i(BaseImporter):
 
         subtype_uid = None
         for candidate in mapping.SCAFFOLDING_ELEMENT_SUBTYPES:
-            term, error = self._lookup_final_ct_term(CODELIST_ELEMENT_SUBTYPE, candidate)
+            term, error = self._lookup_final_ct_term(
+                CODELIST_ELEMENT_SUBTYPE, candidate
+            )
             if not error and term:
                 subtype_uid = term["term_uid"]
                 break
         if subtype_uid is None:
             self.census.stop(
-                "study_element", study_uid,
+                "study_element",
+                study_uid,
                 f"no Final term in '{CODELIST_ELEMENT_SUBTYPE}' for any of "
                 f"{mapping.SCAFFOLDING_ELEMENT_SUBTYPES}; design cells not created",
             )
@@ -1686,8 +1734,12 @@ class Import360i(BaseImporter):
 
         existing = {
             str(e.get("name")): (e.get("element_uid") or e.get("uid"))
-            for e in (self.api.get_all_from_api(
-                f"/studies/{study_uid}/study-elements", params={"page_size": 0}) or [])
+            for e in (
+                self.api.get_all_from_api(
+                    f"/studies/{study_uid}/study-elements", params={"page_size": 0}
+                )
+                or []
+            )
         }
         element_uid_by_arm = {}
         for item in plan["elements"]:
@@ -1704,22 +1756,31 @@ class Import360i(BaseImporter):
                     "/study-elements",
                 )
                 if res is None:
-                    self.census.stop("study_element", item["name"], "element create failed")
+                    self.census.stop(
+                        "study_element", item["name"], "element create failed"
+                    )
                     continue
                 uid = res.get("element_uid") or res.get("uid")
                 self.census.scaffolding.append(
-                    {"kind": "study_element", "ref": item["name"],
-                     "reason": SCAFFOLDING_ELEMENT_DESCRIPTION}
+                    {
+                        "kind": "study_element",
+                        "ref": item["name"],
+                        "reason": SCAFFOLDING_ELEMENT_DESCRIPTION,
+                    }
                 )
             else:
-                self.census.unchanged.append({"kind": "study_element", "ref": item["name"]})
+                self.census.unchanged.append(
+                    {"kind": "study_element", "ref": item["name"]}
+                )
             if uid:
                 element_uid_by_arm[item["arm_ref"]] = uid
 
         current_cells = {
             (c.get("study_arm_uid"), c.get("study_epoch_uid"))
-            for c in (self.api.get_all_from_api(
-                f"/studies/{study_uid}/study-design-cells") or [])
+            for c in (
+                self.api.get_all_from_api(f"/studies/{study_uid}/study-design-cells")
+                or []
+            )
         }
         for arm_ref, element_uid in element_uid_by_arm.items():
             arm_uid = self.uid_map["arms"].get(arm_ref)
@@ -1728,7 +1789,8 @@ class Import360i(BaseImporter):
             for epoch_uid in epoch_uids:
                 if (arm_uid, epoch_uid) in current_cells:
                     self.census.unchanged.append(
-                        {"kind": "study_design_cell", "ref": f"{arm_ref}::{epoch_uid}"})
+                        {"kind": "study_design_cell", "ref": f"{arm_ref}::{epoch_uid}"}
+                    )
                     continue
                 res = self.api.simple_post_to_api(
                     f"/studies/{study_uid}/study-design-cells",
@@ -1741,12 +1803,18 @@ class Import360i(BaseImporter):
                 )
                 if res is None:
                     self.census.stop(
-                        "study_design_cell", f"{arm_ref}::{epoch_uid}", "design cell create failed")
+                        "study_design_cell",
+                        f"{arm_ref}::{epoch_uid}",
+                        "design cell create failed",
+                    )
                     continue
                 self.census.scaffolding.append(
-                    {"kind": "study_design_cell", "ref": f"{arm_ref}::{epoch_uid}",
-                     "reason": "arm x epoch cell placing the arm's own element; "
-                               "the protocol states no elements"}
+                    {
+                        "kind": "study_design_cell",
+                        "ref": f"{arm_ref}::{epoch_uid}",
+                        "reason": "arm x epoch cell placing the arm's own element; "
+                        "the protocol states no elements",
+                    }
                 )
 
     # ------------------------------------------------------------------
@@ -1791,9 +1859,12 @@ class Import360i(BaseImporter):
                 blocker["kind"], blocker["ref"], blocker["reason"]
             )
 
-        selected = self.api.get_all_from_api(
-            f"/studies/{study_uid}/study-activities", params={"page_size": 0}
-        ) or []
+        selected = (
+            self.api.get_all_from_api(
+                f"/studies/{study_uid}/study-activities", params={"page_size": 0}
+            )
+            or []
+        )
         selected_by_activity_uid = {}
         for row in selected:
             activity_uid = (row.get("activity") or {}).get("uid")
@@ -1824,9 +1895,9 @@ class Import360i(BaseImporter):
                     self.census.stop("study_activity", ref, reason)
                     self.census.block_release("study_activity", ref, reason)
                     continue
-                existing_flowchart_uid = (
-                    matches[0].get("study_soa_group") or {}
-                ).get("soa_group_term_uid")
+                existing_flowchart_uid = (matches[0].get("study_soa_group") or {}).get(
+                    "soa_group_term_uid"
+                )
                 if existing_flowchart_uid != flowchart_uid:
                     reason = (
                         "matched study activity has a conflicting or missing "
@@ -1866,9 +1937,10 @@ class Import360i(BaseImporter):
                 {"kind": "study_activity", "ref": ref, "uid": uid}
             )
 
-        current_schedules = self.api.get_all_from_api(
-            f"/studies/{study_uid}/study-activity-schedules"
-        ) or []
+        current_schedules = (
+            self.api.get_all_from_api(f"/studies/{study_uid}/study-activity-schedules")
+            or []
+        )
         schedules_by_pair = {}
         schedules_by_uid = {}
         for row in current_schedules:
@@ -1906,7 +1978,9 @@ class Import360i(BaseImporter):
             desired_pair_by_ref[ref] = pair
             matches = schedules_by_pair.get(pair, [])
             if len(matches) > 1:
-                reason = "multiple native schedules exist for the same activity and visit"
+                reason = (
+                    "multiple native schedules exist for the same activity and visit"
+                )
                 self.census.stop("study_activity_schedule", ref, reason)
                 self.census.block_release("study_activity_schedule", ref, reason)
                 continue
@@ -1954,7 +2028,9 @@ class Import360i(BaseImporter):
                 "/study-activity-schedules",
             ):
                 self.census.stop(
-                    "study_activity_schedule_removed", ref, "owned schedule delete failed"
+                    "study_activity_schedule_removed",
+                    ref,
+                    "owned schedule delete failed",
                 )
                 continue
             self.uid_map["native_soa_owned_schedules"].pop(ref, None)
@@ -1968,9 +2044,10 @@ class Import360i(BaseImporter):
                 self.uid_map["native_soa_schedules"].pop(ref, None)
 
         # Verify durable API state, not merely successful response bodies.
-        read_back = self.api.get_all_from_api(
-            f"/studies/{study_uid}/study-activity-schedules"
-        ) or []
+        read_back = (
+            self.api.get_all_from_api(f"/studies/{study_uid}/study-activity-schedules")
+            or []
+        )
         read_back_by_pair = {}
         for row in read_back:
             pair = (row.get("study_activity_uid"), row.get("study_visit_uid"))
@@ -2008,12 +2085,21 @@ class Import360i(BaseImporter):
     @staticmethod
     def _purpose_plain(value):
         """Normalize OSB HTML/plain syntax content for exact reconciliation."""
-        without_tags = re.sub(r"</?(?:p|div|span|strong|em|b|i|u|br|ul|ol|li)(?:\s[^<>]*)?/?>", " ", str(value or ""), flags=re.IGNORECASE)
+        without_tags = re.sub(
+            r"</?(?:p|div|span|strong|em|b|i|u|br|ul|ol|li)(?:\s[^<>]*)?/?>",
+            " ",
+            str(value or ""),
+            flags=re.IGNORECASE,
+        )
         return re.sub(r"\s+", " ", html.unescape(without_tags)).strip()
 
     @staticmethod
     def _purpose_html(value):
-        escaped = html.escape(str(value), quote=False).replace("[", "&#91;").replace("]", "&#93;")
+        escaped = (
+            html.escape(str(value), quote=False)
+            .replace("[", "&#91;")
+            .replace("]", "&#93;")
+        )
         return f"<p>{escaped}</p>"
 
     def _ensure_purpose_template(
@@ -2033,14 +2119,18 @@ class Import360i(BaseImporter):
         matches = [
             item
             for item in current
-            if self._purpose_plain(item.get("name_plain") or self._purpose_plain(item.get("name")))
+            if self._purpose_plain(
+                item.get("name_plain") or self._purpose_plain(item.get("name"))
+            )
             == self._purpose_plain(text)
             and (
                 kind != "criterion"
                 or (item.get("type") or {}).get("term_uid") == criteria_type_uid
             )
         ]
-        finals = [item for item in matches if str(item.get("status") or "").lower() == "final"]
+        finals = [
+            item for item in matches if str(item.get("status") or "").lower() == "final"
+        ]
         unique = {item.get("uid"): item for item in finals if item.get("uid")}
         if len(unique) > 1:
             self.census.stop(
@@ -2064,15 +2154,11 @@ class Import360i(BaseImporter):
             body["type_uid"] = criteria_type_uid
         res = self.api.simple_post_to_api(path, body, path)
         if res is None or not res.get("uid"):
-            self.census.stop(
-                f"study_{kind}_template", ref, f"{label} create failed"
-            )
+            self.census.stop(f"study_{kind}_template", ref, f"{label} create failed")
             return None
         uid = res["uid"]
         if not self.api.simple_approve(f"{path}/{uid}/approvals"):
-            self.census.stop(
-                f"study_{kind}_template", ref, f"{label} approval failed"
-            )
+            self.census.stop(f"study_{kind}_template", ref, f"{label} approval failed")
             return None
         self._purpose_template_cache[cache_key] = uid
         self.census.created.append(
@@ -2086,11 +2172,15 @@ class Import360i(BaseImporter):
         key = self._purpose_plain(text)
         if key in self._purpose_timeframe_cache:
             return self._purpose_timeframe_cache[key]
-        current = self.api.get_all_from_api("/timeframes", params={"page_size": 0}) or []
+        current = (
+            self.api.get_all_from_api("/timeframes", params={"page_size": 0}) or []
+        )
         matches = [
             item
             for item in current
-            if self._purpose_plain(item.get("name_plain") or self._purpose_plain(item.get("name")))
+            if self._purpose_plain(
+                item.get("name_plain") or self._purpose_plain(item.get("name"))
+            )
             == key
             and str(item.get("status") or "").lower() == "final"
             and item.get("uid")
@@ -2106,9 +2196,7 @@ class Import360i(BaseImporter):
             self._purpose_timeframe_cache[key] = uid
             self.uid_map["timeframes"][key] = uid
             return uid
-        template_uid = self._ensure_purpose_template(
-            "timeframe", study_uid, ref, text
-        )
+        template_uid = self._ensure_purpose_template("timeframe", study_uid, ref, text)
         if template_uid is None:
             return None
         res = self.api.simple_post_to_api(
@@ -2121,9 +2209,7 @@ class Import360i(BaseImporter):
             "/timeframes",
         )
         if res is None or not res.get("uid"):
-            self.census.stop(
-                "study_endpoint_timeframe", ref, "Timeframe create failed"
-            )
+            self.census.stop("study_endpoint_timeframe", ref, "Timeframe create failed")
             return None
         uid = res["uid"]
         if not self.api.simple_approve(f"/timeframes/{uid}/approvals"):
@@ -2139,9 +2225,12 @@ class Import360i(BaseImporter):
         return uid
 
     def _purpose_existing(self, study_uid, section, data_key):
-        rows = self.api.get_all_from_api(
-            f"/studies/{study_uid}/{section}", params={"page_size": 0}
-        ) or []
+        rows = (
+            self.api.get_all_from_api(
+                f"/studies/{study_uid}/{section}", params={"page_size": 0}
+            )
+            or []
+        )
         by_text = {}
         for row in rows:
             data = row.get(data_key) or {}
@@ -2168,9 +2257,16 @@ class Import360i(BaseImporter):
             self.census.block_release("study_purpose", study_uid, reason)
             return
         for obligation in plan.get("review_queue") or []:
-            self.census.block_release("study_purpose_property", obligation.get("recordRef"),
-                {"property": obligation.get("property"), "code": obligation.get("code"),
-                 "detail": obligation.get("detail"), "sourceAssertionIds": obligation.get("sourceAssertionIds")})
+            self.census.block_release(
+                "study_purpose_property",
+                obligation.get("recordRef"),
+                {
+                    "property": obligation.get("property"),
+                    "code": obligation.get("code"),
+                    "detail": obligation.get("detail"),
+                    "sourceAssertionIds": obligation.get("sourceAssertionIds"),
+                },
+            )
         for blocker in plan["blockers"]:
             reason = f"{blocker.get('code')}: {blocker.get('detail')}"
             self.census.carried.append(
@@ -2189,7 +2285,7 @@ class Import360i(BaseImporter):
             kind: dict(self.uid_map[kind])
             for kind in ("objectives", "endpoints", "criteria")
         }
-        objective_rows, objectives_by_text = self._purpose_existing(
+        _, objectives_by_text = self._purpose_existing(
             study_uid, "study-objectives", "objective"
         )
         objective_uid_by_ref = {}
@@ -2245,14 +2341,16 @@ class Import360i(BaseImporter):
                     )
                     continue
                 uid = res["study_objective_uid"]
-                objectives_by_text.setdefault(self._purpose_plain(item["text"]), []).append(res)
+                objectives_by_text.setdefault(
+                    self._purpose_plain(item["text"]), []
+                ).append(res)
                 self.census.created.append(
                     {"kind": "study_objective", "ref": ref, "uid": uid}
                 )
             objective_uid_by_ref[ref] = uid
             self.uid_map["objectives"][ref] = uid
 
-        endpoint_rows, endpoints_by_text = self._purpose_existing(
+        _, endpoints_by_text = self._purpose_existing(
             study_uid, "study-endpoints", "endpoint"
         )
         for item in plan["endpoints"]:
@@ -2297,8 +2395,7 @@ class Import360i(BaseImporter):
             compatible = [
                 row
                 for row in matches
-                if (row.get("endpoint_level") or {}).get("term_uid")
-                == term["term_uid"]
+                if (row.get("endpoint_level") or {}).get("term_uid") == term["term_uid"]
                 and (row.get("study_objective") or {}).get("study_objective_uid")
                 == objective_uid
                 and (
@@ -2347,13 +2444,15 @@ class Import360i(BaseImporter):
                     )
                     continue
                 uid = res["study_endpoint_uid"]
-                endpoints_by_text.setdefault(self._purpose_plain(item["text"]), []).append(res)
+                endpoints_by_text.setdefault(
+                    self._purpose_plain(item["text"]), []
+                ).append(res)
                 self.census.created.append(
                     {"kind": "study_endpoint", "ref": ref, "uid": uid}
                 )
             self.uid_map["endpoints"][ref] = uid
 
-        criteria_rows, criteria_by_text = self._purpose_existing(
+        _, criteria_by_text = self._purpose_existing(
             study_uid, "study-criteria", "criteria"
         )
         for item in plan["criteria"]:
@@ -2368,8 +2467,7 @@ class Import360i(BaseImporter):
             compatible = [
                 row
                 for row in matches
-                if (row.get("criteria_type") or {}).get("term_uid")
-                == term["term_uid"]
+                if (row.get("criteria_type") or {}).get("term_uid") == term["term_uid"]
             ]
             if matches and len(compatible) != 1:
                 self.census.stop(
@@ -2411,7 +2509,9 @@ class Import360i(BaseImporter):
                     )
                     continue
                 uid = res["study_criteria_uid"]
-                criteria_by_text.setdefault(self._purpose_plain(item["text"]), []).append(res)
+                criteria_by_text.setdefault(
+                    self._purpose_plain(item["text"]), []
+                ).append(res)
                 self.census.created.append(
                     {"kind": "study_criterion", "ref": ref, "uid": uid}
                 )
@@ -2434,7 +2534,11 @@ class Import360i(BaseImporter):
             for ref, uid in prior_owned[kind].items():
                 # A replaced source-owned UID is stale even when its source ref
                 # remains. Keep any UID still used by another active source ref.
-                active_uids = {value for key, value in self.uid_map[kind].items() if key in desired[kind]}
+                active_uids = {
+                    value
+                    for key, value in self.uid_map[kind].items()
+                    if key in desired[kind]
+                }
                 if not uid or uid in active_uids:
                     continue
                 if self.api.simple_delete(
@@ -2464,29 +2568,60 @@ class Import360i(BaseImporter):
             or [],
         }
         actual_uids = {
-            "objectives": {row.get("study_objective_uid") for row in actual["objectives"]},
+            "objectives": {
+                row.get("study_objective_uid") for row in actual["objectives"]
+            },
             "endpoints": {row.get("study_endpoint_uid") for row in actual["endpoints"]},
             "criteria": {row.get("study_criteria_uid") for row in actual["criteria"]},
         }
         # Identity existence alone cannot acknowledge semantic projection.
         self.purpose_readback = []
-        for kind, model, uid_key in (("objectives", "objective", "study_objective_uid"), ("endpoints", "endpoint", "study_endpoint_uid"), ("criteria", "criteria", "study_criteria_uid")):
+        for kind, model, uid_key in (
+            ("objectives", "objective", "study_objective_uid"),
+            ("endpoints", "endpoint", "study_endpoint_uid"),
+            ("criteria", "criteria", "study_criteria_uid"),
+        ):
             by_uid = {row.get(uid_key): row for row in actual[kind]}
             for source in plan[kind]:
                 row = by_uid.get(self.uid_map[kind].get(source["ref"]))
                 if row is None:
                     continue
-                text = (row.get(model) or {}).get("name_plain") or (row.get(model) or {}).get("name")
-                fields = {"text": self._purpose_plain(text) == self._purpose_plain(source["text"])}
+                text = (row.get(model) or {}).get("name_plain") or (
+                    row.get(model) or {}
+                ).get("name")
+                fields = {
+                    "text": self._purpose_plain(text)
+                    == self._purpose_plain(source["text"])
+                }
                 if kind == "endpoints":
-                    expected_parent = objective_uid_by_ref.get(source.get("objective_ref"))
-                    fields["objective"] = (row.get("study_objective") or {}).get("study_objective_uid") == expected_parent
+                    expected_parent = objective_uid_by_ref.get(
+                        source.get("objective_ref")
+                    )
+                    fields["objective"] = (row.get("study_objective") or {}).get(
+                        "study_objective_uid"
+                    ) == expected_parent
                     if source.get("timeframe"):
-                        native_time = (row.get("timeframe") or {}).get("name_plain") or (row.get("timeframe") or {}).get("name")
-                        fields["timeframe"] = self._purpose_plain(native_time) == self._purpose_plain(source["timeframe"])
-                self.purpose_readback.append({"kind": kind, "ref": source["ref"], "uid": row.get(uid_key), "properties": fields})
+                        native_time = (row.get("timeframe") or {}).get(
+                            "name_plain"
+                        ) or (row.get("timeframe") or {}).get("name")
+                        fields["timeframe"] = self._purpose_plain(
+                            native_time
+                        ) == self._purpose_plain(source["timeframe"])
+                self.purpose_readback.append(
+                    {
+                        "kind": kind,
+                        "ref": source["ref"],
+                        "uid": row.get(uid_key),
+                        "properties": fields,
+                    }
+                )
                 if not all(fields.values()):
-                    self.census.stop("study_purpose_property_reconciliation", source["ref"], "NATIVE_PURPOSE_PROPERTY_MISMATCH:" + json.dumps(fields, sort_keys=True))
+                    self.census.stop(
+                        "study_purpose_property_reconciliation",
+                        source["ref"],
+                        "NATIVE_PURPOSE_PROPERTY_MISMATCH:"
+                        + json.dumps(fields, sort_keys=True),
+                    )
         for kind in ("objectives", "endpoints", "criteria"):
             missing = sorted(
                 ref
@@ -2605,12 +2740,26 @@ class Import360i(BaseImporter):
         # updates), not only on first study creation.
         for key in sorted(payload.get("study", {}).get("attributes", {})):
             if key == "semanticPropertySources":
-                self.census.carried.append({"kind":"study_attribute", "ref":key,
-                    "reason":"source lineage retained in semantic custody; no clinical native property is asserted"})
+                self.census.carried.append(
+                    {
+                        "kind": "study_attribute",
+                        "ref": key,
+                        "reason": "source lineage retained in semantic custody; no clinical native property is asserted",
+                    }
+                )
                 continue
-            if key == "nctNumber" and payload["study"]["attributes"][key] == payload.get("study",{}).get("registryIdentifiers",{}).get("ct_gov_id"):
-                self.census.carried.append({"kind":"study_attribute", "ref":key,
-                    "reason":"duplicate source value consumed by native registry identifier reconciliation"})
+            if key == "nctNumber" and payload["study"]["attributes"][
+                key
+            ] == payload.get("study", {}).get("registryIdentifiers", {}).get(
+                "ct_gov_id"
+            ):
+                self.census.carried.append(
+                    {
+                        "kind": "study_attribute",
+                        "ref": key,
+                        "reason": "duplicate source value consumed by native registry identifier reconciliation",
+                    }
+                )
                 continue
             if key == "eligibility" and payload.get("studyPurpose") is not None:
                 self.census.carried.append(
@@ -2679,7 +2828,11 @@ class Import360i(BaseImporter):
         instance. Attribute VALUES are attached per-entity at create time."""
         namespaces = self.api.get_all_from_api("/odms/vendor-namespaces") or []
         ns = next(
-            (n for n in namespaces if n.get("prefix") == mapping.X360I_NAMESPACE["prefix"]),
+            (
+                n
+                for n in namespaces
+                if n.get("prefix") == mapping.X360I_NAMESPACE["prefix"]
+            ),
             None,
         )
         if ns is None:
@@ -2787,9 +2940,14 @@ class Import360i(BaseImporter):
         source_study_id = payload.get("source", {}).get("studyId")
         source_build_hash = payload.get("source", {}).get("buildHash")
         source_bundle = payload.get("sourceBundle")
-        if (not isinstance(source_study_id, str) or not source_study_id
-                or not isinstance(source_build_hash, str) or not source_build_hash
-                or not isinstance(source_bundle, dict) or not source_bundle):
+        if (
+            not isinstance(source_study_id, str)
+            or not source_study_id
+            or not isinstance(source_build_hash, str)
+            or not source_build_hash
+            or not isinstance(source_bundle, dict)
+            or not source_bundle
+        ):
             reason = "SEMANTIC_SOURCE_SNAPSHOT_REQUIRED"
             self.census.stop("source_snapshot", study_uid, reason)
             self.census.block_release("source_snapshot", study_uid, reason)
@@ -2802,7 +2960,13 @@ class Import360i(BaseImporter):
             self.census.block_release("source_snapshot", study_uid, reason)
             return False
         try:
-            raw = json.dumps(snapshot, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+            raw = json.dumps(
+                snapshot,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                allow_nan=False,
+            )
             raw_bytes = raw.encode("utf-8")
         except (TypeError, ValueError, UnicodeError):
             reason = "SEMANTIC_SOURCE_SNAPSHOT_INVALID_JSON"
@@ -2817,11 +2981,15 @@ class Import360i(BaseImporter):
         snapshot_hash = hashlib.sha256(raw_bytes).hexdigest()
         # Identical source data can legitimately be carried by a new payload
         # build. Its immutable chunk stamps must not collide with the old build.
-        generation_hash = hashlib.sha256((snapshot_hash + "\n" + source_build_hash).encode("utf-8")).hexdigest()
+        generation_hash = hashlib.sha256(
+            (snapshot_hash + "\n" + source_build_hash).encode("utf-8")
+        ).hexdigest()
         encoded = _encode_carrier(raw)
         encoded_hash = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
-        chunks = [encoded[index:index + SOURCE_SNAPSHOT_CHUNK_CHARACTERS]
-                  for index in range(0, len(encoded), SOURCE_SNAPSHOT_CHUNK_CHARACTERS)]
+        chunks = [
+            encoded[index : index + SOURCE_SNAPSHOT_CHUNK_CHARACTERS]
+            for index in range(0, len(encoded), SOURCE_SNAPSHOT_CHUNK_CHARACTERS)
+        ]
         attr_uids = self.ensure_vendor_namespace()
         required_attrs = {"refKey", "studyId", "buildHash", "ext", "bundleMeta"}
         if not required_attrs.issubset(attr_uids):
@@ -2829,17 +2997,30 @@ class Import360i(BaseImporter):
             self.census.stop("source_snapshot", study_uid, reason)
             self.census.block_release("source_snapshot", study_uid, reason)
             return False
-        manifest = {"formatVersion": "1.0", "osbStudyUid": study_uid,
-                    "sourceStudyId": source_study_id, "sourceBuildHash": source_build_hash,
-                    "snapshotHash": snapshot_hash, "encodedHash": encoded_hash,
-                    "generationHash": generation_hash, "byteLength": len(raw_bytes),
-                    "chunkCount": len(chunks)}
+        manifest = {
+            "formatVersion": "1.0",
+            "osbStudyUid": study_uid,
+            "sourceStudyId": source_study_id,
+            "sourceBuildHash": source_build_hash,
+            "snapshotHash": snapshot_hash,
+            "encodedHash": encoded_hash,
+            "generationHash": generation_hash,
+            "byteLength": len(raw_bytes),
+            "chunkCount": len(chunks),
+        }
 
         def find(oid):
-            found = self.api.get_all_from_api("/odms/forms", params={
-                "filters": json.dumps({"oid": {"v": [oid], "op": "eq"}}),
-                "page_number": 1, "page_size": 0,
-            }) or []
+            found = (
+                self.api.get_all_from_api(
+                    "/odms/forms",
+                    params={
+                        "filters": json.dumps({"oid": {"v": [oid], "op": "eq"}}),
+                        "page_number": 1,
+                        "page_size": 0,
+                    },
+                )
+                or []
+            )
             if len(found) > 1:
                 raise ValueError("SEMANTIC_SOURCE_SNAPSHOT_IDENTITY_AMBIGUOUS:" + oid)
             return found[0] if found else None
@@ -2847,91 +3028,169 @@ class Import360i(BaseImporter):
         def values(record):
             result = {}
             for attribute in record.get("vendor_attributes", []) or []:
-                name = attribute.get("name") or next((name for name, uid in attr_uids.items() if uid == attribute.get("uid")), None)
+                name = attribute.get("name") or next(
+                    (
+                        name
+                        for name, uid in attr_uids.items()
+                        if uid == attribute.get("uid")
+                    ),
+                    None,
+                )
                 if name not in required_attrs:
                     continue
                 if name in result:
-                    raise ValueError("SEMANTIC_SOURCE_SNAPSHOT_ATTRIBUTE_AMBIGUOUS:" + str(name))
+                    raise ValueError(
+                        "SEMANTIC_SOURCE_SNAPSHOT_ATTRIBUTE_AMBIGUOUS:" + str(name)
+                    )
                 result[name] = attribute.get("value")
             return result
 
         def body_for(oid, role, index=None, chunk=None):
             descriptor = {**manifest, "role": role}
             if index is not None:
-                descriptor.update({"index": index, "chunkHash": hashlib.sha256(chunk.encode("utf-8")).hexdigest()})
+                descriptor.update(
+                    {
+                        "index": index,
+                        "chunkHash": hashlib.sha256(chunk.encode("utf-8")).hexdigest(),
+                    }
+                )
             # bundleMeta is already a bounded encoded substring: passing it
             # through _entity_vendor_attributes would recompress some shards.
             attrs = self._entity_vendor_attributes(
-                attr_uids, SOURCE_SNAPSHOT_REF_PREFIX + (str(index) if index is not None else "HEAD"),
-                ext_json=json.dumps({"semanticSourceSnapshot": descriptor}, sort_keys=True, separators=(",", ":")),
-                study_id=source_study_id, build_hash=source_build_hash,
+                attr_uids,
+                SOURCE_SNAPSHOT_REF_PREFIX
+                + (str(index) if index is not None else "HEAD"),
+                ext_json=json.dumps(
+                    {"semanticSourceSnapshot": descriptor},
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+                study_id=source_study_id,
+                build_hash=source_build_hash,
             )
             if chunk is not None:
                 attrs.append({"uid": attr_uids["bundleMeta"], "value": chunk})
-            return {"name": f"Semantic source snapshot {study_uid} {role} {index or ''}".strip(),
-                    "oid": oid, "sdtm_version": None, "repeating": "no",
-                    "translated_texts": [{"text_type": "Description", "language": "en",
-                        "text": "Nonclinical semantic source retention. Not a patient form, approval, or released study definition."}],
-                    "vendor_attributes": attrs}
+            return {
+                "name": f"Semantic source snapshot {study_uid} {role} {index or ''}".strip(),
+                "oid": oid,
+                "sdtm_version": None,
+                "repeating": "no",
+                "translated_texts": [
+                    {
+                        "text_type": "Description",
+                        "language": "en",
+                        "text": "Nonclinical semantic source retention. Not a patient form, approval, or released study definition.",
+                    }
+                ],
+                "vendor_attributes": attrs,
+            }
 
         def verify(record, body):
             if not record or record.get("oid") != body["oid"]:
-                raise ValueError("SEMANTIC_SOURCE_SNAPSHOT_READBACK_MISSING:" + body["oid"])
+                raise ValueError(
+                    "SEMANTIC_SOURCE_SNAPSHOT_READBACK_MISSING:" + body["oid"]
+                )
             actual, expected = values(record), values(body)
             if any(actual.get(key) != value for key, value in expected.items()):
-                raise ValueError("SEMANTIC_SOURCE_SNAPSHOT_READBACK_MISMATCH:" + body["oid"])
+                raise ValueError(
+                    "SEMANTIC_SOURCE_SNAPSHOT_READBACK_MISMATCH:" + body["oid"]
+                )
             if record.get("item_groups"):
-                raise ValueError("SEMANTIC_SOURCE_SNAPSHOT_HAS_CLINICAL_CHILDREN:" + body["oid"])
-            for relation in ("vendor_attributes", "vendor_elements", "vendor_element_attributes"):
-                actual_relations = {row.get("uid"): row.get("value") for row in record.get(relation, []) or []}
+                raise ValueError(
+                    "SEMANTIC_SOURCE_SNAPSHOT_HAS_CLINICAL_CHILDREN:" + body["oid"]
+                )
+            for relation in (
+                "vendor_attributes",
+                "vendor_elements",
+                "vendor_element_attributes",
+            ):
+                actual_relations = {
+                    row.get("uid"): row.get("value")
+                    for row in record.get(relation, []) or []
+                }
                 if len(actual_relations) != len(record.get(relation, []) or []):
-                    raise ValueError("SEMANTIC_SOURCE_SNAPSHOT_RELATION_AMBIGUOUS:" + body["oid"])
-                if any(row.get("uid") not in actual_relations or actual_relations[row["uid"]] != row.get("value")
-                       for row in body.get(relation, []) or []):
-                    raise ValueError("SEMANTIC_SOURCE_SNAPSHOT_READBACK_MISMATCH:" + body["oid"])
+                    raise ValueError(
+                        "SEMANTIC_SOURCE_SNAPSHOT_RELATION_AMBIGUOUS:" + body["oid"]
+                    )
+                if any(
+                    row.get("uid") not in actual_relations
+                    or actual_relations[row["uid"]] != row.get("value")
+                    for row in body.get(relation, []) or []
+                ):
+                    raise ValueError(
+                        "SEMANTIC_SOURCE_SNAPSHOT_READBACK_MISMATCH:" + body["oid"]
+                    )
 
         try:
             head_oid = f"{SOURCE_SNAPSHOT_OID_PREFIX}HEAD.{study_uid}"
             head = find(head_oid)
             if head is not None:
                 head_values = values(head)
+
                 def unique_manifest(pairs):
                     result = {}
                     for key, value in pairs:
                         if key in result:
-                            raise ValueError("SEMANTIC_SOURCE_SNAPSHOT_MANIFEST_AMBIGUOUS")
+                            raise ValueError(
+                                "SEMANTIC_SOURCE_SNAPSHOT_MANIFEST_AMBIGUOUS"
+                            )
                         result[key] = value
                     return result
-                previous_ext = json.loads(head_values.get("ext") or "{}", object_pairs_hook=unique_manifest)
-                previous = previous_ext.get("semanticSourceSnapshot", {}) if isinstance(previous_ext, dict) else None
-                if (not isinstance(previous, dict)
-                        or previous.get("formatVersion") != "1.0" or previous.get("role") != "head"
-                        or previous.get("osbStudyUid") != study_uid
-                        or previous.get("sourceStudyId") != source_study_id
-                        or head_values.get("studyId") != source_study_id
-                        or head_values.get("buildHash") != previous.get("sourceBuildHash")):
+
+                previous_ext = json.loads(
+                    head_values.get("ext") or "{}", object_pairs_hook=unique_manifest
+                )
+                previous = (
+                    previous_ext.get("semanticSourceSnapshot", {})
+                    if isinstance(previous_ext, dict)
+                    else None
+                )
+                if (
+                    not isinstance(previous, dict)
+                    or previous.get("formatVersion") != "1.0"
+                    or previous.get("role") != "head"
+                    or previous.get("osbStudyUid") != study_uid
+                    or previous.get("sourceStudyId") != source_study_id
+                    or head_values.get("studyId") != source_study_id
+                    or head_values.get("buildHash") != previous.get("sourceBuildHash")
+                ):
                     raise ValueError("SEMANTIC_SOURCE_SNAPSHOT_HEAD_SCOPE_MISMATCH")
                 if head.get("item_groups"):
-                    raise ValueError("SEMANTIC_SOURCE_SNAPSHOT_HAS_CLINICAL_CHILDREN:" + head_oid)
+                    raise ValueError(
+                        "SEMANTIC_SOURCE_SNAPSHOT_HAS_CLINICAL_CHILDREN:" + head_oid
+                    )
             for index, chunk in enumerate(chunks, start=1):
                 oid = f"{SOURCE_SNAPSHOT_OID_PREFIX}{study_uid}.{generation_hash}.{index:04d}"
                 body = body_for(oid, "chunk", index, chunk)
                 existing = find(oid)
                 if existing is None:
                     if self.api.simple_post_to_api("/odms/forms", body) is None:
-                        raise ValueError("SEMANTIC_SOURCE_SNAPSHOT_CHUNK_CREATE_FAILED:" + oid)
+                        raise ValueError(
+                            "SEMANTIC_SOURCE_SNAPSHOT_CHUNK_CREATE_FAILED:" + oid
+                        )
                     verify(find(oid), body)
-                    self.census.created.append({"kind": "source_snapshot_chunk", "ref": oid})
+                    self.census.created.append(
+                        {"kind": "source_snapshot_chunk", "ref": oid}
+                    )
                 else:
                     verify(existing, body)
-                    self.census.unchanged.append({"kind": "source_snapshot_chunk", "ref": oid})
+                    self.census.unchanged.append(
+                        {"kind": "source_snapshot_chunk", "ref": oid}
+                    )
             head_body = body_for(head_oid, "head")
             if head is None:
                 if self.api.simple_post_to_api("/odms/forms", head_body) is None:
                     raise ValueError("SEMANTIC_SOURCE_SNAPSHOT_HEAD_CREATE_FAILED")
-                self.census.created.append({"kind": "source_snapshot_head", "ref": head_oid})
-            elif all(values(head).get(key) == value for key, value in values(head_body).items()):
-                self.census.unchanged.append({"kind": "source_snapshot_head", "ref": head_oid})
+                self.census.created.append(
+                    {"kind": "source_snapshot_head", "ref": head_oid}
+                )
+            elif all(
+                values(head).get(key) == value
+                for key, value in values(head_body).items()
+            ):
+                self.census.unchanged.append(
+                    {"kind": "source_snapshot_head", "ref": head_oid}
+                )
             else:
                 if str(head.get("status", "")).lower() != "draft":
                     raise ValueError("SEMANTIC_SOURCE_SNAPSHOT_HEAD_NOT_DRAFT")
@@ -2940,20 +3199,35 @@ class Import360i(BaseImporter):
                 managed_uids = {row["uid"] for row in head_body["vendor_attributes"]}
                 head_body["vendor_attributes"].extend(
                     {"uid": row["uid"], "value": row.get("value")}
-                    for row in head.get("vendor_attributes", []) or [] if row["uid"] not in managed_uids)
+                    for row in head.get("vendor_attributes", []) or []
+                    if row["uid"] not in managed_uids
+                )
                 for relation in ("vendor_elements", "vendor_element_attributes"):
-                    head_body[relation] = [{"uid": row["uid"], "value": row.get("value")}
-                                           for row in head.get(relation, []) or []]
-                patch = {**head_body, "uid": head["uid"], "change_description": "Commit verified semantic source snapshot"}
+                    head_body[relation] = [
+                        {"uid": row["uid"], "value": row.get("value")}
+                        for row in head.get(relation, []) or []
+                    ]
+                patch = {
+                    **head_body,
+                    "uid": head["uid"],
+                    "change_description": "Commit verified semantic source snapshot",
+                }
                 for key in PATCH_ONLY_REQUIRED_FIELDS:
                     if key not in patch and key in head:
                         patch[key] = head[key]
                 if self.api.patch_to_api(patch, "/odms/forms") is None:
                     raise ValueError("SEMANTIC_SOURCE_SNAPSHOT_HEAD_COMMIT_FAILED")
-                self.census.updated.append({"kind": "source_snapshot_head", "ref": head_oid})
+                self.census.updated.append(
+                    {"kind": "source_snapshot_head", "ref": head_oid}
+                )
             verify(find(head_oid), head_body)
-            self.census.carried.append({"kind": "semantic_source_snapshot", "ref": head_oid,
-                "reason": f"Complete semantic source snapshot {snapshot_hash}; {len(chunks)} verified nonclinical chunks; no native mapping or release credit"})
+            self.census.carried.append(
+                {
+                    "kind": "semantic_source_snapshot",
+                    "ref": head_oid,
+                    "reason": f"Complete semantic source snapshot {snapshot_hash}; {len(chunks)} verified nonclinical chunks; no native mapping or release credit",
+                }
+            )
             return True
         except (ValueError, TypeError) as error:
             self.census.stop("source_snapshot", study_uid, str(error))
@@ -3101,7 +3375,9 @@ class Import360i(BaseImporter):
             if existing is None:
                 body = dict(body_no_content)
                 _stamp_content(body, sha)
-                res = _create_and_approve(kind, path, body, ref, defer_approve=defer_approve)
+                res = _create_and_approve(
+                    kind, path, body, ref, defer_approve=defer_approve
+                )
                 return (res["uid"], "created", None) if res else (None, None, None)
             if _existing_content_sha(existing) == sha:
                 self.census.unchanged.append({"kind": kind, "ref": ref})
@@ -3151,15 +3427,16 @@ class Import360i(BaseImporter):
                 ):
                     changed.append(child_uid)
             replace = bool(extras or changed)
-            missing = [
-                entry for entry in desired if entry["uid"] not in current_by_uid
-            ]
+            missing = [entry for entry in desired if entry["uid"] not in current_by_uid]
             if not replace and not missing:
                 if state in ("created", "patched"):
                     return _approve(kind, path, uid, ref)
                 return True
 
-            if state == "unchanged" and str((prior or {}).get("status") or "").lower() != "draft":
+            if (
+                state == "unchanged"
+                and str((prior or {}).get("status") or "").lower() != "draft"
+            ):
                 # A parent left in Draft by an earlier partial run must NOT be
                 # re-drafted: POST /versions on a Draft is a 400 ("New draft
                 # version can be created only for FINAL versions") and used to
@@ -3185,9 +3462,12 @@ class Import360i(BaseImporter):
                 # it first if Final, re-approve after), then retry the target.
                 desired_uids = {entry["uid"] for entry in desired}
                 stale_holders = []
-                for holder in self.api.get_all_from_api(
-                    path, params={"page_number": 1, "page_size": 0}
-                ) or []:
+                for holder in (
+                    self.api.get_all_from_api(
+                        path, params={"page_number": 1, "page_size": 0}
+                    )
+                    or []
+                ):
                     if holder.get("uid") == uid:
                         continue
                     held = holder.get(child_key) or []
@@ -3198,25 +3478,30 @@ class Import360i(BaseImporter):
                     h_uid = holder["uid"]
                     if (holder.get("status") or "").lower() != "draft":
                         self.api.simple_post_to_api(f"{path}/{h_uid}/versions", {})
-                    keep = [c for c in (holder.get(child_key) or [])
-                            if c.get("uid") not in desired_uids]
+                    keep = [
+                        c
+                        for c in (holder.get(child_key) or [])
+                        if c.get("uid") not in desired_uids
+                    ]
                     kept_refs = []
                     for order, entry in enumerate(keep, start=1):
                         mand = entry.get("mandatory")
                         if isinstance(mand, bool):
                             mand = "Yes" if mand else "No"
-                        kept_refs.append({
-                            "uid": entry["uid"],
-                            "order_number": entry.get("order_number") or order,
-                            "mandatory": mand or "No",
-                            "key_sequence": None,
-                            "method_oid": None,
-                            "imputation_method_oid": None,
-                            "role": None,
-                            "role_codelist_oid": None,
-                            "collection_exception_condition_oid": None,
-                            "vendor": {"attributes": []},
-                        })
+                        kept_refs.append(
+                            {
+                                "uid": entry["uid"],
+                                "order_number": entry.get("order_number") or order,
+                                "mandatory": mand or "No",
+                                "key_sequence": None,
+                                "method_oid": None,
+                                "imputation_method_oid": None,
+                                "role": None,
+                                "role_codelist_oid": None,
+                                "collection_exception_condition_oid": None,
+                                "vendor": {"attributes": []},
+                            }
+                        )
                     detached = self.api.simple_post_to_api(
                         f"{path}/{h_uid}/{child_key.replace('_', '-')}",
                         kept_refs,
@@ -3224,7 +3509,9 @@ class Import360i(BaseImporter):
                     )
                     self.log.info(
                         "Detached %d stale item(s) from %s (%s): %s",
-                        len(contested), holder.get("oid") or h_uid, h_uid,
+                        len(contested),
+                        holder.get("oid") or h_uid,
+                        h_uid,
                         "ok" if detached is not None else "FAILED",
                     )
                     if detached is not None:
@@ -3292,7 +3579,9 @@ class Import360i(BaseImporter):
                         ),
                     )
                     try:
-                        body = mapping.odm_item_body(item, codelist_by_ref, unit_uid_by_name)
+                        body = mapping.odm_item_body(
+                            item, codelist_by_ref, unit_uid_by_name
+                        )
                     except ValueError as exc:
                         self.census.stop("item", placement_key, str(exc))
                         self.census.block_release("item", placement_key, str(exc))
@@ -3306,7 +3595,11 @@ class Import360i(BaseImporter):
                     )
                     if item.get("prompt"):
                         body["translated_texts"] = [
-                            {"text_type": "Question", "language": "en", "text": item["prompt"]}
+                            {
+                                "text_type": "Question",
+                                "language": "en",
+                                "text": item["prompt"],
+                            }
                         ]
                     existing_item = existing_items_by_oid.get(item_oid)
                     if self.same_payload_replay and existing_item:
@@ -3323,9 +3616,7 @@ class Import360i(BaseImporter):
                                     "item", item_oid, "draft item approval failed"
                                 )
                                 continue
-                        self.census.unchanged.append(
-                            {"kind": "item", "ref": item_oid}
-                        )
+                        self.census.unchanged.append({"kind": "item", "ref": item_oid})
                     else:
                         uid, _state, _prior = _reconcile(
                             "item", "/odms/items", item_oid, body
@@ -3342,11 +3633,17 @@ class Import360i(BaseImporter):
         held_group_refs = set()
         for form in odm.get("forms", []):
             for group in form.get("itemGroups", []):
-                missing_children = [item["refKey"] for item in group.get("items", [])
-                    if (group["refKey"], item["refKey"]) not in placement_item_uids]
+                missing_children = [
+                    item["refKey"]
+                    for item in group.get("items", [])
+                    if (group["refKey"], item["refKey"]) not in placement_item_uids
+                ]
                 if missing_children:
                     held_group_refs.add(group["refKey"])
-                    reason = "OSB_ITEM_GROUP_REPLACEMENT_CHILDREN_UNRESOLVED:" + json.dumps(missing_children)
+                    reason = (
+                        "OSB_ITEM_GROUP_REPLACEMENT_CHILDREN_UNRESOLVED:"
+                        + json.dumps(missing_children)
+                    )
                     self.census.stop("item_group", group["refKey"], reason)
                     self.census.block_release("item_group", group["refKey"], reason)
                     continue
@@ -3356,7 +3653,11 @@ class Import360i(BaseImporter):
                     "oid": group_oid,
                     "repeating": "yes" if group.get("repeating") is True else "no",
                     "translated_texts": [
-                        {"text_type": "Description", "language": "en", "text": group.get("description") or group["name"]}
+                        {
+                            "text_type": "Description",
+                            "language": "en",
+                            "text": group.get("description") or group["name"],
+                        }
                     ],
                     "sdtm_domain_uids": [],
                     "vendor_attributes": self._entity_vendor_attributes(
@@ -3366,7 +3667,10 @@ class Import360i(BaseImporter):
                 # Create as Draft: ITEM_REFs attach only to a Draft element,
                 # so defer approval until after they're wired.
                 uid, state, prior = _reconcile(
-                    "item_group", "/odms/item-groups", group_oid, body,
+                    "item_group",
+                    "/odms/item-groups",
+                    group_oid,
+                    body,
                     defer_approve=True,
                 )
                 if uid is None:
@@ -3412,10 +3716,18 @@ class Import360i(BaseImporter):
         forms = odm.get("forms", [])
         held_form_refs = set()
         for form in forms:
-            if any(group["refKey"] in held_group_refs or group["refKey"] not in self.uid_map["item_groups"] for group in form.get("itemGroups", [])):
+            if any(
+                group["refKey"] in held_group_refs
+                or group["refKey"] not in self.uid_map["item_groups"]
+                for group in form.get("itemGroups", [])
+            ):
                 held_form_refs.add(form["refKey"])
-                self.census.stop("form", form["refKey"], "OSB_FORM_REPLACEMENT_CHILDREN_UNRESOLVED")
-                self.census.block_release("form", form["refKey"], "OSB_FORM_REPLACEMENT_CHILDREN_UNRESOLVED")
+                self.census.stop(
+                    "form", form["refKey"], "OSB_FORM_REPLACEMENT_CHILDREN_UNRESOLVED"
+                )
+                self.census.block_release(
+                    "form", form["refKey"], "OSB_FORM_REPLACEMENT_CHILDREN_UNRESOLVED"
+                )
                 continue
             form_oid = mapping.odm_oid("form", odm_study_id, form["refKey"])
             body = {
@@ -3424,7 +3736,11 @@ class Import360i(BaseImporter):
                 "sdtm_version": None,
                 "repeating": "yes" if form.get("repeating") is True else "no",
                 "translated_texts": [
-                    {"text_type": "Description", "language": "en", "text": form.get("description") or form["name"]}
+                    {
+                        "text_type": "Description",
+                        "language": "en",
+                        "text": form.get("description") or form["name"],
+                    }
                 ],
                 "vendor_attributes": self._entity_vendor_attributes(
                     attr_uids,
@@ -3482,10 +3798,17 @@ class Import360i(BaseImporter):
             visit_ref = visit["refKey"]
             assignments = matrix_by_visit.get(visit_ref, [])
             event_oid = f"SE.360I.{study_id}.{visit_ref}"
-            unresolved_forms = [assignment["formRef"] for assignment in assignments
-                if assignment["formRef"] in held_form_refs or assignment["formRef"] not in self.uid_map["forms"]]
+            unresolved_forms = [
+                assignment["formRef"]
+                for assignment in assignments
+                if assignment["formRef"] in held_form_refs
+                or assignment["formRef"] not in self.uid_map["forms"]
+            ]
             if unresolved_forms:
-                reason = "OSB_STUDY_EVENT_REPLACEMENT_CHILDREN_UNRESOLVED:" + json.dumps(unresolved_forms)
+                reason = (
+                    "OSB_STUDY_EVENT_REPLACEMENT_CHILDREN_UNRESOLVED:"
+                    + json.dumps(unresolved_forms)
+                )
                 self.census.stop("study_event", event_oid, reason)
                 self.census.block_release("study_event", event_oid, reason)
                 continue
@@ -3535,8 +3858,7 @@ class Import360i(BaseImporter):
                 event_uid = existing["uid"]
                 self.uid_map["study_events"][visit_ref] = event_uid
                 event_changed = any(
-                    existing.get(key) != value
-                    for key, value in event_body.items()
+                    existing.get(key) != value for key, value in event_body.items()
                 )
                 if event_changed:
                     if (
@@ -3559,12 +3881,7 @@ class Import360i(BaseImporter):
                         "display_in_tree": existing.get("display_in_tree", True),
                         "change_description": "360i re-import: event changed",
                     }
-                    if (
-                        self.api.patch_to_api(
-                            patch_body, "/odms/study-events"
-                        )
-                        is None
-                    ):
+                    if self.api.patch_to_api(patch_body, "/odms/study-events") is None:
                         self.census.stop(
                             "study_event", event_oid, "study_event patch failed"
                         )
@@ -3580,9 +3897,7 @@ class Import360i(BaseImporter):
                     )
             else:
                 # Create as Draft; FORM_REFs attach only before approval.
-                res = self.api.simple_post_to_api(
-                    "/odms/study-events", event_body
-                )
+                res = self.api.simple_post_to_api("/odms/study-events", event_body)
                 if res is None:
                     self.census.stop(
                         "study_event", event_oid, "study_event create failed"
@@ -3590,15 +3905,11 @@ class Import360i(BaseImporter):
                     continue
                 event_uid = res["uid"]
                 self.uid_map["study_events"][visit_ref] = event_uid
-                self.census.created.append(
-                    {"kind": "study_event", "ref": event_oid}
-                )
+                self.census.created.append({"kind": "study_event", "ref": event_oid})
                 event_state = "created"
 
             form_refs = []
-            for assignment in sorted(
-                assignments, key=lambda a: a.get("ordinal") or 0
-            ):
+            for assignment in sorted(assignments, key=lambda a: a.get("ordinal") or 0):
                 form_uid = self.uid_map["forms"].get(assignment["formRef"])
                 if form_uid is None:
                     self.census.stop(
@@ -3611,7 +3922,9 @@ class Import360i(BaseImporter):
                     {
                         "uid": form_uid,
                         "order_number": assignment.get("ordinal") or len(form_refs) + 1,
-                        "mandatory": "yes" if assignment.get("required", True) else "no",
+                        "mandatory": (
+                            "yes" if assignment.get("required", True) else "no"
+                        ),
                         "locked": "No",
                         "collection_exception_condition_oid": None,
                     }
@@ -3632,8 +3945,7 @@ class Import360i(BaseImporter):
             # Assignment provenance (_derivedFrom, _conditionalNote, ...) has
             # no FORM_REF slot — carried, per assignment, never silently lost.
             derived = [
-                a for a in assignments
-                if any(k.startswith("_") for k in a.keys())
+                a for a in assignments if any(k.startswith("_") for k in a.keys())
             ]
             if derived:
                 self.census.carried.append(
@@ -3668,7 +3980,9 @@ class Import360i(BaseImporter):
             census["counts"]["importer_scaffolding"],
         )
         for row in census["stopped"]:
-            self.log.warning("STOPPED %s '%s': %s", row["kind"], row["ref"], row["reason"])
+            self.log.warning(
+                "STOPPED %s '%s': %s", row["kind"], row["ref"], row["reason"]
+            )
         return {
             "import_id": import_id,
             "osb_study_uid": study_uid,

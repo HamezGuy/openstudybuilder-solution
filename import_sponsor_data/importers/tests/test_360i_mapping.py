@@ -5,6 +5,10 @@ from â€” deterministic identity minting, the carrier-epoch honesty rule, ST
 on unknown vocabulary, and window offsets relative to the scheduled day.
 """
 
+# exact == [] / == {} comparisons are the assertion
+# tests exercise private helpers directly
+# pylint: disable=use-implicit-booleaness-not-comparison,protected-access
+
 from ..mappings import payload_to_osb as mapping
 
 
@@ -44,22 +48,50 @@ def _payload(**over):
             {"name": "Treatment Period", "ordinal": 2, "visitRefs": ["V_BASE", "V_W4"]},
         ],
         "visits": [
-            {"refKey": "V_SCREEN", "name": "Screening", "ordinal": 1, "type": "scheduled", "visitTypeName": "Treatment",
-             "epochRef": 0, "scheduleDay": -14, "minDay": -16, "maxDay": -12},
-            {"refKey": "V_BASE", "name": "Baseline", "ordinal": 2, "type": "scheduled", "visitTypeName": "Treatment",
-             "epochRef": 1, "scheduleDay": 0},
-            {"refKey": "V_W4", "name": "Week 4", "ordinal": 3, "type": "scheduled", "visitTypeName": "Treatment",
-             "epochRef": 1, "scheduleDay": 28, "minDay": 25, "maxDay": 31},
+            {
+                "refKey": "V_SCREEN",
+                "name": "Screening",
+                "ordinal": 1,
+                "type": "scheduled",
+                "visitTypeName": "Treatment",
+                "epochRef": 0,
+                "scheduleDay": -14,
+                "minDay": -16,
+                "maxDay": -12,
+            },
+            {
+                "refKey": "V_BASE",
+                "name": "Baseline",
+                "ordinal": 2,
+                "type": "scheduled",
+                "visitTypeName": "Treatment",
+                "epochRef": 1,
+                "scheduleDay": 0,
+            },
+            {
+                "refKey": "V_W4",
+                "name": "Week 4",
+                "ordinal": 3,
+                "type": "scheduled",
+                "visitTypeName": "Treatment",
+                "epochRef": 1,
+                "scheduleDay": 28,
+                "minDay": 25,
+                "maxDay": 31,
+            },
         ],
         "arms": [{"name": "Widgetinib 10 mg", "description": "Active"}],
         "nonArmGroupClasses": [],
         "odm": {
             "forms": [],
             "codelists": [
-                {"name": "X360I_CL_abcd1234", "terms": [
-                    {"decode": "Mild", "value": "MILD", "order": 1},
-                    {"decode": "Severe", "value": "SEVERE", "order": 2},
-                ]}
+                {
+                    "name": "X360I_CL_abcd1234",
+                    "terms": [
+                        {"decode": "Mild", "value": "MILD", "order": 1},
+                        {"decode": "Severe", "value": "SEVERE", "order": 2},
+                    ],
+                }
             ],
             "units": ["mmHg"],
         },
@@ -161,23 +193,40 @@ def test_explicit_withdrawal_criterion_preserves_wording_type_and_evidence():
     text = "Withdrawal of consent. Further observation stops from consent withdrawal."
     evidence = [{"documentId": "protocol", "page": 14, "section": "8.3"}]
     purpose = {
-        "objectives": [], "endpoints": [],
-        "criteria": [{
-            "refKey": "withdrawal-consent", "text": text, "type": "WITHDRAWAL",
-            "sourceAssertionIds": ["source-withdrawal"], "evidence": evidence,
-        }],
+        "objectives": [],
+        "endpoints": [],
+        "criteria": [
+            {
+                "refKey": "withdrawal-consent",
+                "text": text,
+                "type": "WITHDRAWAL",
+                "sourceAssertionIds": ["source-withdrawal"],
+                "evidence": evidence,
+            }
+        ],
         "blockers": [],
         "reconciliation": {
-            "balanced": True, "sourceAssertions": 1, "mappedAssertions": 1,
-            "blockedAssertions": 0, "objectives": 0, "endpoints": 0, "criteria": 1,
+            "balanced": True,
+            "sourceAssertions": 1,
+            "mappedAssertions": 1,
+            "blockedAssertions": 0,
+            "objectives": 0,
+            "endpoints": 0,
+            "criteria": 1,
         },
     }
     plan = mapping.study_purpose_plan(_payload(studyPurpose=purpose))
-    assert plan["criteria"] == [{
-        "ref": "withdrawal-consent", "text": text, "type": "WITHDRAWAL",
-        "type_name": "Withdrawal Criteria", "category": None,
-        "source_assertion_ids": ["source-withdrawal"], "evidence": evidence,
-    }]
+    assert plan["criteria"] == [
+        {
+            "ref": "withdrawal-consent",
+            "text": text,
+            "type": "WITHDRAWAL",
+            "type_name": "Withdrawal Criteria",
+            "category": None,
+            "source_assertion_ids": ["source-withdrawal"],
+            "evidence": evidence,
+        }
+    ]
 
 
 def test_no_epochs_preserves_missing_structure_without_inventing_carrier():
@@ -205,14 +254,35 @@ def test_anchor_is_earliest_visit_and_times_rebase_to_it_when_no_day_zero():
     # With no day-0 visit, the EARLIEST dated visit is the anchor and its day
     # becomes the origin: it rebases to 0 and every other visit gets a positive
     # offset (never a negative time before the anchor, which OSB rejects).
-    p = _payload(epochs=[], visits=[
-        {"refKey": "V_D1", "name": "Day 1", "ordinal": 1, "type": "scheduled", "visitTypeName": "Treatment",
-         "scheduleDay": 1},
-        {"refKey": "V_DN10", "name": "Day -10", "ordinal": 2, "type": "scheduled", "visitTypeName": "Treatment",
-         "scheduleDay": -10},
-        {"refKey": "V_D20", "name": "Day 20", "ordinal": 3, "type": "scheduled", "visitTypeName": "Treatment",
-         "scheduleDay": 20},
-    ])
+    p = _payload(
+        epochs=[],
+        visits=[
+            {
+                "refKey": "V_D1",
+                "name": "Day 1",
+                "ordinal": 1,
+                "type": "scheduled",
+                "visitTypeName": "Treatment",
+                "scheduleDay": 1,
+            },
+            {
+                "refKey": "V_DN10",
+                "name": "Day -10",
+                "ordinal": 2,
+                "type": "scheduled",
+                "visitTypeName": "Treatment",
+                "scheduleDay": -10,
+            },
+            {
+                "refKey": "V_D20",
+                "name": "Day 20",
+                "ordinal": 3,
+                "type": "scheduled",
+                "visitTypeName": "Treatment",
+                "scheduleDay": 20,
+            },
+        ],
+    )
     plans = {pl["refKey"]: pl for pl in mapping.visit_plan(p, {})}
     # Earliest (day -10) is the anchor, rebased to 0.
     assert plans["V_DN10"]["is_global_anchor_visit"] is True
@@ -375,7 +445,12 @@ def test_arm_diff_removed_arm_deletes():
             "short_name": "Widgetinib 10 mg"[:20],
             "description": "Active",
         },
-        "Placebo": {"uid": "StudyArm_2", "name": "Placebo", "short_name": "Placebo", "description": None},
+        "Placebo": {
+            "uid": "StudyArm_2",
+            "name": "Placebo",
+            "short_name": "Placebo",
+            "description": None,
+        },
     }
     diff = mapping.arm_diff(p, current)
     assert [e["ref"] for e in diff["delete"]] == ["Placebo"]
@@ -415,11 +490,16 @@ def test_odm_concept_diff_missing_stored_sha_forces_patch():
 
 def test_odm_item_text_requires_authority_for_native_length_when_unstated():
     import pytest
+
     with pytest.raises(ValueError, match="OSB_CAPTURE_TEXT_LENGTH_AUTHORITY_REQUIRED"):
-        mapping.odm_item_body({"name": "Comment", "refKey": "IT.CMT", "datatype": "text"}, {}, {})
+        mapping.odm_item_body(
+            {"name": "Comment", "refKey": "IT.CMT", "datatype": "text"}, {}, {}
+        )
     # A stated length is honored, not overridden.
     body2 = mapping.odm_item_body(
-        {"name": "Comment", "refKey": "IT.CMT", "datatype": "string", "length": 40}, {}, {}
+        {"name": "Comment", "refKey": "IT.CMT", "datatype": "string", "length": 40},
+        {},
+        {},
     )
     assert body2["length"] == 40
     # Non-text datatypes keep whatever was stated (including None).
@@ -440,6 +520,7 @@ def test_content_sha_is_stable_and_order_independent():
 # batch atomically. A catch-all group that re-lists domain fields must NOT steal
 # them, and the items unique to it must still wire (regression: a payload's
 # Medical History "MH_OTHER" catch-all silently dropped all 140 of its items).
+
 
 def _odm_two_groups():
     # AE is a focused domain group (its one shared item AETERM + one unique);
@@ -471,8 +552,14 @@ def _odm_two_groups():
                         "refKey": "G_AAA_CATCH",
                         "orderNumber": 1,
                         "items": [
-                            {"refKey": "AETERM", "orderNumber": 1},  # shared, owned by AE
-                            {"refKey": "AESER", "orderNumber": 2},  # shared, owned by AE
+                            {
+                                "refKey": "AETERM",
+                                "orderNumber": 1,
+                            },  # shared, owned by AE
+                            {
+                                "refKey": "AESER",
+                                "orderNumber": 2,
+                            },  # shared, owned by AE
                             {"refKey": "MH_ONLY", "orderNumber": 3},  # unique here
                         ],
                     }
@@ -569,9 +656,7 @@ def test_placement_item_oid_clones_duplicates_but_preserves_source_ref():
     clone_oid = mapping.placement_item_oid("AETERM", "G_AAA_CATCH", "G_AE")
     assert owner_oid == "AETERM"
     assert clone_oid.startswith("AETERM__X360I_PL_")
-    assert clone_oid == mapping.placement_item_oid(
-        "AETERM", "G_AAA_CATCH", "G_AE"
-    )
+    assert clone_oid == mapping.placement_item_oid("AETERM", "G_AAA_CATCH", "G_AE")
     assert clone_oid != mapping.placement_item_oid("AETERM", "G_OTHER", "G_AE")
 
 
@@ -599,7 +684,7 @@ def test_exact_source_carriers_preserve_study_form_and_field_data():
                             }
                         ],
                     }
-                ]
+                ],
             },
         }
     )

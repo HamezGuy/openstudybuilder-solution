@@ -1,5 +1,9 @@
 """Focused stateful reconciliation tests for the 360i importer."""
 
+# exact == [] / == {} comparisons are the assertion
+# tests exercise private helpers directly
+# pylint: disable=use-implicit-booleaness-not-comparison,protected-access
+
 from ..mappings import payload_to_osb as mapping
 from ..run_import_360i import (
     CARRIER_EPOCH_DESCRIPTION,
@@ -232,9 +236,7 @@ class _PurposeApi:
         if path == "/studies/Study_1/study-endpoints":
             row = {
                 "study_endpoint_uid": "StudyEndpoint_1",
-                "study_objective": {
-                    "study_objective_uid": body["study_objective_uid"]
-                },
+                "study_objective": {"study_objective_uid": body["study_objective_uid"]},
                 "endpoint_level": {"term_uid": body["endpoint_level_uid"]},
                 "endpoint": {"name_plain": "Total insulin used."},
                 "timeframe": None,

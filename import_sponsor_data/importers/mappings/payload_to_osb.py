@@ -41,16 +41,28 @@ X360I_NAMESPACE = {
 # its OID (SE.360I.<studyId>.<visitRef>), which Leg C parses directly — so no
 # StudyEventDef-scoped attribute is needed. (Hence visitRefKey is dropped.)
 X360I_ATTRIBUTES = [
-    {"name": "refKey", "compatible_types": ["FormDef", "ItemGroupDef", "ItemDef"], "data_type": "string"},
+    {
+        "name": "refKey",
+        "compatible_types": ["FormDef", "ItemGroupDef", "ItemDef"],
+        "data_type": "string",
+    },
     {"name": "fieldType", "compatible_types": ["ItemDef"], "data_type": "string"},
     {"name": "studyId", "compatible_types": ["FormDef"], "data_type": "string"},
     {"name": "buildHash", "compatible_types": ["FormDef"], "data_type": "string"},
-    {"name": "ext", "compatible_types": ["FormDef", "ItemGroupDef", "ItemDef"], "data_type": "string"},
+    {
+        "name": "ext",
+        "compatible_types": ["FormDef", "ItemGroupDef", "ItemDef"],
+        "data_type": "string",
+    },
     # Exact source objects are the closed-loop carrier. `ext` contains only
     # properties which Leg A did not map first-class; `source` also preserves
     # handled values (option codes, original refKeys, null-vs-default, etc.) so
     # Leg C can prove and restore byte-semantic parity after an OSB round trip.
-    {"name": "source", "compatible_types": ["FormDef", "ItemDef"], "data_type": "string"},
+    {
+        "name": "source",
+        "compatible_types": ["FormDef", "ItemDef"],
+        "data_type": "string",
+    },
     # One deterministic form carries the non-structural StudyBundle envelope:
     # study metadata, tasks, provenance, narrative, evidence, and build census.
     # This keeps OSB as the system of record without making Leg C read Postgres.
@@ -58,7 +70,11 @@ X360I_ATTRIBUTES = [
     # Content sha of the last-imported concept body — the upsert's
     # content-compare reads it back from OSB state so an unchanged concept is
     # not version-churned on re-import (no dependency on the payload hash).
-    {"name": "content", "compatible_types": ["FormDef", "ItemGroupDef", "ItemDef"], "data_type": "string"},
+    {
+        "name": "content",
+        "compatible_types": ["FormDef", "ItemGroupDef", "ItemDef"],
+        "data_type": "string",
+    },
 ]
 
 # Payload visit `type` -> (candidate OSB VisitType term names, visit_class).
@@ -264,10 +280,9 @@ def _flowchart_group_name(activity):
     if category in set(FLOWCHART_GROUP_BY_CDASH_DOMAIN.values()):
         return category
     identity = semantic_identity(activity.get("name"))
-    return (
-        FLOWCHART_GROUP_BY_ACTIVITY_NAME.get(identity)
-        or FLOWCHART_GROUP_OVERRIDES.get(identity)
-    )
+    return FLOWCHART_GROUP_BY_ACTIVITY_NAME.get(
+        identity
+    ) or FLOWCHART_GROUP_OVERRIDES.get(identity)
 
 
 def native_soa_plan(payload, library_activities):
@@ -309,7 +324,10 @@ def native_soa_plan(payload, library_activities):
         raise ValueError("OSB_NATIVE_SOA_UNJOINED_VISIT_IDS_MISMATCH")
     if reconciliation.get("joinedScheduleCells") != joined_schedules:
         raise ValueError("OSB_NATIVE_SOA_JOINED_SCHEDULE_COUNT_MISMATCH")
-    if reconciliation.get("unjoinedScheduleCells") != len(source_schedules) - joined_schedules:
+    if (
+        reconciliation.get("unjoinedScheduleCells")
+        != len(source_schedules) - joined_schedules
+    ):
         raise ValueError("OSB_NATIVE_SOA_UNJOINED_SCHEDULE_COUNT_MISMATCH")
 
     activity_by_ref = {}
@@ -402,33 +420,65 @@ def native_soa_plan(payload, library_activities):
         activity_ref = str(schedule.get("activityRef") or "").strip()
         source_visit_id = str(schedule.get("sourceVisitId") or "").strip()
         if activity_ref not in activity_by_ref:
-            raise ValueError(f"OSB_NATIVE_SOA_SCHEDULE_ACTIVITY_MISSING:{activity_ref or index}")
+            raise ValueError(
+                f"OSB_NATIVE_SOA_SCHEDULE_ACTIVITY_MISSING:{activity_ref or index}"
+            )
         if source_visit_id not in visit_by_source_id:
-            raise ValueError(f"OSB_NATIVE_SOA_SCHEDULE_VISIT_MISSING:{source_visit_id or index}")
+            raise ValueError(
+                f"OSB_NATIVE_SOA_SCHEDULE_VISIT_MISSING:{source_visit_id or index}"
+            )
         source_cell = (activity_ref, source_visit_id)
         if source_cell in seen_source_cells:
-            blocked.append({"kind": "activity_schedule", "ref": f"{activity_ref}::{source_visit_id}",
-                            "reason": "OSB_NATIVE_SOA_SCHEDULE_OCCURRENCE_CONFLICT", "source": schedule})
+            blocked.append(
+                {
+                    "kind": "activity_schedule",
+                    "ref": f"{activity_ref}::{source_visit_id}",
+                    "reason": "OSB_NATIVE_SOA_SCHEDULE_OCCURRENCE_CONFLICT",
+                    "source": schedule,
+                }
+            )
             # No duplicate winner is executable when the source occurrences differ.
-            schedules = [row for row in schedules if not (row["activity_ref"] == activity_ref and row["source_visit_id"] == source_visit_id)]
+            schedules = [
+                row
+                for row in schedules
+                if not (
+                    row["activity_ref"] == activity_ref
+                    and row["source_visit_id"] == source_visit_id
+                )
+            ]
             continue
         seen_source_cells.add(source_cell)
         unsupported = []
         rules = schedule.get("applicabilityRules", [])
         rules_valid = isinstance(rules, list) and all(
-            isinstance(rule, dict) and rule.get("ruleType") == "ALWAYS"
-            and not set(rule).difference({"ruleType", "ruleId", "evidenceRef", "status", "scopeRef"})
+            isinstance(rule, dict)
+            and rule.get("ruleType") == "ALWAYS"
+            and not set(rule).difference(
+                {"ruleType", "ruleId", "evidenceRef", "status", "scopeRef"}
+            )
             and ("status" not in rule or rule["status"] == "INCLUDED")
-            and ("scopeRef" not in rule or rule["scopeRef"] in (None, "")) for rule in rules)
-        if schedule.get("conditional") or not rules_valid or schedule.get("required") is not True:
+            and ("scopeRef" not in rule or rule["scopeRef"] in (None, ""))
+            for rule in rules
+        )
+        if (
+            schedule.get("conditional")
+            or not rules_valid
+            or schedule.get("required") is not True
+        ):
             unsupported.append("OSB_NATIVE_SOA_APPLICABILITY_AUTHORITY_REQUIRED")
         if schedule.get("unresolvedFootnoteRefs"):
             unsupported.append("OSB_NATIVE_SOA_FOOTNOTE_DEFINITION_UNAVAILABLE")
         if schedule.get("footnoteRefs"):
             unsupported.append("OSB_NATIVE_SOA_FOOTNOTE_INSTRUCTION_BINDING_REQUIRED")
         if unsupported:
-            blocked.append({"kind": "activity_schedule", "ref": f"{activity_ref}::{source_visit_id}",
-                            "reason": ";".join(unsupported), "source": schedule})
+            blocked.append(
+                {
+                    "kind": "activity_schedule",
+                    "ref": f"{activity_ref}::{source_visit_id}",
+                    "reason": ";".join(unsupported),
+                    "source": schedule,
+                }
+            )
             continue
         payload_visit_ref = schedule.get("payloadVisitRef")
         if not payload_visit_ref:
@@ -645,6 +695,7 @@ def epoch_subtype_candidates(epoch_name):
 def visit_plan(payload, epoch_uid_by_ref):
     """Preserve source timing; require explicit native type and occurrence context."""
     visits = list(payload.get("visits", []))
+
     def gate(visit):
         type_key = str(visit.get("type") or "scheduled").strip().lower()
         if type_key not in VISIT_TYPE_MAP:
@@ -655,15 +706,22 @@ def visit_plan(payload, epoch_uid_by_ref):
             return "OSB_VISIT_TIMING_AUTHORITY_REQUIRED"
         for key in ("scheduleDay", "minDay", "maxDay"):
             value = visit.get(key)
-            if value is not None and (type(value) not in (int, float) or not float(value).is_integer()):
+            if value is not None and (
+                type(value) not in (int, float) or not float(value).is_integer()
+            ):
                 return "OSB_VISIT_FRACTIONAL_OR_INVALID_DAY_UNSUPPORTED"
-        if not isinstance(visit.get("visitTypeName"), str) or not visit["visitTypeName"].strip():
+        if (
+            not isinstance(visit.get("visitTypeName"), str)
+            or not visit["visitTypeName"].strip()
+        ):
             return "OSB_VISIT_TYPE_AUTHORITY_REQUIRED"
         if epoch_uid_by_ref and not epoch_uid_by_ref.get(visit["refKey"]):
             return "OSB_VISIT_EPOCH_BINDING_REQUIRED"
         return None
 
-    dated = [(int(v["scheduleDay"]), i) for i, v in enumerate(visits) if gate(v) is None]
+    dated = [
+        (int(v["scheduleDay"]), i) for i, v in enumerate(visits) if gate(v) is None
+    ]
     zero = next(((d, i) for d, i in dated if d == 0), None)
     origin, anchor_idx = zero or (min(dated) if dated else (0, -1))
     chronological = sorted(dated)
@@ -672,26 +730,38 @@ def visit_plan(payload, epoch_uid_by_ref):
     for i, visit in enumerate(visits):
         requirement = gate(visit)
         if requirement:
-            plans.append({"refKey": visit["refKey"], "stop": requirement, "source": visit})
+            plans.append(
+                {"refKey": visit["refKey"], "stop": requirement, "source": visit}
+            )
             continue
         day = int(visit["scheduleDay"])
-        plans.append({
-            "visit_class": "MANUALLY_DEFINED_VISIT",
-            "visit_type_names": [visit["visitTypeName"].strip()],
-            "visit_type_name": visit["visitTypeName"].strip(),
-            "visit_contact_mode_name": visit.get("visitContactModeName"),
-            "epoch_ref": visit.get("epochRef"),
-            "study_epoch_uid": epoch_uid_by_ref.get(visit["refKey"]),
-            "refKey": visit["refKey"],
-            "is_global_anchor_visit": i == anchor_idx,
-            "time_value": day - origin,
-            "day_missing": False, "unscheduled_demoted": False,
-            "visit_name": visit["name"], "visit_short_name": visit["refKey"][:20],
-            "visit_number": rank_by_index[i], "unique_visit_number": rank_by_index[i] * 100,
-            "description": visit.get("description"), "show_visit": True,
-            "min_window": int(visit["minDay"]) - day if visit.get("minDay") is not None else 0,
-            "max_window": int(visit["maxDay"]) - day if visit.get("maxDay") is not None else 0,
-        })
+        plans.append(
+            {
+                "visit_class": "MANUALLY_DEFINED_VISIT",
+                "visit_type_names": [visit["visitTypeName"].strip()],
+                "visit_type_name": visit["visitTypeName"].strip(),
+                "visit_contact_mode_name": visit.get("visitContactModeName"),
+                "epoch_ref": visit.get("epochRef"),
+                "study_epoch_uid": epoch_uid_by_ref.get(visit["refKey"]),
+                "refKey": visit["refKey"],
+                "is_global_anchor_visit": i == anchor_idx,
+                "time_value": day - origin,
+                "day_missing": False,
+                "unscheduled_demoted": False,
+                "visit_name": visit["name"],
+                "visit_short_name": visit["refKey"][:20],
+                "visit_number": rank_by_index[i],
+                "unique_visit_number": rank_by_index[i] * 100,
+                "description": visit.get("description"),
+                "show_visit": True,
+                "min_window": (
+                    int(visit["minDay"]) - day if visit.get("minDay") is not None else 0
+                ),
+                "max_window": (
+                    int(visit["maxDay"]) - day if visit.get("maxDay") is not None else 0
+                ),
+            }
+        )
     return plans
 
 
@@ -700,7 +770,8 @@ def visit_plan(payload, epoch_uid_by_ref):
 # placebo-controlled study, not the placebo arm, and a bare word boundary reads
 # it the wrong way round because '-' is a non-word character.
 _PLACEBO_ARM = re.compile(
-    r"(?:^|\W)(placebo|sham)(?![\s-]*controlled)(?:\W|$)", re.IGNORECASE)
+    r"(?:^|\W)(placebo|sham)(?![\s-]*controlled)(?:\W|$)", re.IGNORECASE
+)
 _COMPARATOR_ARM = re.compile(
     r"(?:^|\W)(comparator|active control|standard of care|standard-of-care|"
     r"usual care|best supportive care)(?:\W|$)",
@@ -833,12 +904,20 @@ def units_plan(payload):
 
 def odm_item_body(item, codelist_uid_by_name, unit_uid_by_name):
     """POST /odms/items body for one payload item."""
-    if item.get("datatypeHint") in {"criteria_list", "readonly_reference", "static_text", "label", "header"}:
+    if item.get("datatypeHint") in {
+        "criteria_list",
+        "readonly_reference",
+        "static_text",
+        "label",
+        "header",
+    }:
         raise ValueError("OSB_CAPTURE_NONSCALAR_NATIVE_BINDING_REQUIRED")
     unit_defs = []
     unit_name = item.get("unitName")
     if unit_name and unit_name.lower() in unit_uid_by_name:
-        unit_defs.append({"uid": unit_uid_by_name[unit_name.lower()], "mandatory": False})
+        unit_defs.append(
+            {"uid": unit_uid_by_name[unit_name.lower()], "mandatory": False}
+        )
     codelist = None
     terms = []
     cl_ref = item.get("codelistRef")
@@ -861,7 +940,9 @@ def odm_item_body(item, codelist_uid_by_name, unit_uid_by_name):
     if length is None and str(datatype).lower() in ("text", "string"):
         raise ValueError("OSB_CAPTURE_TEXT_LENGTH_AUTHORITY_REQUIRED")
     significant_digits = item.get("significantDigits")
-    if str(datatype).lower() == "float" and ((length is None) != (significant_digits is None)):
+    if str(datatype).lower() == "float" and (
+        (length is None) != (significant_digits is None)
+    ):
         raise ValueError("OSB_CAPTURE_FLOAT_LENGTH_PRECISION_PAIR_REQUIRED")
     return {
         "name": item["name"][:200],
@@ -903,7 +984,9 @@ def _canonical_json(value):
 def source_form_value(payload, form_ref):
     """Exact source form, including fields for one bounded lossless carrier."""
     for form in (
-        _source_execution(payload.get("sourceBundle", {})).get("forms", {}).get("forms", [])
+        _source_execution(payload.get("sourceBundle", {}))
+        .get("forms", {})
+        .get("forms", [])
     ):
         if form.get("refKey") == form_ref:
             return _canonical_json(form)
@@ -913,7 +996,9 @@ def source_form_value(payload, form_ref):
 def source_field_value(payload, form_ref, field_ref):
     """Exact source field for one form placement (compound identity)."""
     for form in (
-        _source_execution(payload.get("sourceBundle", {})).get("forms", {}).get("forms", [])
+        _source_execution(payload.get("sourceBundle", {}))
+        .get("forms", {})
+        .get("forms", [])
     ):
         if form.get("refKey") != form_ref:
             continue
@@ -936,10 +1021,16 @@ def source_bundle_snapshot(payload):
         if snapshot.get("formatVersion") == "2.0":
             # Mutating even an empty extensions object can invalidate an exact
             # ledger target. Extra importer custody belongs outside the exchange.
-            return {"formatVersion": "osb-edc-source-snapshot/2", "studyExchange": snapshot,
-                    "semanticSourceCustody": deepcopy(custody)}
+            return {
+                "formatVersion": "osb-edc-source-snapshot/2",
+                "studyExchange": snapshot,
+                "semanticSourceCustody": deepcopy(custody),
+            }
         target = snapshot
-        if "semanticSourceCustody" in target and target["semanticSourceCustody"] != custody:
+        if (
+            "semanticSourceCustody" in target
+            and target["semanticSourceCustody"] != custody
+        ):
             raise ValueError("SEMANTIC_SOURCE_CUSTODY_CONFLICT")
         target["semanticSourceCustody"] = deepcopy(custody)
     return snapshot
@@ -1073,9 +1164,7 @@ def _selection_diff(desired_plans, current_by_ref, key_field, compare_fields):
             result["create"].append(plan)
             continue
         changed = [
-            f
-            for f in compare_fields
-            if _norm(plan.get(f)) != _norm(current.get(f))
+            f for f in compare_fields if _norm(plan.get(f)) != _norm(current.get(f))
         ]
         if changed:
             result["patch"].append(

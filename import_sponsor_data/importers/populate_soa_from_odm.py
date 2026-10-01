@@ -57,7 +57,9 @@ LIBRARY = "Sponsor"
 def request(method, url, body=None):
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(
-        url, data=data, method=method,
+        url,
+        data=data,
+        method=method,
         headers={"content-type": "application/json"},
     )
     try:
@@ -72,7 +74,10 @@ def request(method, url, body=None):
 def get_paged(api, path, page_size=100):
     out, page = [], 1
     while True:
-        d = request("GET", f"{api}{path}{'&' if '?' in path else '?'}page_number={page}&page_size={page_size}")
+        d = request(
+            "GET",
+            f"{api}{path}{'&' if '?' in path else '?'}page_number={page}&page_size={page_size}",
+        )
         items = d.get("items", d) if isinstance(d, dict) else d
         out.extend(items)
         if not isinstance(d, dict) or len(items) < page_size:
@@ -126,8 +131,11 @@ def main():
     # the visit by its order among unique_visit_number-sorted visits recorded at
     # import time. The robust join available live: study-event OID visitRef ==
     # ledger uid_map['visits'] key -> StudyVisit uid.
-    events = [e for e in get_paged(api, "/odms/study-events")
-              if ".360I." in (e.get("oid") or "")]
+    events = [
+        e
+        for e in get_paged(api, "/odms/study-events")
+        if ".360I." in (e.get("oid") or "")
+    ]
     if not events:
         sys.exit("no 360i ODM study-events found; was the study imported?")
 
@@ -151,8 +159,10 @@ def main():
         else:
             unmatched.append(ref)
     if unmatched:
-        sys.exit(f"STOP: study-event visitRefs {unmatched} not resolvable to "
-                 f"study visits — pipe the ledger uid_map JSON on stdin")
+        sys.exit(
+            f"STOP: study-event visitRefs {unmatched} not resolvable to "
+            f"study visits — pipe the ledger uid_map JSON on stdin"
+        )
 
     all_forms = sorted({f for fs in resolved.values() for f in fs})
     print(f"{len(resolved)} visits, {len(all_forms)} scheduled forms")
@@ -168,13 +178,17 @@ def main():
     group_uid, g_new = find_or_create_group(api, "activity-groups", ACTIVITY_GROUP_NAME)
     (census["created"] if g_new else census["reused"]).append(ACTIVITY_GROUP_NAME)
     sub_uid, s_new = find_or_create_group(
-        api, "activity-sub-groups", ACTIVITY_SUBGROUP_NAME,
+        api,
+        "activity-sub-groups",
+        ACTIVITY_SUBGROUP_NAME,
         {"activity_groups": [group_uid]},
     )
     (census["created"] if s_new else census["reused"]).append(ACTIVITY_SUBGROUP_NAME)
 
     # 4. One Activity per scheduled form (find-by-name first).
-    existing = {a.get("name"): a for a in get_paged(api, "/concepts/activities/activities")}
+    existing = {
+        a.get("name"): a for a in get_paged(api, "/concepts/activities/activities")
+    }
     activity_uid_by_form = {}
     for form in all_forms:
         hit = existing.get(form)
@@ -183,17 +197,25 @@ def main():
             activity_uid_by_form[form] = hit["uid"]
             census["reused"].append(form)
             continue
-        created = request("POST", f"{api}/concepts/activities/activities", {
-            "name": form,
-            "name_sentence_case": form.lower(),
-            "library_name": LIBRARY,
-            "is_data_collected": True,
-            "activity_groupings": [{
-                "activity_group_uid": group_uid,
-                "activity_subgroup_uid": sub_uid,
-            }],
-        })
-        request("POST", f"{api}/concepts/activities/activities/{created['uid']}/approvals")
+        created = request(
+            "POST",
+            f"{api}/concepts/activities/activities",
+            {
+                "name": form,
+                "name_sentence_case": form.lower(),
+                "library_name": LIBRARY,
+                "is_data_collected": True,
+                "activity_groupings": [
+                    {
+                        "activity_group_uid": group_uid,
+                        "activity_subgroup_uid": sub_uid,
+                    }
+                ],
+            },
+        )
+        request(
+            "POST", f"{api}/concepts/activities/activities/{created['uid']}/approvals"
+        )
         activity_uid_by_form[form] = created["uid"]
         census["created"].append(form)
 
@@ -202,7 +224,8 @@ def main():
     have = {sa.get("activity", {}).get("uid") for sa in current}
     sa_uid_by_form = {
         sa.get("activity", {}).get("name"): sa["study_activity_uid"]
-        for sa in current if sa.get("activity")
+        for sa in current
+        if sa.get("activity")
     }
     for form in all_forms:
         auid = activity_uid_by_form[form]
@@ -210,17 +233,23 @@ def main():
             continue
         fc_name = FLOWCHART_GROUP_BY_FORM.get(form, DEFAULT_FLOWCHART_GROUP)
         fc_uid = fc_terms.get(fc_name) or fc_terms[DEFAULT_FLOWCHART_GROUP]
-        sel = request("POST", f"{api}/studies/{study}/study-activities", {
-            "activity_uid": auid,
-            "soa_group_term_uid": fc_uid,
-            "activity_group_uid": group_uid,
-            "activity_subgroup_uid": sub_uid,
-        })
+        sel = request(
+            "POST",
+            f"{api}/studies/{study}/study-activities",
+            {
+                "activity_uid": auid,
+                "soa_group_term_uid": fc_uid,
+                "activity_group_uid": group_uid,
+                "activity_subgroup_uid": sub_uid,
+            },
+        )
         sa_uid_by_form[form] = sel["study_activity_uid"]
 
     # 6. Schedules: (study_activity, study_visit) pairs from the ODM matrix.
-    scheduled = {(s["study_activity_uid"], s["study_visit_uid"])
-                 for s in get_paged(api, f"/studies/{study}/study-activity-schedules")}
+    scheduled = {
+        (s["study_activity_uid"], s["study_visit_uid"])
+        for s in get_paged(api, f"/studies/{study}/study-activity-schedules")
+    }
     for vuid, forms in resolved.items():
         for form in forms:
             sa = sa_uid_by_form.get(form)
@@ -229,10 +258,14 @@ def main():
                 continue
             if (sa, vuid) in scheduled:
                 continue
-            request("POST", f"{api}/studies/{study}/study-activity-schedules", {
-                "study_activity_uid": sa,
-                "study_visit_uid": vuid,
-            })
+            request(
+                "POST",
+                f"{api}/studies/{study}/study-activity-schedules",
+                {
+                    "study_activity_uid": sa,
+                    "study_visit_uid": vuid,
+                },
+            )
             census["scheduled"] += 1
 
     print(json.dumps(census, indent=1))
