@@ -98,10 +98,14 @@ an image declares is covered in every compose file of this repository.
 ### Fork schema migrations
 
 The fork's own migrations run in a separate series,
-`db_schema_migration/migrations/migration_accuratrial_001` … `_009`, so they
-never collide with upstream's numbering (they were `migration_024` … `_032`
-before upstream 2.10 shipped its own `migration_024`). See
+`db_schema_migration/migrations/migration_accuratrial_001` … `_010`, so they
+never collide with upstream's numbering (`_001` … `_009` were `migration_024` …
+`_032` before upstream 2.10 shipped its own `migration_024`). See
 [`migration_overview_accuratrial_001.md`](db_schema_migration/migrations/migration_overview_accuratrial_001.md).
+
+`_010` must run before upstream `migration_024`: it adds the sponsor ODM datatype
+`text` to CODMDT so `text` items keep their datatype
+([`migration_overview_accuratrial_010.md`](db_schema_migration/migrations/migration_overview_accuratrial_010.md)).
 
 ### Governed Proposal V2 importer
 

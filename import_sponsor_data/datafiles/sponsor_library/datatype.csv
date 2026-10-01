@@ -1,7 +1,7 @@
 CODELIST_SUBMVAL,PARENT_CODELIST_SUBMVAL__TERM_SUBMVAL__TYPE,TERM_SUBMVAL,SPONSOR_NAME,SPONSOR_NAME_SENTENCE_CASE,NCI_PREFERRED_NAME,ORDER,CONCEPT_ID,CATALOGUES,DEFINITION
 DATATYPE|SMIPLEDT,,char,Char,char,Char,1,,,Character
 DATATYPE|SMIPLEDT,,num,Num,num,Num,2,,,Number
-DATATYPE|CODMDT20|SEMTCDT|NSVXMLDT,DATATYPE:char:specialization,text,Text,text,Text,3,,,Text data type (free text)
+DATATYPE|CODMDT|CODMDT20|SEMTCDT|NSVXMLDT,DATATYPE:char:specialization,text,Text,text,Text,3,,,Text data type (free text)
 DATATYPE|HL7FHRDT|CODMDT|CODMDT13|CODMDT20|SEMTCDT|NSVXMLDT,DATATYPE:num:specialization,integer,Integer,integer,Integer,4,,,Integer data type (please specify the length)
 DATATYPE|CODMDT|CODMDT13|CODMDT20|SEMTCDT|NSVXMLDT,DATATYPE:num:specialization,float,Float,float,Float,5,,,Float data type (please specify the length and the number of digit after the floating separator)
 DATATYPE|HL7FHRDT|CODMDT|CODMDT13|CODMDT20|SEMTCDT|NSVXMLDT,DATATYPE:string:specialization|DATATYPE:integer:specialization,datetime,Date Time,date time,Date time,6,,,Date time data type (yy-mm-dd hh:mm)
