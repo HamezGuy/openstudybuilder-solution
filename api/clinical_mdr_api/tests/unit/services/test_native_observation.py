@@ -52,10 +52,75 @@ class NativeObservationTests(unittest.TestCase):
             native_study={"uid": "S1"},
             readers={"study_endpoints": (lambda **_: [original], lambda **_: [])},
         )
-        self.assertEqual(result["comparisonProfile"], "osb-native-read/1.1")
+        self.assertEqual(result["comparisonProfile"], "osb-native-read/1.2")
         retained = result["records"][1]
         self.assertEqual(retained["record"], original)
         self.assertEqual(retained["comparisonHash"], canonical_hash(compared))
+        self.assertEqual(retained["comparisonExcludedPaths"], paths)
+
+    def test_profile_12_excludes_only_a_latest_epoch_readings_as_of_instant(self):
+        # Two consecutive production polls of one epoch differed only in these two
+        # read-time values, so every poll recorded the epoch as updated.
+        def epoch(read_at, study_value_version=None, label=True):
+            return {
+                "study_uid": "S1",
+                "uid": "StudyEpoch_000001",
+                "study_version": f"LATEST on {read_at}" if label else "1.0",
+                "epoch_name": "Follow-Up 1",
+                "terminology_source": {
+                    "mode": "selected-standard-date-observation",
+                    "studyUid": "S1",
+                    "studyValueVersion": study_value_version,
+                    "nativeStudyAsOf": read_at,
+                    "cutoff": "2024-09-27T23:59:59.999999+00:00",
+                    "terms": {"epoch": {"uid": "CTTerm_001799"}},
+                },
+            }
+
+        first = epoch("2026-10-04T01:24:59.260208+00:00")
+        second = epoch("2026-10-04T01:26:07.841546+00:00")
+        compared, paths = comparison_record(first, "study_epochs")
+        self.assertEqual(
+            paths, ["/study_version", "/terminology_source/nativeStudyAsOf"]
+        )
+        self.assertNotIn("nativeStudyAsOf", compared["terminology_source"])
+        self.assertEqual(
+            compared["terminology_source"]["cutoff"],
+            "2024-09-27T23:59:59.999999+00:00",
+        )
+        self.assertEqual(
+            canonical_hash(compared),
+            canonical_hash(comparison_record(second, "study_epochs")[0]),
+        )
+        self.assertIn("nativeStudyAsOf", first["terminology_source"])
+        # a source change inside the witness is still a change
+        changed = deepcopy(second)
+        changed["terminology_source"]["terms"]["epoch"]["uid"] = "CTTerm_001800"
+        self.assertNotEqual(
+            canonical_hash(compared),
+            canonical_hash(comparison_record(changed, "study_epochs")[0]),
+        )
+        # a reading at a selected version, another collection, or an unlabelled
+        # reading keeps the instant
+        for record, collection in (
+            (epoch("2026-10-04T01:24:59Z", study_value_version="1.0"), "study_epochs"),
+            (epoch("2026-10-04T01:24:59Z"), "study_visits"),
+            (epoch("2026-10-04T01:24:59Z", label=False), "study_epochs"),
+        ):
+            self.assertIn(
+                "nativeStudyAsOf",
+                comparison_record(record, collection)[0]["terminology_source"],
+            )
+        result = collect_native_observation(
+            "S1",
+            native_study={"uid": "S1"},
+            readers={"study_epochs": (lambda **_: [first], lambda **_: [])},
+        )
+        self.assertEqual(result["comparisonProfile"], "osb-native-read/1.2")
+        retained = next(
+            r for r in result["records"] if r["collection"] == "study_epochs"
+        )
+        self.assertEqual(retained["record"], first)
         self.assertEqual(retained["comparisonExcludedPaths"], paths)
 
     def test_generated_read_labels_do_not_reorder_retained_audit_revisions(self):

@@ -1,7 +1,8 @@
 """Read native study state and edit history without granting mapping authority.
 
 Raw records are retained intact. Comparison excludes only explicitly declared
-read-time study_version model labels, never arbitrary nested clinical metadata.
+read-time values (study_version model labels and a latest epoch reading's
+nativeStudyAsOf), never arbitrary nested clinical metadata.
 """
 
 import hashlib
@@ -24,14 +25,18 @@ def canonical_hash(value: Any) -> str:
     return "sha256:" + hashlib.sha256(canonical_json(value).encode()).hexdigest()
 
 
+COMPARISON_PROFILE = "osb-native-read/1.2"
+
+
 def comparison_record(
     record: dict[str, Any], collection: str | None = None
 ) -> tuple[dict, list[str]]:
     compared = deepcopy(record)
     ignored = []
-    if isinstance(compared.get("study_version"), str) and re.fullmatch(
-        r"LATEST on \d{4}-\d{2}-\d{2}T.+", compared["study_version"]
-    ):
+    latest_read = isinstance(compared.get("study_version"), str) and bool(
+        re.fullmatch(r"LATEST on \d{4}-\d{2}-\d{2}T.+", compared["study_version"])
+    )
+    if latest_read:
         del compared["study_version"]
         ignored.append("/study_version")
     # Profile 1.1 declares one additional generated model label: the objective
@@ -45,7 +50,26 @@ def comparison_record(
     ):
         del objective["study_version"]
         ignored.append("/study_objective/study_version")
+    # Profile 1.2: an epoch read at the latest study version carries the time of
+    # the read as its terminology witness's nativeStudyAsOf, so every poll saw
+    # each epoch change. Only that instant, only on a latest reading; the
+    # packages, cutoff and term observations stay source.
+    witness = compared.get("terminology_source")
+    if collection == "study_epochs" and latest_read and _latest_witness(witness):
+        del witness["nativeStudyAsOf"]
+        ignored.append("/terminology_source/nativeStudyAsOf")
     return compared, ignored
+
+
+def _latest_witness(witness: Any) -> bool:
+    """A terminology witness taken at the latest study version, stamped with its read time."""
+    if (
+        not isinstance(witness, dict)
+        or witness.get("studyValueVersion", "") is not None
+    ):
+        return False
+    as_of = witness.get("nativeStudyAsOf")
+    return isinstance(as_of, str) and bool(re.match(r"\d{4}-\d{2}-\d{2}T", as_of))
 
 
 @dataclass(frozen=True)
@@ -658,7 +682,7 @@ def collect_native_observation(
         "schemaVersion": "osb-native-observation/1.0",
         "nativeStudyId": study_uid,
         "capturedAt": datetime.now(timezone.utc).isoformat(),
-        "comparisonProfile": "osb-native-read/1.1",
+        "comparisonProfile": COMPARISON_PROFILE,
         "records": records,
         "auditRecords": history,
         **({"users": users} if users is not None else {}),
