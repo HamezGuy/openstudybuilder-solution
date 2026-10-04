@@ -1,10 +1,11 @@
-"""A term may specialize several parents; only the same parent twice is refused.
+"""A term may specialize several parents; re-adding one changes nothing.
 
 add_parent() called get_or_none() on the relationship for every type. For a term
-that already specialized two parents (2.10's datatime specializes string and
+that already specialized two parents (2.10's datetime specializes string and
 integer) that raised MultipleNodesReturned, so re-running the sponsor datatype
-import, or adding a third specialization, failed. Parent type and subtype stay
-single-valued.
+import, or adding a third specialization, failed. The importer posts every parent
+on every run, so re-adding a specialization the term already has stays a no-op,
+as it was for a single parent. Parent type and subtype stay single-valued.
 """
 
 import types
@@ -74,17 +75,12 @@ def test_a_term_specializing_two_parents_can_specialize_a_third():
     assert datetime.is_specialization_of.connected == [string, integer, text]
 
 
-def test_the_same_specialization_parent_twice_is_refused():
-    string = term("string")
-    datetime = term("datetime", specializes=[string])
-    with pytest.raises(AlreadyExistsException):
-        add_parent(
-            {"string": string, "datetime": datetime},
-            "datetime",
-            "string",
-            TermParentType.SPECIALIZATION,
-        )
-    assert datetime.is_specialization_of.connected == [string]
+def test_re_adding_a_specialization_parent_changes_nothing():
+    string, integer = term("string"), term("integer")
+    datetime = term("datetime", specializes=[string, integer])
+    terms = {t.uid: t for t in (string, integer, datetime)}
+    add_parent(terms, "datetime", "integer", TermParentType.SPECIALIZATION)
+    assert datetime.is_specialization_of.connected == [string, integer]
 
 
 def test_a_parent_type_stays_single_valued():

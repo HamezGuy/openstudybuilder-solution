@@ -638,13 +638,12 @@ class CTTermGenericRepository(
 
         if relationship_type == TermParentType.SPECIALIZATION:
             # A term may specialize several parents (datetime specializes string and
-            # integer), so only the same parent twice is refused. get_or_none() raised
-            # MultipleNodesReturned once a term had two specialization parents.
+            # integer). get_or_none() raised MultipleNodesReturned once a term had two
+            # specialization parents. Adding a parent the term already specializes
+            # changes nothing, as it always did for a single parent, so the sponsor
+            # import can run again.
             if relationship.is_connected(ct_term_root_parent_node):
-                raise AlreadyExistsException(
-                    msg=f"Term with UID '{term_uid}' is already a specialization "
-                    f"of the term with UID '{parent_uid}'"
-                )
+                return
         else:
             parent_node = relationship.get_or_none()
             if parent_node is not None:
