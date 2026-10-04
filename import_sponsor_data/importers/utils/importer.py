@@ -301,7 +301,14 @@ class BaseImporter:
     async def patch_term_if_required(
         self, existing_data: dict, new_data: dict, session: aiohttp.ClientSession
     ):
-        existing_name = existing_data.get("name", {}).get("sponsor_preferred_name")
+        # /ct/codelists/{uid}/terms (where find_term_in_codelists reads existing terms) returns the
+        # name flat; term-detail responses nest it under "name". Reading only the nested form saw
+        # None for every existing term and created a new name version on every run.
+        existing_name = existing_data.get("sponsor_preferred_name")
+        if existing_name is None:
+            existing_name = (existing_data.get("name") or {}).get(
+                "sponsor_preferred_name"
+            )
         new_name = new_data["sponsor_preferred_name"]
         if existing_name == new_name:
             return

@@ -634,19 +634,26 @@ class CTTermGenericRepository(
             )
 
         relationship = relationship_map[relationship_type]
-        parent_node = relationship.get_or_none()
-
-        if (
-            parent_node is not None
-            and relationship_type != TermParentType.SPECIALIZATION
-        ):
-            raise AlreadyExistsException(
-                msg=f"Term with UID '{term_uid}' already has a "
-                f"parent type node with UID '{parent_node.uid}' "
-                f"with the relationship of type '{relationship_type.value}'"
-            )
-
         ct_term_root_parent_node = CTTermRoot.nodes.get_or_none(uid=parent_uid)
+
+        if relationship_type == TermParentType.SPECIALIZATION:
+            # A term may specialize several parents (datetime specializes string and
+            # integer), so only the same parent twice is refused. get_or_none() raised
+            # MultipleNodesReturned once a term had two specialization parents.
+            if relationship.is_connected(ct_term_root_parent_node):
+                raise AlreadyExistsException(
+                    msg=f"Term with UID '{term_uid}' is already a specialization "
+                    f"of the term with UID '{parent_uid}'"
+                )
+        else:
+            parent_node = relationship.get_or_none()
+            if parent_node is not None:
+                raise AlreadyExistsException(
+                    msg=f"Term with UID '{term_uid}' already has a "
+                    f"parent type node with UID '{parent_node.uid}' "
+                    f"with the relationship of type '{relationship_type.value}'"
+                )
+
         relationship.connect(ct_term_root_parent_node)
 
     @sb_clear_cache(

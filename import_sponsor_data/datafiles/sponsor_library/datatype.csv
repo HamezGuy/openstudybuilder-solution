@@ -18,7 +18,7 @@ DATATYPE|CODMDT|CODMDT13|CODMDT20,DATATYPE:date:specialization,partialDate,Parti
 DATATYPE|CODMDT|CODMDT13|CODMDT20,DATATYPE:time:specialization,partialTime,Partial Time,partial time,Partial time,17,,,Partial Time data type
 DATATYPE|CODMDT|CODMDT13|CODMDT20,DATATYPE:datetime:specialization,partialDatetime,Partial Date Time,partial date time,Partial date time,18,,,Partial Date Time data type
 DATATYPE|CODMDT|CODMDT13|CODMDT20|SEMTCDT|NSVXMLDT,DATATYPE:datetime:specialization,durationDatetime,Duration Date Time,duration date time,Duration date time,19,,,Duration Date Time data type
-DATATYPE|CODMDT|CODMDT13|CODMDT20,DATATYPE:datetime:specialization,intervalDatetime,Intervale Date Time,interval date time,Intervale date time,20,,,Interval Date Time data type
+DATATYPE|CODMDT|CODMDT13|CODMDT20,DATATYPE:datetime:specialization,intervalDatetime,Interval Date Time,interval date time,Interval date time,20,,,Interval Date Time data type
 DATATYPE|CODMDT|CODMDT13|CODMDT20,DATATYPE:datetime:specialization,incompleteDatetime,Incomplete Date Time,incomplete date time,Incomplete date time,21,,,Incomplete Date Time data type
 DATATYPE|CODMDT|CODMDT13|CODMDT20,DATATYPE:date:specialization,incompleteDate,Incomplete Date,incomplete date,Incomplete date,22,,,Incomplete Date data type
 DATATYPE|CODMDT|CODMDT13|CODMDT20,DATATYPE:time:specialization,incompleteTime,Incomplete Time,incomplete time,Incomplete time,23,,,Incomplete Time data type
