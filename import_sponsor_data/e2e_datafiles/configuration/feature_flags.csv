@@ -6,7 +6,7 @@ library,Wizard Stepper,activity_instance_wizard_stepper_events,0,This flag toggl
 library,Wizard Stepper,activity_instance_wizard_stepper_textual_findings,0,This flag toggles on/off the Textual Findings use case in the new wizard stepper for activity instances
 library,Wizard Stepper,activity_instance_wizard_stepper_edit_mode,0,This flag toggles on/off the edit mode of the new wizard stepper for activity instances
 library,Compounds v2,compounds_library,0,This flag toggles on/off the whole subpage found at Library/Concepts/Compounds
-library,Non-Standard variables,nsvs_library,This flag toggles on/off the whole subpage found at Library/Concepts/Non-Standard Variables
+library,Non-Standard variables,nsvs_library,0,This flag toggles on/off the whole subpage found at Library/Concepts/Non-Standard Variables
 studies,Compounds v2,compounds_studies,0,This flag toggles on/off the whole subpage found at Studies/Define Study/Study Interventions
 studies,Complexity score,complexity_score_calculation,1,Enables complexity score calculation on the Detailed SoA page
 studies,Complexity score details,complexity_score_details,0,Enables complexity score details dialog on the Detailed SoA page

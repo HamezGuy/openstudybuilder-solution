@@ -59,7 +59,11 @@ class FeatureFlags(BaseImporter):
                 "section": feature_flag_data["section"],
                 "feature": feature_flag_data["feature"],
                 "name": feature_flag_data["name"],
-                "enabled": map_boolean(feature_flag_data["enabled"]),
+                # A row missing a column shifts the description into "enabled"; refuse it
+                # rather than import the flag switched off with no description.
+                "enabled": map_boolean(
+                    feature_flag_data["enabled"], raise_exception=True
+                ),
                 "description": feature_flag_data["description"] or None,
             }
 
