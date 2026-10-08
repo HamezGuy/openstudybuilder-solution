@@ -6,8 +6,7 @@
 # relationship writes. See tmp-ora-wire-20260826/patch-360i-importer.py.
 Import a 360i study (EDCProtocolToECRF) into OpenStudyBuilder.
 
-Reads the OSB-shaped payload the 360i pipeline persisted to its Postgres
-(`ecrf_platform.osb_study_payloads`, written at every study build), populates
+Reads the OSB-shaped payload through the scoped IL owner ledger API, populates
 OSB through OSB's own APIs in dependency order, and records what it did to
 `ecrf_platform.osb_import_ledger` — whose latest row per study is the
 360i-study -> OSB-study crosswalk this importer's own upsert reads back.
@@ -36,7 +35,8 @@ skip so an unchanged concept is not churned. A locked OSB study REFUSES the
 import with an actionable error — never unlocked programmatically.
 
 Env:
-  ECRF_PG_DSN, ECRF_TENANT_ID     the 360i Postgres (see ecrf_platform_db.py)
+  ECRF_API_URL, ECRF_TENANT_ID    IL owner API (see ecrf_platform_db.py)
+  ECRF_API_TOKEN_FILE             externally refreshed scoped IL bearer file
   ECRF_STUDY_ID                   which study to import (or --study)
   API_BASE_URL, STUDYBUILDER_API_TOKEN   the OSB API (see utils/importer.py;
                                   local compose runs OAUTH_ENABLED=False and
@@ -317,13 +317,52 @@ class Import360i(BaseImporter):
                 return term["term_uid"]
         return None
 
-    def _lookup_unit(self, unit_name):
-        units = self.api.get_all_from_api("/concepts/unit-definitions")
-        wanted = unit_name.strip().lower()
-        for unit in units or []:
-            if (unit.get("name") or "").strip().lower() == wanted:
-                return unit["uid"]
-        return None
+    def _lookup_unit(self, unit_name, catalogue=None):
+        """One Final unit explicitly declaring this exact native/UCUM/CT spelling."""
+        if catalogue is None:
+            catalogue = self.api.get_all_from_api_paged(
+                "/concepts/unit-definitions", items_only=False
+            )
+        if not isinstance(catalogue, dict):
+            raise ValueError("OSB_UNIT_CATALOGUE_UNAVAILABLE")
+        units = catalogue.get("items")
+        if (
+            not isinstance(units, list)
+            or not isinstance(catalogue.get("total"), int)
+            or isinstance(catalogue["total"], bool)
+            or len(units) != catalogue["total"]
+            or any(not isinstance(unit, dict) for unit in units)
+            or any(
+                not isinstance(unit.get("uid"), str)
+                or not unit["uid"]
+                or not isinstance(unit.get("name"), str)
+                for unit in units
+            )
+            or len({unit["uid"] for unit in units}) != len(units)
+        ):
+            raise ValueError("OSB_UNIT_CATALOGUE_INCOMPLETE")
+        matches = set()
+        for unit in units:
+            if unit.get("status") != "Final":
+                continue
+            spellings = {unit["name"]}
+            # These spellings come from the approved native definition, never
+            # from a carrier's claimed key, dimension or catalogueTerm.
+            if isinstance(unit.get("legacy_code"), str):
+                spellings.add(unit["legacy_code"])
+            ucum = unit.get("ucum")
+            if isinstance(ucum, dict) and isinstance(ucum.get("name"), str):
+                spellings.add(ucum["name"])
+            for term in unit.get("ct_units") or []:
+                if isinstance(term, dict):
+                    for field in ("term_name", "submission_value"):
+                        if isinstance(term.get(field), str):
+                            spellings.add(term[field])
+            if unit_name in spellings:
+                matches.add(unit["uid"])
+        if len(matches) > 1:
+            raise ValueError(f"OSB_UNIT_NATIVE_BINDING_AMBIGUOUS:{unit_name}")
+        return next(iter(matches), None)
 
     @staticmethod
     def _semantic_key(value):
@@ -541,41 +580,39 @@ class Import360i(BaseImporter):
         return project_number
 
     def ensure_units(self, payload):
-        """Every distinct unit display string the items reference."""
+        """Resolve source spellings to an approved native identity, without writes."""
         unit_uid_by_name = {}
-        for unit_name in mapping.units_plan(payload):
-            uid = self._lookup_unit(unit_name)
-            if uid:
-                self.census.unchanged.append({"kind": "unit", "ref": unit_name})
-            else:
-                self.log.info("Creating unit definition '%s'", unit_name)
-                res = self.api.simple_post_to_api(
-                    "/concepts/unit-definitions",
-                    {
-                        "name": unit_name,
-                        "library_name": "Sponsor",
-                        "convertible_unit": False,
-                        "display_unit": True,
-                        "master_unit": False,
-                        "si_unit": False,
-                        "us_conventional_unit": False,
-                        "ct_units": [],
-                        "unit_subsets": [],
-                    },
-                )
-                if res is None:
-                    self.census.stop("unit", unit_name, "unit-definition create failed")
-                    continue
-                uid = res["uid"]
-                if not self.api.simple_approve(
-                    f"/concepts/unit-definitions/{uid}/approvals"
-                ):
-                    self.census.stop(
-                        "unit", unit_name, "unit-definition approval failed"
-                    )
-                    continue
-                self.census.created.append({"kind": "unit", "ref": unit_name})
-            unit_uid_by_name[unit_name.lower()] = uid
+        plans = mapping.units_plan(payload)
+        if not plans:
+            return unit_uid_by_name
+        catalogue = self.api.get_all_from_api_paged(
+            "/concepts/unit-definitions", items_only=False
+        )
+        if catalogue is None:
+            self.census.stop("unit", "catalogue", "OSB_UNIT_CATALOGUE_UNAVAILABLE")
+            self.census.block_release(
+                "unit", "catalogue", "OSB_UNIT_CATALOGUE_UNAVAILABLE"
+            )
+            return unit_uid_by_name
+        for plan in plans:
+            try:
+                bindings = {
+                    name: self._lookup_unit(name, catalogue)
+                    for name in plan["spellings"]
+                }
+                if any(uid is None for uid in bindings.values()):
+                    raise ValueError("OSB_UNIT_NATIVE_BINDING_REQUIRED")
+                matches = set(bindings.values())
+                if len(matches) != 1:
+                    raise ValueError("OSB_UNIT_NATIVE_BINDING_AMBIGUOUS")
+            except ValueError as exc:
+                self.census.stop("unit", plan["key"], str(exc))
+                self.census.block_release("unit", plan["key"], str(exc))
+                continue
+            uid = next(iter(matches))
+            for name in plan["spellings"]:
+                self.census.unchanged.append({"kind": "unit", "ref": name})
+                unit_uid_by_name[name] = uid
         return unit_uid_by_name
 
     def ensure_codelists(self, payload):
@@ -1580,6 +1617,182 @@ class Import360i(BaseImporter):
             }
         return current
 
+    def _preflight_arm_identity(self, payload, crosswalk, study_id):
+        """Rebind an old truncated key only with original source and native proof.
+
+        The old mapper used the first 200 characters as identity. Replacing that
+        key without proof would create a new arm and delete the prior native arm.
+        No native write, source mutation or guessed disambiguation occurs here.
+        """
+        prior_refs = (crosswalk.get("uid_map") or {}).get("arms") or {}
+        suspect_refs = sorted(ref for ref in prior_refs if len(ref) == 200)
+        try:
+            desired_names = {arm["name"] for arm in mapping.arms_plan(payload)}
+            if not desired_names and not suspect_refs:
+                return False
+            prior = None
+            prior_names = []
+            if suspect_refs or any(len(name) > 20 for name in desired_names):
+                prior = self.db.read_payload(crosswalk["payload_hash"], study_id)
+                if not prior or prior.get("payload_hash") != crosswalk["payload_hash"]:
+                    raise ValueError("OSB_ARM_PRIOR_SOURCE_PROOF_REQUIRED")
+                prior_names = [
+                    arm["name"] for arm in mapping.arms_plan(prior["payload"])
+                ]
+
+            def native_rows(collection):
+                native = self.api.get_all_from_api_paged(
+                    f"/studies/{crosswalk['osb_study_uid']}/{collection}",
+                    items_only=False,
+                )
+                if (
+                    not isinstance(native, dict)
+                    or not isinstance(native.get("items"), list)
+                    or not isinstance(native.get("total"), int)
+                    or isinstance(native.get("total"), bool)
+                    or len(native["items"]) != native["total"]
+                    or any(not isinstance(row, dict) for row in native["items"])
+                ):
+                    raise ValueError("OSB_ARM_NATIVE_PROOF_INCOMPLETE")
+                return native["items"]
+
+            native_by_uid = {}
+            for arm in native_rows("study-arms"):
+                uid = arm.get("arm_uid") or arm.get("uid")
+                if not isinstance(uid, str) or not uid or uid in native_by_uid:
+                    raise ValueError("OSB_ARM_NATIVE_PROOF_AMBIGUOUS")
+                native_by_uid[uid] = arm
+            rebindings = {}
+            for ref in suspect_refs:
+                source_names = [name for name in prior_names if name[:200] == ref]
+                if len(source_names) != 1:
+                    raise ValueError("OSB_ARM_LEGACY_IDENTITY_AMBIGUOUS")
+                full_name = source_names[0]
+                if full_name == ref:
+                    continue  # The original name really had exactly 200 characters.
+                uid = prior_refs[ref]
+                actual = native_by_uid.get(uid)
+                if (
+                    full_name not in desired_names
+                    or full_name in prior_refs
+                    or list(prior_refs.values()).count(uid) != 1
+                    or not actual
+                    or actual.get("name") not in (ref, full_name)
+                    or actual.get("short_name") not in (full_name[:20], full_name)
+                ):
+                    raise ValueError("OSB_ARM_LEGACY_IDENTITY_RECONCILIATION_REQUIRED")
+                rebindings[ref] = (full_name, uid)
+            prospective_refs = dict(prior_refs)
+            for ref, (full_name, uid) in rebindings.items():
+                prospective_refs.pop(ref)
+                prospective_refs[full_name] = uid
+            # The native domain requires name and short_name uniqueness. Do not
+            # discover an unowned/manual collision after programme/study writes,
+            # or appropriate another native arm merely because its name matches.
+            for name in sorted(desired_names):
+                expected_uid = prospective_refs.get(name)
+                for uid, actual in native_by_uid.items():
+                    if uid != expected_uid and (
+                        actual.get("name") == name or actual.get("short_name") == name
+                    ):
+                        raise ValueError("OSB_ARM_NATIVE_NAME_ALREADY_BOUND")
+            # A design cell still points to its original element after an arm
+            # rename. Prove that join before repairing an old truncated element;
+            # names alone must not adopt a manual element or create a replacement.
+            elements = native_rows("study-elements")
+            # This native route is an unpaginated list (unlike arms/elements).
+            cells = self.api.get_all_from_api(
+                f"/studies/{crosswalk['osb_study_uid']}/study-design-cells"
+            )
+            if not isinstance(cells, list) or any(
+                not isinstance(cell, dict) for cell in cells
+            ):
+                raise ValueError("OSB_ELEMENT_NATIVE_PROOF_INCOMPLETE")
+            element_uids = [
+                row.get("element_uid") or row.get("uid") for row in elements
+            ]
+            if any(not isinstance(uid, str) or not uid for uid in element_uids) or len(
+                set(element_uids)
+            ) != len(element_uids):
+                raise ValueError("OSB_ELEMENT_NATIVE_PROOF_AMBIGUOUS")
+            element_names = [row.get("name") for row in elements]
+            if any(not isinstance(name, str) for name in element_names) or len(
+                set(element_names)
+            ) != len(element_names):
+                raise ValueError("OSB_ELEMENT_NATIVE_NAME_AMBIGUOUS")
+            element_repairs = {}
+            for name in sorted(desired_names):
+                arm_uid = prospective_refs.get(name)
+                matches = [
+                    row
+                    for row in elements
+                    if row.get("name") == name
+                    or (len(name) > 200 and arm_uid and row.get("name") == name[:200])
+                ]
+                arm_cells = [
+                    cell for cell in cells if cell.get("study_arm_uid") == arm_uid
+                ]
+                if not matches and not arm_cells:
+                    continue  # No prior native element/cell exists to replace.
+                if len(matches) != 1 or not arm_uid:
+                    raise ValueError(
+                        "OSB_ELEMENT_LEGACY_IDENTITY_RECONCILIATION_REQUIRED"
+                    )
+                actual = matches[0]
+                element_uid = actual.get("element_uid") or actual.get("uid")
+                linked_cells = [
+                    cell
+                    for cell in cells
+                    if cell.get("study_element_uid") == element_uid
+                ]
+                if (
+                    actual.get("description") != SCAFFOLDING_ELEMENT_DESCRIPTION
+                    or not arm_cells
+                    or not linked_cells
+                    or any(
+                        cell.get("study_element_uid") != element_uid
+                        for cell in arm_cells
+                    )
+                    or any(
+                        cell.get("study_arm_uid") != arm_uid for cell in linked_cells
+                    )
+                    or actual.get("short_name") not in (name[:20], name)
+                ):
+                    raise ValueError(
+                        "OSB_ELEMENT_LEGACY_IDENTITY_RECONCILIATION_REQUIRED"
+                    )
+                if actual.get("name") != name or actual.get("short_name") != name:
+                    if not prior or prior_names.count(name) != 1:
+                        raise ValueError("OSB_ELEMENT_PRIOR_SOURCE_PROOF_REQUIRED")
+                    element_repairs[name] = {
+                        "uid": element_uid,
+                        "prior_name": actual["name"],
+                        "prior_short_name": actual["short_name"],
+                        "source_payload_hash": prior["payload_hash"],
+                    }
+            # Apply only after every suspect mapping is proved. A refusal cannot
+            # persist a partially repaired crosswalk on the stopped import.
+            self._element_name_repairs = element_repairs
+            for ref, (full_name, uid) in rebindings.items():
+                self.uid_map["arms"].pop(ref, None)
+                self.uid_map["arms"][full_name] = uid
+                self.census.carried.append(
+                    {
+                        "kind": "arm_identity_rebound",
+                        "ref": full_name,
+                        "prior_ref": ref,
+                        "uid": uid,
+                        "source_payload_hash": prior["payload_hash"],
+                        "reason": "original source and current native arm prove the same UID",
+                    }
+                )
+            return bool(rebindings or element_repairs)
+        except (KeyError, TypeError, ValueError) as error:
+            reason = str(error)
+            self.census.stop("arm_identity", study_id, reason)
+            self.census.block_release("arm_identity", study_id, reason)
+            return False
+
     def ensure_arms(self, payload, study_uid):
         """Reconcile study-arms to the payload (create/patch/delete). Genuine
         arms only; non-arm group classes ride the census as carried."""
@@ -1712,35 +1925,88 @@ class Import360i(BaseImporter):
         never deletes a cell a human added.
         """
         plan = mapping.design_structure_plan(payload)
-        if not plan["elements"] or not epoch_uids:
+        if not plan["elements"]:
+            return
+        if not epoch_uids and not getattr(self, "_element_name_repairs", {}):
             return
 
-        subtype_uid = None
-        for candidate in mapping.SCAFFOLDING_ELEMENT_SUBTYPES:
-            term, error = self._lookup_final_ct_term(
-                CODELIST_ELEMENT_SUBTYPE, candidate
+        existing_rows = (
+            self.api.get_all_from_api(
+                f"/studies/{study_uid}/study-elements", params={"page_size": 0}
             )
-            if not error and term:
-                subtype_uid = term["term_uid"]
-                break
-        if subtype_uid is None:
-            self.census.stop(
-                "study_element",
-                study_uid,
-                f"no Final term in '{CODELIST_ELEMENT_SUBTYPE}' for any of "
-                f"{mapping.SCAFFOLDING_ELEMENT_SUBTYPES}; design cells not created",
-            )
-            return
-
-        existing = {
-            str(e.get("name")): (e.get("element_uid") or e.get("uid"))
-            for e in (
-                self.api.get_all_from_api(
-                    f"/studies/{study_uid}/study-elements", params={"page_size": 0}
+            or []
+        )
+        existing = {}
+        for row in existing_rows:
+            name = row.get("name")
+            if name in existing:
+                reason = "OSB_ELEMENT_NATIVE_NAME_AMBIGUOUS"
+                self.census.stop("study_element", str(name), reason)
+                self.census.block_release("study_element", str(name), reason)
+                return
+            existing[name] = row.get("element_uid") or row.get("uid")
+        validated_repairs = []
+        for name, repair in getattr(self, "_element_name_repairs", {}).items():
+            matches = [
+                row
+                for row in existing_rows
+                if (row.get("element_uid") or row.get("uid")) == repair["uid"]
+            ]
+            if (
+                (name in existing and existing[name] != repair["uid"])
+                or len(matches) != 1
+                or any(
+                    matches[0].get(field) != value
+                    for field, value in (
+                        ("name", repair["prior_name"]),
+                        ("short_name", repair["prior_short_name"]),
+                        ("description", SCAFFOLDING_ELEMENT_DESCRIPTION),
+                    )
                 )
-                or []
+            ):
+                reason = "OSB_ELEMENT_NATIVE_CHANGED_AFTER_PREFLIGHT"
+                self.census.stop("study_element", name, reason)
+                self.census.block_release("study_element", name, reason)
+                return
+            validated_repairs.append((name, repair, matches[0]))
+        for name, repair, actual in validated_repairs:
+            # PATCH only the two name fields: the same element UID and
+            # every native design-cell/epoch relationship remain intact.
+            result = self.api.patch_to_api(
+                {"uid": repair["uid"], "name": name, "short_name": name},
+                f"/studies/{study_uid}/study-elements",
             )
-        }
+            if result is None:
+                self.census.stop("study_element", name, "element name repair failed")
+                return
+            existing.pop(repair["prior_name"], None)
+            existing[name] = repair["uid"]
+            actual.update(name=name, short_name=name)
+            self.census.updated.append(
+                {"kind": "study_element_name", "ref": name, **repair}
+            )
+        if not epoch_uids:
+            return
+
+        # A proved name-only repair has no dependency on a new epoch or subtype.
+        # Governed subtype admission is required only for new scaffold creation.
+        subtype_uid = None
+        if any(item["name"] not in existing for item in plan["elements"]):
+            for candidate in mapping.SCAFFOLDING_ELEMENT_SUBTYPES:
+                term, error = self._lookup_final_ct_term(
+                    CODELIST_ELEMENT_SUBTYPE, candidate
+                )
+                if not error and term:
+                    subtype_uid = term["term_uid"]
+                    break
+            if subtype_uid is None:
+                self.census.stop(
+                    "study_element",
+                    study_uid,
+                    f"no Final term in '{CODELIST_ELEMENT_SUBTYPE}' for any of "
+                    f"{mapping.SCAFFOLDING_ELEMENT_SUBTYPES}; new scaffold not created",
+                )
+                return
         element_uid_by_arm = {}
         for item in plan["elements"]:
             uid = existing.get(item["name"])
@@ -1785,6 +2051,9 @@ class Import360i(BaseImporter):
         for arm_ref, element_uid in element_uid_by_arm.items():
             arm_uid = self.uid_map["arms"].get(arm_ref)
             if not arm_uid:
+                reason = "OSB_DESIGN_CELL_ARM_UID_REQUIRED"
+                self.census.stop("study_design_cell", arm_ref, reason)
+                self.census.block_release("study_design_cell", arm_ref, reason)
                 continue
             for epoch_uid in epoch_uids:
                 if (arm_uid, epoch_uid) in current_cells:
@@ -2654,6 +2923,9 @@ class Import360i(BaseImporter):
                 f"(tenant '{self.db.tenant_id}'). Build the study in 360i first."
             )
         payload = record["payload"]
+        # Validate the unit contract before any native write.
+        mapping.units_plan(payload)
+        mapping.arms_plan(payload)
         if record["census"]["unmapped"] != 0:
             raise SystemExit(
                 f"Payload {record['payload_hash'][:12]} claims {record['census']['unmapped']} "
@@ -2668,9 +2940,13 @@ class Import360i(BaseImporter):
         )
 
         crosswalk = self.db.read_current_crosswalk(study_id)
+        unit_uid_by_name = self.ensure_units(payload)
+        arm_identity_rebound = False
         if crosswalk:
             self.same_payload_replay = bool(
                 crosswalk["payload_hash"] == record["payload_hash"]
+                and crosswalk.get("importer_version") == IMPORTER_VERSION
+                and crosswalk.get("status") == "succeeded"
             )
             # The hash-gate no-op is only valid if the crosswalked OSB study
             # STILL EXISTS. A crosswalk can outlive its OSB study (the instance
@@ -2692,10 +2968,21 @@ class Import360i(BaseImporter):
                     osb_uid,
                 )
                 crosswalk = None
-            elif (
+            else:
+                # Retain existing joins before admission; a stopped import must
+                # still describe the native state it refused to change.
+                for kind, refs in (crosswalk.get("uid_map") or {}).items():
+                    if kind in self.uid_map and isinstance(refs, dict):
+                        self.uid_map[kind].update(refs)
+                arm_identity_rebound = self._preflight_arm_identity(
+                    payload, crosswalk, study_id
+                )
+            if crosswalk and (
                 crosswalk["payload_hash"] == record["payload_hash"]
                 and crosswalk.get("status") == "succeeded"
                 and crosswalk.get("importer_version") == IMPORTER_VERSION
+                and not self.census.stopped
+                and not arm_identity_rebound
             ):
                 # Only a SUCCEEDED import may no-op: a partial one has named
                 # stopped rows — the whole point of re-running is to finish them.
@@ -2705,7 +2992,7 @@ class Import360i(BaseImporter):
                     crosswalk["import_id"],
                 )
                 return crosswalk
-            else:
+            elif crosswalk:
                 self.log.info(
                     "Study previously imported as OSB study '%s' — updating in place "
                     "(stored importer %s, current %s).",
@@ -2713,16 +3000,17 @@ class Import360i(BaseImporter):
                     crosswalk.get("importer_version") or "unknown",
                     IMPORTER_VERSION,
                 )
-                # Seed the uid map with the previous import's joins so unchanged
-                # entities resolve without re-creation.
-                for kind, refs in (crosswalk.get("uid_map") or {}).items():
-                    if kind in self.uid_map and isinstance(refs, dict):
-                        self.uid_map[kind].update(refs)
 
+        if self.census.stopped:
+            return self._finish(
+                study_id,
+                record,
+                crosswalk.get("osb_study_uid") if crosswalk else None,
+                crosswalk.get("osb_project_number") if crosswalk else None,
+            )
         project_number = self.ensure_programme_and_project(payload)
         if project_number is None:
             return self._finish(study_id, record, None, None)
-        unit_uid_by_name = self.ensure_units(payload)
         codelist_by_ref = self.ensure_codelists(payload)
 
         study_uid = self.ensure_study(payload, project_number, crosswalk)

@@ -1,12 +1,12 @@
 {
   "contractVersion": "OsbVocabularyRegistryV1@1.1.0",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "owner": "ClinicalSemanticLayer",
   "canonicalNames": "OpenStudyBuilder resource type names, as its proposal target taxonomy names them; the IL ruleset uses the same names from 1.17.0 (formerNames records what 1.16.0 and earlier called three of them)",
   "sources": {
     "ruleset": {
       "path": "packages/mappings/il-to-usdm-v4.rules.json",
-      "version": "1.21.0"
+      "version": "1.22.0"
     },
     "generatedModule": "packages/semantic-core/src/generated/osb-vocabulary-registry.ts (scripts/generate-osb-vocabulary.mjs, part of contracts:generate and contracts:check)",
     "osbCopy": "clinical_mdr_api/schemas/platform/osb-vocabulary-registry-v1.json (registry:export-osb-vocabulary; byte identical)",
@@ -1644,6 +1644,7 @@
       "cslObjectType": "NarrativeContent",
       "correspondence": "broader",
       "cslAssertionTypes": [
+        "ABBREVIATION_DEFINITION",
         "PROTOCOL_STATEMENT",
         "RETAINED_SOURCE_RECORD",
         "STATISTICAL_CONSIDERATION"
@@ -1699,5 +1700,5 @@
       "dependencies": []
     }
   ],
-  "registryHash": "sha256:e80ceb3a92ebe67c93693ce60f6df2ba39266796a5d1d992d0001be85158c747"
+  "registryHash": "sha256:81e3c0d886b303445c7b96e17c107a4c01b70e7ae519c482cc4689cfa12e0b62"
 }

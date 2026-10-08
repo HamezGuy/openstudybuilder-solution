@@ -545,3 +545,56 @@ Found the CSV with example structure :)
 CSV data loaded successfully
 Result has been written to './output_result.csv'
 ```
+
+## Legacy IL ledger owner API
+
+The `EcrfPlatformDb` compatibility class now calls IL's authenticated
+`/api/pipeline/study/:nativeStudyId/legacy-osb` API. It no longer opens IL Postgres.
+Deploy the owner routes and migration 096 before these clients. Existing native
+OSB writes and replay gates retain their semantics. Importer 1.18 accompanies
+the coordinated native measured-unit preflight correction; transport alone does
+not require a version bump. Legacy mutation
+still requires the existing disposable-environment opt-in; this transport grants
+no production eligibility or Package V2 authority.
+
+Configure `ECRF_API_URL` as the explicitly trusted HTTP(S) origin (including the
+existing private Docker HTTP origin when applicable), `ECRF_TENANT_ID` as the
+native IL tenant, and exactly one of `ECRF_API_TOKEN` or `ECRF_API_TOKEN_FILE`.
+The token must be an existing IL operator credential or a genuine delegated
+service JWT scoped to that native tenant/study, purpose `workflow-orchestration`,
+and the required `protocol:read`/`protocol:process` capabilities. A trusted
+external supplier must refresh short-lived token files; the client rereads them
+for every request and does not mint tokens, borrow OSB credentials or use a shared
+signing key. Set `ECRF_ACCESS_GATE_TOKEN` when IL requires `X-Access-Gate`.
+Credentials are never logged. Redirects, URL credentials, paths, queries and
+fragments in the configured origin are refused. There is no SQL fallback.
+
+`read_payload(hash, study_id=...)` requires explicit study scope, with
+`ECRF_STUDY_ID` as its fallback. `list_payload_studies(study_ids=[...])` visits every
+explicitly authorized study; its environment fallback is JSON `ECRF_STUDY_IDS`
+or single `ECRF_STUDY_ID`. Tenant-wide discovery is no longer implicit. Missing
+scope or access is an error, not a truncated list or a missing payload.
+`iter_payloads` and `iter_imports` drain all opaque cursor pages. Import pages are
+metadata; `read_import(study_id, import_id)` returns the complete census/UID map.
+
+The owner verifies the existing canonical payload hash. This client additionally
+verifies the exact returned UTF-8 text digest/length before JSON decoding. Gzip
+records retain original text; JSONB records represent stored semantic JSON, not
+historical HTTP bytes. The 256 MiB decoded payload limit and 8 MiB owner gzip
+threshold are retained. The existing aiohttp transport enforces a hard total
+timeout of 250 seconds per attempt, including header/body reads, with 10-second
+connect and 240-second idle-read bounds. Each synchronous call owns and closes its
+event loop and session. Responses are size-bounded; failures never become empty
+successes.
+
+A ledger write allocates one attempt UUID, serializes once and retries at most
+once with exactly the same bytes and UUID after a transient/unknown response.
+An unresolved `EcrfLedgerError` carries `import_id`; retain it and use
+`read_import(study_id, import_id)` to reconcile. An explicit repeat can supply
+`write_import_ledger(..., import_id=retained_id)` with the same body. Never generate
+a new attempt merely to recover an unknown commit. Exact replay returns the
+original immutable census, UID map, IDs and importer version.
+
+Focused regression suite: `pipenv run python -m pytest
+importers/tests/test_ecrf_platform_http.py`. Native producer-to-owner-to-consumer
+qualification is a separate gate; mock transport tests do not establish it.

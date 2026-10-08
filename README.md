@@ -107,38 +107,20 @@ never collide with upstream's numbering (`_001` … `_009` were `migration_024` 
 `text` to CODMDT so `text` items keep their datatype
 ([`migration_overview_accuratrial_010.md`](db_schema_migration/migrations/migration_overview_accuratrial_010.md)).
 
-### Governed Proposal V2 importer
+### Retired Proposal V2 delivery worker
 
-Build the importer image once:
+The former `import_osb_proposal_v2` command now refuses execution before opening
+an API or database client. IL retired direct Proposal V2 delivery and removed its
+outbox in migration 061. SourceFactPackageV1 ingestion and the governed Package V2
+workflow are the supported authority path. The old worker and hash validators
+remain for forensic tests with explicitly injected adapters; no environment flag
+re-enables delivery and no replacement delivery API is introduced.
 
-```shell
-docker compose -f import_sponsor_data/compose.yaml build import
-```
-
-The override joins the importer to the root stack's Docker network and addresses
-the API as `http://api:5003`. Proposal V2 reads immutable Facts/outbox jobs,
-validates the pinned OSB mapping context, and hands itemized targets to OSB review:
-
-```shell
-docker compose   -f import_sponsor_data/compose.yaml   -f import_sponsor_data/compose.override.yaml   run --rm import pipenv run import_osb_proposal_v2   --study <source-study-id>   --target-study-uid <osb-study-uid>   --target-study-version <draft-version>
-```
-
-The default external network is `opensourcebuilder_default`. If the root stack
-uses a different Compose project name, set `OSB_NETWORK_NAME` to its network name.
-Database credentials and tenant settings remain supplied through the importer's
-environment file or command environment; do not commit them. The former
-`import_360i` StudyBundleV1 carrier command is retired from runtime wiring. Its
-module and historical tables remain only for controlled forensic/migration work
-and require explicit unsafe-legacy opt-in when invoked directly.
-
-Command Center invokes the same worker with `--study <study-id>`. That option
-scopes intake, review-polling, and native-execution leases to the requested source
-study. Native execution additionally requires the explicit target UID/version
-arguments (or `OSB_TARGET_STUDY_UID` and `OSB_TARGET_STUDY_VERSION`). The worker
-verifies that target is still the same DRAFT version before and after all writes.
-Omit the target arguments only for a worker that must stop at review; native jobs
-then remain `review_complete` rather than being assigned to an arbitrary study.
-
+The separate `import_360i` legacy helper remains limited to disposable migration
+work with explicit unsafe-legacy opt-in. It now reads and records through the
+[IL owner ledger API](import_sponsor_data/README.md#legacy-il-ledger-owner-api),
+with the same payload hashes and native upsert behavior. Importer1.18 also
+includes the coordinated native measured-unit preflight correction.
 ### Line endings on Windows
 
 The repository `.gitattributes` forces Unix line endings for shell and AWK

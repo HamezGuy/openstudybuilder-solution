@@ -1,8 +1,10 @@
-"""Tenant-scoped Proposal V2/outbox bridge for the OSB worker.
+"""Historical Proposal V2/outbox bridge retained for forensic validation.
 
 This module is deliberately separate from ``ecrf_platform_db.py``: V1 reads an
 EDC-derived carrier, while V2 reads immutable Fact-based proposals and owns a
-leased transactional outbox. It never mutates proposal content.
+leased transactional outbox. IL migration 061 retired that outbox; the worker's
+live entry point refuses before constructing this adapter. Tests may explicitly
+inject historical stores. The legacy V1 adapter now uses the IL owner HTTP API.
 """
 
 from __future__ import annotations

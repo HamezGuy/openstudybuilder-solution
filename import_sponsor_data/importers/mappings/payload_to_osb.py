@@ -815,12 +815,20 @@ def arms_plan(payload):
         .get("controlType")
     )
     plans = []
+    names = set()
     for i, arm in enumerate(payload.get("arms", []), start=1):
+        if not isinstance(arm.get("name"), str) or not arm["name"].strip():
+            raise ValueError("OSB_ARM_NAME_REQUIRED")
         name = arm["name"].strip()
+        if name in names:
+            raise ValueError(f"OSB_ARM_NATIVE_NAME_COLLISION:{name}")
+        names.add(name)
         plans.append(
             {
-                "name": name[:200],
-                "short_name": name[:20],
+                # Native arm names/short names have no width constraint. The
+                # full name is also this importer's source identity.
+                "name": name,
+                "short_name": name,
                 "order": i,
                 "description": arm.get("description"),
                 "arm_type_names": arm_type_names(name, stated_control),
@@ -855,12 +863,12 @@ def design_structure_plan(payload):
     restated in OSB's structural vocabulary. It is not a schedule, a dose, or a
     duration, and it never invents an epoch the protocol did not state.
     """
-    arms = [a["name"].strip() for a in payload.get("arms", []) if a.get("name")]
+    arms = [arm["name"] for arm in arms_plan(payload)]
     elements = [
         {
             "arm_ref": name,
-            "name": name[:200],
-            "short_name": name[:20],
+            "name": name,
+            "short_name": name,
             "order": i,
             "element_subtype_names": list(SCAFFOLDING_ELEMENT_SUBTYPES),
             "scaffolding": True,
@@ -897,9 +905,79 @@ def codelists_plan(payload):
 
 
 def units_plan(payload):
-    """Distinct unit display names the items reference — created as OSB
-    unit definitions when absent (matched case-insensitively by name)."""
-    return list(payload.get("odm", {}).get("units", []))
+    """Validate measured-unit groups; legacy carriers retain individual names.
+
+    These are lookup candidates, not permission to create or approve a unit.
+    Unversioned governance used dimension keys that merged beats and breaths.
+    """
+    odm = payload.get("odm", {})
+    if not isinstance(odm, dict):
+        raise ValueError("OSB_UNIT_NAMES_INVALID")
+    names = odm.get("units", [])
+    if not isinstance(names, list) or any(
+        not isinstance(name, str) or not name.strip() for name in names
+    ):
+        raise ValueError("OSB_UNIT_NAMES_INVALID")
+    raw_names = set(names)
+    item_names = set()
+    for form in odm.get("forms", []):
+        for group in form.get("itemGroups", []):
+            for item in group.get("items", []):
+                name = item.get("unitName")
+                if name is not None:
+                    if not isinstance(name, str) or not name.strip():
+                        raise ValueError("OSB_ITEM_UNIT_NAME_INVALID")
+                    item_names.add(name)
+    if "unitGovernanceVersion" not in odm:
+        return [
+            {"key": f"unresolved:{name}", "spellings": [name]}
+            for name in sorted(raw_names | item_names)
+        ]
+    if odm["unitGovernanceVersion"] != "measured-unit/1":
+        raise ValueError("OSB_UNIT_GOVERNANCE_VERSION_UNSUPPORTED")
+    groups = odm.get("unitGovernance")
+    if not isinstance(groups, list) or not item_names.issubset(raw_names):
+        raise ValueError("OSB_UNIT_GOVERNANCE_COVERAGE_INVALID")
+    plans, keys, covered = [], set(), set()
+    for group in groups:
+        if not isinstance(group, dict):
+            raise ValueError("OSB_UNIT_GOVERNANCE_GROUP_INVALID")
+        key, spellings = group.get("key"), group.get("spellings")
+        if (
+            not isinstance(key, str)
+            or not key.strip()
+            or key in keys
+            or not isinstance(spellings, list)
+            or not spellings
+            or any(not isinstance(s, str) or not s.strip() for s in spellings)
+        ):
+            raise ValueError("OSB_UNIT_GOVERNANCE_GROUP_INVALID")
+        if len(set(spellings)) != len(spellings) or covered.intersection(spellings):
+            raise ValueError("OSB_UNIT_GOVERNANCE_SPELLING_AMBIGUOUS")
+        if key.startswith("unresolved:"):
+            if (
+                len(spellings) != 1
+                or key != f"unresolved:{spellings[0]}"
+                or "catalogueTerm" in group
+                or "identity" in group
+            ):
+                raise ValueError("OSB_UNIT_UNRESOLVED_ALIAS_FORBIDDEN")
+        else:
+            if "catalogueTerm" in group:
+                term = group["catalogueTerm"]
+                if not isinstance(term, str) or not term.strip():
+                    raise ValueError("OSB_UNIT_CATALOGUE_TERM_INVALID")
+        keys.add(key)
+        covered.update(spellings)
+        plans.append(
+            {
+                "key": key,
+                "spellings": sorted(spellings),
+            }
+        )
+    if covered != raw_names:
+        raise ValueError("OSB_UNIT_GOVERNANCE_COVERAGE_INVALID")
+    return sorted(plans, key=lambda plan: plan["key"])
 
 
 def odm_item_body(item, codelist_uid_by_name, unit_uid_by_name):
@@ -914,10 +992,10 @@ def odm_item_body(item, codelist_uid_by_name, unit_uid_by_name):
         raise ValueError("OSB_CAPTURE_NONSCALAR_NATIVE_BINDING_REQUIRED")
     unit_defs = []
     unit_name = item.get("unitName")
-    if unit_name and unit_name.lower() in unit_uid_by_name:
-        unit_defs.append(
-            {"uid": unit_uid_by_name[unit_name.lower()], "mandatory": False}
-        )
+    if unit_name is not None:
+        if not isinstance(unit_name, str) or not unit_uid_by_name.get(unit_name):
+            raise ValueError("OSB_UNIT_NATIVE_BINDING_REQUIRED")
+        unit_defs.append({"uid": unit_uid_by_name[unit_name], "mandatory": False})
     codelist = None
     terms = []
     cl_ref = item.get("codelistRef")
@@ -945,7 +1023,7 @@ def odm_item_body(item, codelist_uid_by_name, unit_uid_by_name):
     ):
         raise ValueError("OSB_CAPTURE_FLOAT_LENGTH_PRECISION_PAIR_REQUIRED")
     return {
-        "name": item["name"][:200],
+        "name": item["name"],
         "oid": item["refKey"],
         "datatype": datatype,
         "prompt": item["prompt"] if item.get("prompt") is not None else item["name"],

@@ -57,6 +57,535 @@ def _importer(api):
     return importer
 
 
+class _UnitApi:
+    def __init__(self, rows, total=None):
+        self.catalogue = {"items": rows, "total": len(rows) if total is None else total}
+
+    def get_all_from_api_paged(self, path, items_only=True):
+        assert path == "/concepts/unit-definitions"
+        assert items_only is False
+        return self.catalogue
+
+    def simple_post_to_api(self, *_args, **_kwargs):
+        raise AssertionError(
+            "a carrier must not create or approve native unit identity"
+        )
+
+
+def test_units_require_unique_final_native_identity_without_case_folding_or_creation():
+    api = _UnitApi(
+        [
+            {"uid": "count", "name": "G/L", "status": "Final"},
+            {"uid": "mass", "name": "g/L", "status": "Final"},
+            {"uid": "draft", "name": "bpm", "status": "Draft"},
+            {
+                "uid": "heart",
+                "name": "beats/min",
+                "status": "Final",
+                "legacy_code": "bpm",
+            },
+            {"uid": "resp", "name": "breaths/min", "status": "Final"},
+        ]
+    )
+    importer = _importer(api)
+    payload = {
+        "odm": {
+            "units": ["G/L", "g/L", "bpm", "breaths/min"],
+            "unitGovernanceVersion": "measured-unit/1",
+            "unitGovernance": [
+                {"key": "10^9/L", "spellings": ["G/L"]},
+                {"key": "g/L", "spellings": ["g/L"]},
+                {"key": "beats/min", "spellings": ["bpm"]},
+                {"key": "breaths/min", "spellings": ["breaths/min"]},
+            ],
+        }
+    }
+    assert importer.ensure_units(payload) == {
+        "G/L": "count",
+        "g/L": "mass",
+        "bpm": "heart",
+        "breaths/min": "resp",
+    }
+    assert importer.census.created == []
+    assert importer.census.stopped == []
+    legacy = _importer(api)
+    assert legacy.ensure_units({"odm": {"units": ["bpm", "g/l"]}}) == {"bpm": "heart"}
+    assert len(legacy.census.stopped) == 1
+    assert len(legacy.census.release_blockers) == 1
+    assert legacy.census.created == []
+    assert (
+        _importer(_UnitApi(api.catalogue["items"], total=6)).ensure_units(payload) == {}
+    )
+    api.catalogue["items"].append(
+        {"uid": "other-count", "name": "G/L", "status": "Final"}
+    )
+    api.catalogue["total"] += 1
+    ambiguous = _importer(api)
+    assert "G/L" not in ambiguous.ensure_units(payload)
+    assert "AMBIGUOUS" in ambiguous.census.stopped[0]["reason"]
+
+
+def test_aliases_with_two_approved_native_uids_require_review():
+    importer = _importer(
+        _UnitApi(
+            [
+                {"uid": "a", "name": "bpm", "status": "Final"},
+                {"uid": "b", "name": "beats/min", "status": "Final"},
+            ]
+        )
+    )
+    assert (
+        importer.ensure_units(
+            {
+                "odm": {
+                    "units": ["bpm", "beats/min"],
+                    "unitGovernanceVersion": "measured-unit/1",
+                    "unitGovernance": [
+                        {"key": "beats/min", "spellings": ["bpm", "beats/min"]}
+                    ],
+                }
+            }
+        )
+        == {}
+    )
+    assert "AMBIGUOUS" in importer.census.stopped[0]["reason"]
+
+
+def test_carrier_keys_and_catalogue_terms_cannot_authorize_native_unit_aliases():
+    from copy import deepcopy
+
+    source = {
+        "odm": {
+            "units": ["mg"],
+            "unitGovernanceVersion": "measured-unit/1",
+            "unitGovernance": [{"key": "g", "spellings": ["mg"], "catalogueTerm": "g"}],
+        }
+    }
+    before = deepcopy(source)
+    importer = _importer(_UnitApi([{"uid": "grams", "name": "g", "status": "Final"}]))
+    assert importer.ensure_units(source) == {}
+    assert importer.census.stopped[0]["reason"] == "OSB_UNIT_NATIVE_BINDING_REQUIRED"
+    assert source == before
+
+
+def test_each_group_spelling_needs_an_approved_native_alias_witness():
+    source = {
+        "odm": {
+            "units": ["bpm", "BEATS/MIN", "beats/min"],
+            "unitGovernanceVersion": "measured-unit/1",
+            "unitGovernance": [
+                {"key": "beats/min", "spellings": ["bpm", "BEATS/MIN", "beats/min"]}
+            ],
+        }
+    }
+    native = {
+        "uid": "heart",
+        "name": "beats/min",
+        "status": "Final",
+        "ucum": {"name": "bpm"},
+        "ct_units": [{"submission_value": "BEATS/MIN"}],
+    }
+    assert _importer(_UnitApi([native])).ensure_units(source) == {
+        "bpm": "heart",
+        "BEATS/MIN": "heart",
+        "beats/min": "heart",
+    }
+    native.pop("ct_units")
+    assert (
+        _importer(_UnitApi([native])).ensure_units(source) == {}
+    ), "one missing alias holds the group"
+    native["status"] = "Draft"
+    assert (
+        _importer(_UnitApi([native])).ensure_units(source) == {}
+    ), "source groups cannot approve native drafts"
+
+
+def test_missing_native_units_stop_before_programme_or_study_writes(monkeypatch):
+    import logging
+    from types import SimpleNamespace
+
+    from .. import run_import_360i as module
+
+    monkeypatch.setattr(module, "assert_unsafe_legacy_mutation_allowed", lambda _: None)
+    importer = _importer(_UnitApi([]))
+    importer.log = logging.getLogger(__name__)
+    importer.db = SimpleNamespace(
+        read_latest_payload=lambda _: {
+            "payload": {"odm": {"units": ["not-approved"]}},
+            "census": {"unmapped": 0},
+            "payload_hash": "p" * 64,
+            "build_hash": "b" * 64,
+        },
+        read_current_crosswalk=lambda _: None,
+    )
+    importer._finish = lambda *_: {"status": importer.census.status}
+    # No programme/study writer is installed on this deliberately minimal worker.
+    assert importer.run("study")["status"] == "partial"
+    assert importer.census.stopped[0]["reason"] == "OSB_UNIT_NATIVE_BINDING_REQUIRED"
+
+
+class _ArmProofApi:
+    def __init__(self, arms):
+        self.arms = arms
+        self.elements = []
+        self.cells = []
+        self.patches = []
+
+    def get_all_from_api(self, path, params=None):
+        if path == "/studies":
+            return [{"uid": "Study_1"}]
+        if path == "/studies/Study_1/study-arms":
+            return self.arms
+        if path == "/studies/Study_1/study-elements":
+            return self.elements
+        if path == "/studies/Study_1/study-design-cells":
+            return self.cells
+        raise AssertionError(f"unexpected GET {path}")
+
+    def get_all_from_api_paged(self, path, items_only=True):
+        assert items_only is False
+        rows = self.get_all_from_api(path)
+        return {"items": rows, "total": len(rows)}
+
+    def patch_to_api(self, body, path):
+        assert path == "/studies/Study_1/study-elements"
+        self.patches.append(dict(body))
+        return dict(body)
+
+
+def _legacy_arm_worker(names, native_name=None):
+    import logging
+    from types import SimpleNamespace
+
+    old_ref = names[0][:200]
+    uid = "Arm_original"
+    payload_hash = "a" * 64
+    crosswalk = {
+        "osb_study_uid": "Study_1",
+        "payload_hash": payload_hash,
+        "uid_map": {"arms": {old_ref: uid}},
+        "importer_version": "1.17",
+        "status": "succeeded",
+        "import_id": "prior-import",
+    }
+    payload = {"arms": [{"name": name} for name in names], "odm": {}}
+    importer = _importer(
+        _ArmProofApi(
+            [
+                {
+                    "arm_uid": uid,
+                    "name": native_name or old_ref,
+                    "short_name": names[0][:20],
+                    "description": None,
+                }
+            ]
+        )
+    )
+    importer.log = logging.getLogger(__name__)
+    importer.db = SimpleNamespace(
+        read_payload=lambda digest, study: {"payload_hash": digest, "payload": payload},
+        read_latest_payload=lambda _: {
+            "payload_hash": payload_hash,
+            "payload": payload,
+            "build_hash": "b" * 64,
+            "census": {"unmapped": 0},
+        },
+        read_current_crosswalk=lambda _: crosswalk,
+    )
+    importer.uid_map["arms"] = dict(crosswalk["uid_map"]["arms"])
+    return importer, payload, crosswalk
+
+
+def test_proven_legacy_arm_rebind_keeps_native_uid_and_patches_full_names():
+    full_name = "Arm " + "x" * 220
+    worker, payload, crosswalk = _legacy_arm_worker([full_name])
+    assert worker._preflight_arm_identity(payload, crosswalk, "study") is True
+    assert worker.uid_map["arms"] == {full_name: "Arm_original"}
+    assert crosswalk["uid_map"]["arms"] == {full_name[:200]: "Arm_original"}
+    diff = mapping.arm_diff(payload, worker._current_arms_by_ref("Study_1"))
+    assert diff["create"] == [] and diff["delete"] == []
+    assert diff["patch"][0]["uid"] == "Arm_original"
+    assert diff["patch"][0]["plan"]["name"] == full_name
+    assert diff["patch"][0]["plan"]["short_name"] == full_name
+    assert worker.census.carried[0]["source_payload_hash"] == crosswalk["payload_hash"]
+
+
+def test_ambiguous_or_altered_legacy_arm_stops_run_before_any_native_write(monkeypatch):
+    from .. import run_import_360i as module
+
+    monkeypatch.setattr(module, "assert_unsafe_legacy_mutation_allowed", lambda _: None)
+    prefix = "Arm " + "x" * 220
+    for names, changed_native in [
+        ([prefix + " A", prefix + " B"], None),
+        ([prefix], "Reviewed native arm"),
+    ]:
+        worker, _payload, crosswalk = _legacy_arm_worker(names, changed_native)
+        worker._finish = lambda *_, current=worker: {"status": current.census.status}
+        worker.ensure_programme_and_project = lambda *_: (_ for _ in ()).throw(
+            AssertionError("native writes must not start before identity admission")
+        )
+        assert worker.run("study")["status"] == "partial"
+        assert worker.uid_map["arms"] == crosswalk["uid_map"]["arms"]
+        assert worker.census.stopped[0]["kind"] == "arm_identity"
+        assert worker.census.release_blockers
+
+
+def test_legacy_arm_rebind_requires_original_payload_hash_and_all_native_rows():
+    from types import SimpleNamespace
+
+    full_name = "Arm " + "x" * 220
+    for corrupt in ("absent", "hash", "incomplete", "duplicate-uid", "removed"):
+        worker, payload, crosswalk = _legacy_arm_worker([full_name])
+        if corrupt == "absent":
+            worker.db = SimpleNamespace(read_payload=lambda *_: None)
+        elif corrupt == "hash":
+            worker.db = SimpleNamespace(
+                read_payload=lambda *_, retained=payload: {
+                    "payload_hash": "bad",
+                    "payload": retained,
+                }
+            )
+        elif corrupt == "incomplete":
+            worker.api.get_all_from_api_paged = lambda *_args, **_kwargs: {
+                "items": [],
+                "total": 1,
+            }
+        elif corrupt == "duplicate-uid":
+            worker.api.arms.append(dict(worker.api.arms[0]))
+        else:
+            payload = {"arms": [], "odm": {}}
+        assert worker._preflight_arm_identity(payload, crosswalk, "study") is False
+        assert worker.uid_map["arms"] == crosswalk["uid_map"]["arms"]
+        assert worker.census.stopped and worker.census.release_blockers
+
+
+def test_arm_name_collision_stops_run_before_native_reads_or_writes(monkeypatch):
+    import logging
+    from types import SimpleNamespace
+
+    import pytest
+
+    from .. import run_import_360i as module
+
+    monkeypatch.setattr(module, "assert_unsafe_legacy_mutation_allowed", lambda _: None)
+    worker = _importer(None)
+    worker.log = logging.getLogger(__name__)
+    worker.db = SimpleNamespace(
+        read_latest_payload=lambda _: {
+            "payload": {"arms": [{"name": "Arm"}, {"name": " Arm "}], "odm": {}}
+        }
+    )
+    with pytest.raises(ValueError, match="OSB_ARM_NATIVE_NAME_COLLISION"):
+        worker.run("study")
+
+
+def test_existing_native_arm_name_or_short_name_collision_stops_before_writes(
+    monkeypatch,
+):
+    from .. import run_import_360i as module
+
+    monkeypatch.setattr(module, "assert_unsafe_legacy_mutation_allowed", lambda _: None)
+    for property_name in ("name", "short_name"):
+        worker, payload, crosswalk = _legacy_arm_worker(["Arm"])
+        worker.api.arms.append({"arm_uid": "Arm_manual", property_name: "Arm"})
+        worker._finish = lambda *_, current=worker: {"status": current.census.status}
+        worker.ensure_programme_and_project = lambda *_: (_ for _ in ()).throw(
+            AssertionError("native writes must not start before uniqueness admission")
+        )
+        assert worker.run("study")["status"] == "partial"
+        assert worker.uid_map["arms"] == crosswalk["uid_map"]["arms"]
+        assert worker.census.stopped[0]["reason"] == "OSB_ARM_NATIVE_NAME_ALREADY_BOUND"
+        assert payload["arms"] == [{"name": "Arm"}]
+
+
+def _legacy_element(worker, full_name):
+    from ..run_import_360i import SCAFFOLDING_ELEMENT_DESCRIPTION
+
+    worker.api.elements = [
+        {
+            "element_uid": "Element_original",
+            "name": full_name[:200],
+            "short_name": full_name[:20],
+            "description": SCAFFOLDING_ELEMENT_DESCRIPTION,
+            "start_rule": "Native rule that must not be overwritten",
+        }
+    ]
+    worker.api.cells = [
+        {
+            "study_arm_uid": "Arm_original",
+            "study_epoch_uid": "Epoch_original",
+            "study_element_uid": "Element_original",
+        }
+    ]
+
+
+def test_legacy_element_proof_patches_same_uid_without_replacing_cells():
+    full_name = "Arm " + "x" * 220
+    for previously_rebound in (False, True):
+        worker, payload, crosswalk = _legacy_arm_worker([full_name])
+        _legacy_element(worker, full_name)
+        if previously_rebound:
+            crosswalk["uid_map"]["arms"] = {full_name: "Arm_original"}
+            worker.uid_map["arms"] = dict(crosswalk["uid_map"]["arms"])
+            worker.api.arms[0].update(name=full_name, short_name=full_name)
+        assert worker._preflight_arm_identity(payload, crosswalk, "study") is True
+        worker._lookup_final_ct_term = lambda *_: ({"term_uid": "Subtype"}, None)
+        worker.ensure_design_structure(payload, "Study_1", ["Epoch_original"])
+        assert worker.api.patches == [
+            {
+                "uid": "Element_original",
+                "name": full_name,
+                "short_name": full_name,
+            }
+        ]
+        assert worker.api.cells == [
+            {
+                "study_arm_uid": "Arm_original",
+                "study_epoch_uid": "Epoch_original",
+                "study_element_uid": "Element_original",
+            }
+        ]
+        assert (
+            worker.api.elements[0]["start_rule"]
+            == "Native rule that must not be overwritten"
+        )
+        assert not worker.census.stopped
+        assert (
+            worker.census.updated[0]["source_payload_hash"] == crosswalk["payload_hash"]
+        )
+
+
+def test_legacy_element_missing_or_ambiguous_proof_refuses_before_writes(monkeypatch):
+    from .. import run_import_360i as module
+
+    monkeypatch.setattr(module, "assert_unsafe_legacy_mutation_allowed", lambda _: None)
+    full_name = "Arm " + "x" * 220
+    for corruption in (
+        "duplicate",
+        "unowned",
+        "missing-cell",
+        "wrong-arm",
+        "wrong-element",
+    ):
+        worker, _payload, crosswalk = _legacy_arm_worker([full_name])
+        _legacy_element(worker, full_name)
+        if corruption == "duplicate":
+            worker.api.elements.append(
+                {**worker.api.elements[0], "element_uid": "Other"}
+            )
+        elif corruption == "unowned":
+            worker.api.elements[0]["description"] = "Human authored element"
+        elif corruption == "missing-cell":
+            worker.api.cells = []
+        elif corruption == "wrong-arm":
+            worker.api.cells[0]["study_arm_uid"] = "Other"
+        else:
+            worker.api.cells[0]["study_element_uid"] = "Other"
+        worker._finish = lambda *_, current=worker: {"status": current.census.status}
+        worker.ensure_programme_and_project = lambda *_: (_ for _ in ()).throw(
+            AssertionError("no native writes before all arm/element proof succeeds")
+        )
+        assert worker.run("study")["status"] == "partial"
+        assert worker.uid_map["arms"] == crosswalk["uid_map"]["arms"]
+        assert worker.api.patches == []
+        assert worker.census.release_blockers
+
+
+def test_proved_element_rename_does_not_require_current_epochs_or_subtype():
+    full_name = "Arm " + "x" * 220
+    for epochs in ([], ["Epoch_original"]):
+        worker, payload, crosswalk = _legacy_arm_worker([full_name])
+        _legacy_element(worker, full_name)
+        assert worker._preflight_arm_identity(payload, crosswalk, "study") is True
+        worker._lookup_final_ct_term = lambda *_: (_ for _ in ()).throw(
+            AssertionError("name-only repair must not resolve new subtype authority")
+        )
+        worker.ensure_design_structure(payload, "Study_1", epochs)
+        assert worker.api.patches == [
+            {
+                "uid": "Element_original",
+                "name": full_name,
+                "short_name": full_name,
+            }
+        ]
+        assert not worker.census.stopped
+
+
+def test_element_rename_rechecks_native_uid_and_names_before_patch():
+    full_name = "Arm " + "x" * 220
+    for field in ("element_uid", "name", "short_name"):
+        worker, payload, crosswalk = _legacy_arm_worker([full_name])
+        _legacy_element(worker, full_name)
+        assert worker._preflight_arm_identity(payload, crosswalk, "study") is True
+        worker.api.elements[0][field] = "Changed after preflight"
+        worker.ensure_design_structure(payload, "Study_1", [])
+        assert worker.api.patches == []
+        assert (
+            worker.census.stopped[0]["reason"]
+            == "OSB_ELEMENT_NATIVE_CHANGED_AFTER_PREFLIGHT"
+        )
+        assert worker.census.release_blockers
+
+
+def test_unit_lookup_reads_all_http_pages_and_detects_late_ambiguity():
+    import json
+    import logging
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from threading import Thread
+    from types import SimpleNamespace
+    from urllib.parse import parse_qs, urlparse
+
+    import pytest
+
+    from ..utils.api_bindings import ApiBinding
+
+    rows = [
+        {"uid": f"u{i}", "name": f"unit-{i}", "status": "Final"} for i in range(1001)
+    ]
+    rows[0]["name"] = rows[-1]["name"] = "G/L"
+    requests = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):  # pylint: disable=invalid-name
+            path = urlparse(self.path)
+            assert path.path == "/concepts/unit-definitions"
+            query = parse_qs(path.query)
+            page, size = int(query["page_number"][0]), int(query["page_size"][0])
+            requests.append((page, size))
+            body = json.dumps(
+                {
+                    "items": rows[(page - 1) * size : page * size],
+                    "total": len(rows),
+                    "page": page,
+                    "size": size,
+                }
+            ).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    api = object.__new__(ApiBinding)
+    api.api_base_url = f"http://127.0.0.1:{server.server_port}"
+    api.api_headers = {}
+    api.log = logging.getLogger(__name__)
+    api.metrics = SimpleNamespace(icrement=lambda *_: None)
+    try:
+        with pytest.raises(ValueError, match="OSB_UNIT_NATIVE_BINDING_AMBIGUOUS"):
+            _importer(api)._lookup_unit("G/L")
+        assert requests == [(1, 1000), (2, 1000)]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
 def test_group_metadata_and_empty_descriptions_reach_native_import_bodies():
     class CreateApi:
         def __init__(self):

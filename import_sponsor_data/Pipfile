@@ -8,9 +8,8 @@ requests = "~=2.34.2"
 aiohttp = "~=3.14.1"
 typing-extensions = "~=4.15.0"
 pyyaml = "~=6.0"
-# The 360i importer reads the ecrf_platform Postgres directly (payloads in,
-# import ledger out). Postgres stays confined to this component - never add a
-# relational driver to the api component.
+# Retained historical Proposal V2 forensic adapters/tests use psycopg.
+# The live legacy360i bridge uses the IL owner HTTP API, not foreign SQL.
 psycopg = {version = "~=3.2", extras = ["binary"]}
 
 [dev-packages]

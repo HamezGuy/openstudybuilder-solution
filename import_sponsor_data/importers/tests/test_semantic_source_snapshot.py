@@ -460,7 +460,7 @@ class SemanticSourceSnapshotTests(unittest.TestCase):
             "osb_study_uid": "Study_1",
             "uid_map": {},
         }
-        self.assertEqual(IMPORTER_VERSION, "360i-importer/1.17")
+        self.assertEqual(IMPORTER_VERSION, "360i-importer/1.18")
         self.assertNotEqual(IMPORTER_VERSION, previous["importer_version"])
         importer.db = Mock()
         importer.db.read_latest_payload.return_value = {
@@ -494,7 +494,22 @@ class SemanticSourceSnapshotTests(unittest.TestCase):
                 "semanticSourceCustody": source["sourceCustody"],
             },
         )
+        # Same bytes under an older importer must repair native projections,
+        # including the old truncated names, rather than reuse them unchecked.
+        self.assertFalse(importer.same_payload_replay)
+        previous["importer_version"] = IMPORTER_VERSION
+        with patch("importers.run_import_360i.assert_unsafe_legacy_mutation_allowed"):
+            self.assertIs(importer.run("semantic-study"), previous)
         self.assertTrue(importer.same_payload_replay)
+        # A stopped upgrade records this importer version too. It does not prove
+        # that native item reconciliation ever ran, so the retry cannot reuse it.
+        previous["status"] = "partial"
+        with patch("importers.run_import_360i.assert_unsafe_legacy_mutation_allowed"):
+            with self.assertRaisesRegex(
+                RuntimeError, "clinical phase reached after source backfill"
+            ):
+                importer.run("semantic-study")
+        self.assertFalse(importer.same_payload_replay)
 
 
 if __name__ == "__main__":

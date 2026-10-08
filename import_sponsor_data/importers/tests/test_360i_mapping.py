@@ -319,7 +319,99 @@ def test_codelists_and_units_plans():
     cls = mapping.codelists_plan(p)
     assert cls[0]["name"] == "X360I_CL_abcd1234"
     assert [t["submission_value"] for t in cls[0]["terms"]] == ["MILD", "SEVERE"]
-    assert mapping.units_plan(p) == ["mmHg"]
+    assert mapping.units_plan(p) == [{"key": "unresolved:mmHg", "spellings": ["mmHg"]}]
+
+
+def test_measured_unit_groups_are_versioned_complete_and_preserve_exact_spellings():
+    from copy import deepcopy
+
+    import pytest
+
+    odm = {
+        "units": ["G/L", "g/L", "BEATS/MIN", "bpm", "breaths/min", " unknown "],
+        "unitGovernanceVersion": "measured-unit/1",
+        "unitGovernance": [
+            {"key": "10^9/L", "spellings": ["G/L"]},
+            {"key": "g/L", "spellings": ["g/L"]},
+            {"key": "beats/min", "spellings": ["BEATS/MIN", "bpm"]},
+            {"key": "breaths/min", "spellings": ["breaths/min"]},
+            {"key": "unresolved: unknown ", "spellings": [" unknown "]},
+        ],
+    }
+    before = deepcopy(odm)
+    plans = mapping.units_plan({"odm": odm})
+    assert next(p for p in plans if p["key"] == "beats/min")["spellings"] == [
+        "BEATS/MIN",
+        "bpm",
+    ]
+    assert next(p for p in plans if p["key"].startswith("unresolved:"))[
+        "spellings"
+    ] == [" unknown "]
+    assert odm == before
+    for version in [None, "measured-unit/2", ""]:
+        with pytest.raises(ValueError, match="OSB_UNIT_GOVERNANCE_VERSION_UNSUPPORTED"):
+            mapping.units_plan({"odm": {**odm, "unitGovernanceVersion": version}})
+    malformed = deepcopy(odm)
+    malformed["unitGovernance"].pop()
+    with pytest.raises(ValueError, match="OSB_UNIT_GOVERNANCE_COVERAGE_INVALID"):
+        mapping.units_plan({"odm": malformed})
+    malformed = deepcopy(odm)
+    malformed["unitGovernance"][-1]["catalogueTerm"] = "unknown"
+    with pytest.raises(ValueError, match="OSB_UNIT_UNRESOLVED_ALIAS_FORBIDDEN"):
+        mapping.units_plan({"odm": malformed})
+    malformed = deepcopy(odm)
+    malformed["unitGovernance"][-1] = {"key": "other", "spellings": ["bpm"]}
+    with pytest.raises(ValueError, match="OSB_UNIT_GOVERNANCE_SPELLING_AMBIGUOUS"):
+        mapping.units_plan({"odm": malformed})
+
+
+def test_legacy_dimension_groups_never_authorize_unit_aliases():
+    plans = mapping.units_plan(
+        {
+            "odm": {
+                "units": ["bpm", "breaths/min"],
+                "unitGovernance": [
+                    {"key": "per-minute", "spellings": ["bpm", "breaths/min"]}
+                ],
+            }
+        }
+    )
+    assert plans == [
+        {"key": "unresolved:bpm", "spellings": ["bpm"]},
+        {
+            "key": "unresolved:breaths/min",
+            "spellings": ["breaths/min"],
+        },
+    ]
+
+
+def test_item_units_use_exact_names_and_missing_bindings_never_become_unitless():
+    import pytest
+
+    units = {"G/L": "Unit_count", "g/L": "Unit_mass"}
+    for name, uid in units.items():
+        body = mapping.odm_item_body(
+            {
+                "name": "Measurement",
+                "refKey": "I",
+                "datatype": "float",
+                "unitName": name,
+            },
+            {},
+            units,
+        )
+        assert body["unit_definitions"] == [{"uid": uid, "mandatory": False}]
+    with pytest.raises(ValueError, match="OSB_UNIT_NATIVE_BINDING_REQUIRED"):
+        mapping.odm_item_body(
+            {
+                "name": "Measurement",
+                "refKey": "I",
+                "datatype": "float",
+                "unitName": "g/l",
+            },
+            {},
+            units,
+        )
 
 
 def test_vendor_ext_is_one_sorted_json_blob():
@@ -453,6 +545,35 @@ def test_arm_diff_rename_is_patch_not_recreate():
     assert diff["patch"][0]["uid"] == "StudyArm_1"
     assert "description" in diff["patch"][0]["changed"]
     assert diff["create"] == [] and diff["delete"] == []
+
+
+def test_native_arm_element_and_item_names_keep_full_source_identity():
+    names = ["Investigational arm " + "x" * 190 + suffix for suffix in (" A", " B")]
+    payload = _payload(arms=[{"name": name} for name in names])
+    plans = mapping.arms_plan(payload)
+    assert [plan["name"] for plan in plans] == names
+    assert [plan["short_name"] for plan in plans] == names
+    diff = mapping.arm_diff(payload, {})
+    assert [plan["refKey"] for plan in diff["create"]] == names
+    elements = mapping.design_structure_plan(payload)["elements"]
+    assert [plan["arm_ref"] for plan in elements] == names
+    assert [plan["name"] for plan in elements] == names
+    assert [plan["short_name"] for plan in elements] == names
+    item = {"name": names[0], "refKey": "stable-item", "datatype": "float"}
+    body = mapping.odm_item_body(item, {}, {})
+    assert body["name"] == body["prompt"] == names[0]
+    assert body["oid"] == "stable-item"
+
+
+def test_arm_native_normalization_collision_is_refused_before_a_diff():
+    import pytest
+
+    payload = _payload(arms=[{"name": "Arm A"}, {"name": " Arm A "}])
+    for project in (mapping.arms_plan, mapping.design_structure_plan):
+        with pytest.raises(ValueError, match="OSB_ARM_NATIVE_NAME_COLLISION"):
+            project(payload)
+    with pytest.raises(ValueError, match="OSB_ARM_NATIVE_NAME_COLLISION"):
+        mapping.arm_diff(payload, {})
 
 
 def test_arm_diff_removed_arm_deletes():

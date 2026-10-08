@@ -1,9 +1,10 @@
-"""Claim and validate one Fact-based OSB Proposal V2 delivery job.
+"""Retained forensic implementation of the retired Proposal V2 worker.
 
 The worker proves leasing, exact Fact revision checks, OpenAPI pinning and
 deterministic planning, then hands the immutable envelope to OSB's durable
-item-level review inbox. It does not call V1 mapping code and deliberately cannot
-report ``succeeded`` until reviewed native execution and reconciliation complete.
+item-level review inbox. Its live entry point is retired: SourceFactPackageV1 and
+the governed Package V2 lane replaced delivery, and IL migration 061 removed the
+foreign outbox. Explicitly injected forensic test adapters remain usable.
 """
 
 from __future__ import annotations
@@ -33,9 +34,7 @@ from .mappings.proposal_v2_native_operations import (
 )
 from .mappings.proposal_v2_to_osb import ProposalPlanError, proposal_object_plan
 from .utils.importer import BaseImporter
-from .utils.metrics import Metrics
 from .utils.osb_proposal_db import (
-    OsbProposalDb,
     OsbProposalIntegrityError,
     _stable_hash,
 )
@@ -78,8 +77,13 @@ class ImportOsbProposalV2(BaseImporter):
         target_study_uid=None,
         target_study_version=None,
     ):
+        if db is None:
+            raise RuntimeError(
+                "OSB_PROPOSAL_V2_DELIVERY_RETIRED: no live database worker; "
+                "use the governed SourceFactPackageV1/Package V2 workflow"
+            )
         super().__init__(api=api, metrics_inst=metrics_inst)
-        self.db = db or OsbProposalDb(log=self.log)
+        self.db = db
         self.worker_id = worker_id or f"{socket.gethostname()}:{id(self)}"
         self.study_id = study_id
         self.target_study_uid = target_study_uid or os.environ.get(
@@ -1525,43 +1529,9 @@ class ImportOsbProposalV2(BaseImporter):
 
 
 def main():
-    import argparse
-
-    parser = argparse.ArgumentParser(prog="run_import_osb_proposal_v2.py")
-    parser.add_argument(
-        "--study",
-        default=os.environ.get("ECRF_STUDY_ID"),
-        help="Required source-study scope for native execution",
-    )
-    parser.add_argument(
-        "--target-study-uid",
-        default=os.environ.get("OSB_TARGET_STUDY_UID"),
-        help="Explicit OSB Study UID that reviewed native operations may mutate",
-    )
-    parser.add_argument(
-        "--target-study-version",
-        default=os.environ.get("OSB_TARGET_STUDY_VERSION") or "DRAFT",
-        help="Logical target version; OSB live drafts use the literal DRAFT",
-    )
-    args = parser.parse_args()
-
-    metrics = Metrics()
-    importer = ImportOsbProposalV2(
-        metrics_inst=metrics,
-        study_id=args.study,
-        target_study_uid=args.target_study_uid,
-        target_study_version=args.target_study_version,
-    )
-    try:
-        result = importer.run_once()
-    finally:
-        importer.db.close()
-    metrics.print()
-    return (
-        0
-        if result is None
-        or result.get("status") in {"review_required", "review_complete", "succeeded"}
-        else 1
+    raise RuntimeError(
+        "OSB_PROPOSAL_V2_DELIVERY_RETIRED: no live database worker; "
+        "use the governed SourceFactPackageV1/Package V2 workflow"
     )
 
 
