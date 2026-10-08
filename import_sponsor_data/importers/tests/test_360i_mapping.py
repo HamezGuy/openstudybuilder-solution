@@ -348,7 +348,7 @@ def test_measured_unit_groups_are_versioned_complete_and_preserve_exact_spelling
         "spellings"
     ] == [" unknown "]
     assert odm == before
-    for version in [None, "measured-unit/2", ""]:
+    for version in [None, "measured-unit/3", ""]:
         with pytest.raises(ValueError, match="OSB_UNIT_GOVERNANCE_VERSION_UNSUPPORTED"):
             mapping.units_plan({"odm": {**odm, "unitGovernanceVersion": version}})
     malformed = deepcopy(odm)
@@ -363,6 +363,53 @@ def test_measured_unit_groups_are_versioned_complete_and_preserve_exact_spelling
     malformed["unitGovernance"][-1] = {"key": "other", "spellings": ["bpm"]}
     with pytest.raises(ValueError, match="OSB_UNIT_GOVERNANCE_SPELLING_AMBIGUOUS"):
         mapping.units_plan({"odm": malformed})
+
+
+def test_current_measured_unit_version_requires_exact_governed_kernel():
+    from copy import deepcopy
+
+    import pytest
+
+    odm = {
+        "units": ["mg/kg", "milligrams per kilogram", "G/L", "g/L"],
+        "unitGovernanceVersion": "measured-unit/2",
+        "unitGovernanceKernel": "governed-unit/3",
+        "unitGovernance": [
+            {"key": "mg/kg", "spellings": ["mg/kg", "milligrams per kilogram"]},
+            {"key": "10^9/L", "spellings": ["G/L"]},
+            {"key": "g/L", "spellings": ["g/L"]},
+        ],
+    }
+    before = deepcopy(odm)
+    current = mapping.units_plan({"odm": odm})
+    assert current == mapping.units_plan(
+        {"odm": {**odm, "unitGovernanceVersion": "measured-unit/1"}}
+    )
+    assert odm == before
+    assert next(p for p in current if p["key"] == "mg/kg")["spellings"] == [
+        "mg/kg",
+        "milligrams per kilogram",
+    ]
+    missing_kernel = {
+        key: value for key, value in odm.items() if key != "unitGovernanceKernel"
+    }
+    for invalid in [missing_kernel] + [
+        {**odm, "unitGovernanceKernel": kernel}
+        for kernel in [
+            None,
+            "",
+            "governed-unit/1",
+            "governed-unit/2",
+            "governed-unit/4",
+            3,
+        ]
+    ]:
+        with pytest.raises(ValueError, match="OSB_UNIT_GOVERNANCE_VERSION_UNSUPPORTED"):
+            mapping.units_plan({"odm": invalid})
+    incomplete = deepcopy(odm)
+    incomplete["unitGovernance"].pop()
+    with pytest.raises(ValueError, match="OSB_UNIT_GOVERNANCE_COVERAGE_INVALID"):
+        mapping.units_plan({"odm": incomplete})
 
 
 def test_legacy_dimension_groups_never_authorize_unit_aliases():

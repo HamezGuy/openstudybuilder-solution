@@ -933,7 +933,11 @@ def units_plan(payload):
             {"key": f"unresolved:{name}", "spellings": [name]}
             for name in sorted(raw_names | item_names)
         ]
-    if odm["unitGovernanceVersion"] != "measured-unit/1":
+    version = odm["unitGovernanceVersion"]
+    if version not in ("measured-unit/1", "measured-unit/2") or (
+        version == "measured-unit/2"
+        and odm.get("unitGovernanceKernel") != "governed-unit/3"
+    ):
         raise ValueError("OSB_UNIT_GOVERNANCE_VERSION_UNSUPPORTED")
     groups = odm.get("unitGovernance")
     if not isinstance(groups, list) or not item_names.issubset(raw_names):

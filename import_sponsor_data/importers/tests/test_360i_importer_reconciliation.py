@@ -151,6 +151,71 @@ def test_aliases_with_two_approved_native_uids_require_review():
     assert "AMBIGUOUS" in importer.census.stopped[0]["reason"]
 
 
+def test_current_unit_kernel_full_names_still_require_exact_final_native_aliases():
+    from copy import deepcopy
+
+    payload = {
+        "odm": {
+            "units": ["mg/kg", "milligrams per kilogram"],
+            "unitGovernanceVersion": "measured-unit/2",
+            "unitGovernanceKernel": "governed-unit/3",
+            "unitGovernance": [
+                {"key": "mg/kg", "spellings": ["mg/kg", "milligrams per kilogram"]}
+            ],
+        }
+    }
+    before = deepcopy(payload)
+    native = {
+        "uid": "approved-dose",
+        "name": "milligrams per kilogram",
+        "status": "Final",
+        "ucum": {"name": "mg/kg"},
+    }
+    importer = _importer(_UnitApi([native]))
+    assert importer.ensure_units(payload) == {
+        "mg/kg": "approved-dose",
+        "milligrams per kilogram": "approved-dose",
+    }
+    assert importer.census.created == []
+    assert importer.census.release_blockers == []
+    native["name"] = "Milligrams per kilogram"
+    refused = _importer(_UnitApi([native]))
+    assert refused.ensure_units(payload) == {}
+    assert refused.census.release_blockers
+    assert refused.census.created == []
+    assert payload == before
+
+
+def test_current_unit_kernel_mismatch_stops_before_any_native_lookup_or_write(
+    monkeypatch,
+):
+    import logging
+    from types import SimpleNamespace
+
+    import pytest
+
+    from .. import run_import_360i as module
+
+    monkeypatch.setattr(module, "assert_unsafe_legacy_mutation_allowed", lambda _: None)
+    # There is no native API installed: admission must fail before even lookup.
+    importer = _importer(None)
+    importer.log = logging.getLogger(__name__)
+    importer.db = SimpleNamespace(
+        read_latest_payload=lambda _: {
+            "payload": {
+                "odm": {
+                    "units": ["mg/kg"],
+                    "unitGovernanceVersion": "measured-unit/2",
+                    "unitGovernanceKernel": "governed-unit/2",
+                    "unitGovernance": [{"key": "mg/kg", "spellings": ["mg/kg"]}],
+                }
+            },
+        }
+    )
+    with pytest.raises(ValueError, match="OSB_UNIT_GOVERNANCE_VERSION_UNSUPPORTED"):
+        importer.run("study")
+
+
 def test_carrier_keys_and_catalogue_terms_cannot_authorize_native_unit_aliases():
     from copy import deepcopy
 
