@@ -217,7 +217,12 @@ def _assemble_study_odm_metadata(
 def _get_study_odm_metadata(
     study_uid: str, study_value_version: str | None
 ) -> dict[str, Any]:
-    """Load ODM forms/groups/items/events reachable from one native study version."""
+    """Load ODM forms/groups/items/events reachable from one native study version.
+
+    Version aliases on the same bound value follow the native ODM reference
+    readers' newest start_date rule. We never follow a root's newer value, and
+    equal-time aliases remain visible for ambiguity/closure validation.
+    """
     query = (
         """
         MATCH (study_root:StudyRoot {uid: $study_uid})
@@ -232,6 +237,10 @@ def _get_study_odm_metadata(
               ->(activity_instance:ActivityInstanceValue)
         MATCH (activity_instance_root:ActivityInstanceRoot)
               -[activity_instance_version:HAS_VERSION]->(activity_instance)
+        WHERE NOT EXISTS {
+            MATCH (activity_instance_root)-[newer:HAS_VERSION]->(activity_instance)
+            WHERE newer.start_date > activity_instance_version.start_date
+        }
         MATCH (activity_instance)-[:CONTAINS_ACTIVITY_ITEM]
               ->(activity_item:ActivityItem)
         OPTIONAL MATCH (activity_item)<-[:HAS_ACTIVITY_ITEM]
@@ -240,18 +249,34 @@ def _get_study_odm_metadata(
               -[activity_item_link:LINKS_TO_ACTIVITY_ITEM]->(activity_item)
         OPTIONAL MATCH (odm_item_root:OdmItemRoot)
               -[odm_item_version:HAS_VERSION]->(odm_item)
+        WHERE NOT EXISTS {
+            MATCH (odm_item_root)-[newer:HAS_VERSION]->(odm_item)
+            WHERE newer.start_date > odm_item_version.start_date
+        }
         OPTIONAL MATCH (odm_item_group:OdmItemGroupValue)
               -[item_ref:ITEM_REF]->(odm_item)
         OPTIONAL MATCH (odm_item_group_root:OdmItemGroupRoot)
               -[odm_item_group_version:HAS_VERSION]->(odm_item_group)
+        WHERE NOT EXISTS {
+            MATCH (odm_item_group_root)-[newer:HAS_VERSION]->(odm_item_group)
+            WHERE newer.start_date > odm_item_group_version.start_date
+        }
         OPTIONAL MATCH (odm_form:OdmFormValue)
               -[item_group_ref:ITEM_GROUP_REF]->(odm_item_group)
         OPTIONAL MATCH (odm_form_root:OdmFormRoot)
               -[odm_form_version:HAS_VERSION]->(odm_form)
+        WHERE NOT EXISTS {
+            MATCH (odm_form_root)-[newer:HAS_VERSION]->(odm_form)
+            WHERE newer.start_date > odm_form_version.start_date
+        }
         OPTIONAL MATCH (odm_study_event:OdmStudyEventValue)
               -[form_ref:FORM_REF]->(odm_form)
         OPTIONAL MATCH (odm_study_event_root:OdmStudyEventRoot)
               -[odm_study_event_version:HAS_VERSION]->(odm_study_event)
+        WHERE NOT EXISTS {
+            MATCH (odm_study_event_root)-[newer:HAS_VERSION]->(odm_study_event)
+            WHERE newer.start_date > odm_study_event_version.start_date
+        }
         RETURN {
             studyActivityInstanceUid: selection.uid,
             activityInstanceUid: activity_instance_root.uid,

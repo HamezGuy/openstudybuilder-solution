@@ -7,6 +7,7 @@ version or an event-to-visit assignment for a study.
 from copy import deepcopy
 from hashlib import sha256
 
+from clinical_mdr_api.services.ddf.usdm_ct_package_mapping import _source_json
 from clinical_mdr_api.services.ddf.usdm_mapping_context import native_json
 from clinical_mdr_api.services.integrations.canonical_json import canonical_json
 from clinical_mdr_api.services.integrations.edc_source_snapshot import (
@@ -18,10 +19,24 @@ class NativeOdmCandidateError(ValueError):
     pass
 
 
-def candidate_identity(uid: str, version: str) -> str:
+def candidate_identity(
+    uid: str, version: str, *, kind: str = "FORM", parent: str | None = None
+) -> str:
+    if (
+        not isinstance(uid, str)
+        or not uid
+        or not isinstance(version, str)
+        or not version
+    ):
+        raise NativeOdmCandidateError("OSB_NATIVE_ODM_EXACT_VERSION_REQUIRED")
+    # Form identities retain their existing wire profile. Child placements are
+    # versioned native identities too; labels/OID sanitization cannot join them.
+    identity = [uid, version] if parent is None else [parent, uid, version]
     return (
-        "OSB_FORM_"
-        + sha256(canonical_json([uid, version]).encode()).hexdigest().upper()
+        "OSB_"
+        + kind
+        + "_"
+        + sha256(canonical_json(identity).encode()).hexdigest().upper()
     )
 
 
@@ -37,7 +52,10 @@ def read_study_odm_candidates(
         _get_study_odm_metadata,
     )
 
-    closure = _get_study_odm_metadata(study_uid, study_value_version)
+    # Cypher relationship metadata contains Neo4j DateTime values. Preserve
+    # their nanosecond text with the established native-source serializer before
+    # canonical hashing; Python's datetime conversion would truncate precision.
+    closure = _source_json(_get_study_odm_metadata(study_uid, study_value_version))
     if closure.get("scope") != "study-reachable-native-odm":
         raise NativeOdmCandidateError("OSB_NATIVE_ODM_CANDIDATE_SCOPE")
     cache = {}

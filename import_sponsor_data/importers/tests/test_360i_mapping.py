@@ -328,6 +328,25 @@ def test_vendor_ext_is_one_sorted_json_blob():
     assert mapping.vendor_ext_value({"vendorExtensions": {}}) is None
 
 
+def test_explicit_empty_prompt_and_numeric_precision_survive_native_body():
+    body = mapping.odm_item_body(
+        {
+            "refKey": "I",
+            "name": "Fallback name",
+            "prompt": "",
+            "datatype": "float",
+            "length": 8,
+            "significantDigits": 3,
+            "sdsVarName": "",
+        },
+        {},
+        {},
+    )
+    assert body["prompt"] == ""
+    assert body["sds_var_name"] == ""
+    assert (body["length"], body["significant_digits"]) == (8, 3)
+
+
 # ----------------------------------------------------------------------------
 # Upsert diff â€” the pure classification the importer executes on re-import.
 # ----------------------------------------------------------------------------

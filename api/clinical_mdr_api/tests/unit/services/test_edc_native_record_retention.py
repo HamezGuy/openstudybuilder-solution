@@ -581,6 +581,159 @@ def test_native_codelist_submission_values_are_not_replaced_with_display_labels(
     assert [option["value"] for option in field["options"]] == ["Y", "0"]
 
 
+def test_native_field_precision_empty_choice_label_and_zero_order_survive():
+    exporter = service()
+    field = exporter._field(
+        "F",
+        "Group",
+        {
+            "uid": "I",
+            "version": "1.0",
+            "name": "Measured",
+            "oid": "I",
+            "datatype": "float",
+            "length": 8,
+            "significant_digits": 3,
+            "prompt": "",
+            "codelist": {"allows_multi_choice": False},
+            "terms": [
+                {
+                    "uid": "T",
+                    "submission_value": "0",
+                    "display_text": "",
+                    "name": "Fallback",
+                    "order": 0,
+                }
+            ],
+        },
+        {"order_number": 0, "mandatory": "No"},
+        1,
+        native_candidate=True,
+    )
+    assert field["significantDigits"] == 3
+    assert field["label"] == ""
+    assert field["order"] == 0
+    assert field["required"] is False
+    assert field["options"] == [{"label": "", "value": "0", "order": 0}]
+
+
+def test_native_same_named_groups_keep_exact_placement_identity_and_metadata():
+    exporter = service()
+    item = {
+        "uid": "I",
+        "version": "1.0",
+        "oid": "I.A-B",
+        "name": "Measured",
+        "datatype": "float",
+    }
+    groups = [
+        {
+            "uid": uid,
+            "version": "1.0",
+            "oid": oid,
+            "name": "Measurements",
+            "repeating": repeating,
+            "translated_texts": [
+                {"text_type": "Description", "language": "en", "text": description}
+            ],
+            "items": [
+                {"uid": "I", "version": "1.0", "order_number": 0, "mandatory": "No"}
+            ],
+        }
+        for uid, oid, repeating, description in [
+            ("G1", "G.A-B", "No", ""),
+            ("G2", "G.A_B", "Yes", "Repeat instructions"),
+        ]
+    ]
+    form = {
+        "uid": "F",
+        "version": "1.0",
+        "name": "Form",
+        "oid": "F",
+        "repeating": "Yes",
+        "item_groups": [
+            {"uid": group["uid"], "version": "1.0", "order_number": index}
+            for index, group in enumerate(groups)
+        ],
+    }
+    exporter.form_service = SimpleNamespace(get_all_odms=lambda **_: [])
+    exporter._native_form_candidates = [
+        {
+            "refKey": "NATIVE_F",
+            "nativeUid": "F",
+            "nativeVersion": "1.0",
+            "nativeOid": "F",
+            "studyUid": "S",
+            "studyValueVersion": None,
+            "status": "draft-candidate",
+            "sourceSha256": "a" * 64,
+            "requiresFormVersionReview": True,
+            "requiresVisitAssignmentReview": True,
+            "form": form,
+            "groups": [
+                {"record": group, "items": [{"record": deepcopy(item)}]}
+                for group in groups
+            ],
+        }
+    ]
+    projected = exporter._forms(None, None, "S")[0][0]
+    assert projected["repeating"] is True
+    assert [section["repeating"] for section in projected["sections"]] == [False, True]
+    assert [section["description"] for section in projected["sections"]] == [
+        "",
+        "Repeat instructions",
+    ]
+    assert [section["order"] for section in projected["sections"]] == [0, 1]
+    assert len({section["id"] for section in projected["sections"]}) == 2
+    assert len({field["refKey"] for field in projected["fields"]}) == 2
+    assert [field["section"] for field in projected["fields"]] == [
+        section["id"] for section in projected["sections"]
+    ]
+    assert [field["group"] for field in projected["fields"]] == [
+        "Measurements",
+        "Measurements",
+    ]
+
+
+def test_group_extension_metadata_is_restored_without_whole_source_form_archive():
+    exporter = service()
+    form = {
+        "uid": "F",
+        "version": "1.0",
+        "oid": "F",
+        "name": "Form",
+        "item_groups": [{"uid": "G", "version": "1.0"}],
+    }
+    group = {
+        "uid": "G",
+        "version": "1.0",
+        "oid": "G",
+        "name": "Group",
+        "items": [],
+        "translated_texts": [
+            {
+                "text_type": "osb:CompletionInstructions",
+                "language": "en",
+                "text": "Native instruction",
+            }
+        ],
+        "vendor_attributes": [
+            {
+                "name": "ext",
+                "value": '{"subtitle":"","instructions":"Older extension instruction"}',
+            }
+        ],
+    }
+    exporter.form_service = SimpleNamespace(get_all_odms=lambda **_: [form])
+    exporter.item_group_service = SimpleNamespace(
+        get_by_uid=lambda *_args, **_kwargs: group
+    )
+    section = exporter._forms({"F"})[0][0]["sections"][0]
+    assert section["subtitle"] == ""
+    assert section["instructions"] == "Native instruction"
+    assert exporter.census == []
+
+
 def test_normalized_field_key_collision_cannot_hybridize_two_source_definitions():
     exporter = service()
     with pytest.raises(EdcExportError, match="AMBIGUOUS_SOURCE_REFERENCE"):

@@ -139,6 +139,12 @@ class OdmFormService(OdmGenericService[OdmFormAR]):
             msg=self.OBJECT_NOT_IN_DRAFT,
         )
 
+        BusinessLogicException.raise_if(
+            len({group.uid for group in odm_form_item_group_post_input})
+            != len(odm_form_item_group_post_input),
+            msg="ODM_ITEM_GROUP_REFERENCE_DUPLICATE: a batch cannot assign two placements to one group UID.",
+        )
+
         if override:
             self._repos.odm_form_repository.remove_relation(
                 uid=uid,

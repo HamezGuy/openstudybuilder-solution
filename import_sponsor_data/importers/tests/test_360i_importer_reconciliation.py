@@ -5,11 +5,7 @@
 # pylint: disable=use-implicit-booleaness-not-comparison,protected-access
 
 from ..mappings import payload_to_osb as mapping
-from ..run_import_360i import (
-    CARRIER_EPOCH_DESCRIPTION,
-    Import360i,
-    ImportCensus,
-)
+from ..run_import_360i import CARRIER_EPOCH_DESCRIPTION, Import360i, ImportCensus
 
 
 class _EpochApi:
@@ -59,6 +55,79 @@ def _importer(api):
     importer._purpose_template_cache = {}
     importer._purpose_timeframe_cache = {}
     return importer
+
+
+def test_group_metadata_and_empty_descriptions_reach_native_import_bodies():
+    class CreateApi:
+        def __init__(self):
+            self.posts = []
+
+        def get_all_from_api(self, _path, params=None):
+            return []
+
+        def odm_item_request_body(self, _path, body):
+            return body
+
+        def simple_post_to_api(self, path, body, params=None):
+            self.posts.append((path, body))
+            return {
+                "uid": "NativeGroup" if path == "/odms/item-groups" else "NativeForm"
+            }
+
+        def simple_approve(self, _path):
+            return True
+
+    api = CreateApi()
+    worker = _importer(api)
+    worker.same_payload_replay = False
+    worker.ensure_vendor_namespace = lambda: {"ext": "NativeExtAttribute"}
+    extensions = {"subtitle": "", "instructions": "Repeat for each specimen."}
+    worker.ensure_odm(
+        {
+            "source": {"studyId": "source", "buildHash": "hash"},
+            "sourceBundle": {},
+            "odm": {
+                "forms": [
+                    {
+                        "refKey": "F",
+                        "name": "Form",
+                        "description": "",
+                        "itemGroups": [
+                            {
+                                "refKey": "G",
+                                "name": "Group",
+                                "description": "",
+                                "orderNumber": 1,
+                                "repeating": True,
+                                "vendorExtensions": extensions,
+                                "items": [],
+                            },
+                        ],
+                    }
+                ]
+            },
+            "visits": [],
+            "formVisitMatrix": [],
+        },
+        "Study_1",
+        {},
+        {},
+    )
+    group = next(body for path, body in api.posts if path == "/odms/item-groups")
+    form = next(body for path, body in api.posts if path == "/odms/forms")
+    assert group["vendor_attributes"] == [
+        {
+            "uid": "NativeExtAttribute",
+            "value": mapping.vendor_ext_value({"vendorExtensions": extensions}),
+        }
+    ]
+    assert group["repeating"] == "yes"
+    assert (
+        group["translated_texts"][0]["text"]
+        == form["translated_texts"][0]["text"]
+        == ""
+    )
+    assert not worker.census.stopped
 
 
 def test_carrier_epoch_uses_ledger_identity_and_retires_old_duplicates():

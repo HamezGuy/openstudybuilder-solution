@@ -56,11 +56,11 @@ def test_native_odm_form_values_and_exact_candidate_identity_survive_without_nam
     assert form["_nativeCandidate"]["nativeVersion"] == "1.0"
     assert form["_nativeCandidate"]["requiresVisitAssignmentReview"] is True
     assert [field["type"] for field in form["fields"]] == ["decimal", "date", "text"]
-    assert [field["refKey"] for field in form["fields"]] == [
-        "PLATELETS",
-        "COLLECTION_DATE",
-        "SAMPLE_COMMENT",
-    ]
+    assert len({field["refKey"] for field in form["fields"]}) == 3
+    assert all(field["refKey"].startswith("OSB_ITEM_") for field in form["fields"])
+    assert all(
+        field["section"] == form["sections"][0]["id"] for field in form["fields"]
+    )
     assert form["fields"][0]["unit"] == "10^9/L"
     assert form["fields"][2]["length"] == 512
     assert form["fields"][2]["required"] is False
@@ -175,8 +175,8 @@ def test_historical_vendor_carriers_cannot_supply_native_candidate_field_authori
     field = form["fields"][0]
     assert form["_nativeCandidate"]["nativeVersion"] == "1.0"
     assert form["refKey"] != "FOREIGN_FORM"
-    assert (field["refKey"], field["type"], field["unit"], field["required"]) == (
-        "PLATELETS",
+    assert field["refKey"].startswith("OSB_ITEM_")
+    assert (field["type"], field["unit"], field["required"]) == (
         "decimal",
         "10^9/L",
         True,
@@ -228,6 +228,7 @@ def test_each_candidate_reads_its_exact_group_and_item_version_without_current_m
     assert forms["1.0"]["fields"][0]["unit"] == "10^9/L"
     assert forms["2.0"]["fields"][0]["type"] == "text"
     assert forms["2.0"]["fields"][0]["length"] == 200
+    assert forms["1.0"]["fields"][0]["refKey"] != forms["2.0"]["fields"][0]["refKey"]
     assert "unit" not in forms["2.0"]["fields"][0]
     for version in ("1.0", "2.0"):
         assert ("item_group_service", "OdmItemGroup_lab", version) in source.calls
@@ -291,7 +292,7 @@ def test_native_candidate_with_multiple_units_keeps_all_choices_for_review():
     pending = next(
         row
         for row in export["census"]["rows"]
-        if row.get("ref") == f"{form['refKey']}/PLATELETS/unit"
+        if row.get("ref") == f"{form['refKey']}/{form['fields'][0]['refKey']}/unit"
     )
     assert [unit["uid"] for unit in pending["nativeValues"]] == [
         "Unit_1",

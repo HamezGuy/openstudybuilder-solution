@@ -3656,12 +3656,18 @@ class Import360i(BaseImporter):
                         {
                             "text_type": "Description",
                             "language": "en",
-                            "text": group.get("description") or group["name"],
+                            "text": (
+                                group["description"]
+                                if group.get("description") is not None
+                                else group["name"]
+                            ),
                         }
                     ],
                     "sdtm_domain_uids": [],
                     "vendor_attributes": self._entity_vendor_attributes(
-                        attr_uids, group["refKey"]
+                        attr_uids,
+                        group["refKey"],
+                        ext_json=mapping.vendor_ext_value(group),
                     ),
                 }
                 # Create as Draft: ITEM_REFs attach only to a Draft element,
@@ -3739,7 +3745,11 @@ class Import360i(BaseImporter):
                     {
                         "text_type": "Description",
                         "language": "en",
-                        "text": form.get("description") or form["name"],
+                        "text": (
+                            form["description"]
+                            if form.get("description") is not None
+                            else form["name"]
+                        ),
                     }
                 ],
                 "vendor_attributes": self._entity_vendor_attributes(

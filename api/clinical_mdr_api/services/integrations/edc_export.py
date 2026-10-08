@@ -25,6 +25,9 @@ from clinical_mdr_api.services.ddf.usdm_service import USDMService
 from clinical_mdr_api.services.integrations.edc_field_types import (
     resolve_edc_field_type,
 )
+from clinical_mdr_api.services.integrations.edc_native_odm_candidates import (
+    candidate_identity,
+)
 from clinical_mdr_api.services.integrations.edc_source_snapshot import (
     SourceSnapshotError,
     is_source_snapshot,
@@ -37,6 +40,7 @@ from clinical_mdr_api.services.integrations.edc_study_exchange import (
 )
 from clinical_mdr_api.services.odms.datatypes import odm_datatype_value
 from common import config
+from common.utils import strtobool
 
 log = logging.getLogger(__name__)
 
@@ -818,7 +822,8 @@ class EdcExportService:
             if epoch_name:
                 visit["category"] = epoch_name
             from clinical_mdr_api.services.integrations.edc_native_visit_projection import (
-                project_visit_timing, read_visit_units,
+                project_visit_timing,
+                read_visit_units,
             )
 
             def issue(code, field, message):
@@ -860,7 +865,8 @@ class EdcExportService:
         self._native_form_candidates = []
         if study_uid is not None and expected_source_study_id is None:
             from clinical_mdr_api.services.integrations.edc_native_odm_candidates import (
-                NativeOdmCandidateError, read_study_odm_candidates,
+                NativeOdmCandidateError,
+                read_study_odm_candidates,
             )
             try:
                 candidates = read_study_odm_candidates(
@@ -1190,14 +1196,22 @@ class EdcExportService:
                     group.model_dump() if hasattr(group, "model_dump") else dict(group)
                 )
                 self._retain_native("itemGroup", group)
-                section_id = _sanitize_ref(group.get("oid") or group.get("name"))
+                section_id = (candidate_identity(group.get("uid"), group.get("version"), kind="GROUP")
+                              if candidate is not None else _sanitize_ref(group.get("oid") or group.get("name")))
+                description = _english_text(group, "Description")
+                instructions = _english_text(group, "osb:CompletionInstructions")
                 sections.append(
                     {
                         "id": section_id,
                         "name": group.get("name"),
-                        "order": group_ref.get("order_number") or gi,
+                        "order": group_ref["order_number"] if group_ref.get("order_number") is not None else gi,
+                        **({"description": description} if description is not None else {}),
+                        **({"instructions": instructions} if instructions is not None else {}),
+                        **({"repeating": bool(strtobool(group["repeating"]))} if group.get("repeating") is not None else {}),
                     }
                 )
+                if candidate is None:
+                    self._restore_vendor_extensions(group, sections[-1], f"{ref}/{section_id}")
                 for ii, item_ref in enumerate(group.get("items", []) or [], start=1):
                     item = (candidate_group["items"][ii - 1]["record"] if candidate_group is not None else
                             self.item_service.get_by_uid(
@@ -1214,6 +1228,7 @@ class EdcExportService:
                             item_ref=item_ref,
                             order=ii,
                             native_candidate=candidate is not None,
+                            section_ref=section_id if candidate is not None else None,
                         )
                     )
             fields = self._restore_source_fields(fields, source_form)
@@ -1234,9 +1249,10 @@ class EdcExportService:
                     {
                         "refKey": ref,
                         "name": form.get("name"),
+                        **({"repeating": bool(strtobool(form["repeating"]))} if form.get("repeating") is not None else {}),
                         **(
                             {"description": _english_text(form, "Description")}
-                            if _english_text(form, "Description")
+                            if _english_text(form, "Description") is not None
                             else {}
                         ),
                         "sections": sections,
@@ -1272,7 +1288,7 @@ class EdcExportService:
             forms = deepcopy(source_forms)
         return forms, ref_by_uid, ref_by_oid
 
-    def _field(self, form_ref, section_name, item, item_ref, order, *, native_candidate=False):
+    def _field(self, form_ref, section_name, item, item_ref, order, *, native_candidate=False, section_ref=None):
         self._retain_native("item", item)
         # OpenStudyBuilder 2.10 reads an item's datatype as its CODMDT term;
         # EDC field typing uses the term's ODM datatype string.
@@ -1284,6 +1300,8 @@ class EdcExportService:
             (None if native_candidate else _vendor_attr(item, "refKey"))
             or item.get("oid") or item.get("name")
         )
+        if native_candidate:
+            field_ref = candidate_identity(item.get("uid"), item.get("version"), kind="ITEM", parent=section_ref)
         # The source UI historically stamped scalar SYSBP/DIABP questions with
         # its composite `blood_pressure` widget type. OSB now owns each as a
         # separate numeric ODM ItemDef (`float`). Restoring the stale widget stamp
@@ -1350,8 +1368,8 @@ class EdcExportService:
             field.pop("order", None)
         else:
             field["order"] = current_order
-        prompt = item.get("prompt") or _english_text(item, "Question")
-        if prompt:
+        prompt = item.get("prompt") if item.get("prompt") is not None else _english_text(item, "Question")
+        if prompt is not None:
             field["label"] = prompt
         mandatory = item_ref.get("mandatory")
         if mandatory is not None:
@@ -1364,12 +1382,14 @@ class EdcExportService:
             field["length"] = item["length"]
         elif "length" not in source_field:
             field.pop("length", None)
-        if item.get("comment"):
+        if item.get("significant_digits") is not None:
+            field["significantDigits"] = item["significant_digits"]
+        if item.get("comment") is not None:
             field["description"] = item["comment"]
-        if item.get("sds_var_name"):
+        if item.get("sds_var_name") is not None:
             field["sdtmVariable"] = item["sds_var_name"]
-        if section_name:
-            field["section"] = section_name
+        if section_ref is not None or section_name:
+            field["section"] = section_ref if section_ref is not None else section_name
             field["group"] = section_name
         units = item.get("unit_definitions") or []
         unit_names = list(dict.fromkeys(unit.get("name") for unit in units))
@@ -1389,9 +1409,8 @@ class EdcExportService:
         if terms and "options" not in source_field:
             field["options"] = [
                 {
-                    "label": t.get("display_text")
-                    or t.get("name")
-                    or str(t.get("uid")),
+                    "label": t["display_text"] if t.get("display_text") is not None
+                    else t["name"] if t.get("name") is not None else str(t.get("uid")),
                     "value": (
                         str(t["submission_value"])
                         if t.get("submission_value") is not None
@@ -1399,27 +1418,35 @@ class EdcExportService:
                         or t.get("name")
                         or str(t.get("term_uid") or t.get("uid"))
                     ),
-                    "order": t.get("order") or ti + 1,
+                    "order": t["order"] if t.get("order") is not None else ti + 1,
                 }
                 for ti, t in enumerate(terms)
             ]
         # Restore carried 360i extensions (helpText, showWhen, validation
         # rules, SDTM annotation parts) from the ext blob, when stamped.
-        ext_json = None if native_candidate else _vendor_attr(item, "ext")
+        if not native_candidate:
+            self._restore_vendor_extensions(item, field, f"{form_ref}/{field_ref}")
+        return field
+
+    def _restore_vendor_extensions(self, entity, target, ref):
+        """Restore the existing entity extension carrier without replacing native slots."""
+        ext_json = _vendor_attr(entity, "ext")
         if ext_json:
             try:
                 ext = json.loads(ext_json)
+                if not isinstance(ext, dict):
+                    raise ValueError("Extensions must be a JSON object")
             except (TypeError, ValueError):
                 ext = {}
                 self.census.append(
                     {
                         "kind": "ext_unparseable",
-                        "ref": f"{form_ref}/{field_ref}",
+                        "ref": ref,
                         "detail": "x360i:ext is not valid JSON; extensions not restored",
                     }
                 )
             for key, value in ext.items():
-                if key in field:
+                if key in target:
                     continue
                 if isinstance(value, str) and value.startswith("json:"):
                     try:
@@ -1428,7 +1455,7 @@ class EdcExportService:
                         self.census.append(
                             {
                                 "kind": "ext_value_unparseable",
-                                "ref": f"{form_ref}/{field_ref}/{key}",
+                                "ref": f"{ref}/{key}",
                                 "detail": "tagged x360i:ext value is not valid JSON",
                             }
                         )
@@ -1439,12 +1466,11 @@ class EdcExportService:
                         self.census.append(
                             {
                                 "kind": "ext_value_unparseable",
-                                "ref": f"{form_ref}/{field_ref}/{key}",
+                                "ref": f"{ref}/{key}",
                                 "detail": "structured x360i:ext value is not valid JSON",
                             }
                         )
-                field[key] = value
-        return field
+                target[key] = value
 
     def _assignments(
         self,

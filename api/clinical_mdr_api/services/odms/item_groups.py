@@ -157,6 +157,12 @@ class OdmItemGroupService(OdmGenericService[OdmItemGroupAR]):
             msg=self.OBJECT_NOT_IN_DRAFT,
         )
 
+        BusinessLogicException.raise_if(
+            len({item.uid for item in odm_item_group_item_post_input})
+            != len(odm_item_group_item_post_input),
+            msg="ODM_ITEM_REFERENCE_DUPLICATE: a batch cannot assign two placements to one item UID.",
+        )
+
         if override:
             self._repos.odm_item_group_repository.remove_relation(
                 uid=uid,

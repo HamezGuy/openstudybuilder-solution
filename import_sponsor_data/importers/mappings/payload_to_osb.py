@@ -948,7 +948,7 @@ def odm_item_body(item, codelist_uid_by_name, unit_uid_by_name):
         "name": item["name"][:200],
         "oid": item["refKey"],
         "datatype": datatype,
-        "prompt": item.get("prompt") or item["name"],
+        "prompt": item["prompt"] if item.get("prompt") is not None else item["name"],
         "length": length,
         "significant_digits": significant_digits,
         "sas_field_name": None,
