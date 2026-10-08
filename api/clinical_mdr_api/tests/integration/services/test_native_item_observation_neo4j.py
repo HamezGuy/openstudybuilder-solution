@@ -71,7 +71,12 @@ def native():
         start_date:datetime('2026-09-11T10:00:00Z')}]->(studyValue)
       CREATE (root:OdmItemRoot {fixture:$fixture,uid:$itemUid})
       CREATE (value:OdmItemValue {fixture:$fixture,name:'Native observed name',oid:'I.NATIVE',
-        prompt:'Native prompt',datatype:'integer',length:8})
+        prompt:'Native prompt',length:8})
+      CREATE (value)-[:HAS_DATA_TYPE]->(datatype_context:CTTermContext {fixture:$fixture})
+        -[:HAS_SELECTED_TERM]->(datatype:CTTermRoot {fixture:$fixture,uid:$fixture+'-integer'})
+      CREATE (datatype_context)-[:HAS_SELECTED_CODELIST]->(:CTCodelistRoot {fixture:$fixture,uid:$fixture+'-CODMDT'})
+        -[:HAS_TERM]->(:CTCodelistTerm {fixture:$fixture,submission_value:'integer'})
+        -[:HAS_TERM_ROOT]->(datatype)
       CREATE (root)-[:LATEST]->(value)
       CREATE (root)-[:HAS_VERSION {version:$itemVersion,status:'Final'}]->(value)
       CREATE (decision:StudyMappingDecisionV1 {fixture:$fixture,tenant_id:$tenantId,

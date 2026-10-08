@@ -194,7 +194,8 @@ def test_existing_supersedes_invalidates_old_association_then_explicit_new_revie
         "MATCH (p:OsbProposalReview) SET p.proposal_json=$oversized",
         "MATCH (c:OsbMappingContextSnapshot) SET c.content_json='changed'",
         "MATCH (s:DomainStudyScope) SET s.status='quarantined'",
-        "MATCH (i:OdmItemValue) SET i.datatype='string'",
+        "MATCH (:OdmItemValue)-[:HAS_DATA_TYPE]->(:CTTermContext)-[:HAS_SELECTED_CODELIST]->(c)"
+        " MATCH (c)-[:HAS_TERM]->(t:CTCodelistTerm) SET t.submission_value='string'",
         "MATCH (i:ActivityItem) SET i.text_value='changed'",
         "MATCH (a:OsbGovernedItemAssociation) SET a.payload_json='changed'",
         "MATCH (d)-[:HAS_GOVERNED_ITEM_ASSOCIATION]->(a:OsbGovernedItemAssociation) CREATE (b:OsbGovernedItemAssociation) SET b=properties(a) CREATE (d)-[:HAS_GOVERNED_ITEM_ASSOCIATION]->(b)",

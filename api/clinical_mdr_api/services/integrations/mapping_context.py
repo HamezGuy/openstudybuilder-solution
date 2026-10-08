@@ -153,9 +153,13 @@ class MappingContextService:
                             f"MAPPING_CONTEXT_CANDIDATE_IDENTITY_INCOMPLETE:{incomplete}"
                         )
                 elif family == "units":
-                    rows = self._units(
-                        searches, codes, request.maximum_candidates_per_family
+                    rows, incomplete = self._units_v2(
+                        searches, codes, request.maximum_candidates_per_family, None
                     )
+                    if incomplete:
+                        release_blockers.append(
+                            f"MAPPING_CONTEXT_CANDIDATE_IDENTITY_INCOMPLETE:{incomplete}"
+                        )
                 elif family == "cdash_variables":
                     rows, incomplete = self._cdash_variables_v2(
                         searches,
@@ -422,7 +426,7 @@ class MappingContextService:
             "mappingAuthority": "OpenStudyBuilder",
             "studyUid": request.study_uid,
             "studyValueVersion": request.study_value_version,
-            "asOf": request.as_of,
+            "asOf": jsonable_encoder(request.as_of),
             "osbOpenApiHash": osb_openapi_hash,
             "governed": governed,
             "selectedPackages": jsonable_encoder(packages),
@@ -1034,44 +1038,6 @@ class MappingContextService:
         return candidates, incomplete
 
     @staticmethod
-    def _units(searches, codes, limit):
-        query = """
-            MATCH (root:UnitDefinitionRoot)-[version:LATEST_FINAL]->(value:UnitDefinitionValue)
-            OPTIONAL MATCH (value)-[:HAS_UCUM_TERM]->(ucum:UCUMTermRoot)
-            WITH root, value, ucum, version,
-                 CASE
-                   WHEN any(code IN $codes WHERE toLower(root.uid) = code
-                         OR toLower(coalesce(ucum.uid, '')) = code) THEN 0
-                   WHEN any(needle IN $searches WHERE toLower(value.name) = needle) THEN 1
-                   ELSE 2
-                 END AS match_rank
-            WHERE any(needle IN $searches WHERE toLower(value.name) CONTAINS needle)
-               OR any(code IN $codes WHERE toLower(root.uid) = code
-                        OR toLower(coalesce(ucum.uid, '')) = code)
-            RETURN root.uid AS uid, value.name AS label, ucum.uid AS ucum,
-                   value.version AS version
-            ORDER BY match_rank, toLower(label), uid
-            LIMIT $limit
-        """
-        result, _ = db.cypher_query(
-            query,
-            {"searches": searches, "codes": codes, "limit": limit},
-        )
-        return [
-            MappingContextCandidate(
-                resource_family="units",
-                resource_type="UnitDefinition",
-                uid=row[0],
-                label=row[1],
-                # MappingContextCandidate has no ucum_code field; this V1 reader never
-                # carried the UCUM term (the V2 reader carries ucum_expression).
-                version=str(row[3]) if row[3] is not None else None,  # type: ignore[arg-type]
-                status="Final",
-            )
-            for row in result
-        ]
-
-    @staticmethod
     def _units_v2(searches, codes, limit, as_of):
         if as_of is None:
             version_match = """
@@ -1079,7 +1045,12 @@ class MappingContextService:
                 MATCH (root)-[version:HAS_VERSION]->(value)
                 WHERE version.status = 'Final' AND version.end_date IS NULL
             """
-            params = {"searches": searches, "codes": codes, "limit": limit}
+            params = {
+                "searches": searches,
+                "codes": codes,
+                "limit": limit,
+                "as_of": None,
+            }
         else:
             version_match = """
                 MATCH (root:UnitDefinitionRoot)-[version:HAS_VERSION]->(value:UnitDefinitionValue)
@@ -1094,33 +1065,50 @@ class MappingContextService:
                 "as_of": as_of.isoformat(),
             }
         query = version_match + """
-            MATCH (value)-[:HAS_UCUM_TERM]->(ucum_root:UCUMTermRoot)
-                  -[:LATEST_FINAL]->(ucum_value:UCUMTermValue)
+            OPTIONAL MATCH (value)-[:HAS_UCUM_TERM]->(ucum_root:UCUMTermRoot)
+            OPTIONAL MATCH (ucum_root)-[ucum_version:HAS_VERSION]->(ucum_value:UCUMTermValue)
+            WHERE ucum_version.status = 'Final'
+              AND (($as_of IS NULL AND ucum_version.end_date IS NULL)
+                OR ($as_of IS NOT NULL AND ucum_version.start_date <= datetime($as_of)
+                  AND (ucum_version.end_date IS NULL OR ucum_version.end_date > datetime($as_of))))
             OPTIONAL MATCH (value)-[:HAS_CT_DIMENSION]->(:CTTermContext)
-                  -[:HAS_SELECTED_TERM]->(:CTTermRoot)-[:HAS_NAME_ROOT]->(:CTTermNameRoot)
-                  -[:LATEST_FINAL]->(dimension_name:CTTermNameValue)
-            WITH root, value, version, ucum_root, ucum_value, dimension_name,
+                  -[:HAS_SELECTED_TERM]->(dimension_root:CTTermRoot)
+            OPTIONAL MATCH (dimension_root)-[:HAS_NAME_ROOT]->(dimension_names:CTTermNameRoot)
+            OPTIONAL MATCH (dimension_names)-[dimension_version:HAS_VERSION]->(dimension_name:CTTermNameValue)
+            WHERE dimension_version.status = 'Final'
+              AND (($as_of IS NULL AND dimension_version.end_date IS NULL)
+                OR ($as_of IS NOT NULL AND dimension_version.start_date <= datetime($as_of)
+                  AND (dimension_version.end_date IS NULL OR dimension_version.end_date > datetime($as_of))))
+            WITH root, value, version, ucum_root, ucum_value, dimension_root, dimension_name,
                  CASE
                    WHEN any(code IN $codes WHERE toLower(root.uid) = code
+                        OR toLower(ucum_root.uid) = code
                         OR toLower(ucum_value.name) = code) THEN 0
                    WHEN any(needle IN $searches WHERE toLower(value.name) = needle) THEN 1
                    ELSE 2
                  END AS match_rank
             WHERE any(needle IN $searches WHERE toLower(value.name) CONTAINS needle)
                OR any(code IN $codes WHERE toLower(root.uid) = code
+                       OR toLower(ucum_root.uid) = code
                        OR toLower(ucum_value.name) = code)
             RETURN root.uid, value.name, version.version, version.status,
                    toString(version.start_date), toString(version.end_date),
                    ucum_value.name, dimension_name.name,
-                   value.conversion_factor_to_master
-            ORDER BY match_rank, toLower(value.name), root.uid
+                   value.conversion_factor_to_master,
+                   ucum_root IS NOT NULL AND ucum_value IS NULL,
+                   dimension_root IS NOT NULL AND dimension_name IS NULL
+            ORDER BY match_rank, toLower(value.name), root.uid, version.version,
+                     ucum_value.name, dimension_name.name
             LIMIT $limit
         """
         result, _ = db.cypher_query(query, params)
         candidates = []
         incomplete = 0
         for row in result:
-            if not all((row[0], row[1], row[2], row[3], row[6])):
+            # UCUM and dimension are optional in the native UnitDefinition.
+            # A bound reference without a valid reading is different from an
+            # absent reference and must remain an explicit incomplete result.
+            if not all((row[0], row[1], row[2], row[3])) or any(row[9:11]):
                 incomplete += 1
                 continue
             candidates.append(

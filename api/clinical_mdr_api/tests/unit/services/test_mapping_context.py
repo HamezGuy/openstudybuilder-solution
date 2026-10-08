@@ -19,6 +19,7 @@ from clinical_mdr_api.models.integrations.mapping_context import (
     MappingContextV2Request,
 )
 from clinical_mdr_api.routers.integrations.mapping_context import canonical_openapi_hash
+from clinical_mdr_api.services.integrations.canonical_json import canonical_hash
 from clinical_mdr_api.services.integrations.mapping_context import MappingContextService
 
 
@@ -589,7 +590,8 @@ def test_v2_ct_query_is_constrained_to_requested_parent_codelist(monkeypatch):
     assert "codelist_attributes.submission_value" in observed["text"]
 
 
-def test_v2_empty_groups_persist_a_governed_prerequisite_snapshot(monkeypatch):
+@pytest.mark.parametrize("as_of", [None, datetime(2025, 1, 1, tzinfo=timezone.utc)])
+def test_v2_empty_groups_persist_a_governed_prerequisite_snapshot(monkeypatch, as_of):
     saved = []
     service = MappingContextService(
         context_registry=SimpleNamespace(
@@ -627,13 +629,16 @@ def test_v2_empty_groups_persist_a_governed_prerequisite_snapshot(monkeypatch):
         ],
     )
 
-    context = service.get_context_v2(_v2_request([]), "a" * 64)
+    context = service.get_context_v2(_v2_request([], as_of=as_of), "a" * 64)
 
     assert context.governed is True
     assert context.candidate_groups == []
     assert context.release_blockers == []
     assert len(saved) == 1
     assert saved[0][0] == context.context_hash
+    # The real repository hashes strict JSON, without the service wrapper's
+    # datetime encoder. Both hashing boundaries must receive identical values.
+    assert canonical_hash(saved[0][1]) == context.context_hash
     assert saved[0][1]["candidateGroups"] == []
 
 
@@ -809,6 +814,77 @@ def test_v2_historical_family_query_uses_only_explicit_temporal_validity(monkeyp
     assert "version.start_date <= datetime($as_of)" in observed["text"]
     assert "version.end_date > datetime($as_of)" in observed["text"]
     assert observed["params"]["as_of"] == as_of.isoformat()
+
+
+@pytest.mark.parametrize(
+    "ucum,dimension,broken_ucum,broken_dimension,expected_count",
+    [
+        (None, None, False, False, 1),
+        (None, None, True, False, 0),
+        ("mg", None, False, True, 0),
+    ],
+)
+def test_unit_optional_metadata_is_distinct_from_unreadable_bound_metadata(
+    monkeypatch, ucum, dimension, broken_ucum, broken_dimension, expected_count
+):
+    monkeypatch.setattr(
+        "clinical_mdr_api.services.integrations.mapping_context.db.cypher_query",
+        lambda *_: (
+            [
+                [
+                    "Unit_1",
+                    "Clinical score",
+                    "1.0",
+                    "Final",
+                    None,
+                    None,
+                    ucum,
+                    dimension,
+                    None,
+                    broken_ucum,
+                    broken_dimension,
+                ]
+            ],
+            None,
+        ),
+    )
+    candidates, incomplete = MappingContextService._units_v2(
+        ["clinical score"], [], 2, None
+    )
+    assert len(candidates) == expected_count
+    assert incomplete == 1 - expected_count
+    if candidates:
+        assert candidates[0].ucum_expression is None
+        assert candidates[0].conversion_factor_to_master is None
+
+
+def test_v1_units_share_versioned_reader_and_keep_incomplete_blocker(monkeypatch):
+    service = MappingContextService(
+        context_registry=SimpleNamespace(save_context=lambda *_: None)
+    )
+    monkeypatch.setattr(
+        service,
+        "_selected_packages",
+        lambda *_: [
+            SimpleNamespace(
+                catalogue_name="DDF CT",
+                package_uid="DDF-2025",
+                effective_date="2025-01-01",
+                automatically_created=False,
+            )
+        ],
+    )
+    monkeypatch.setattr(service, "_units_v2", lambda *args: ([], 1))
+    response = service.get_context(
+        MappingContextRequest(
+            resource_families=["units"], search_strings=["clinical score"]
+        ),
+        "a" * 64,
+    )
+    assert response.candidates["units"] == []
+    assert response.release_blockers == [
+        "MAPPING_CONTEXT_CANDIDATE_IDENTITY_INCOMPLETE:1"
+    ]
 
 
 def test_v2_timeframe_family_returns_instance_identity_not_template(monkeypatch):
