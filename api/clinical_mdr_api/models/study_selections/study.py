@@ -2499,6 +2499,8 @@ class StudyFieldAuditTrailEntry(BaseModel):
 
 
 class StudyProtocolHeaderVersion(BaseModel):
+    authored_documents: dict[str, Any] | None = None
+    authored_documents_hash: str | None = None
     protocol_header_version: Annotated[
         str | None,
         Field(

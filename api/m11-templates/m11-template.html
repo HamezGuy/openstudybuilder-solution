@@ -311,6 +311,31 @@
     </details>
   </section>
 
+  {% if authored_document %}
+  <main id="m11-authored-document" data-document-id="{{ authored_document.id }}" data-document-version-id="{{ authored_document.version_id }}">
+    <h1>{{ authored_document.name }}</h1>
+    {% if authored_document.description %}{{ authored_document.description | safe }}{% endif %}
+    {% if authored_document.synthetic %}<p><strong>Synthetic qualification content — not for clinical use.</strong></p>{% endif %}
+    <p>Authored draft version {{ authored_document.version }}; {{ authored_document.binding.role }}.</p>
+    <p>Applies to native arms: {{ authored_document.binding.arm_uids | join(', ') }}.
+      {% if authored_document.binding.master_document_id %}Master document: {{ authored_document.binding.master_document_id }}.{% endif %}</p>
+    <p>Sponsor: {{ sponsor_name }}. Legal address: {{ authored_sponsor_address }}.</p>
+    <p>Exact authored source SHA-256: <code>{{ authored_document.content_hash }}</code>.</p>
+    <p>{{ authored_document.assessment_meaning }}</p>
+    <details open><summary>Required-section coverage: {{ 'complete' if authored_document.coverage.section_complete else 'incomplete' }}</summary>
+      <ul>{% for issue in authored_document.coverage.issues %}<li>{{ issue.code }} — {{ issue.section_number }} {{ issue.title }}</li>{% endfor %}</ul>
+    </details>
+    {% for section in authored_document.sections %}
+    <section data-content-id="{{ section.id }}" data-content-item-id="{{ section.content_item_id or '' }}" data-m11-section="{{ section.number }}">
+      {% if section.display_number or section.display_title %}<h2>{% if section.display_number %}{{ section.number }}{% endif %} {% if section.display_title %}{{ section.title }}{% endif %}</h2>{% endif %}
+      {% if section.state == 'not-applicable' %}<p>Not applicable: {{ section.reason }}</p>
+      {% else %}{% if section.state == 'unresolved' %}<p><strong>Author disposition unresolved.</strong></p>{% endif %}
+        {{ section.html | safe if section.html else 'No authored content supplied.' }}
+      {% endif %}
+    </section>
+    {% endfor %}
+  </main>
+  {% else %}
   <div id="loading" class="loading-message">
     Loading M11 specifications...
   </div>
@@ -4351,6 +4376,7 @@ The term "${term}" was not found in the M11 specifications database.<br>
       });
     </script>
 
+  {% endif %}
 </body>
 
 </html>

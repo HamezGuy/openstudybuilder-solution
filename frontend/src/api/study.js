@@ -941,11 +941,31 @@ export default {
   getDdfUsdmJson(studyUid) {
     return repository.get(`usdm/v4/studyDefinitions/${studyUid}`)
   },
-  getDdfIchM11(studyUid, studyValueVersion = null, { signal } = {}) {
+  getDdfIchM11(
+    studyUid,
+    studyValueVersion = null,
+    { signal, documentId, requireSectionComplete, download } = {}
+  ) {
     return repository.get(`usdm/v4/studyDefinitions/${studyUid}/m11`, {
-      params: { study_value_version: studyValueVersion },
+      params: {
+        study_value_version: studyValueVersion,
+        ...(documentId ? { document_id: documentId } : {}),
+        ...(requireSectionComplete ? { require_section_complete: true } : {}),
+        ...(download ? { download: true } : {}),
+      },
       signal,
       // The preview owns its error and retry state, including cancelled requests.
+      ignoreErrors: true,
+    })
+  },
+  getProtocolDocuments(studyUid, studyValueVersion = null) {
+    return repository.get(`${resource}/${studyUid}/protocol-documents`, {
+      params: { study_value_version: studyValueVersion },
+      ignoreErrors: true,
+    })
+  },
+  saveProtocolDocuments(studyUid, data) {
+    return repository.put(`${resource}/${studyUid}/protocol-documents`, data, {
       ignoreErrors: true,
     })
   },

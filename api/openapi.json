@@ -3,7 +3,7 @@
   "info": {
     "title": "OpenStudyBuilder API",
     "description": "\n## NOTICE\n\nThis license information is applicable to the swagger documentation of the clinical-mdr-api, that is the openapi.json.\n\n## License Terms (MIT)\n\nCopyright (C) 2025 Novo Nordisk A/S, Danish company registration no. 24256790\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\n\n## Licenses and Acknowledgements for Incorporated Software\n\nThis component contains software licensed under different licenses when compiled, please refer to the third-party-licenses.md file for further information and full license texts.\n\n## Authentication\n\nSupports OAuth2 [Authorization Code Flow](https://datatracker.ietf.org/doc/html/rfc6749#section-4.1),\nat paths described in the OpenID Connect Discovery metadata document (whose URL is defined by the `OAUTH_METADATA_URL` environment variable).\n\nMicrosoft Identity Platform documentation can be read \n([here](https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-auth-code-flow)).\n\nAuthentication can be turned off with `OAUTH_ENABLED=false` environment variable. \n\nWhen authentication is turned on, all requests to protected API endpoints must provide a valid bearer (JWT) token inside the `Authorization` http header. \n",
-    "version": "3.0.700"
+    "version": "3.0.701"
   },
   "paths": {
     "/": {
@@ -72252,6 +72252,125 @@
         }
       }
     },
+    "/studies/{study_uid}/protocol-documents": {
+      "get": {
+        "tags": [
+          "Studies"
+        ],
+        "summary": "Read exact native authored draft documents and section coverage.",
+        "operationId": "get_protocol_documents_studies__study_uid__protocol_documents_get",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "study_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The unique id of the study.",
+              "title": "Study Uid"
+            },
+            "description": "The unique id of the study."
+          },
+          {
+            "name": "study_value_version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "title": "Study Value Version",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Protocol Documents Studies  Study Uid  Protocol Documents Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Studies"
+        ],
+        "summary": "Save draft USDM narrative content on the existing native document selection.",
+        "operationId": "save_protocol_documents_studies__study_uid__protocol_documents_put",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "study_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The unique id of the study.",
+              "title": "Study Uid"
+            },
+            "description": "The unique id of the study."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthoredProtocolDocumentsInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Save Protocol Documents Studies  Study Uid  Protocol Documents Put"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/studies/{study_uid}/fields-audit-trail": {
       "get": {
         "tags": [
@@ -114882,6 +115001,36 @@
               "pattern": "^\\S+$"
             },
             "description": "Explicit native study value version for every preview source. Omit for a current draft preview; this does not establish protocol approval or immutability."
+          },
+          {
+            "name": "document_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "title": "Document Id",
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "require_section_complete",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Require Section Complete"
+            }
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Download"
+            }
           }
         ],
         "responses": {
@@ -123779,6 +123928,147 @@
         ],
         "title": "AdamReport"
       },
+      "Address": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Id"
+          },
+          "extensionAttributes": {
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAttribute"
+            },
+            "type": "array",
+            "title": "Extensionattributes",
+            "default": []
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "lines": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Lines",
+            "default": []
+          },
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "City"
+          },
+          "district": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "District"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "postalCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Postalcode"
+          },
+          "country": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Code"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "instanceType": {
+            "type": "string",
+            "const": "Address",
+            "title": "Instancetype"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "instanceType"
+        ],
+        "title": "Address"
+      },
+      "AliasCode": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Id"
+          },
+          "extensionAttributes": {
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAttribute"
+            },
+            "type": "array",
+            "title": "Extensionattributes",
+            "default": []
+          },
+          "standardCode": {
+            "$ref": "#/components/schemas/Code"
+          },
+          "standardCodeAliases": {
+            "items": {
+              "$ref": "#/components/schemas/Code"
+            },
+            "type": "array",
+            "title": "Standardcodealiases",
+            "default": []
+          },
+          "instanceType": {
+            "type": "string",
+            "const": "AliasCode",
+            "title": "Instancetype"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "standardCode",
+          "instanceType"
+        ],
+        "title": "AliasCode"
+      },
       "AllowedTimeReferences": {
         "properties": {
           "time_reference_uid": {
@@ -123828,6 +124118,271 @@
           "null_term_uid"
         ],
         "title": "AppliedNullAdjudication"
+      },
+      "AuthoredProtocolDocuments": {
+        "properties": {
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/StudyDefinitionDocument"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Documents"
+          },
+          "narrative_content_items": {
+            "items": {
+              "$ref": "#/components/schemas/NarrativeContentItem"
+            },
+            "type": "array",
+            "maxItems": 10000,
+            "title": "Narrative Content Items"
+          },
+          "organizations": {
+            "items": {
+              "$ref": "#/components/schemas/Organization"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Organizations"
+          },
+          "bindings": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentBinding"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Bindings"
+          },
+          "section_dispositions": {
+            "items": {
+              "$ref": "#/components/schemas/SectionDisposition"
+            },
+            "type": "array",
+            "maxItems": 10000,
+            "title": "Section Dispositions"
+          },
+          "synthetic": {
+            "type": "boolean",
+            "title": "Synthetic"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "synthetic"
+        ],
+        "title": "AuthoredProtocolDocuments"
+      },
+      "AuthoredProtocolDocumentsInput": {
+        "properties": {
+          "expected_content_hash": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Content Hash"
+          },
+          "expected_study_version": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Expected Study Version"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Reason"
+          },
+          "content": {
+            "$ref": "#/components/schemas/AuthoredProtocolDocuments"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_content_hash",
+          "expected_study_version",
+          "reason",
+          "content"
+        ],
+        "title": "AuthoredProtocolDocumentsInput"
+      },
+      "BaseAliasCode": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Id"
+          },
+          "standardCode": {
+            "$ref": "#/components/schemas/BaseCode"
+          },
+          "standardCodeAliases": {
+            "items": {
+              "$ref": "#/components/schemas/BaseCode"
+            },
+            "type": "array",
+            "title": "Standardcodealiases",
+            "default": []
+          },
+          "instanceType": {
+            "type": "string",
+            "const": "AliasCode",
+            "title": "Instancetype"
+          },
+          "extensionAttributes": {
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAttribute"
+            },
+            "type": "array",
+            "title": "Extensionattributes",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "standardCode",
+          "instanceType"
+        ],
+        "title": "BaseAliasCode"
+      },
+      "BaseCode": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "codeSystem": {
+            "type": "string",
+            "title": "Codesystem"
+          },
+          "codeSystemVersion": {
+            "type": "string",
+            "title": "Codesystemversion"
+          },
+          "decode": {
+            "type": "string",
+            "title": "Decode"
+          },
+          "instanceType": {
+            "type": "string",
+            "const": "Code",
+            "title": "Instancetype"
+          },
+          "extensionAttributes": {
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAttribute"
+            },
+            "type": "array",
+            "title": "Extensionattributes",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "code",
+          "codeSystem",
+          "codeSystemVersion",
+          "decode",
+          "instanceType"
+        ],
+        "title": "BaseCode"
+      },
+      "BaseQuantity": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Id"
+          },
+          "value": {
+            "type": "number",
+            "title": "Value"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BaseAliasCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "instanceType": {
+            "type": "string",
+            "const": "Quantity",
+            "title": "Instancetype"
+          },
+          "extensionAttributes": {
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAttribute"
+            },
+            "type": "array",
+            "title": "Extensionattributes",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "value",
+          "instanceType"
+        ],
+        "title": "BaseQuantity"
+      },
+      "BaseRange": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Id"
+          },
+          "minValue": {
+            "$ref": "#/components/schemas/BaseQuantity"
+          },
+          "maxValue": {
+            "$ref": "#/components/schemas/BaseQuantity"
+          },
+          "isApproximate": {
+            "type": "boolean",
+            "title": "Isapproximate"
+          },
+          "instanceType": {
+            "type": "string",
+            "const": "Range",
+            "title": "Instancetype"
+          },
+          "extensionAttributes": {
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAttribute"
+            },
+            "type": "array",
+            "title": "Extensionattributes",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "minValue",
+          "maxValue",
+          "isApproximate",
+          "instanceType"
+        ],
+        "title": "BaseRange"
       },
       "BatchErrorResponse": {
         "properties": {
@@ -128724,6 +129279,54 @@
         ],
         "title": "ClinicalProgrammeInput"
       },
+      "Code": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Id"
+          },
+          "extensionAttributes": {
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAttribute"
+            },
+            "type": "array",
+            "title": "Extensionattributes",
+            "default": []
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "codeSystem": {
+            "type": "string",
+            "title": "Codesystem"
+          },
+          "codeSystemVersion": {
+            "type": "string",
+            "title": "Codesystemversion"
+          },
+          "decode": {
+            "type": "string",
+            "title": "Decode"
+          },
+          "instanceType": {
+            "type": "string",
+            "const": "Code",
+            "title": "Instancetype"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "code",
+          "codeSystem",
+          "codeSystemVersion",
+          "decode",
+          "instanceType"
+        ],
+        "title": "Code"
+      },
       "CodelistChangeItem": {
         "properties": {
           "uid": {
@@ -128771,6 +129374,47 @@
           "count"
         ],
         "title": "CodelistCount"
+      },
+      "CommentAnnotation": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Id"
+          },
+          "extensionAttributes": {
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAttribute"
+            },
+            "type": "array",
+            "title": "Extensionattributes",
+            "default": []
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "codes": {
+            "items": {
+              "$ref": "#/components/schemas/Code"
+            },
+            "type": "array",
+            "title": "Codes",
+            "default": []
+          },
+          "instanceType": {
+            "type": "string",
+            "const": "CommentAnnotation",
+            "title": "Instancetype"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "text",
+          "instanceType"
+        ],
+        "title": "CommentAnnotation"
       },
       "CommentReply": {
         "properties": {
@@ -139584,6 +140228,61 @@
         "title": "DictionaryTermVersion",
         "description": "Class for storing DictionaryTerm and calculation of differences"
       },
+      "DocumentBinding": {
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Document Id"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "master-protocol",
+              "arm-appendix"
+            ],
+            "title": "Role"
+          },
+          "arm_uids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Arm Uids"
+          },
+          "master_document_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Master Document Id"
+          },
+          "sponsor_organization_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sponsor Organization Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "document_id",
+          "role",
+          "arm_uids"
+        ],
+        "title": "DocumentBinding"
+      },
       "DurationJsonModel": {
         "properties": {
           "duration_value": {
@@ -141693,6 +142392,166 @@
         ],
         "title": "ExporterType",
         "description": "Enum for systems that export ODM files that can be imported into OSB"
+      },
+      "ExtensionAttribute": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Id"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "valueString": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valuestring"
+          },
+          "valueBoolean": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valueboolean"
+          },
+          "valueInteger": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valueinteger"
+          },
+          "valueId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valueid"
+          },
+          "valueQuantity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BaseQuantity"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "valueRange": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BaseRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "valueCode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BaseCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "valueAliasCode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BaseAliasCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "valueExtensionClass": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExtensionClass"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "extensionAttributes": {
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAttribute"
+            },
+            "type": "array",
+            "title": "Extensionattributes",
+            "default": []
+          },
+          "instanceType": {
+            "type": "string",
+            "const": "ExtensionAttribute",
+            "title": "Instancetype"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "url",
+          "instanceType"
+        ],
+        "title": "ExtensionAttribute"
+      },
+      "ExtensionClass": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Id"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "extensionAttributes": {
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAttribute"
+            },
+            "type": "array",
+            "title": "Extensionattributes",
+            "default": []
+          },
+          "instanceType": {
+            "type": "string",
+            "const": "ExtensionClass",
+            "title": "Instancetype"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "url",
+          "instanceType"
+        ],
+        "title": "ExtensionClass"
       },
       "FeatureFlag": {
         "properties": {
@@ -144694,6 +145553,48 @@
         ],
         "title": "GenericFilteringReturn[StudySelectionObjective]"
       },
+      "GeographicScope": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Id"
+          },
+          "extensionAttributes": {
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAttribute"
+            },
+            "type": "array",
+            "title": "Extensionattributes",
+            "default": []
+          },
+          "type": {
+            "$ref": "#/components/schemas/Code"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AliasCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "instanceType": {
+            "type": "string",
+            "const": "GeographicScope",
+            "title": "Instancetype"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "instanceType"
+        ],
+        "title": "GeographicScope"
+      },
       "GlobalPreferencesPatchInput": {
         "properties": {
           "language": {
@@ -144757,6 +145658,80 @@
         },
         "type": "object",
         "title": "GlobalPreferencesPatchInput"
+      },
+      "GovernanceDate": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Id"
+          },
+          "extensionAttributes": {
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAttribute"
+            },
+            "type": "array",
+            "title": "Extensionattributes",
+            "default": []
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Name"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "type": {
+            "$ref": "#/components/schemas/Code"
+          },
+          "dateValue": {
+            "type": "string",
+            "format": "date",
+            "title": "Datevalue"
+          },
+          "geographicScopes": {
+            "items": {
+              "$ref": "#/components/schemas/GeographicScope"
+            },
+            "type": "array",
+            "title": "Geographicscopes"
+          },
+          "instanceType": {
+            "type": "string",
+            "const": "GovernanceDate",
+            "title": "Instancetype"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "type",
+          "dateValue",
+          "geographicScopes",
+          "instanceType"
+        ],
+        "title": "GovernanceDate"
       },
       "GovernedItemAssociationResponse": {
         "properties": {
@@ -147694,6 +148669,152 @@
         ],
         "title": "MultiTemplateParameterTerm",
         "description": "A MultiTemplateParameterTerm provides a way to select a list of template parameter terms for a\ngiven position in a template.\n\nGiven the template \"To evaluate [Activity]\", and the value \"To evaluate [Activity X and Activity Y]\",\nan example value for a MultiTemplateParameterTerm is:\n{\n    position: 1,\n    conjunction: 'and',\n    terms: [\n        {index: 1, name: \"Activity_0001\", uid: \"39040243\"},\n        {index: 2, name: \"Activity_0002\", uid: \"32210211\"}\n    ]\n}"
+      },
+      "NarrativeContent": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Id"
+          },
+          "extensionAttributes": {
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAttribute"
+            },
+            "type": "array",
+            "title": "Extensionattributes",
+            "default": []
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Name"
+          },
+          "sectionNumber": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sectionnumber"
+          },
+          "sectionTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sectiontitle"
+          },
+          "displaySectionNumber": {
+            "type": "boolean",
+            "title": "Displaysectionnumber"
+          },
+          "displaySectionTitle": {
+            "type": "boolean",
+            "title": "Displaysectiontitle"
+          },
+          "childIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Childids",
+            "default": []
+          },
+          "previousId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previousid"
+          },
+          "nextId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextid"
+          },
+          "contentItemId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contentitemid"
+          },
+          "instanceType": {
+            "type": "string",
+            "const": "NarrativeContent",
+            "title": "Instancetype"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "displaySectionNumber",
+          "displaySectionTitle",
+          "instanceType"
+        ],
+        "title": "NarrativeContent"
+      },
+      "NarrativeContentItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Id"
+          },
+          "extensionAttributes": {
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAttribute"
+            },
+            "type": "array",
+            "title": "Extensionattributes",
+            "default": []
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Name"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "instanceType": {
+            "type": "string",
+            "const": "NarrativeContentItem",
+            "title": "Instancetype"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "text",
+          "instanceType"
+        ],
+        "title": "NarrativeContentItem"
       },
       "NativeItemObservationRequest": {
         "properties": {
@@ -155447,6 +156568,83 @@
         ],
         "title": "OdmVendorRelationPostInput"
       },
+      "Organization": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Id"
+          },
+          "extensionAttributes": {
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAttribute"
+            },
+            "type": "array",
+            "title": "Extensionattributes",
+            "default": []
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Name"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "type": {
+            "$ref": "#/components/schemas/Code"
+          },
+          "identifierScheme": {
+            "type": "string",
+            "title": "Identifierscheme"
+          },
+          "identifier": {
+            "type": "string",
+            "title": "Identifier"
+          },
+          "legalAddress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Address"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "managedSites": {
+            "items": {
+              "$ref": "#/components/schemas/StudySite"
+            },
+            "type": "array",
+            "title": "Managedsites",
+            "default": []
+          },
+          "instanceType": {
+            "type": "string",
+            "const": "Organization",
+            "title": "Instancetype"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "type",
+          "identifierScheme",
+          "identifier",
+          "instanceType"
+        ],
+        "title": "Organization"
+      },
       "OsbStudyProposalV21": {
         "properties": {
           "formatVersion": {
@@ -158880,6 +160078,41 @@
           "effective_date"
         ],
         "title": "RequestedMappingContextPackage"
+      },
+      "SectionDisposition": {
+        "properties": {
+          "content_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Content Id"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "authored",
+              "not-applicable"
+            ],
+            "title": "State"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "content_id",
+          "state"
+        ],
+        "title": "SectionDisposition"
       },
       "SelectedActivityItemFields": {
         "properties": {
@@ -164654,6 +165887,160 @@
           "IETESTCD"
         ],
         "title": "StudyCriterionListing"
+      },
+      "StudyDefinitionDocument": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Id"
+          },
+          "extensionAttributes": {
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAttribute"
+            },
+            "type": "array",
+            "title": "Extensionattributes",
+            "default": []
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Name"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "language": {
+            "$ref": "#/components/schemas/Code"
+          },
+          "type": {
+            "$ref": "#/components/schemas/Code"
+          },
+          "templateName": {
+            "type": "string",
+            "title": "Templatename"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/StudyDefinitionDocumentVersion"
+            },
+            "type": "array",
+            "title": "Versions",
+            "default": []
+          },
+          "childIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Childids",
+            "default": []
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/CommentAnnotation"
+            },
+            "type": "array",
+            "title": "Notes",
+            "default": []
+          },
+          "instanceType": {
+            "type": "string",
+            "const": "StudyDefinitionDocument",
+            "title": "Instancetype"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "language",
+          "type",
+          "templateName",
+          "instanceType"
+        ],
+        "title": "StudyDefinitionDocument"
+      },
+      "StudyDefinitionDocumentVersion": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Id"
+          },
+          "extensionAttributes": {
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAttribute"
+            },
+            "type": "array",
+            "title": "Extensionattributes",
+            "default": []
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "status": {
+            "$ref": "#/components/schemas/Code"
+          },
+          "dateValues": {
+            "items": {
+              "$ref": "#/components/schemas/GovernanceDate"
+            },
+            "type": "array",
+            "title": "Datevalues",
+            "default": []
+          },
+          "contents": {
+            "items": {
+              "$ref": "#/components/schemas/NarrativeContent"
+            },
+            "type": "array",
+            "title": "Contents",
+            "default": []
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/CommentAnnotation"
+            },
+            "type": "array",
+            "title": "Notes",
+            "default": []
+          },
+          "instanceType": {
+            "type": "string",
+            "const": "StudyDefinitionDocumentVersion",
+            "title": "Instancetype"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "status",
+          "instanceType"
+        ],
+        "title": "StudyDefinitionDocumentVersion"
       },
       "StudyDescriptionJsonModel": {
         "properties": {
@@ -170477,6 +171864,29 @@
       },
       "StudyProtocolHeaderVersion": {
         "properties": {
+          "authored_documents": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authored Documents"
+          },
+          "authored_documents_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authored Documents Hash"
+          },
           "protocol_header_version": {
             "anyOf": [
               {
@@ -179225,6 +180635,66 @@
           "version_start_date"
         ],
         "title": "StudySimple"
+      },
+      "StudySite": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Id"
+          },
+          "extensionAttributes": {
+            "items": {
+              "$ref": "#/components/schemas/ExtensionAttribute"
+            },
+            "type": "array",
+            "title": "Extensionattributes",
+            "default": []
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Name"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "country": {
+            "$ref": "#/components/schemas/Code"
+          },
+          "instanceType": {
+            "type": "string",
+            "const": "StudySite",
+            "title": "Instancetype"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "country",
+          "instanceType"
+        ],
+        "title": "StudySite"
       },
       "StudySoAEditBatchInput": {
         "properties": {

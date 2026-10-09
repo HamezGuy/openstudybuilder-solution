@@ -2,9 +2,15 @@
 
 from typing import Any
 
+from clinical_mdr_api.models.study_selections.study_definition_document import (
+    AuthoredProtocolDocuments,
+)
 from clinical_mdr_api.models.utils import sanitize_html
 from clinical_mdr_api.services.ddf.usdm_mapping_context import (
     USDMMappingAuthorityRequired,
+)
+from clinical_mdr_api.services.studies.study_definition_document import (
+    assess_authored_documents,
 )
 
 MISSING = "Not available in the selected source"
@@ -728,7 +734,10 @@ def _objective_for_preview(value: dict[str, Any]) -> dict[str, Any]:
 
 
 def m11_preview_context(
-    report: dict[str, Any], study_uid: str, study_value_version: str | None
+    report: dict[str, Any],
+    study_uid: str,
+    study_value_version: str | None,
+    document_id: str | None = None,
 ) -> dict[str, Any]:
     """Project retained native headers and selected USDM values, never latest fallbacks.
 
@@ -846,7 +855,7 @@ def m11_preview_context(
     sections = _section_content(
         report, metadata, version, design, study_uid, study_value_version, issues
     )
-    return {
+    result: dict[str, Any] = {
         "source_sections": sections,
         "intervention_names": "; ".join(
             row["name"] for row in sections["interventions"] if row["selected"]
@@ -910,4 +919,160 @@ def m11_preview_context(
         "number_of_arms": sections["root_arm_count"] if design else MISSING,
         # Last timing is not necessarily total trial duration.
         "trial_intervention_total_duration": None,
+    }
+    result.update(
+        _authored_document_context(
+            report, study, version, study_uid, study_value_version, document_id
+        )
+    )
+    if result.get("authored_document"):
+        result["preview_issues"] = [
+            issue
+            for issue in result["preview_issues"]
+            if issue.get("code") != "M11_PROTOCOL_VERSION_UNRESOLVED"
+            and not (
+                issue.get("code") == "M11_SPONSOR_SOURCE_UNAVAILABLE"
+                and result.get("sponsor_name") != MISSING
+            )
+        ]
+    return result
+
+
+def _authored_document_context(
+    report, study, version, study_uid, study_value_version, document_id
+):
+    records = [
+        row
+        for row in _objects(report.get("nativeRecords"))
+        if row.get("kind") == "studyAuthoredDocuments"
+    ]
+    if not records:
+        if document_id is not None:
+            raise USDMMappingAuthorityRequired(
+                "The selected authored document is unavailable in this native study version"
+            )
+        return {"authored_document": None}
+    if (
+        len(records) != 1
+        or records[0].get("uid") != study_uid
+        or records[0].get("scope")
+        != {"studyUid": study_uid, "studyValueVersion": study_value_version}
+    ):
+        raise USDMMappingAuthorityRequired(
+            "Authored document provenance does not match the selected native study version"
+        )
+    authored = AuthoredProtocolDocuments.model_validate(records[0]["record"])
+    if not authored.documents:
+        if document_id is not None:
+            raise USDMMappingAuthorityRequired(
+                "The selected authored document is unavailable in this native study version"
+            )
+        return {"authored_document": None}
+    bindings = {item.document_id: item for item in authored.bindings}
+    if document_id is None:
+        document_id = next(
+            item.document_id
+            for item in authored.bindings
+            if item.role == "master-protocol"
+        )
+    selected = next(
+        (item for item in authored.documents if item.id == document_id), None
+    )
+    if selected is None:
+        raise USDMMappingAuthorityRequired(
+            "The selected document is not part of this native version"
+        )
+    # No imported or detached carrier may replace the retained authored source.
+    if study.get("documentedBy") != [
+        item.model_dump(mode="json") for item in authored.documents
+    ] or version.get("narrativeContentItems") != [
+        item.model_dump(mode="json") for item in authored.narrative_content_items
+    ]:
+        raise USDMMappingAuthorityRequired(
+            "Mapped authored document content differs from its retained native source"
+        )
+    if version.get("documentVersionIds") != [
+        item.versions[0].id for item in authored.documents
+    ]:
+        raise USDMMappingAuthorityRequired(
+            "Authored document version references differ from native selection"
+        )
+    native_arms = {
+        row.get("uid")
+        for row in _objects(report.get("nativeRecords"))
+        if row.get("kind") == "studyArm"
+    }
+    binding = bindings[document_id]
+    if not set(binding.arm_uids) <= native_arms:
+        raise USDMMappingAuthorityRequired(
+            "Authored applicability does not resolve to selected native arms"
+        )
+    items = {item.id: item for item in authored.narrative_content_items}
+    dispositions = {item.content_id: item for item in authored.section_dispositions}
+    assessment = assess_authored_documents(authored)
+    coverage = next(
+        item for item in assessment["documents"] if item["document_id"] == document_id
+    )
+    organization = next(
+        (
+            item
+            for item in authored.organizations
+            if item.id == binding.sponsor_organization_id
+        ),
+        None,
+    )
+    address = organization.legalAddress if organization else None
+    rows = []
+    for section in selected.versions[0].contents:
+        item = items.get(section.contentItemId)
+        disposition = dispositions.get(section.id)
+        rows.append(
+            {
+                "id": section.id,
+                "number": section.sectionNumber,
+                "title": section.sectionTitle,
+                "content_item_id": section.contentItemId,
+                "child_ids": section.childIds,
+                "state": disposition.state if disposition else "unresolved",
+                "reason": disposition.reason if disposition else None,
+                "html": sanitize_html(item.text, allow_tables=True) if item else None,
+                "display_number": section.displaySectionNumber,
+                "display_title": section.displaySectionTitle,
+            }
+        )
+    return {
+        "authored_document": {
+            "id": selected.id,
+            "name": selected.name,
+            "description": (
+                sanitize_html(selected.description) if selected.description else None
+            ),
+            "version_id": selected.versions[0].id,
+            "version": selected.versions[0].version,
+            "binding": binding.model_dump(),
+            "synthetic": authored.synthetic,
+            "content_hash": authored.content_hash(),
+            "sections": rows,
+            "coverage": coverage,
+            "assessment_meaning": assessment["meaning"],
+        },
+        "sponsor_name": organization.name if organization else MISSING,
+        "sponsor_legal_address": address.model_dump(mode="json") if address else {},
+        "authored_sponsor_address": (
+            "; ".join(
+                str(value)
+                for value in [
+                    address.text,
+                    *address.lines,
+                    address.city,
+                    address.district,
+                    address.state,
+                    address.postalCode,
+                    _code(address.country.model_dump()) if address.country else None,
+                ]
+                if value
+            )
+            if address
+            else MISSING
+        ),
     }

@@ -75,6 +75,7 @@ class NativeStudyMapping:
                     )
                 )
         self._history(study, document, version)
+        self._authored_documents(study, document, version)
         from clinical_mdr_api.services.ddf.usdm_native_interventions import (
             NativeInterventionMapping,
         )
@@ -114,6 +115,52 @@ class NativeStudyMapping:
                         entry["kind"] + "-version", entry["uid"], entry["record"]
                     )
                 )
+
+    def _authored_documents(self, study, document, version):
+        from clinical_mdr_api.models.study_selections.study_definition_document import (
+            AuthoredProtocolDocuments,
+        )
+
+        header = (
+            self.mapper._call(self.mapper._get_protocol_header, study.uid)
+            if self.mapper._get_protocol_header
+            else None
+        )
+        content = getattr(header, "authored_documents", None)
+        if not content:
+            return
+        authored = AuthoredProtocolDocuments.model_validate(content)
+        if authored.content_hash() != getattr(header, "authored_documents_hash", None):
+            raise USDMMappingAuthorityRequired(
+                "Authored content does not match its retained native hash"
+            )
+        if not authored.documents:
+            return
+        self.context.retain(
+            "studyAuthoredDocuments",
+            study.uid,
+            authored,
+            scope={
+                "studyUid": study.uid,
+                "studyValueVersion": self.mapper._study_value_version,
+            },
+        )
+        # Authored documents replace the header-only projection. Their actual IDs,
+        # version references and complete text are preserved without re-authoring.
+        document.documentedBy = authored.documents
+        version.documentVersionIds = [
+            item.versions[0].id for item in authored.documents
+        ]
+        version.narrativeContentItems = authored.narrative_content_items
+        existing_ids = {item.id for item in version.organizations}
+        if existing_ids.intersection(item.id for item in authored.organizations):
+            raise USDMMappingAuthorityRequired(
+                "Authored organization IDs collide with native registry organizations"
+            )
+        version.organizations.extend(authored.organizations)
+        version.extensionAttributes.append(
+            self.extension("authored-document-applicability", study.uid, authored)
+        )
 
     def _cohorts_and_branches(self, study, design) -> None:
         arms = {
@@ -811,6 +858,10 @@ class NativeStudyMapping:
             # visible without minting a final protocol status or approval date.
 
     def protocol_document(self, study):
+        from clinical_mdr_api.models.study_selections.study_definition_document import (
+            AuthoredProtocolDocuments,
+        )
+
         reader = self.mapper._get_protocol_header
         if reader is None:
             return None
@@ -824,6 +875,27 @@ class NativeStudyMapping:
                 "studyValueVersion": self.mapper._study_value_version,
             },
         )
+        authored = getattr(header, "authored_documents", None)
+        if authored:
+            content = AuthoredProtocolDocuments.model_validate(authored)
+            if content.content_hash() != getattr(
+                header, "authored_documents_hash", None
+            ):
+                raise USDMMappingAuthorityRequired(
+                    "Authored content does not match its retained native hash"
+                )
+            master = next(
+                (
+                    binding.document_id
+                    for binding in content.bindings
+                    if binding.role == "master-protocol"
+                ),
+                None,
+            )
+            if master is not None:
+                return next(
+                    document for document in content.documents if document.id == master
+                )
         number = getattr(header, "protocol_header_version", None)
         if number is None:
             return None

@@ -422,10 +422,21 @@ def strip_whitespace(value: Any) -> Any:
     return value
 
 
-def sanitize_html(string: str) -> str:
+def sanitize_html(string: str, *, allow_tables: bool = False) -> str:
     """Remove malicious HTML tags and attributes from a string."""
     return nh3.clean(
-        string, tags=ALLOWED_HTML_TAGS, attributes=ALLOWED_HTML_ATTRIBUTES
+        string,
+        tags=ALLOWED_HTML_TAGS
+        | (
+            {"table", "caption", "thead", "tbody", "tfoot", "tr", "th", "td"}
+            if allow_tables
+            else set()
+        ),
+        attributes=(
+            {"th": {"scope", "colspan", "rowspan"}, "td": {"colspan", "rowspan"}}
+            if allow_tables
+            else ALLOWED_HTML_ATTRIBUTES
+        ),
     ).strip()
 
 

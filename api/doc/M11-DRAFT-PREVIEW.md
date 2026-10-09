@@ -161,3 +161,130 @@ There are no new routes, API schema changes, frontend source changes or external
 authority contracts in this slice. Existing dependency and partial-draft model
 serializer warnings remain; the native source is still deliberately incomplete
 where clinical authoring facts do not exist.
+
+## Native narrative authoring
+
+The subsequent authoring change extends the existing `StudyDefinitionDocument`
+selection. `GET /studies/{study_uid}/protocol-documents` reads its exact selected
+StudyValue; `PUT` writes the current unlocked study with an expected study version,
+expected authored-content SHA-256 and an explicit change reason. Native
+BEFORE/AFTER actions retain the writer and old selection. Updating the protocol
+header preserves all authored properties. Existing public study cloning does
+not select protocol documents; this change does not implicitly copy clinical
+documents to another study or infer replacement arm identities.
+
+The request contains the installed USDM document, document-version,
+NarrativeContent, NarrativeContentItem and Organization shapes. Native bindings
+identify one master and its arm appendices, exact native arm UIDs, the master
+reference and each document's explicit sponsor organization. A document has one
+selected draft version; prior native selections remain in history. Unknown
+fields, duplicate identities, unresolved/cyclic section references, wrong master
+membership and invalid arm applicability are rejected, rather than discarded.
+Section dispositions distinguish authored text from not-applicable content with
+an explicit reason. This path does not make clinical approval decisions.
+
+The M11 page can edit the complete retained JSON source, select a document,
+inspect coverage and download the displayed draft HTML. It preserves an editor
+draft while switching studies, blocks edits during a pending save and rejects
+responses from superseded selections. Reloading the saved source retains the
+previous editor text for manual reconciliation after a conflict. Historical
+sources are read-only. Browser reload/unmount does not persist unsaved text.
+
+The existing native USDM mapper exports the exact authored documents, content
+items and document-version references. The existing M11 route accepts
+`document_id`; omission selects the explicitly bound master. The selected arm
+document renders only its own authored sections. It compares the mapped content
+against retained native content and rejects detached or inconsistent carriers.
+Raw source text is preserved in USDM; HTML presentation sanitizes rich text and
+retains safe table structure, units and footnote text. Authored content remains
+separate from inferred clinical facts and retains its synthetic marker.
+Arbitrary embedded clinical images or media are not qualified by this route:
+trusted asset custody, source-version/applicability binding and safe rendering
+are still software work. The source hash preserves raw text; it does not imply
+that unsupported HTML or media is rendered. Download equality applies to the
+displayed sanitized draft.
+
+`require_section_complete=true` blocks a draft export when required narrative
+headings from the pinned M11 specification are absent, have the wrong heading,
+lack visible authored text or a reasoned not-applicable disposition, or lack an
+explicit sponsor/legal address. This is **required narrative-heading coverage**,
+not all M11 data-element conformance, clinical adequacy, review acceptance,
+regulatory approval or permission to activate a trial. Optional content is
+retained. `download=true` returns the same HTML with an attachment disposition;
+the authored source hash is returned in `X-Authored-Content-SHA256`.
+
+### Review, amendment and handoff boundaries
+
+IL already owns original document upload, version/supersession links, independent
+quality review, exact-hash master/arm filing membership, arm dossier acceptance,
+amendment impact and decision carry-forward. This change does not introduce a
+second review engine. The exported original still needs upload and filing in
+that existing workflow; there is no new automatic OSB-to-IL document delivery or
+receipt binding. The JSON source hash and original HTML byte hash are different
+identities and must not be treated as interchangeable. Review acceptance applies
+to exact originals; saving a later OSB draft does not carry that acceptance.
+
+Site-specific effective-use rules, SAP/consent authoring, clinical approval and
+downstream activation bindings remain separate requirements. A synthetic master
+and three arm appendices qualify document software behavior without claiming
+real clinical narratives, actual approvals or achieved SURPASS time/cost metrics.
+
+### Focused authoring checks
+
+```text
+python -m pytest clinical_mdr_api/tests/unit/services/test_authored_protocol_documents.py -q --no-cov -p no:cacheprovider
+node --test tests/ich-m11-page.test.mjs
+```
+
+The separate `test_authored_protocol_documents_neo4j.py` requires an explicitly
+owned fresh loopback fixture and refuses a normal/shared connection. Its harness
+owns a dedicated Community 2026.06.0 instance, storage and process tree, runs
+native copy-on-write/history/header/rollback/concurrent-writer checks and stops
+the owned server. It never invokes a shared clear-database fixture. Test counts
+and execution receipts are recorded only after the corresponding checks run.
+
+The real isolated graph run first reproduced an ORM identity-copy defect: copying
+`__properties__` also copied `element_id_property`, making an amendment update its
+historical node. Both document and header copies now use the existing declared
+property projection (`to_dict`). A fresh Neo4j 2026.06.0 run passed the native
+history, header preservation, optimistic conflict, transaction rollback,
+concurrent-writer and audit-author assertions. The harness stopped its owned
+process tree and verified the loopback port closed; no shared database was used.
+
+Authored HTML does not require unrelated generated SoA/figure readers. An explicit
+document selection that no longer exists, including after clearing the authored
+bundle, fails instead of falling back to a different document. The source editor
+caps its visible height while retaining the complete JSON; exported HTML is the
+exact displayed draft, not a fresh read that could select different content.
+
+### Authoring qualification recorded on 2026-10-09
+
+- All 34 new authoring/model/API regressions passed, alongside 150 existing M11
+  and native-mapping cases. The initial combined run had ten adjacent compound
+  fixture failures because its established mock-auth setting was omitted; that
+  complete 29-case module passed with `OAUTH_ENABLED=False`. This setting enables
+  its existing test fixture and does not change application authorization.
+- One real isolated Neo4j integration test passed the persistence, history,
+  header-copy, stale-write, rollback, competing-writer and audit assertions.
+  It first reproduced the ORM identity-copy defect described above. The passing
+  run retained a cleanup receipt with the owned server stopped and port closed.
+- All 11 actual Vue/Edge browser cases passed, including late read/write results
+  across A/B/A selections, edits frozen while saving, conflict reconciliation,
+  historical read-only behavior, keyboard document selection, bounded large JSON
+  editing and byte-exact download of the displayed preview. Two initial test
+  selector failures were corrected without force-clicking or omitting behavior.
+  The editor-size screenshot shows a pending preview and is not evidence of a
+  completed protocol render; real HTTP tests separately render the Jinja template.
+- Mypy passed all 11 changed runtime files, Pylint scored 10/10, Black/isort and
+  scoped ESLint/Prettier passed, and the production frontend build completed.
+  Dependency deprecation/annotation, partial-source serializer and chunk-size
+  warnings remain. The isolated integration mark also produces an existing
+  pytest marker-configuration warning in this invocation.
+- Generated OpenAPI and `apiVersion` agree at 3.0.701. All 970 referenced schema
+  targets resolve; the only new path is the native protocol-documents resource,
+  and the only changed existing path is the M11 route.
+
+These are synthetic software checks. Full M11 element/conditional conformance,
+trusted media support, joined IL review/filing receipt delivery, amendment
+invalidation and downstream/site effective-use integration remain software work.
+No clinical approval or SURPASS time, cost or labor metric is established here.

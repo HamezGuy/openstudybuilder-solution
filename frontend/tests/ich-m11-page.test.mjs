@@ -72,6 +72,9 @@ const routes = new Map([
     [
       'text/javascript',
       `export default {
+         put(url, data, config) {
+           return new Promise((resolve, reject) => window.m11Test.requests.push({ method: 'PUT', url, data, config, resolve, reject }))
+         },
          get(url, config) {
            return new Promise((resolve, reject) => {
              // Deliberately ignore abort: late transport completion must not
@@ -185,6 +188,317 @@ async function select(page, uid, version, requestCount) {
 
 const html = (label) => `<html><body><h1>${label}</h1></body></html>`
 const preview = (page) => page.locator('#app iframe')
+
+const authoredSnapshot = {
+  study_uid: 'Study_1',
+  study_value_version: '0.1',
+  study_status: 'DRAFT',
+  content_hash: 'a'.repeat(64),
+  content: {
+    documents: [
+      { id: 'master', name: 'Synthetic master' },
+      { id: 'arm-1', name: 'Synthetic arm one' },
+    ],
+    synthetic: true,
+  },
+  assessment: {
+    meaning: 'Section coverage does not establish approval.',
+    documents: [],
+  },
+  required_sections: { 2.1: 'Purpose of Trial' },
+}
+
+test('authoring saves complete retained JSON with exact source hash and refreshes preview', async (t) => {
+  const page = await openPage(t)
+  await select(page, 'Study_1', null, 1)
+  await page.evaluate(
+    (value) => window.m11Test.resolve(0, value),
+    html('Original draft')
+  )
+  await page
+    .getByRole('button', { name: translations.IchM11Page.author })
+    .click()
+  await expect
+    .poll(() => page.evaluate(() => window.m11Test.requests.length))
+    .toBe(2)
+  await page.evaluate(
+    (value) => window.m11Test.resolve(1, value),
+    authoredSnapshot
+  )
+  const editor = page.getByRole('textbox', {
+    name: translations.IchM11Page.source,
+  })
+  const changed = {
+    ...authoredSnapshot.content,
+    narrative_content_items: [
+      { id: 'exact-section', name: 'Section', text: 'Synthetic 0 mg/day' },
+    ],
+  }
+  await editor.fill(JSON.stringify(changed))
+  await page
+    .getByRole('textbox', { name: translations.IchM11Page.reason })
+    .fill('Synthetic authored source change')
+  await page
+    .getByRole('button', { name: translations.IchM11Page.save, exact: true })
+    .click()
+  await expect
+    .poll(() => page.evaluate(() => window.m11Test.requests.length))
+    .toBe(3)
+  await expect(editor).toHaveAttribute('readonly')
+  await expect(
+    page.getByRole('textbox', { name: translations.IchM11Page.reason })
+  ).toHaveAttribute('readonly')
+  await expect(
+    page.getByRole('button', { name: translations.IchM11Page.author })
+  ).toBeDisabled()
+  const saved = await page.evaluate(() => {
+    const { method, url, data } = window.m11Test.requests[2]
+    return { method, url, data }
+  })
+  assert.equal(saved.method, 'PUT')
+  assert.equal(saved.url, 'studies/Study_1/protocol-documents')
+  assert.deepEqual(saved.data, {
+    expected_content_hash: 'a'.repeat(64),
+    expected_study_version: '0.1',
+    reason: 'Synthetic authored source change',
+    content: changed,
+  })
+  await page.evaluate((value) => window.m11Test.resolve(2, value), {
+    ...authoredSnapshot,
+    content: changed,
+    content_hash: 'b'.repeat(64),
+  })
+  await expect(page.getByText(translations.IchM11Page.saved)).toBeVisible()
+  await expect
+    .poll(() => page.evaluate(() => window.m11Test.requests.length))
+    .toBe(4)
+  await expect(preview(page)).toHaveCount(0)
+  await page.evaluate(
+    (value) => window.m11Test.resolve(3, value),
+    html('Saved exact source')
+  )
+  await expect(preview(page).contentFrame().getByRole('heading')).toHaveText(
+    'Saved exact source'
+  )
+  const downloaded = page.waitForEvent('download')
+  await page
+    .getByRole('button', { name: translations.IchM11Page.download })
+    .click()
+  const download = await downloaded
+  assert.equal(download.suggestedFilename(), 'protocol-draft.html')
+  assert.equal(
+    await readFile(await download.path(), 'utf8'),
+    html('Saved exact source')
+  )
+  assert.equal(await page.evaluate(() => window.m11Test.requests.length), 4)
+})
+
+test('A to B to A selection rejects the first A authoring response', async (t) => {
+  const page = await openPage(t)
+  await select(page, 'Study_1', null, 1)
+  await page
+    .getByRole('button', { name: translations.IchM11Page.author })
+    .click()
+  await expect
+    .poll(() => page.evaluate(() => window.m11Test.requests.length))
+    .toBe(2)
+  await select(page, 'Study_2', null, 3)
+  await select(page, 'Study_1', null, 4)
+  await page
+    .getByRole('button', { name: translations.IchM11Page.author })
+    .click()
+  await expect
+    .poll(() => page.evaluate(() => window.m11Test.requests.length))
+    .toBe(5)
+  await page.evaluate((value) => window.m11Test.resolve(4, value), {
+    ...authoredSnapshot,
+    content: { documents: [], synthetic: true, revision: 'new' },
+  })
+  await page.evaluate((value) => window.m11Test.resolve(1, value), {
+    ...authoredSnapshot,
+    content: { documents: [], synthetic: true, revision: 'old' },
+  })
+  await expect(
+    page.getByRole('textbox', { name: translations.IchM11Page.source })
+  ).toHaveValue(/"revision": "new"/)
+})
+
+test('large retained source stays scrollable without pushing all controls off the page', async (t) => {
+  const page = await openPage(t)
+  await select(page, 'Study_1', null, 1)
+  await page
+    .getByRole('button', { name: translations.IchM11Page.author })
+    .click()
+  const content = {
+    ...authoredSnapshot.content,
+    narrative_content_items: Array.from({ length: 100 }, (_, index) => ({
+      id: `synthetic-section-${index}`,
+      name: `Synthetic section ${index}`,
+      text: 'Synthetic retained narrative with 0 mg/day and source relationships.',
+    })),
+  }
+  await page.evaluate((value) => window.m11Test.resolve(1, value), {
+    ...authoredSnapshot,
+    content,
+  })
+  const editor = page.getByRole('textbox', {
+    name: translations.IchM11Page.source,
+  })
+  await expect(editor).toHaveValue(JSON.stringify(content, null, 2))
+  await expect
+    .poll(async () => (await editor.boundingBox()).height)
+    .toBeLessThan(600)
+  assert.equal(
+    await editor.evaluate(
+      (element) => element.scrollHeight > element.clientHeight
+    ),
+    true
+  )
+  if (process.env.M11_AUTHORING_SCREENSHOT)
+    await page.screenshot({
+      path: process.env.M11_AUTHORING_SCREENSHOT,
+      fullPage: true,
+    })
+})
+
+test('authoring failures retain edited source and study switches ignore late writes', async (t) => {
+  const page = await openPage(t)
+  await select(page, 'Study_1', null, 1)
+  await page
+    .getByRole('button', { name: translations.IchM11Page.author })
+    .click()
+  await page.evaluate(
+    (value) => window.m11Test.resolve(1, value),
+    authoredSnapshot
+  )
+  const editor = page.getByRole('textbox', {
+    name: translations.IchM11Page.source,
+  })
+  await editor.fill('{invalid')
+  await page
+    .getByRole('textbox', { name: translations.IchM11Page.reason })
+    .fill('Preserve my unsaved draft')
+  await page
+    .getByRole('button', { name: translations.IchM11Page.save, exact: true })
+    .click()
+  assert.equal(await page.evaluate(() => window.m11Test.requests.length), 2)
+  await expect(editor).toHaveValue('{invalid')
+  await editor.fill(JSON.stringify(authoredSnapshot.content))
+  await page
+    .getByRole('button', { name: translations.IchM11Page.save, exact: true })
+    .click()
+  await expect
+    .poll(() => page.evaluate(() => window.m11Test.requests.length))
+    .toBe(3)
+  await select(page, 'Study_2', '1.0', 4)
+  await expect(
+    page.getByRole('textbox', { name: translations.IchM11Page.source })
+  ).toHaveCount(0)
+  await expect(page.getByText(translations.IchM11Page.saved)).toHaveCount(0)
+  await select(page, 'Study_1', null, 5)
+  await page
+    .getByRole('button', { name: translations.IchM11Page.author })
+    .click()
+  await expect(
+    page.getByRole('textbox', { name: translations.IchM11Page.reason })
+  ).toHaveValue('Preserve my unsaved draft')
+  await page.evaluate(
+    (value) => window.m11Test.resolve(2, value),
+    authoredSnapshot
+  )
+  await expect(page.getByText(translations.IchM11Page.saved)).toHaveCount(0)
+})
+
+test('conflict reload retains edited source for reconciliation and uses the fresh hash', async (t) => {
+  const page = await openPage(t)
+  await select(page, 'Study_1', null, 1)
+  await page
+    .getByRole('button', { name: translations.IchM11Page.author })
+    .click()
+  await page.evaluate(
+    (value) => window.m11Test.resolve(1, value),
+    authoredSnapshot
+  )
+  const editor = page.getByRole('textbox', {
+    name: translations.IchM11Page.source,
+  })
+  const edited = JSON.stringify({
+    ...authoredSnapshot.content,
+    synthetic: false,
+  })
+  await editor.fill(edited)
+  await page
+    .getByRole('textbox', { name: translations.IchM11Page.reason })
+    .fill('Reconcile synthetic draft')
+  await page
+    .getByRole('button', { name: translations.IchM11Page.save, exact: true })
+    .click()
+  await page.evaluate(() =>
+    window.m11Test.requests[2].reject({
+      response: {
+        data: {
+          message:
+            'Authored documents changed; reload and reconcile before saving',
+        },
+      },
+    })
+  )
+  await expect(editor).toHaveValue(edited)
+  await page
+    .getByRole('button', { name: translations.IchM11Page.reload_source })
+    .click()
+  await expect(editor).toHaveAttribute('readonly')
+  await page.evaluate((value) => window.m11Test.resolve(3, value), {
+    ...authoredSnapshot,
+    content_hash: 'c'.repeat(64),
+  })
+  await expect(editor).not.toHaveAttribute('readonly')
+  await page
+    .getByText(translations.IchM11Page.recovery_source, { exact: true })
+    .click()
+  await expect(page.getByText(edited, { exact: true })).toBeVisible()
+  await page
+    .getByRole('button', { name: translations.IchM11Page.save, exact: true })
+    .click()
+  assert.equal(
+    await page.evaluate(
+      () => window.m11Test.requests[4].data.expected_content_hash
+    ),
+    'c'.repeat(64)
+  )
+})
+
+test('historical authored source is read-only and exact document selection reaches M11', async (t) => {
+  const page = await openPage(t)
+  await select(page, 'Study_1', '1.0', 1)
+  await page
+    .getByRole('button', { name: translations.IchM11Page.author })
+    .click()
+  await page.evaluate((value) => window.m11Test.resolve(1, value), {
+    ...authoredSnapshot,
+    study_value_version: '1.0',
+  })
+  await expect(
+    page.getByRole('textbox', { name: translations.IchM11Page.source })
+  ).toHaveAttribute('readonly')
+  await expect(
+    page.getByRole('button', {
+      name: translations.IchM11Page.save,
+      exact: true,
+    })
+  ).toHaveCount(0)
+  await page
+    .getByRole('combobox', { name: translations.IchM11Page.document })
+    .press('ArrowDown')
+  await page.getByRole('option', { name: 'Synthetic arm one' }).click()
+  await expect
+    .poll(() => page.evaluate(() => window.m11Test.requests.length))
+    .toBe(3)
+  assert.deepEqual(
+    await page.evaluate(() => window.m11Test.requests[2].config.params),
+    { study_value_version: '1.0', document_id: 'arm-1' }
+  )
+})
 
 test('loads the explicit version through the real API method and isolates script-capable HTML', async (t) => {
   const page = await openPage(t)

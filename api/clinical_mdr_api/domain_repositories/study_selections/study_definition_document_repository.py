@@ -16,6 +16,11 @@ from clinical_mdr_api.domains.study_definition_aggregates.study_metadata import 
 from clinical_mdr_api.services._utils import ensure_transaction
 from common.auth.user import user
 from common.config import settings
+from common.exceptions import (
+    AlreadyExistsException,
+    NotFoundException,
+    ValidationException,
+)
 
 
 class StudyDefinitionDocumentRepository:
@@ -68,7 +73,87 @@ class StudyDefinitionDocumentRepository:
             return None
 
         study_definition_document = result[0][0]
+        if (
+            study_definition_document.protocol_header_major_version is None
+            or study_definition_document.protocol_header_minor_version is None
+        ):
+            return None
         return f"{study_definition_document.protocol_header_major_version}.{study_definition_document.protocol_header_minor_version}"
+
+    @ensure_transaction(db)
+    def get_authored_documents(
+        self, study_uid: str, study_value_version: str | None = None
+    ):
+        """Read only the document directly attached to the selected StudyValue."""
+        params = {"study_uid": study_uid, "version": study_value_version}
+        selection = (
+            "MATCH (root:StudyRoot {uid:$study_uid})-[:LATEST]->(value:StudyValue)"
+            if study_value_version is None
+            else "MATCH (root:StudyRoot {uid:$study_uid})-[:HAS_VERSION {version:$version}]->(value:StudyValue)"
+        )
+        rows, _ = db.cypher_query(
+            selection
+            + " OPTIONAL MATCH (value)-[:HAS_STUDY_DEFINITION_DOCUMENT]->(document:StudyDefinitionDocument) RETURN DISTINCT value, document",
+            params,
+            resolve_objects=True,
+        )
+        if not rows:
+            raise NotFoundException("Study version", study_uid)
+        if len(rows) != 1:
+            raise ValidationException(
+                msg="The selected study version has ambiguous document selections"
+            )
+        return rows[0][1]
+
+    @ensure_transaction(db)
+    def save_authored_documents(
+        self,
+        study_uid: str,
+        content_json: str,
+        content_hash: str,
+        expected_hash: str | None,
+        reason: str,
+    ):
+        """Copy-on-write the existing native selection, including its header."""
+        acquire_write_lock_study_value(study_uid)
+        before = self.get_authored_documents(study_uid)
+        current_hash = getattr(before, "authored_documents_hash", None)
+        if current_hash != expected_hash:
+            raise AlreadyExistsException(
+                msg="Authored documents changed; reload and reconcile before saving"
+            )
+        if current_hash == content_hash:
+            return before
+        rows, _ = db.cypher_query(
+            "MATCH (root:StudyRoot {uid:$uid})-[:LATEST]->(value:StudyValue) RETURN root, value",
+            {"uid": study_uid},
+            resolve_objects=True,
+        )
+        if len(rows) != 1:
+            raise NotFoundException("Study", study_uid)
+        root, value = rows[0]
+        # __properties__ also includes neomodel's element_id_property. Passing it
+        # to a new node would turn save() into an update of the historical node.
+        properties = before.to_dict() if before is not None else {}
+        properties.update(
+            authored_documents_json=content_json,
+            authored_documents_hash=content_hash,
+            authored_documents_reason=reason,
+            authored_documents_author=self.author_id,
+        )
+        after = StudyDefinitionDocument(**properties).save()
+        # Historical StudyValues keep their existing selection. Only LATEST moves.
+        if before is not None:
+            value.has_study_definition_document.disconnect(before)
+        value.has_study_definition_document.connect(after)
+        _manage_versioning_with_relations(
+            study_root=root,
+            action_type=Edit if before else Create,
+            before=before,
+            after=after,
+            author_id=self.author_id,
+        )
+        return after
 
     def has_final_protocol_locked_version(
         self, study_uid: str, study_value_version: str | None = None
@@ -131,7 +216,11 @@ class StudyDefinitionDocumentRepository:
                 }
             )
             update_query += """
-            CREATE (new_sdd:StudyDefinitionDocument:StudySelection {uid: $study_definition_document, protocol_header_major_version: $protocol_header_major_version, protocol_header_minor_version: $protocol_header_minor_version})
+            CREATE (new_sdd:StudyDefinitionDocument:StudySelection)
+            SET new_sdd = $existing_properties
+            SET new_sdd.uid = $study_definition_document,
+                new_sdd.protocol_header_major_version = $protocol_header_major_version,
+                new_sdd.protocol_header_minor_version = $protocol_header_minor_version
             WITH new_sdd, study_value
             OPTIONAL MATCH (old_sdd:StudyDefinitionDocument {uid: $study_definition_document})<-[old_rel:HAS_STUDY_DEFINITION_DOCUMENT]-(study_value)
             WHERE NOT (old_sdd)-[:BEFORE]-(:StudyAction)
@@ -141,7 +230,7 @@ class StudyDefinitionDocumentRepository:
             """
             result, _ = db.cypher_query(
                 update_query,
-                params,
+                {**params, "existing_properties": before_node.to_dict()},
                 resolve_objects=True,
             )
             after_node = result[0][0] if result and result[0] else None

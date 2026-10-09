@@ -55,6 +55,9 @@ from clinical_mdr_api.models.study_selections.study import (
     StudyVersionHistory,
     UnlockInput,
 )
+from clinical_mdr_api.models.study_selections.study_definition_document import (
+    AuthoredProtocolDocumentsInput,
+)
 from clinical_mdr_api.models.study_selections.study_pharma_cm import StudyPharmaCM
 from clinical_mdr_api.models.utils import CustomPage, EditInputModel
 from clinical_mdr_api.repositories._utils import FilterOperator
@@ -74,6 +77,9 @@ from clinical_mdr_api.services.studies.null_adjudication import (
 from clinical_mdr_api.services.studies.study import (
     StudyService,
     validate_if_study_is_not_locked,
+)
+from clinical_mdr_api.services.studies.study_definition_document import (
+    StudyDefinitionDocumentService,
 )
 from clinical_mdr_api.services.studies.study_pharma_cm import StudyPharmaCMService
 from common.auth import rbac
@@ -1087,6 +1093,28 @@ def get_protocol_header_version(
     study_uid: Annotated[str, StudyUID],
 ) -> StudyProtocolHeaderVersion:
     return StudyService().get_protocol_header_version(study_uid=study_uid)
+
+
+@router.get(
+    "/{study_uid}/protocol-documents",
+    dependencies=[security, rbac.STUDY_READ],
+    summary="Read exact native authored draft documents and section coverage.",
+)
+def get_protocol_documents(
+    study_uid: Annotated[str, StudyUID], study_value_version: str | None = None
+) -> dict[str, Any]:
+    return StudyDefinitionDocumentService().get(study_uid, study_value_version)
+
+
+@router.put(
+    "/{study_uid}/protocol-documents",
+    dependencies=[security, rbac.STUDY_WRITE],
+    summary="Save draft USDM narrative content on the existing native document selection.",
+)
+def save_protocol_documents(
+    study_uid: Annotated[str, StudyUID], body: AuthoredProtocolDocumentsInput
+) -> dict[str, Any]:
+    return StudyDefinitionDocumentService().save(study_uid, body)
 
 
 @router.get(

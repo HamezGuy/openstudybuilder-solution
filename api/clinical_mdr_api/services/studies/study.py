@@ -1534,9 +1534,23 @@ class StudyService:
             study_uid=study_uid,
             study_value_version=study_value_version,
         )
+        document = (
+            self._repos.study_definition_document_repository.get_authored_documents(
+                study_uid, study_value_version
+            )
+        )
+        from clinical_mdr_api.models.study_selections.study_definition_document import (
+            authored_content_from_json,
+        )
+
+        authored = authored_content_from_json(
+            getattr(document, "authored_documents_json", None)
+        )
         return StudyProtocolHeaderVersion(
             protocol_header_version=protocol_header_version,
             has_final_protocol_locked_version=has_final_protocol,
+            authored_documents=authored.model_dump(mode="json") if authored else None,
+            authored_documents_hash=getattr(document, "authored_documents_hash", None),
         )
 
     def get_distinct_values_for_header(

@@ -831,6 +831,11 @@ class StudyVersion(StudySelection):
 class StudyDefinitionDocument(StudySelection):
     protocol_header_major_version = IntegerProperty()
     protocol_header_minor_version = IntegerProperty()
+    # The native selection and its BEFORE/AFTER history own authored USDM content.
+    authored_documents_json = StringProperty()
+    authored_documents_hash = StringProperty()
+    authored_documents_reason = StringProperty()
+    authored_documents_author = StringProperty()
 
     study_value = RelationshipFrom(
         STUDY_VALUE_CLASS_NAME, "HAS_STUDY_DEFINITION_DOCUMENT", model=ClinicalMdrRel
