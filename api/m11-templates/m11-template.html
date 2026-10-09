@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="UTF-8">
-  <title>ICH M11 Template / Final version Adopted on 19 November 2025 - Study {{ study_name }}</title>
+  <title>ICH M11 draft preview - Study {{ study_name }}</title>
   <style>
     body {
       background-color: #ffffff;
@@ -293,6 +293,22 @@
 </head>
 
 <body>
+  <section aria-label="Draft preview provenance" style="border:2px solid #555;padding:12px;margin-bottom:16px">
+    <h1>Draft protocol preview — review required</h1>
+    <p>This is a source-derived draft using the ICH M11 template adopted on 19 November 2025.
+      It is not an approved, submission-ready or immutable protocol. Template instructions and missing fields remain visible.</p>
+    <p>Native study: <strong>{{ study_id }}</strong>; native version: <strong>{{ source_version }}</strong>;
+      native status: <strong>{{ source_status }}</strong>.
+      {% if current_preview %}Current-source preview: separate source reads can change while this page is generated.{% else %}
+      All source readers requested version {{ source_version }}. Selecting a metadata version does not establish protocol approval.{% endif %}
+      USDM mapping state: <strong>{{ mapping_state }}</strong>.</p>
+    <details open>
+      <summary>Unresolved source and presentation evidence ({{ preview_issues | length }})</summary>
+      <ul>{% for issue in preview_issues %}<li><strong>{{ issue.code }}</strong>: {{ issue.message }}
+        {% if issue.sourcePath %}<span>Source: {{ issue.sourcePath }}.</span>{% endif %}
+        {% if issue.resolution %}<span>{{ issue.resolution }}</span>{% endif %}</li>{% endfor %}</ul>
+    </details>
+  </section>
 
   <div id="loading" class="loading-message">
     Loading M11 specifications...
@@ -302,7 +318,7 @@
     <strong>Error:</strong> <span id="error-text"></span>
   </div>
 
-  <h1>ICH M11 Template / Final version Adopted on 19 November 2025 - Study {{ study_name }}</h1>
+  <h1>ICH M11 draft preview - Study {{ study_name }}</h1>
   <div class="float">
     <button onclick="toggleinstruction()">Instructional text</button><br>
     <button onclick="togglesuggested()">Suggested text</button><br>
@@ -379,7 +395,7 @@
             title="View M11 Specification">1</button>
         </th>
         <td width="70%" class="suggested-text">
-          {{ study_name }} - {{ protocol_version }}<br>
+          {{ protocol_version }}<br>
           <span class="metadata-reply">&lt;Enter Version Number&gt;</span>
           <div class="instructional-text">For use by the sponsor at their discretion.</div>
         </td>
@@ -568,50 +584,12 @@
             title="View M11 Specification">1</button>
         </th>
         <td width="70%">
-          {% if eu_trial_number %}EU CT Number: {{ eudract_id }}{% endif %}
-          <span class="metadata-reply">
-            &lt;EU CT Number&gt;
-            <button class="info-button" onclick="openSpecModal('<EU CT Number>')"
-              title="View M11 Specification">2</button>
-          </span>
-          <br>
-          {% if ct_gov_id %}FDA IND Number: {{ ct_gov_id }}{% endif %}
-          <span class="metadata-reply">
-            &lt;FDA IND Number&gt;
-            <button class="info-button" onclick="openSpecModal('<FDA IND Number>')"
-              title="View M11 Specification">3</button>
-          </span>
-          <br>
-          {% if investigational_device_exemption_ide_number %}IDE Number: {{ investigational_device_exemption_ide_number
-          }}{% endif %}
-          <span class="metadata-reply">
-            &lt;IDE Number&gt;
-            <button class="info-button" onclick="openSpecModal('<IDE Number>')"
-              title="View M11 Specification">4</button>
-          </span>
-          <br>
-          {% if japanese_trial_registry_number_jrct %}jRCT Number: {{ japanese_trial_registry_number_jrct }}{% endif
-          %}<span class="metadata-reply">&lt;jRCT Number Number&gt;</span><br>
-          {% if national_clinical_trial_number %}NCT Number: {{ national_clinical_trial_number }}{% endif %}<span
-            class="metadata-reply">&lt;NCT Number&gt;</span><br>
-          {% if national_medical_products_administration_nmpa_number %}NMPA IND Number: {{
-          national_medical_products_administration_nmpa_number }}{% endif %}<span class="metadata-reply">&lt;NMPA IND
-            Number&gt;</span><br>
-          {% if who_number %}WHO/UTN Number: {{ who_number }}{% endif %}<span class="metadata-reply">&lt;WHO/UTN
-            Number&gt;</span><br>
-          {% if other_identifier_number %}Other: {{ other_identifier_number }}{% endif %}<span
-            class="metadata-reply">&lt;Other Regulatory or Clinical Trial Identifier&gt;</span><br>
-          <br>
-          {% if eudamed_srn_number %}EUDAMED: {{ eudamed_srn_number }}{% endif %}<span class="metadata-reply">[EUDAMED
-            Number]</span><br>
-
-          {% if eu_trial_number %}EU Trial Number: {{ eu_trial_number }}{% endif %}<span class="metadata-reply">[EU
-            Trial Number]</span><br>
-
-          {% if investigational_new_drug_application_number_ind %}IND Number: {{
-          investigational_new_drug_application_number_ind }}{% endif %}<span class="metadata-reply">[IND
-            Number]</span><br>
-
+          {% for identifier in registry_identifiers %}
+          <div>{{ identifier.label }}: {{ identifier.value }}</div>
+          {% else %}
+          <div>Not available in the selected source</div>
+          {% endfor %}
+          <span class="metadata-reply">&lt;Enter Regulatory or Clinical Trial Identifier(s)&gt;</span>
           <div class="instructional-text">Include all identifiers that are applicable for the trial and available at the
             time of protocol or amendment finalisation. Delete prompts for identifiers not available at the time of
             document finalisation. Delete unused fields. Add fields for “other” if more than one is needed.</div>
@@ -970,7 +948,9 @@
             <button class="info-button" onclick="openSpecModal('Population Type')"
               title="View M11 Specification">1</button>
           </td>
-          <td width="25%">{% if population_healthy_subjects %} Healthy volunteers {% endif %}
+          <td width="25%">{% if population_healthy_subjects is sameas true %} Includes healthy volunteers
+            {% elif population_healthy_subjects is sameas false %} Does not include healthy volunteers
+            {% else %} Not available in the selected source {% endif %}
             <span class="metadata-reply">[Population Type]</span>
             <button class="info-button" onclick="openSpecModal('[Population Type]')"
               title="View M11 Specification">2</button>
@@ -992,8 +972,8 @@
             <button class="info-button" onclick="openSpecModal('Population Diagnosis or Condition:')"
               title="View M11 Specification">1</button>
           </td>
-          <td width="25%">{% if population_healthy_subjects %} N/A {% else %} {% for indication in study_indications %}
-            {{indication.name}} {% endfor %} {% endif %}
+          <td width="25%">{% for indication in study_indications %}
+            {{indication.name}} {% else %} Not available in the selected source {% endfor %}
             <span class="metadata-reply">[Population Diagnosis or Condition]</span>
             <button class="info-button" onclick="openSpecModal('[Population Diagnosis or Condition]')"
               title="View M11 Specification">2</button>
@@ -4055,7 +4035,7 @@
     <script>
       let m11Specifications = [];
 
-      loadM11Specifications({{ specification_20251119| safe }});
+      loadM11Specifications({{ specification_20251119 | tojson }});
 
       function toggleinstruction() {
         const elements = document.getElementsByClassName('instructional-text');

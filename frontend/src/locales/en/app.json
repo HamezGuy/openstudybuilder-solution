@@ -3614,7 +3614,11 @@
         "target_study_population": "Target Study Population [C142728]"
     },
     "IchM11Page": {
-        "title": "ICH M11 version of the protocol"
+        "title": "ICH M11 version of the protocol",
+        "loading": "Loading the protocol preview…",
+        "load_error": "The protocol preview could not be loaded for the selected study version.",
+        "retry": "Retry preview",
+        "empty": "No protocol preview is available for the selected study version."
     },
     "CtPackageCodelistHistoryView": {
         "title": "CT packages history for one code list"

@@ -941,8 +941,13 @@ export default {
   getDdfUsdmJson(studyUid) {
     return repository.get(`usdm/v4/studyDefinitions/${studyUid}`)
   },
-  getDdfIchM11(studyUid) {
-    return repository.get(`usdm/v4/studyDefinitions/${studyUid}/m11`)
+  getDdfIchM11(studyUid, studyValueVersion = null, { signal } = {}) {
+    return repository.get(`usdm/v4/studyDefinitions/${studyUid}/m11`, {
+      params: { study_value_version: studyValueVersion },
+      signal,
+      // The preview owns its error and retry state, including cancelled requests.
+      ignoreErrors: true,
+    })
   },
   getStudyStandardVersions(studyUid) {
     return repository.get(`${resource}/${studyUid}/study-standard-versions`)
