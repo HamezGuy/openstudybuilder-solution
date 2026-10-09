@@ -645,6 +645,34 @@
               "Year"
             ]
           }
+        },
+        {
+          "codelist": {
+            "conceptId": "C66797",
+            "name": "Category of Inclusion/Exclusion",
+            "submissionValue": "IECAT"
+          },
+          "term": {
+            "conceptId": "C25370",
+            "definition": "List of characteristics in a protocol, any one of which makes a potential subject ineligible to participate in a study.",
+            "preferredTerm": "Exclusion Criteria",
+            "submissionValue": "EXCLUSION",
+            "synonyms": []
+          }
+        },
+        {
+          "codelist": {
+            "conceptId": "C66797",
+            "name": "Category of Inclusion/Exclusion",
+            "submissionValue": "IECAT"
+          },
+          "term": {
+            "conceptId": "C25532",
+            "definition": "The criteria in a protocol that prospective subjects must meet to be eligible to participate in a study.",
+            "preferredTerm": "Inclusion Criteria",
+            "submissionValue": "INCLUSION",
+            "synonyms": []
+          }
         }
       ]
     },

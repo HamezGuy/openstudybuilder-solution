@@ -141,6 +141,11 @@ def test_current_preview_is_explicit_and_uses_current_for_all_readers(
 ):
     report = deepcopy(mapped_source)
     report["mappingReport"]["studyValueVersion"] = None
+    # A real current-source mapping scopes every retained selection to the same
+    # unversioned read, even when its native metadata reports a version number.
+    for record in report["nativeRecords"]:
+        if "scope" in record:
+            record["scope"]["studyValueVersion"] = None
     api, mapper, flowchart, figure = client(monkeypatch, report)
     response = get(api, None)
     assert response.status_code == 200

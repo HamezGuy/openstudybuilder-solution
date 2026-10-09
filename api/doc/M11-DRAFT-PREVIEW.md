@@ -40,12 +40,53 @@ cancels obsolete requests, and ignores late transport completion. A component-ow
 `srcdoc` iframe permits the template's specification dialogs while omitting
 `allow-same-origin`; it cannot access the parent application's document.
 
+## Native section projection
+
+The same selected native mapping report supplies these additional sections:
+
+- Section 4.1 shows native high-level design and intervention metadata, including
+  null reasons, durations with units, stop rules and separate root-arm/branch
+  counts. Branches are not silently counted as additional native root arms.
+- Section 5.1 shows all native population fields and the separately scoped cohort
+  counts and explicit arm/branch associations. Counts are never summed.
+- Sections 5.2 and 5.3 retain ordered inclusion and exclusion criteria, repeated
+  text, source definition identifiers/versions and key-criterion indicators.
+  Classification uses CDISC C25532/C25370, not sponsor display labels. Unknown
+  categories remain unclassified; template-only selections remain uninstantiated.
+  Native study-level criteria do not establish arm-specific eligibility.
+- Section 6 shows intervention roles/types, source library versions, selected
+  dispense/device facts, administrations, dose/frequency/route and composition.
+  Arm, epoch and element applicability must agree with both canonical references
+  and the retained native dosing and design-cell relationships. Missing,
+  duplicate or conflicting identities cannot authorize an assignment.
+- Product definitions and their ingredients/strengths remain visible separately
+  from administration assignment. Assignment requires one exact native selected
+  product UID/version and study/compound scope. Catalog order, matching names,
+  allowed product routes and another compound's product cannot supply that
+  authority. Strength denominators, when present, retain their value and unit;
+  the current native mapper emits scalar strengths with numerator quantities.
+
+Zero, false, repeated values, interval text, native missing-value reasons and
+unit/version identifiers are preserved. Source descriptions are sanitized with
+the existing sanitizer and other source text is HTML-escaped. Projection leaves
+the retained mapping evidence unchanged. Foreign selected-record scope returns
+HTTP 422 before the visual readers run.
+
+The native protocol-header source has a version and lock flag but no authored
+protocol-section bodies. Structured facts therefore do not become clinical
+rationale, benefit-risk assessments, safety plans or approved narrative content.
+The preview explicitly identifies those unavailable bodies. This is a software
+qualification boundary, not a prerequisite to testing the mapped source path
+with synthetic multi-arm data, and not a claim of achieved SURPASS time, cost,
+labor or clinical metrics.
+
 ## Focused verification
 
 From `api`, using the configured Python environment:
 
 ```text
 python -m pytest clinical_mdr_api/tests/unit/services/test_m11_preview_http.py -q --no-cov -p no:cacheprovider
+python -m pytest clinical_mdr_api/tests/unit/services/test_m11_source_sections.py -q --no-cov -p no:cacheprovider
 ```
 
 These public HTTP tests render the real Jinja template using the real native
@@ -53,6 +94,9 @@ mapper and isolated source fixtures. They check selected-version propagation,
 non-first version selection, provenance rejection, unavailable and ambiguous
 inputs, native identifiers, HTML escaping, visibility and query validation.
 They do not use a Neo4j clear-database fixture or a live clinical source.
+The section tests include three root arms, one branch, multiple compounds and
+products, wrong-but-existing references, ambiguous identities, zero/null values,
+concentration denominators, repeated criteria and source HTML sanitation.
 
 From `frontend`, with the installed Playwright Chromium or an explicit
 `M11_BROWSER_CHANNEL` such as `msedge`:
@@ -89,3 +133,31 @@ the cooperative heavy-command wrapper described in workspace guidance.
 
 These checks use synthetic isolated data and do not establish production
 readiness, complete regulatory authoring, or achieved SURPASS clinical metrics.
+
+### Native section verification recorded on 2026-10-09
+
+- The expanded run passed 62 cases: 18 new section HTTP cases, the 18 existing
+  preview HTTP cases and all 26 unchanged native-domain cases. The final review
+  tightened assigned-product verification to require the exact native dosing
+  relationship as well as product-selection authority.
+- After that review and nullable-reference typing fixes, the final 36 HTTP cases
+  passed again. Scoped mypy passed for the helper and route; Pylint passed at
+  10/10, and Black/isort checks passed for all four affected Python files.
+- Another 88 existing isolated tests passed across compound snapshot, native
+  corrections, native export, native library semantics and mapper semantics.
+  None of these scoped runs skipped a test or contacted a clinical database.
+- The literal-byte schema integrity test now passes with its expected SHA-256
+  unchanged. An exact-path `.gitattributes` LF policy restores the canonical Git
+  bytes on Windows; the schema content and full schema-drift assertion are
+  unchanged. The previously documented CRLF failure is resolved.
+- The actual HTTP-rendered synthetic preview was exported, and the old committed
+  helper/template reproduced the missing native-section defect when loaded only
+  in memory. The new preview's DOM is verified by public HTTP tests. A new visual
+  browser inspection was not completed: the browser tool rejected the local
+  file URL under its URL policy. No alternate access was attempted. The earlier
+  B.1 Vue/browser qualification remains separate evidence.
+
+There are no new routes, API schema changes, frontend source changes or external
+authority contracts in this slice. Existing dependency and partial-draft model
+serializer warnings remain; the native source is still deliberately incomplete
+where clinical authoring facts do not exist.

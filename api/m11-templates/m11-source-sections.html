@@ -1,0 +1,51 @@
+{% macro facts(rows) -%}
+<table class="source-facts"><thead><tr><th>Selected source fact</th><th>Value</th></tr></thead><tbody>
+{% for row in rows %}<tr data-source-field="{{ row.field }}"><th>{{ row.label }}</th><td>{{ row.value }}{% if row.null_reason %}<br><small>Native missing-value reason: {{ row.null_reason }}</small>{% endif %}</td></tr>{% endfor %}
+</tbody></table>
+{%- endmacro %}
+
+{% macro criteria(rows, category) -%}
+<section id="m11-criteria-{{ category }}" data-m11-section="{{ '5.2' if category == 'inclusion' else '5.3' if category == 'exclusion' else '5-unclassified' }}">
+<p class="source-note">Selected study-level criteria. The native criteria model does not specify arm restrictions; no arm applicability is inferred.</p>
+{% for row in rows %}<article class="source-record" data-source-uid="{{ row.uid }}" data-canonical-id="{{ row.id }}" data-source-order="{{ row.order }}">
+<p><strong>Source order {{ row.order }} — {{ row.uid }}</strong><br>{{ row.text }}</p>
+<small>Selected criterion {{ row.definition_uid }} @ {{ row.source_version }}; key criterion: {{ row.key }}; category: {{ row.category }}.</small>
+{% if row.template_only %}<p>Only a template is selected. An instantiated criterion is not available.</p>{% endif %}
+</article>{% else %}<p>Not available in the selected source. No eligibility decision can be inferred.</p>{% endfor %}
+</section>
+{%- endmacro %}
+
+{% macro product(content) -%}
+<p>{{ content.name }} [{{ content.id }}]</p><p>Dose form: {{ content.dose_form }}</p>
+{% for ingredient in content.ingredients %}<p>Ingredient: {{ ingredient.name }} [{{ ingredient.id }}]</p>
+{% for strength in ingredient.strengths %}<p>Strength: {{ strength }}</p>{% else %}<p>Strength: Not available in the selected source.</p>{% endfor %}{% endfor %}
+{%- endmacro %}
+
+{% macro interventions(rows, unresolved) -%}
+<section id="m11-intervention-source" data-m11-section="6">
+<h3>Selected intervention and administration facts</h3>
+<p class="source-note">Use and product names are retained from the selected source. Investigational designation, sourcing, route and duration remain unavailable unless explicitly present. An allowed product route is not an assigned administration route.</p>
+{% for row in rows %}<article class="source-record" data-source-uid="{{ row.uid }}" data-canonical-id="{{ row.id }}">
+<h4>{{ row.name }} — {{ row.uid }}</h4><div>{{ row.description|safe }}</div>
+{% if not row.selected %}<p><strong>Unresolved intervention source: this record is not established as a selected intervention in this design.</strong></p>{% endif %}
+<p>Role: {{ row.role }}. Type: {{ row.type }}.</p>
+{{ facts(row.facts) }}
+{% for identity in row.source_versions %}<p class="source-note">{{ identity.kind }}: {{ identity.uid }} @ {{ identity.version }}</p>{% endfor %}
+{% for code in row.codes %}<p class="source-note">Product code: {{ code }}</p>{% endfor %}
+{% if row.products %}<h5>Product definitions retained with this compound selection</h5>
+<p>These definitions preserve selected source content. Their presence does not assign a product to an administration.</p>
+{% for item in row.products %}<section class="source-product" data-source-uid="{{ item.uid }}"><p>Native product {{ item.uid }} @ {{ item.version }}</p>{{ product(item.content) }}{{ facts(item.facts) }}</section>{% endfor %}{% endif %}
+{% for administration in row.administrations %}<section class="source-administration" data-source-uid="{{ administration.uid }}" data-canonical-id="{{ administration.id }}">
+<h5>Administration {{ administration.uid }}</h5>
+<p>Dose: <span class="source-dose">{{ administration.dose }}</span>. Frequency: {{ administration.frequency }}. Route: {{ administration.route }}.</p>
+<p>Selected dosing composition: {{ administration.composition }}.</p>
+{% if administration.product %}<p>Assigned product:</p>{{ product(administration.product) }}
+{% else %}<p>Assigned product: Not available in the selected source.</p>{% endif %}
+<table class="source-scopes"><thead><tr><th>Arm or branch</th><th>Epoch</th><th>Element</th><th>Selected cell identity</th></tr></thead><tbody>
+{% for scope in administration.scopes %}<tr data-arm-id="{{ scope.arm_id }}" data-element-id="{{ scope.element_id }}" data-cell-id="{{ scope.cell_id }}"><td>{{ scope.arm }} [{{ scope.arm_id }}]</td><td>{{ scope.epoch }} [{{ scope.epoch_id }}]</td><td>{{ scope.element }} [{{ scope.element_id }}]</td><td>{{ scope.cell_id }}</td></tr>
+{% else %}<tr><td colspan="4">Unresolved applicability. No arm, epoch or element has been inferred.</td></tr>{% endfor %}
+</tbody></table></section>{% else %}<p>No selected administration data is available.</p>{% endfor %}
+</article>{% else %}<p>No selected intervention data is available.</p>{% endfor %}
+{% if unresolved %}<h4>Unresolved native dosing selections</h4><ul>{% for row in unresolved %}<li data-source-uid="{{ row.uid }}">{{ row.uid }}: compound {{ row.compound }}; element {{ row.element }}. No mapped administration or arm scope is inferred.</li>{% endfor %}</ul>{% endif %}
+</section>
+{%- endmacro %}

@@ -10,3 +10,6 @@
 /api/clinical_mdr_api/models/integrations/** text eol=lf
 /api/clinical_mdr_api/services/integrations/source_draft_stage.py text eol=lf
 /api/clinical_mdr_api/services/integrations/native_capture_projection.py text eol=lf
+
+# The normative USDM schema fixture has a literal-byte SHA-256 integrity check.
+/api/clinical_mdr_api/tests/fixtures/usdm_native_model4_schema.json text eol=lf

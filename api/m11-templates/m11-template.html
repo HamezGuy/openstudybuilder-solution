@@ -1,3 +1,4 @@
+{% import 'm11-source-sections.html' as native_sections %}
 <!DOCTYPE html>
 <html lang="en">
 
@@ -933,7 +934,7 @@
             <button class="info-button" onclick="openSpecModal('Intervention')"
               title="View M11 Specification">1</button>
           </td>
-          <td width="25%">{{ intervention_model }}
+          <td width="25%">{{ intervention_names }}
             <span class="metadata-reply"> {&lt;Enter Sponsor's Investigational Product Code(s)&gt;}</span>
             <button class="info-button" onclick="openSpecModal('[Sponsor’s Investigational Product Code(s)]')"
               title="View M11 Specification">2</button>
@@ -1151,7 +1152,7 @@
     </p>
 
     <p>
-      <span class="metadata-title">Trial Blind Schema:</span> {{ blinded_roles }} <span class="metadata-reply">[Trial
+      <span class="metadata-title">Trial Blind Schema:</span> {{ blinding_schema }} <span class="metadata-reply">[Trial
         Blind Schema]</span>
       <button class="info-button" onclick="openSpecModal('Trial Blind Schema')"
         title="View M11 Specification">1</button>
@@ -1634,7 +1635,12 @@
       conducted under a master protocol), provide a summary of these design aspects.</div>
     <div class="instructional-text">If applicable, describe within-trial transition rules (e.g., transitions involving
       cohorts or trial parts). Dose escalation or dose-ranging details should also be described.</div>
-    <div>{{ missing_overall_description_of_trial_design_and_description_of_intervention_model }}</div>
+    <section id="m11-design-source" data-m11-section="4.1"><h3>Selected native design facts</h3>
+      <p>Native study version {{ source_version }}. These structured facts do not supply the design rationale or other missing narrative.</p>
+      <p>Native arms: {{ source_sections.root_arm_count }}; branches: {{ source_sections.branch_count }}. Branches remain distinct treatment paths.</p>
+      {{ native_sections.facts(source_sections.design_facts) }}
+    </section>
+    <div>Authored overall design narrative: Not available in the selected source.</div>
     <div class="metadata-reply suggested-text">&lt;Enter Overall Description of Trial Design and Description of
       Intervention Model&gt; <button class="info-button"
         onclick="openSpecModal('<Overall Description of Trial Design and Description of Intervention Model>')"
@@ -1876,7 +1882,14 @@
       participants, in adults unable to consent for themselves, other vulnerable participant populations, or those that
       may respond to the trial intervention differently (e.g., elderly, hepatic or renally impaired, or
       immunocompromised participants).</div>
-    <div>{{ missing_description_of_trial_population_and_rationale }}</div>
+    <section id="m11-population-source" data-m11-section="5.1"><h3>Selected native population facts</h3>
+      <p>Native study version {{ source_version }}. Population rationale: Not available in the selected source.</p>
+      {{ native_sections.facts(source_sections.population_facts) }}
+      <h4>Selected cohorts</h4><p>Counts retain their original scope; cohort and population counts are not added together.</p>
+      <table><thead><tr><th>Cohort identity</th><th>Native participant count</th><th>Native arm/branch associations</th></tr></thead><tbody>
+      {% for cohort in source_sections.cohorts %}<tr data-source-uid="{{ cohort.uid }}"><td>{{ cohort.name }} [{{ cohort.uid }}]</td><td>{{ cohort.count }}</td><td>{% for association in cohort.associations %}<div>{{ association }}</div>{% else %}Not available in the selected source{% endfor %}</td></tr>{% else %}<tr><td colspan="3">No selected cohort data is available.</td></tr>{% endfor %}
+      </tbody></table>
+    </section>
     <div class="metadata-reply suggested-text">&lt;Enter Description of Trial Population and Rationale&gt; <button
         class="info-button" onclick="openSpecModal('<Description of Trial Population and Rationale>')"
         title="View M11 Specification">2</button></div>
@@ -1905,7 +1918,7 @@
         title="View M11 Specification">2</button></div>
     <div class="suggested-text">&lt;#&gt; <button class="info-button" onclick="openSpecModal('<#>')"
         title="View M11 Specification">3</button></div>
-    <div>{{ missing_inclusion_criterion }}</div>
+    {{ native_sections.criteria(source_sections.eligibility.inclusion, 'inclusion') }}
     <div class="metadata-reply">&lt;Enter Inclusion Criterion&gt; <button class="info-button"
         onclick="openSpecModal('<Inclusion Criterion>')" title="View M11 Specification">4</button></div>
     <div class="instructional-text">Add criteria as needed. Consider numbering the criteria sequentially.</div>
@@ -1923,7 +1936,8 @@
     </div>
     <div class="suggested-text">&lt;#&gt; <button class="info-button" onclick="openSpecModal('<#>')"
         title="View M11 Specification">3</button></div>
-    <div>{{ missing_exclusion_criterion }}</div>
+    {{ native_sections.criteria(source_sections.eligibility.exclusion, 'exclusion') }}
+    {% if source_sections.eligibility.unclassified %}<h3>Criteria requiring category or source review</h3>{{ native_sections.criteria(source_sections.eligibility.unclassified, 'unclassified') }}{% endif %}
     <div class="metadata-reply">&lt;Enter Exclusion Criterion&gt; <button class="info-button"
         onclick="openSpecModal('<Exclusion Criterion>')" title="View M11 Specification">4</button></div>
     <div class="instructional-text">Add criteria as needed. Consider numbering the criteria sequentially.</div>
@@ -2050,7 +2064,7 @@
     <div class="instructional-text">Provide an overview of investigational and noninvestigational trial interventions.
       Designate the trial intervention as IMP or NIMP/AxMP based on trial design and regional requirements. Consider the
       optional table below.</div>
-    <div>{{ missing_description_of_the_overview_of_trial_interventions_or_a_heading_for_the_optional_table }}</div>
+    {{ native_sections.interventions(source_sections.interventions, source_sections.unresolved_dosings) }}
     <div class="metadata-reply suggested-text">&lt;Enter description of the overview of trial interventions or a heading
       for the optional table&gt; <button class="info-button"
         onclick="openSpecModal('<description of the overview of trial interventions or a heading for the optional table>')"
