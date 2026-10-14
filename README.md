@@ -64,6 +64,39 @@ Never copy the EDC JWT signing secret into this repository. OSB trusts only
 Command Center's HTTPS discovery/JWKS endpoint; EDC imports use a separate,
 narrowly scoped `x-api-key`.
 
+### Authenticated receipt signing in Docker
+
+The main API reads its signing-service bearer credential from
+`OSB_PLATFORM_SIGNING_TOKEN_FILE`. For the root compose stack, set that variable
+in the selected environment file to the absolute path of an existing **host
+file**, then explicitly add `-f compose.signing.yaml` after the other compose
+files. For example, validate the combined configuration without displaying its
+environment values:
+
+```sh
+docker compose --env-file .env -f compose.yaml -f compose.signing.yaml config --quiet
+```
+
+Use the same file list for the approved deployment command. When also using
+`compose.production.yaml`, put the signing overlay last. Without this overlay,
+the base stack keeps its existing behavior and requires no token file.
+
+The overlay mounts only that file, read-only, into the main API at
+`/run/secrets/osb-platform-signing-token` and supplies that container path to the
+existing credential reader. Keep the host file outside the repository, restrict
+its permissions, and ensure the API container user can read it. A missing source
+path is not created automatically. Selecting the overlay with an empty or unset
+variable fails configuration validation. Configuration validation does not check
+the token's validity or exercise the signing service.
+
+The operator supplies the narrow signing-service credential and the trusted
+`OSB_NATIVE_IDENTITY_SIGNING_URL` / `OSB_PLATFORM_COMMAND_SIGNING_URL` endpoints;
+use HTTPS for authenticated signing. Token contents never belong in `.env`,
+compose YAML, build arguments or image layers. This overlay changes only credential
+delivery: it does not enable identity, command, review or production features.
+If rotation replaces the host file itself, recreate the API container with the
+same overlay so its file mount follows the replacement.
+
 ### Running the full stack in Docker
 
 The root `compose.yaml` runs the whole solution (database, the three API apps,

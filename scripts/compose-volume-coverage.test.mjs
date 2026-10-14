@@ -33,6 +33,8 @@ const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const STACKS = [
   { files: ['compose.yaml'] },
   { files: ['compose.yaml', 'compose.production.yaml'] },
+  { files: ['compose.yaml', 'compose.signing.yaml'] },
+  { files: ['compose.yaml', 'compose.production.yaml', 'compose.signing.yaml'] },
   { files: ['api/compose.yaml'] },
   { files: ['api/compose.yaml', 'api/compose.dev.yaml'] },
   { files: ['db_schema_migration/compose.yaml'] },
@@ -70,6 +72,7 @@ const UNINSPECTABLE = new Map([
 
 const COMPOSE_FILE = /(^|\/)(docker-)?compose(\.[\w-]+)*\.ya?ml$/;
 const PLACEHOLDER = 'compose-volume-guard-placeholder-0123456789abcdef';
+const SIGNING_TOKEN_FIXTURE = 'synthetic-compose-signing-file-not-a-credential';
 
 const imageName = (ref) => String(ref).trim().replace(/^docker\.io\//, '').replace(/^library\//, '');
 const normalTarget = (target) => String(target).replace(/\/+$/, '') || '/';
@@ -191,11 +194,19 @@ function composeConfig({ files, env: values = {}, partial = false }) {
   for (const [, name] of text.matchAll(/\$\{(\w+)/g)) delete env[name];
   for (const [, name] of text.matchAll(/\$\{(\w+):?\?/g)) env[name] = PLACEHOLDER;
   Object.assign(env, values);
+  if (env.OSB_PLATFORM_SIGNING_TOKEN_FILE === PLACEHOLDER) {
+    // Exercise the opt-in mount with an actual disposable file. Never inspect
+    // an operator's credential or put token contents in the Compose environment.
+    env.OSB_PLATFORM_SIGNING_TOKEN_FILE = path.join(envDir, 'signing-token');
+    writeFileSync(env.OSB_PLATFORM_SIGNING_TOKEN_FILE, SIGNING_TOKEN_FIXTURE);
+  }
   const args = ['compose', '--env-file', emptyEnv, ...files.flatMap((file) => ['--file', file]), '--profile', '*', 'config', '--format', 'json'];
   if (partial) args.push('--no-consistency');
   const result = spawnSync('docker', args, {
     cwd: REPO, env, encoding: 'utf8', windowsHide: true, timeout: 60000,
   });
+  assert.equal(`${result.stdout}${result.stderr}`.includes(SIGNING_TOKEN_FIXTURE), false,
+    'Compose output must not contain signing-token file contents');
   assert.equal(result.status, 0, `${files.join(' + ')}: ${result.stderr}`);
   return JSON.parse(result.stdout);
 }
@@ -230,6 +241,35 @@ test('every tracked compose file belongs to a checked stack', () => {
   const listed = new Set(STACKS.flatMap((stack) => stack.files));
   assert.deepEqual(tracked.filter((file) => !listed.has(file)), [], 'add each new compose file to STACKS');
   assert.deepEqual([...listed].filter((file) => !tracked.includes(file)), [], 'STACKS names a file git does not track');
+});
+
+test('the signing overlay only adds the API credential file and requires explicit configuration', { skip: noCompose }, () => {
+  for (const files of [['compose.yaml'], ['compose.yaml', 'compose.production.yaml']]) {
+    const baseline = composeConfig({ files });
+    const selected = composeConfig({ files: [...files, 'compose.signing.yaml'] });
+    const api = selected.services.api;
+    const target = '/run/secrets/osb-platform-signing-token';
+    assert.equal(api.environment.OSB_PLATFORM_SIGNING_TOKEN_FILE, target);
+    const tokenMounts = api.volumes.filter((mount) => mount.target === target);
+    assert.equal(tokenMounts.length, 1);
+    const [mount] = tokenMounts;
+    assert.equal(mount.type, 'bind');
+    assert.equal(mount.read_only, true);
+    assert.equal(mount.bind.create_host_path, false);
+    assert.equal(path.resolve(mount.source), path.join(envDir, 'signing-token'));
+    assert.equal(existsSync(mount.source), true);
+    delete api.environment.OSB_PLATFORM_SIGNING_TOKEN_FILE;
+    api.volumes = api.volumes.filter((item) => item.target !== target);
+    if (!api.volumes.length) delete api.volumes;
+    assert.deepEqual(selected, baseline, 'the overlay must preserve every other setting');
+
+    // A path setting alone never changes the base stack or discloses the file.
+    assert.deepEqual(composeConfig({ files, env: { OSB_PLATFORM_SIGNING_TOKEN_FILE: mount.source } }), baseline);
+    for (const value of ['', undefined]) {
+      assert.throws(() => composeConfig({ files: [...files, 'compose.signing.yaml'],
+        env: { OSB_PLATFORM_SIGNING_TOKEN_FILE: value } }), /Set OSB_PLATFORM_SIGNING_TOKEN_FILE/);
+    }
+  }
 });
 
 for (const stack of STACKS) {

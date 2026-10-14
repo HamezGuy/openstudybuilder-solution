@@ -1,0 +1,14 @@
+# Opt-in authenticated receipt signing for the main API. Merge after compose.yaml
+# (and compose.production.yaml, when used). The source is a host FILE PATH, never
+# the token itself; the container sees only the fixed path below.
+services:
+  api:
+    environment:
+      OSB_PLATFORM_SIGNING_TOKEN_FILE: /run/secrets/osb-platform-signing-token
+    volumes:
+      - type: bind
+        source: "${OSB_PLATFORM_SIGNING_TOKEN_FILE:?Set OSB_PLATFORM_SIGNING_TOKEN_FILE to the absolute path of an existing host token file}"
+        target: /run/secrets/osb-platform-signing-token
+        read_only: true
+        bind:
+          create_host_path: false
