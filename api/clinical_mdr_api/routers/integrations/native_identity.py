@@ -66,6 +66,7 @@ from common.config import settings
 from clinical_mdr_api.routers.integrations.native_item_observation import router as native_item_observation_router
 from clinical_mdr_api.routers.integrations.selected_activity_item_observation import router as selected_activity_item_observation_router
 from clinical_mdr_api.routers.integrations.source_draft_stage import router as source_draft_stage_router
+from clinical_mdr_api.routers.integrations.native_package_review_context import router as native_package_review_context_router
 
 router = APIRouter()
 
@@ -73,6 +74,7 @@ router = APIRouter()
 router.include_router(native_item_observation_router)
 router.include_router(selected_activity_item_observation_router)
 router.include_router(source_draft_stage_router)
+router.include_router(native_package_review_context_router)
 
 
 class _UnavailablePublisher:
@@ -933,6 +935,7 @@ def execute_specialist_review_command(body: dict[str, Any]) -> dict[str, Any]:
             platform_study_id=body["platformStudyId"],
             input_payload=input_payload,
             actor=body["requestingActor"]["issuerQualifiedSubject"],
+            expected_target_state=body.get("expectedTargetState"),
         )
         identity = reviewed["payload"]["osbStudyIdentity"]
         return {

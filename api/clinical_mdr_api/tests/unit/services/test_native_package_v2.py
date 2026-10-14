@@ -797,6 +797,163 @@ def review(store):
     )
 
 
+def context(store):
+    return PACKAGE["review_context"](
+        tenant_id=TENANT,
+        platform_study_id=STUDY,
+        transformation_checkpoint_artifact=store.checkpoint_artifact,
+        transformation_checkpoint=store.checkpoint,
+    )
+
+
+def test_review_context_returns_exact_hash_preimage_without_retaining_artifacts():
+    store = setup(
+        request_version="1.3.0",
+        capture_graph=CAPTURE_FIXTURE["selected_library_fixture"](),
+    )
+    store.inbound.clear()
+    before = canonical(store.applied)
+    result = context(store)
+    assert result["contractVersion"] == "OsbSpecialistReviewContextV1@1.0.0"
+    assert result["tenantId"] == TENANT and result["platformStudyId"] == STUDY
+    assert result["transformationCheckpointArtifact"] == store.checkpoint_artifact
+    assert result["nativeStateHash"] == h(result["nativeState"], STATE["STATE_SCHEMA"])
+    assert result["nativeStateHash"] == state(store)["stateHash"]
+    assert result["content"] == PACKAGE["_package_content"](state(store))
+    assert result["nativeLockEvidence"]["nativeStatus"] == "LOCKED"
+    assert result["productionEligible"] is result["clinicalApproval"] is False
+    assert canonical(store.applied) == before
+    assert not store.writes and not store.inbound and not store.reviews
+
+
+@pytest.mark.parametrize(
+    "change", ["tenant", "study", "payload", "descriptor", "version"]
+)
+def test_review_context_refuses_unverified_checkpoint_before_native_read(change):
+    store = setup()
+    if change == "tenant":
+        store.checkpoint["tenantId"] = "other-tenant"
+    elif change == "study":
+        store.checkpoint["platformStudyId"] = "other-study"
+    elif change == "payload":
+        store.checkpoint_artifact["payloadHash"]["value"] = "sha256:" + "0" * 64
+    elif change == "descriptor":
+        store.checkpoint_artifact["descriptorHash"]["value"] = "sha256:" + "0" * 64
+    else:
+        store.checkpoint["contractVersion"] = "TransformationCheckpointV1@9.0.0"
+    queries = []
+    store.hook = lambda query, _params: queries.append(query)
+    with pytest.raises(Error):
+        context(store)
+    assert not queries and not store.writes
+
+
+@pytest.mark.parametrize("change", ["unlock", "projection", "binding"])
+def test_review_context_retains_native_authority_gates(change):
+    store = setup(
+        (("select", "criteria_templates"),)
+        if change == "projection"
+        else (("create", "compound_product_relationships"),)
+    )
+    if change == "unlock":
+        store.heads[0][4] = None
+    elif change == "binding":
+        store.producer.binding = ("other-binding", *store.producer.binding[1:])
+    with pytest.raises(Error):
+        context(store)
+    assert not store.writes
+
+
+def test_context_detects_edit_during_content_assembly(monkeypatch):
+    store = setup()
+    assemble = PACKAGE["_package_content"]
+
+    def change_during_assembly(observed):
+        result = assemble(observed)
+        store.title = "concurrent native edit"
+        return result
+
+    monkeypatch.setitem(PACKAGE, "_package_content", change_during_assembly)
+    with pytest.raises(Error) as error:
+        context(store)
+    assert error.value.code == "OSB_POST_REVIEW_NATIVE_EDIT"
+    assert not store.writes
+
+
+def test_expected_review_state_matches_context_and_preserves_legacy_replay_bytes():
+    store = setup()
+    expected = context(store)["nativeStateHash"]
+    guarded = PACKAGE["record_specialist_review"](
+        tenant_id=TENANT,
+        platform_study_id=STUDY,
+        input_payload={"transformationCheckpointArtifact": store.checkpoint_artifact},
+        actor="synthetic-reviewer",
+        expected_target_state=expected,
+    )
+    legacy = review(store)
+    assert guarded["payload"]["nativeStateHash"] == expected
+    assert legacy["replay"] is True
+    assert legacy["payload"] == guarded["payload"]
+    assert legacy["payloadHash"] == guarded["payloadHash"]
+    assert store.writes == ["review"]
+
+
+@pytest.mark.parametrize(
+    "change", ["native", "digest", "schema", "media", "profile", "exclusions"]
+)
+def test_expected_review_state_compares_entire_reference_before_review_identity(change):
+    store = setup()
+    expected = copy.deepcopy(context(store)["nativeStateHash"])
+    if change == "native":
+        store.title = "changed since displayed context"
+    else:
+        field, value = {
+            "digest": ("value", "sha256:" + "0" * 64),
+            "schema": ("schemaVersion", "UnrelatedState@1.0.0"),
+            "media": ("mediaType", "text/plain"),
+            "profile": ("canonicalizationVersion", "raw-bytes/1.0"),
+            "exclusions": ("excludedPaths", ["/root"]),
+        }[change]
+        expected[field] = value
+    queries = []
+    store.hook = lambda query, _params: queries.append(query)
+    with pytest.raises(Error) as error:
+        PACKAGE["record_specialist_review"](
+            tenant_id=TENANT,
+            platform_study_id=STUDY,
+            input_payload={
+                "transformationCheckpointArtifact": store.checkpoint_artifact
+            },
+            actor="synthetic-reviewer",
+            expected_target_state=expected,
+        )
+    assert error.value.code == "OSB_SPECIALIST_REVIEW_EXPECTED_STATE_MISMATCH"
+    assert not any("OsbSpecialistReviewEvidenceV1" in query for query in queries)
+    assert not store.writes
+
+
+@pytest.mark.parametrize(
+    "malformed",
+    [False, [], "sha256:abc", {}, {"extra": True}, {"canonicalizationVersion": []}],
+)
+def test_malformed_expected_review_state_is_refused(malformed):
+    store = setup()
+    if isinstance(malformed, dict) and malformed:
+        malformed = {**context(store)["nativeStateHash"], **malformed}
+    with pytest.raises(Error) as error:
+        PACKAGE["record_specialist_review"](
+            tenant_id=TENANT,
+            platform_study_id=STUDY,
+            input_payload={
+                "transformationCheckpointArtifact": store.checkpoint_artifact
+            },
+            actor="synthetic-reviewer",
+            expected_target_state=malformed,
+        )
+    assert error.value.code == "OSB_SPECIALIST_REVIEW_EXPECTED_STATE_INVALID"
+    assert not store.writes
+
+
 def package_inputs(store, reviewed, approval_version="1.0.0"):
     manifest = {
         "contractVersion": "PlatformManifestV1@1.0.0",

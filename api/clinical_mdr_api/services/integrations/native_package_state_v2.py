@@ -997,6 +997,7 @@ def load_checkpoint_native_state(  # pylint: disable=too-many-locals
         "records": records,
         "contentIndex": index,
         "contentIndexHash": _hash(index, "OsbPackageContentIndexV1@1.0.0"),
+        "nativeState": state,
         "stateHash": _hash(state, STATE_SCHEMA),
         "canonicalDefinition": definition,
         "canonicalDefinitionHash": definition_hash,

@@ -280,9 +280,56 @@ def _checkpoint_ref(input_payload: dict[str, Any]) -> tuple[dict[str, Any], str]
     return artifact, payload_hash
 
 
+def review_context(
+    *, tenant_id: str, platform_study_id: str,
+    transformation_checkpoint_artifact: dict[str, Any], transformation_checkpoint: dict[str, Any],
+) -> dict[str, Any]:
+    """Read exact reviewable native content without retaining artifacts or reviews."""
+    checkpoint = _record(transformation_checkpoint, "OSB_TRANSFORMATION_CHECKPOINT_REQUIRED")
+    artifact = _record(transformation_checkpoint_artifact, "OSB_TRANSFORMATION_CHECKPOINT_ARTIFACT_REQUIRED")
+    if checkpoint.get("contractVersion") != "TransformationCheckpointV1@1.0.0":
+        raise OsbCandidateSetError("OSB_RELEASE_ARTIFACT_CONTRACT_MISMATCH", "Artifact contract differs.", 422)
+    _verify_artifact_ref(checkpoint, artifact, kind="transformation-checkpoint",
+                         tenant_id=tenant_id, platform_study_id=platform_study_id,
+                         schema_version="TransformationCheckpointV1@1.0.0", media_type=CHECKPOINT_MEDIA_TYPE)
+    state = load_checkpoint_native_state(tenant_id=tenant_id, platform_study_id=platform_study_id, checkpoint=checkpoint)
+    require_source_projection(state)
+    lock = require_native_lock(state)
+    content = _package_content(state)
+    _assert_state_unchanged(state, tenant_id=tenant_id, platform_study_id=platform_study_id, checkpoint=checkpoint)
+    return {"contractVersion": "OsbSpecialistReviewContextV1@1.0.0",
+            "tenantId": tenant_id, "platformStudyId": platform_study_id,
+            "transformationCheckpointArtifact": artifact,
+            "nativeStateHash": state["stateHash"], "nativeLockEvidence": lock,
+            "nativeState": state["nativeState"], "content": content,
+            "productionEligible": False, "clinicalApproval": False}
+
+
+def _require_expected_target_state(expected: Any, actual: dict[str, Any]) -> None:
+    if not isinstance(expected, dict) or set(expected) != {
+        "algorithm", "canonicalizationVersion", "value", "mediaType", "schemaVersion", "excludedPaths",
+    } or expected.get("algorithm") != "sha-256" \
+            or not isinstance(expected.get("canonicalizationVersion"), str) \
+            or expected["canonicalizationVersion"] not in {"canonical-json/1.0", "raw-bytes/1.0"} \
+            or not isinstance(expected.get("value"), str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", expected["value"]) \
+            or any(not isinstance(expected.get(key), str) or not expected[key] for key in ("mediaType", "schemaVersion")) \
+            or not isinstance(expected.get("excludedPaths"), list) \
+            or any(not isinstance(path, str) for path in expected["excludedPaths"]) \
+            or len(set(expected["excludedPaths"])) != len(expected["excludedPaths"]):
+        raise OsbCandidateSetError("OSB_SPECIALIST_REVIEW_EXPECTED_STATE_INVALID", "Expected target state must be a complete HashRef.", 422)
+    if not hash_refs_equal(expected, actual):
+        raise OsbCandidateSetError("OSB_SPECIALIST_REVIEW_EXPECTED_STATE_MISMATCH", "Native content differs from the displayed review context.", 409)
+
+
 def record_specialist_review(
     *, tenant_id: str, platform_study_id: str, input_payload: dict[str, Any], actor: str,
+    expected_target_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    if "contractVersion" in input_payload:
+        if input_payload["contractVersion"] != "OsbSpecialistReviewInputV1@1.0.0":
+            raise OsbCandidateSetError("OSB_SPECIALIST_REVIEW_INPUT_VERSION_UNSUPPORTED", "Specialist review input version is unsupported.", 422)
+        if expected_target_state is None:
+            raise OsbCandidateSetError("OSB_SPECIALIST_REVIEW_EXPECTED_STATE_REQUIRED", "This review input requires the exact displayed native state hash.", 422)
     checkpoint_artifact, checkpoint_hash = _checkpoint_ref(input_payload)
     checkpoint = _load_inbound(tenant_id, platform_study_id, "transformation-checkpoint", checkpoint_hash)
     _verify_artifact_ref(checkpoint, checkpoint_artifact, kind="transformation-checkpoint",
@@ -302,6 +349,8 @@ def record_specialist_review(
     state = load_checkpoint_native_state(tenant_id=tenant_id, platform_study_id=platform_study_id, checkpoint=checkpoint)
     require_source_projection(state)
     lock = require_native_lock(state)
+    if expected_target_state is not None:
+        _require_expected_target_state(expected_target_state, state["stateHash"])
     root, records = state["root"], state["records"]
     native_study_id = root["nativeStudyId"]
     expected_authority = canonical_json_hash_ref(managed, schema_version="OsbManagedTargetCheckpointV1@1.0.0")
