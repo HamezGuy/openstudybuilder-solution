@@ -5,13 +5,16 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any, cast
-
 from datetime import UTC, datetime
+from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from neomodel import db
 
+from clinical_mdr_api.generated.platform_contracts.hash_signing_v1 import (
+    canonical_json,
+    sha256_bytes,
+)
 from clinical_mdr_api.generated.platform_contracts.models_v1 import (
     ExternalIdentityCreateIntentV1,
     NativeIdentityBindingReceiptV1,
@@ -21,9 +24,6 @@ from clinical_mdr_api.generated.platform_contracts.native_identity_command_proce
     NativeIdentityCommandProcessorV1,
     NativeIdentityPrincipalV1,
 )
-from clinical_mdr_api.services.integrations.native_identity import Neo4jOsbNativeIdentityStoreV1
-from clinical_mdr_api.services.integrations.signing_authorization import platform_signing_authorization
-from clinical_mdr_api.services.integrations.review_workspace_migration import is_review_workspace_claim
 from clinical_mdr_api.generated.platform_contracts.platform_command_v1 import (
     PlatformCommandError,
     PlatformCommandPrincipalV1,
@@ -31,8 +31,27 @@ from clinical_mdr_api.generated.platform_contracts.platform_command_v1 import (
     execute_signed_platform_command,
     validate_platform_command,
 )
-from clinical_mdr_api.services.integrations.atomic_signed_command import execute_osb_atomic_signed_command
-from clinical_mdr_api.services.integrations.platform_command import Neo4jOsbPlatformCommandStore
+from clinical_mdr_api.routers.integrations.native_item_observation import (
+    router as native_item_observation_router,
+)
+from clinical_mdr_api.routers.integrations.native_package_carrier import (
+    router as native_package_carrier_router,
+)
+from clinical_mdr_api.routers.integrations.native_package_carrier import (
+    upload_carrier_prerequisite,
+)
+from clinical_mdr_api.routers.integrations.native_package_review_context import (
+    router as native_package_review_context_router,
+)
+from clinical_mdr_api.routers.integrations.selected_activity_item_observation import (
+    router as selected_activity_item_observation_router,
+)
+from clinical_mdr_api.routers.integrations.source_draft_stage import (
+    router as source_draft_stage_router,
+)
+from clinical_mdr_api.services.integrations.atomic_signed_command import (
+    execute_osb_atomic_signed_command,
+)
 from clinical_mdr_api.services.integrations.candidate_set import (
     CANDIDATE_SET_MEDIA_TYPE,
     OsbCandidateSetError,
@@ -42,11 +61,23 @@ from clinical_mdr_api.services.integrations.candidate_set import (
     read_candidate_set_for_publication,
     store_candidate_request_bytes,
 )
+from clinical_mdr_api.services.integrations.canonical_json import canonical_hash
 from clinical_mdr_api.services.integrations.mapping_decision_v1 import (
     DECISION_MEDIA_TYPE,
     EVIDENCE_SET_MEDIA_TYPE,
     apply_mapping_decision,
     store_mapping_decision_bytes,
+)
+from clinical_mdr_api.services.integrations.native_identity import (
+    Neo4jOsbNativeIdentityStoreV1,
+)
+from clinical_mdr_api.services.integrations.native_package_artifact_custody import (
+    retained_artifact_headers,
+)
+from clinical_mdr_api.services.integrations.native_package_carrier_v2 import (
+    SPECIALIST_V2_MEDIA_TYPE,
+    generate_carrier_native_package,
+    record_carrier_specialist_review,
 )
 from clinical_mdr_api.services.integrations.native_package_v2 import (
     PACKAGE_V2_MEDIA_TYPE,
@@ -55,18 +86,18 @@ from clinical_mdr_api.services.integrations.native_package_v2 import (
     record_specialist_review,
     store_release_artifact_bytes,
 )
-from clinical_mdr_api.services.integrations.canonical_json import canonical_hash
-from clinical_mdr_api.generated.platform_contracts.hash_signing_v1 import (
-    canonical_json,
-    sha256_bytes,
+from clinical_mdr_api.services.integrations.platform_command import (
+    Neo4jOsbPlatformCommandStore,
+)
+from clinical_mdr_api.services.integrations.review_workspace_migration import (
+    is_review_workspace_claim,
+)
+from clinical_mdr_api.services.integrations.signing_authorization import (
+    platform_signing_authorization,
 )
 from common.auth.dependencies import platform_security
 from common.auth.user import user
 from common.config import settings
-from clinical_mdr_api.routers.integrations.native_item_observation import router as native_item_observation_router
-from clinical_mdr_api.routers.integrations.selected_activity_item_observation import router as selected_activity_item_observation_router
-from clinical_mdr_api.routers.integrations.source_draft_stage import router as source_draft_stage_router
-from clinical_mdr_api.routers.integrations.native_package_review_context import router as native_package_review_context_router
 
 router = APIRouter()
 
@@ -75,6 +106,7 @@ router.include_router(native_item_observation_router)
 router.include_router(selected_activity_item_observation_router)
 router.include_router(source_draft_stage_router)
 router.include_router(native_package_review_context_router)
+router.include_router(native_package_carrier_router)
 
 
 class _UnavailablePublisher:
@@ -860,15 +892,25 @@ def get_native_evidence_set(evidence_set_version_id: str, request: Request) -> R
     rows, _ = db.cypher_query(
         """MATCH (evidence:OsbNativeEvidenceSetV1 {tenant_id:$tenant_id,
              platform_study_id:$platform_study_id,evidence_set_version_id:$version_id})
-           RETURN evidence.payload_json,evidence.payload_hash""",
+           RETURN evidence.payload_json,evidence.payload_hash,evidence.artifact_ref_json""",
         {"tenant_id": principal.tenant_id, "platform_study_id": platform_study_id,
          "version_id": evidence_set_version_id},
     )
     if not rows:
         raise HTTPException(status_code=404, detail="OSB_NATIVE_EVIDENCE_SET_NOT_FOUND")
     payload_bytes = str(rows[0][0]).encode("utf-8")
+    headers = {"etag": f'"{rows[0][1]}"', "content-length": str(len(payload_bytes))}
+    if "x-artifact-reference" in request.headers:
+        if len(rows) != 1:
+            raise HTTPException(409, detail="OSB_NATIVE_EVIDENCE_SET_IDENTITY_CONFLICT", headers={"cache-control": "no-store"})
+        try:
+            headers = retained_artifact_headers(payload_bytes=payload_bytes, artifact_ref_json=rows[0][2],
+                tenant_id=principal.tenant_id, platform_study_id=platform_study_id,
+                requested_header=request.headers["x-artifact-reference"])
+        except OsbCandidateSetError as error:
+            raise HTTPException(error.status_code, detail={"code": error.code}, headers={"cache-control": "no-store"}) from error
     return Response(content=payload_bytes, media_type=EVIDENCE_SET_MEDIA_TYPE,
-                    headers={"etag": f'"{rows[0][1]}"', "content-length": str(len(payload_bytes))})
+                    headers=headers)
 
 
 @router.post(
@@ -877,6 +919,18 @@ def get_native_evidence_set(evidence_set_version_id: str, request: Request) -> R
     summary="Store exact canonical release prerequisite bytes",
 )
 async def upload_release_prerequisite(artifact_kind: str, request: Request) -> dict[str, Any]:
+    if "x-artifact-reference" in request.headers:
+        try:
+            return await upload_carrier_prerequisite(artifact_kind, request)
+        except OsbCandidateSetError as error:
+            raise HTTPException(error.status_code, detail={"code": error.code, "message": str(error)},
+                                headers={"cache-control": "no-store"}) from error
+        except TimeoutError as error:
+            raise HTTPException(408, detail="OSB_CARRIER_REQUEST_TIMEOUT",
+                                headers={"cache-control": "no-store"}) from error
+        except HTTPException as error:
+            error.headers = {**(error.headers or {}), "cache-control": "no-store"}
+            raise
     if (
         not settings.platform_commands_prototype_enabled
         or settings.deployment_environment.strip().lower() in {"prod", "production"}
@@ -930,7 +984,10 @@ def execute_specialist_review_command(body: dict[str, Any]) -> dict[str, Any]:
         input_payload = body.get("inputPayload")
         if not isinstance(input_payload, dict):
             raise OsbCandidateSetError("OSB_SPECIALIST_REVIEW_INPUT_REQUIRED", "Review input is required.", 422)
-        reviewed = record_specialist_review(
+        review_function = (record_carrier_specialist_review
+            if input_payload.get("contractVersion") == "OsbSpecialistReviewCommandInputV2@2.0.0"
+            else record_specialist_review)
+        reviewed = review_function(
             tenant_id=principal.tenant_id,
             platform_study_id=body["platformStudyId"],
             input_payload=input_payload,
@@ -976,17 +1033,30 @@ def get_specialist_review(review_version_id: str, request: Request) -> Response:
     platform_study_id = str(request.headers.get("x-platform-study-id") or "").strip()
     principal = _platform_principal("package:release", platform_study_id)
     rows, _ = db.cypher_query(
-        """MATCH (review:OsbSpecialistReviewEvidenceV1 {tenant_id:$tenant_id,
+        """MATCH (review {tenant_id:$tenant_id,
              platform_study_id:$platform_study_id,review_version_id:$version_id})
-           RETURN review.payload_json,review.payload_hash""",
+           WHERE review:OsbSpecialistReviewEvidenceV1 OR review:OsbSpecialistReviewEvidenceV2
+           RETURN review.payload_json,review.payload_hash,review.artifact_ref_json""",
         {"tenant_id": principal.tenant_id, "platform_study_id": platform_study_id,
          "version_id": review_version_id},
     )
     if not rows:
         raise HTTPException(status_code=404, detail="OSB_SPECIALIST_REVIEW_NOT_FOUND")
+    if len(rows) != 1:
+        raise HTTPException(status_code=409, detail="OSB_SPECIALIST_REVIEW_IDENTITY_CONFLICT")
     payload_bytes = str(rows[0][0]).encode("utf-8")
-    return Response(content=payload_bytes, media_type=SPECIALIST_REVIEW_MEDIA_TYPE,
-                    headers={"etag": f'"{rows[0][1]}"', "content-length": str(len(payload_bytes))})
+    profile = json.loads(payload_bytes).get("contractVersion")
+    media = SPECIALIST_V2_MEDIA_TYPE if profile == "OsbSpecialistReviewEvidenceV2@2.0.0" else SPECIALIST_REVIEW_MEDIA_TYPE
+    headers = {"etag": f'"{rows[0][1]}"', "content-length": str(len(payload_bytes)), "cache-control": "no-store"}
+    if profile == "OsbSpecialistReviewEvidenceV2@2.0.0" or "x-artifact-reference" in request.headers:
+        try:
+            headers = retained_artifact_headers(payload_bytes=payload_bytes, artifact_ref_json=rows[0][2],
+                tenant_id=principal.tenant_id, platform_study_id=platform_study_id,
+                requested_header=request.headers.get("x-artifact-reference"))
+        except OsbCandidateSetError as error:
+            raise HTTPException(error.status_code, detail={"code": error.code}, headers={"cache-control": "no-store"}) from error
+    return Response(content=payload_bytes, media_type=media,
+                    headers=headers)
 
 
 @router.post(
@@ -1008,11 +1078,14 @@ def execute_native_package_v2_command(body: dict[str, Any]) -> dict[str, Any]:
         input_payload = body.get("inputPayload")
         if not isinstance(input_payload, dict):
             raise OsbCandidateSetError("OSB_NATIVE_PACKAGE_V2_INPUT_REQUIRED", "Package input is required.", 422)
-        generated = generate_native_package_v2(
+        successor = input_payload.get("contractVersion") == "OsbNativePackageReleaseInputV2@2.0.0"
+        generate = generate_carrier_native_package if successor else generate_native_package_v2
+        generated = generate(
             tenant_id=principal.tenant_id,
             platform_study_id=body["platformStudyId"],
             input_payload=input_payload,
             actor=body["requestingActor"]["issuerQualifiedSubject"],
+            **({"expected_target_state": body.get("expectedTargetState")} if successor else {}),
         )
         identity = generated["payload"]["osbStudyIdentity"]
         consumed = [input_payload[key] for key in (
@@ -1062,14 +1135,24 @@ def get_native_package_v2(package_version_id: str, request: Request) -> Response
     rows, _ = db.cypher_query(
         """MATCH (package:OsbNativePackageV2 {tenant_id:$tenant_id,
              platform_study_id:$platform_study_id,package_version_id:$version_id})
-           RETURN package.payload_json,package.payload_hash,package.byte_size""",
+           RETURN package.payload_json,package.payload_hash,package.byte_size,package.artifact_ref_json""",
         {"tenant_id": principal.tenant_id, "platform_study_id": platform_study_id,
          "version_id": package_version_id},
     )
     if not rows:
         raise HTTPException(status_code=404, detail="OSB_NATIVE_PACKAGE_V2_NOT_FOUND")
+    if len(rows) != 1:
+        raise HTTPException(status_code=409, detail="OSB_NATIVE_PACKAGE_V2_IDENTITY_CONFLICT", headers={"cache-control": "no-store"})
     payload_bytes = str(rows[0][0]).encode("utf-8")
     if len(payload_bytes) != int(rows[0][2]):
         raise HTTPException(status_code=409, detail="OSB_NATIVE_PACKAGE_V2_STORED_SIZE_MISMATCH")
+    headers = {"etag": f'"{rows[0][1]}"', "content-length": str(len(payload_bytes)), "cache-control": "no-store"}
+    if json.loads(payload_bytes).get("contractVersion") == "OsbNativePackageV2@2.3.0" or "x-artifact-reference" in request.headers:
+        try:
+            headers = retained_artifact_headers(payload_bytes=payload_bytes, artifact_ref_json=rows[0][3],
+                tenant_id=principal.tenant_id, platform_study_id=platform_study_id,
+                requested_header=request.headers.get("x-artifact-reference"))
+        except OsbCandidateSetError as error:
+            raise HTTPException(error.status_code, detail={"code": error.code}, headers={"cache-control": "no-store"}) from error
     return Response(content=payload_bytes, media_type=PACKAGE_V2_MEDIA_TYPE,
-                    headers={"etag": f'"{rows[0][1]}"', "content-length": str(len(payload_bytes))})
+                    headers=headers)

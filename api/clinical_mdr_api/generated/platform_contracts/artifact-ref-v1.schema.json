@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.accuratrials.invalid/platform-control-plane/v1/artifact-ref-v1.schema.json",
+  "title": "ArtifactRefV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "artifactId",
+    "artifactVersionId",
+    "kind",
+    "stableLocator",
+    "payloadHash",
+    "descriptorHash",
+    "byteSize",
+    "classification",
+    "tenantId",
+    "region",
+    "producerService",
+    "producerEnvironment",
+    "producerVersion",
+    "payloadContract",
+    "payloadContractVersion",
+    "purpose",
+    "createdAt"
+  ],
+  "properties": {
+    "contractVersion": {
+      "const": "ArtifactRefV1@1.0.0"
+    },
+    "artifactId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "artifactVersionId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "kind": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9._:-]{2,127}$"
+    },
+    "stableLocator": {
+      "type": "string",
+      "pattern": "^(?:artifact://|cc-control://|https://)[^\\s]{1,2048}$"
+    },
+    "payloadHash": {
+      "$ref": "hash-ref-v1.schema.json"
+    },
+    "descriptorHash": {
+      "$ref": "hash-ref-v1.schema.json"
+    },
+    "byteSize": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "classification": {
+      "enum": [
+        "public",
+        "internal",
+        "confidential",
+        "regulated-non-phi",
+        "regional-phi"
+      ]
+    },
+    "tenantId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "region": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 64
+    },
+    "producerService": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 128
+    },
+    "producerEnvironment": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 64
+    },
+    "producerVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "payloadContract": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 256
+    },
+    "payloadContractVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "purpose": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 128
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

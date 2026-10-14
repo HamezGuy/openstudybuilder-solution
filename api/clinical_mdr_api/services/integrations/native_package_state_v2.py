@@ -281,6 +281,7 @@ def _custody(
     )
     return {
         "evidence": evidence,
+        "evidenceArtifact": artifact,
         "decision": decision,
         "candidate": candidate,
         "request": request,
@@ -371,6 +372,35 @@ def _current_study(
         for item in rows
     ]
     return root, concepts
+
+
+def read_pinned_canonical_definition(root: dict[str, Any]) -> dict[str, Any]:
+    """Observe the existing mapper at one exact native study version."""
+    exported = USDMService().get_by_uid_with_report(
+        root["nativeStudyId"], study_value_version=root["nativeVersion"]
+    )
+    report = _record(exported.get("mappingReport"))
+    document = _record(exported.get("document"))
+    _require(
+        report.get("studyUid") == root["nativeStudyId"]
+        and report.get("studyValueVersion") == root["nativeVersion"]
+        and document.get("usdmVersion") == "4.0.0",
+        "OSB_CANONICAL_DEFINITION_SCOPE_MISMATCH",
+    )
+    versions = _list(_record(document.get("study")).get("versions"))
+    designs = _list(versions[0].get("studyDesigns")) if len(versions) == 1 else []
+    return {
+        "contractVersion": DEFINITION_SCHEMA,
+        "nativeStudyId": root["nativeStudyId"],
+        "nativeVersion": root["nativeVersion"],
+        "document": document,
+        "selection": {
+            "versionId": versions[0].get("id") if len(versions) == 1 else None,
+            "designId": designs[0].get("id") if len(designs) == 1 else None,
+        },
+        "mappingReport": report,
+        "nativeRecords": _list(exported.get("nativeRecords")),
+    }
 
 
 def _check_census(checkpoint: dict[str, Any], evidence: dict[str, Any]) -> None:
@@ -957,31 +987,7 @@ def load_checkpoint_native_state(  # pylint: disable=too-many-locals
     # Use the existing native mapper at the checkpoint's exact study version.
     # Its report and original native rows are part of the review commitment:
     # an incomplete source stays an honest draft, never a fabricated design.
-    exported = USDMService().get_by_uid_with_report(
-        root["nativeStudyId"], study_value_version=root["nativeVersion"]
-    )
-    report = _record(exported.get("mappingReport"))
-    document = _record(exported.get("document"))
-    _require(
-        report.get("studyUid") == root["nativeStudyId"]
-        and report.get("studyValueVersion") == root["nativeVersion"]
-        and document.get("usdmVersion") == "4.0.0",
-        "OSB_CANONICAL_DEFINITION_SCOPE_MISMATCH",
-    )
-    versions = _list(_record(document.get("study")).get("versions"))
-    designs = _list(versions[0].get("studyDesigns")) if len(versions) == 1 else []
-    definition = {
-        "contractVersion": DEFINITION_SCHEMA,
-        "nativeStudyId": root["nativeStudyId"],
-        "nativeVersion": root["nativeVersion"],
-        "document": document,
-        "selection": {
-            "versionId": versions[0].get("id") if len(versions) == 1 else None,
-            "designId": designs[0].get("id") if len(designs) == 1 else None,
-        },
-        "mappingReport": report,
-        "nativeRecords": _list(exported.get("nativeRecords")),
-    }
+    definition = read_pinned_canonical_definition(root)
     definition_hash = _hash(definition, DEFINITION_SCHEMA)
     state = {
         "contractVersion": STATE_SCHEMA,
@@ -1005,6 +1011,7 @@ def load_checkpoint_native_state(  # pylint: disable=too-many-locals
         "requestHash": custody["requestHash"],
         "decisionHash": custody["decisionHash"],
         "candidateSetHash": evidence["candidateSetHash"],
+        "nativeEvidenceSetArtifact": custody["evidenceArtifact"],
     }
 
 

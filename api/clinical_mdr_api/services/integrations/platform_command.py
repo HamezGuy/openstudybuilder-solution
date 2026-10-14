@@ -176,6 +176,10 @@ def ensure_platform_command_schema() -> None:
         "CREATE CONSTRAINT platform_domain_audit_root_hash IF NOT EXISTS FOR (n:DomainAuditRootCheckpoint) REQUIRE n.payload_scope_key IS UNIQUE",
         "CREATE CONSTRAINT platform_domain_audit_export_id IF NOT EXISTS FOR (n:DomainAuditExport) REQUIRE n.export_id IS UNIQUE",
         "CREATE CONSTRAINT platform_domain_audit_export_scope IF NOT EXISTS FOR (n:DomainAuditExport) REQUIRE n.export_scope_key IS UNIQUE",
+        "CREATE CONSTRAINT osb_carrier_artifact_identity IF NOT EXISTS FOR (n:OsbInboundCarrierArtifact) REQUIRE (n.tenant_id,n.artifact_id,n.artifact_version_id) IS UNIQUE",
+        "CREATE CONSTRAINT osb_carrier_inspection_identity IF NOT EXISTS FOR (n:OsbCarrierInspection) REQUIRE (n.tenant_id,n.platform_study_id,n.index_key) IS UNIQUE",
+        "CREATE CONSTRAINT osb_carrier_inspection_entry_identity IF NOT EXISTS FOR (n:OsbCarrierInspectionEntry) REQUIRE (n.tenant_id,n.platform_study_id,n.index_key,n.section,n.position) IS UNIQUE",
+        "CREATE CONSTRAINT osb_specialist_review_v2_identity IF NOT EXISTS FOR (n:OsbSpecialistReviewEvidenceV2) REQUIRE (n.tenant_id,n.platform_study_id,n.review_version_id) IS UNIQUE",
     )
     for statement in statements:
         db.cypher_query(statement)

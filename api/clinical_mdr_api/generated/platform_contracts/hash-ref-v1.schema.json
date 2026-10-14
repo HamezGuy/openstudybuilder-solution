@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.accuratrials.invalid/platform-control-plane/v1/hash-ref-v1.schema.json",
+  "title": "HashRefV1",
+  "description": "A complete hash identity. Digest bytes are never compared without the algorithm, canonicalization profile, media type, schema version, and exclusions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "algorithm",
+    "canonicalizationVersion",
+    "value",
+    "mediaType",
+    "schemaVersion",
+    "excludedPaths"
+  ],
+  "properties": {
+    "algorithm": {
+      "const": "sha-256"
+    },
+    "canonicalizationVersion": {
+      "enum": [
+        "canonical-json/1.0",
+        "raw-bytes/1.0"
+      ]
+    },
+    "value": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "mediaType": {
+      "type": "string",
+      "pattern": "^[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+$",
+      "maxLength": 255
+    },
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9._:-]{1,127}@[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "excludedPaths": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*$",
+        "maxLength": 1024
+      }
+    }
+  }
+}

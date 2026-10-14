@@ -50,6 +50,9 @@ msgpack = "~=1.2.1"
 pillow = "~=12.3.0"
 soupsieve = ">=2.9.0"
 urllib3 = ">=2.8.0"
+jsonschema = "==4.26.0"
+rfc3339-validator = "==0.1.4"
+rfc3986-validator = "==0.1.1"
 
 [dev-packages]
 pytest = ">=9.0.3"

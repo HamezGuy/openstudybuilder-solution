@@ -1,0 +1,2597 @@
+{
+  "readinessBasis": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schemas.accuratrials.com/platform-control-plane/AcceptedCanonicalPreReleaseBasisV1/1.0",
+    "title": "AcceptedCanonicalPreReleaseBasisV1",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "contractVersion",
+      "scope",
+      "sourceBasisKind",
+      "acceptedSnapshotId",
+      "acceptedSnapshotManifestHash",
+      "acceptedProjectionPackageHash",
+      "authorityHash",
+      "readinessHash",
+      "sourceEpochHash",
+      "conservationHash",
+      "counts",
+      "ready",
+      "lossless",
+      "fetchedAt"
+    ],
+    "properties": {
+      "contractVersion": {
+        "const": "AcceptedCanonicalPreReleaseBasisV1@1.0.0"
+      },
+      "scope": {
+        "$ref": "#/$defs/Scope"
+      },
+      "sourceBasisKind": {
+        "enum": [
+          "accepted-authored-canonical",
+          "accepted-osb-canonical",
+          "source-fact-and-accepted-canonical"
+        ]
+      },
+      "acceptedSnapshotId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "acceptedSnapshotManifestHash": {
+        "$ref": "#/$defs/LegacyCslHash"
+      },
+      "acceptedProjectionPackageHash": {
+        "$ref": "#/$defs/LegacyCslHash"
+      },
+      "authorityHash": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/HashRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "algorithm": {
+                "const": "sha-256"
+              },
+              "canonicalizationVersion": {
+                "const": "canonical-json/1.0"
+              },
+              "schemaVersion": {
+                "const": "AcceptedCanonicalStudyAuthorityV1@1.0.0"
+              },
+              "mediaType": {
+                "const": "application/json"
+              },
+              "excludedPaths": {
+                "type": "array",
+                "maxItems": 0
+              }
+            }
+          }
+        ]
+      },
+      "readinessHash": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/HashRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "algorithm": {
+                "const": "sha-256"
+              },
+              "canonicalizationVersion": {
+                "const": "canonical-json/1.0"
+              },
+              "schemaVersion": {
+                "const": "AcceptedCanonicalReleaseReadinessV1@1.0.0"
+              },
+              "mediaType": {
+                "const": "application/json"
+              },
+              "excludedPaths": {
+                "type": "array",
+                "maxItems": 0
+              }
+            }
+          }
+        ]
+      },
+      "sourceEpochHash": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/HashRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "algorithm": {
+                "const": "sha-256"
+              },
+              "canonicalizationVersion": {
+                "const": "canonical-json/1.0"
+              },
+              "schemaVersion": {
+                "const": "AcceptedCanonicalReleaseEpochV1@1.0.0"
+              },
+              "mediaType": {
+                "const": "application/json"
+              },
+              "excludedPaths": {
+                "type": "array",
+                "maxItems": 0
+              }
+            }
+          }
+        ]
+      },
+      "conservationHash": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/HashRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "algorithm": {
+                "const": "sha-256"
+              },
+              "canonicalizationVersion": {
+                "const": "canonical-json/1.0"
+              },
+              "schemaVersion": {
+                "const": "AuthoredExecutionConservationV1@1.0.0"
+              },
+              "mediaType": {
+                "const": "application/json"
+              },
+              "excludedPaths": {
+                "type": "array",
+                "maxItems": 0
+              }
+            }
+          }
+        ]
+      },
+      "counts": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "members",
+          "atoms",
+          "nativeObservedAtoms",
+          "acceptedCanonicalExtensionAtoms",
+          "retainedSourceOnlyAtoms",
+          "unmappedAtoms",
+          "multiplyAssignedAtoms",
+          "unsupportedExecutionAtoms"
+        ],
+        "properties": {
+          "members": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "atoms": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "nativeObservedAtoms": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "acceptedCanonicalExtensionAtoms": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "retainedSourceOnlyAtoms": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unmappedAtoms": {
+            "const": 0
+          },
+          "multiplyAssignedAtoms": {
+            "const": 0
+          },
+          "unsupportedExecutionAtoms": {
+            "const": 0
+          }
+        }
+      },
+      "ready": {
+        "const": true
+      },
+      "lossless": {
+        "const": true
+      },
+      "fetchedAt": {
+        "type": "string",
+        "format": "date-time"
+      }
+    },
+    "$defs": {
+      "HashRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "algorithm",
+          "canonicalizationVersion",
+          "value",
+          "mediaType",
+          "schemaVersion",
+          "excludedPaths"
+        ],
+        "properties": {
+          "algorithm": {
+            "const": "sha-256"
+          },
+          "canonicalizationVersion": {
+            "enum": [
+              "canonical-json/1.0",
+              "raw-bytes/1.0"
+            ]
+          },
+          "value": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "mediaType": {
+            "type": "string",
+            "minLength": 1
+          },
+          "schemaVersion": {
+            "type": "string",
+            "minLength": 1
+          },
+          "excludedPaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "LegacyCslHash": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "profile",
+          "value"
+        ],
+        "properties": {
+          "profile": {
+            "const": "csl-semantic-custody/legacy"
+          },
+          "value": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        }
+      },
+      "Scope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "platformTenantId",
+          "platformStudyId",
+          "nativeCslTenantId",
+          "nativeCslStudyId"
+        ],
+        "properties": {
+          "platformTenantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "platformStudyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "nativeCslTenantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "nativeCslStudyId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      }
+    }
+  },
+  "specialist": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schemas.accuratrials.com/osb/OsbSpecialistReviewEvidenceV2/2.0",
+    "title": "OsbSpecialistReviewEvidenceV2",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "contractVersion",
+      "reviewId",
+      "reviewVersionId",
+      "tenantId",
+      "platformStudyId",
+      "osbStudyIdentity",
+      "transformationCheckpointArtifact",
+      "transformationCheckpointHash",
+      "sourceBasisHash",
+      "authoredExecution",
+      "osbAuthorityHash",
+      "nativeStateHash",
+      "nativeLockEvidence",
+      "canonicalDefinitionHash",
+      "conservationHash",
+      "managedConceptCount",
+      "nativeObjectCount",
+      "reviewScope",
+      "specialistSubject",
+      "displayedStatement",
+      "meaning",
+      "reason",
+      "lockState",
+      "productionEligible",
+      "clinicalApproval",
+      "reviewedAt"
+    ],
+    "properties": {
+      "contractVersion": {
+        "const": "OsbSpecialistReviewEvidenceV2@2.0.0"
+      },
+      "reviewId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "reviewVersionId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "tenantId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "platformStudyId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "osbStudyIdentity": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "nativeIdentity",
+          "nativeVersion"
+        ],
+        "properties": {
+          "nativeIdentity": {
+            "type": "string",
+            "minLength": 1
+          },
+          "nativeVersion": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "transformationCheckpointArtifact": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "transformation-checkpoint"
+              },
+              "payloadContract": {
+                "const": "accuratrials.csl.TransformationCheckpointV2"
+              },
+              "payloadContractVersion": {
+                "const": "2.0.0"
+              },
+              "payloadHash": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/HashRef"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "algorithm": {
+                        "const": "sha-256"
+                      },
+                      "canonicalizationVersion": {
+                        "const": "canonical-json/1.0"
+                      },
+                      "schemaVersion": {
+                        "const": "TransformationCheckpointV2@2.0.0"
+                      },
+                      "mediaType": {
+                        "const": "application/json"
+                      },
+                      "excludedPaths": {
+                        "type": "array",
+                        "maxItems": 0
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "transformationCheckpointHash": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/HashRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "algorithm": {
+                "const": "sha-256"
+              },
+              "canonicalizationVersion": {
+                "const": "canonical-json/1.0"
+              },
+              "schemaVersion": {
+                "const": "TransformationCheckpointV2@2.0.0"
+              },
+              "mediaType": {
+                "const": "application/json"
+              },
+              "excludedPaths": {
+                "type": "array",
+                "maxItems": 0
+              }
+            }
+          }
+        ]
+      },
+      "sourceBasisHash": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/HashRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "algorithm": {
+                "const": "sha-256"
+              },
+              "canonicalizationVersion": {
+                "const": "canonical-json/1.0"
+              },
+              "schemaVersion": {
+                "const": "AcceptedCanonicalSourceBasisV1@1.0.0"
+              },
+              "mediaType": {
+                "const": "application/json"
+              },
+              "excludedPaths": {
+                "type": "array",
+                "maxItems": 0
+              }
+            }
+          }
+        ]
+      },
+      "authoredExecution": {
+        "$ref": "#/$defs/AuthoredExecutionReferences"
+      },
+      "osbAuthorityHash": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/HashRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "algorithm": {
+                "const": "sha-256"
+              },
+              "canonicalizationVersion": {
+                "const": "canonical-json/1.0"
+              },
+              "schemaVersion": {
+                "const": "OsbPackageNativeStateV1@1.2.0"
+              },
+              "mediaType": {
+                "const": "application/json"
+              },
+              "excludedPaths": {
+                "type": "array",
+                "maxItems": 0
+              }
+            }
+          }
+        ]
+      },
+      "nativeStateHash": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/HashRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "algorithm": {
+                "const": "sha-256"
+              },
+              "canonicalizationVersion": {
+                "const": "canonical-json/1.0"
+              },
+              "schemaVersion": {
+                "const": "OsbPackageNativeStateV1@1.2.0"
+              },
+              "mediaType": {
+                "const": "application/json"
+              },
+              "excludedPaths": {
+                "type": "array",
+                "maxItems": 0
+              }
+            }
+          }
+        ]
+      },
+      "nativeLockEvidence": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "nativeStudyId",
+          "nativeVersion",
+          "relationship",
+          "nativeStatus",
+          "versionTimestamp",
+          "draftEndedAt"
+        ],
+        "properties": {
+          "nativeStudyId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "nativeVersion": {
+            "type": "string",
+            "minLength": 1
+          },
+          "relationship": {
+            "const": "LATEST_LOCKED"
+          },
+          "nativeStatus": {
+            "type": "string",
+            "pattern": "^[Ll][Oo][Cc][Kk][Ee][Dd]$"
+          },
+          "versionTimestamp": {
+            "type": "string",
+            "minLength": 1
+          },
+          "draftEndedAt": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "canonicalDefinitionHash": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/HashRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "algorithm": {
+                "const": "sha-256"
+              },
+              "canonicalizationVersion": {
+                "const": "canonical-json/1.0"
+              },
+              "schemaVersion": {
+                "const": "OsbCanonicalStudyDefinitionV1@1.0.0"
+              },
+              "mediaType": {
+                "const": "application/json"
+              },
+              "excludedPaths": {
+                "type": "array",
+                "maxItems": 0
+              }
+            }
+          }
+        ]
+      },
+      "conservationHash": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/HashRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "algorithm": {
+                "const": "sha-256"
+              },
+              "canonicalizationVersion": {
+                "const": "canonical-json/1.0"
+              },
+              "schemaVersion": {
+                "const": "AuthoredExecutionConservationV1@1.0.0"
+              },
+              "mediaType": {
+                "const": "application/json"
+              },
+              "excludedPaths": {
+                "type": "array",
+                "maxItems": 0
+              }
+            }
+          }
+        ]
+      },
+      "managedConceptCount": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "nativeObjectCount": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "reviewScope": {
+        "const": "native-evidence-and-accepted-canonical-execution-extensions"
+      },
+      "specialistSubject": {
+        "type": "string",
+        "minLength": 1
+      },
+      "displayedStatement": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      },
+      "meaning": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      },
+      "reason": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      },
+      "lockState": {
+        "const": "checkpoint-locked"
+      },
+      "productionEligible": {
+        "const": false
+      },
+      "clinicalApproval": {
+        "const": false
+      },
+      "reviewedAt": {
+        "type": "string",
+        "format": "date-time"
+      }
+    },
+    "$defs": {
+      "ArtifactRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "artifactId",
+          "artifactVersionId",
+          "kind",
+          "stableLocator",
+          "payloadHash",
+          "byteSize",
+          "classification",
+          "tenantId",
+          "region",
+          "producerService",
+          "producerEnvironment",
+          "producerVersion",
+          "payloadContract",
+          "payloadContractVersion",
+          "purpose",
+          "createdAt",
+          "descriptorHash"
+        ],
+        "properties": {
+          "contractVersion": {
+            "const": "ArtifactRefV1@1.0.0"
+          },
+          "artifactId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "artifactVersionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "stableLocator": {
+            "type": "string",
+            "minLength": 1
+          },
+          "payloadHash": {
+            "$ref": "#/$defs/HashRef"
+          },
+          "byteSize": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "classification": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tenantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "region": {
+            "type": "string",
+            "minLength": 1
+          },
+          "producerService": {
+            "type": "string",
+            "minLength": 1
+          },
+          "producerEnvironment": {
+            "type": "string",
+            "minLength": 1
+          },
+          "producerVersion": {
+            "type": "string",
+            "minLength": 1
+          },
+          "payloadContract": {
+            "type": "string",
+            "minLength": 1
+          },
+          "payloadContractVersion": {
+            "type": "string",
+            "minLength": 1
+          },
+          "purpose": {
+            "type": "string",
+            "minLength": 1
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "descriptorHash": {
+            "$ref": "#/$defs/HashRef"
+          }
+        }
+      },
+      "AuthoredExecutionReferences": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "carrierArtifact",
+          "carrierHash",
+          "bundleArtifact",
+          "bundlePayloadHash",
+          "crosswalkArtifact",
+          "crosswalkHash",
+          "exportCensusArtifact"
+        ],
+        "properties": {
+          "carrierArtifact": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "carrierHash": {
+            "$ref": "#/$defs/HashRef"
+          },
+          "bundleArtifact": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "bundlePayloadHash": {
+            "$ref": "#/$defs/HashRef"
+          },
+          "crosswalkArtifact": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "crosswalkHash": {
+            "$ref": "#/$defs/HashRef"
+          },
+          "exportCensusArtifact": {
+            "$ref": "#/$defs/ArtifactRef"
+          }
+        }
+      },
+      "HashRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "algorithm",
+          "canonicalizationVersion",
+          "value",
+          "mediaType",
+          "schemaVersion",
+          "excludedPaths"
+        ],
+        "properties": {
+          "algorithm": {
+            "const": "sha-256"
+          },
+          "canonicalizationVersion": {
+            "enum": [
+              "canonical-json/1.0",
+              "raw-bytes/1.0"
+            ]
+          },
+          "value": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "mediaType": {
+            "type": "string",
+            "minLength": 1
+          },
+          "schemaVersion": {
+            "type": "string",
+            "minLength": 1
+          },
+          "excludedPaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "browserInput": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schemas.accuratrials.com/osb/OsbSpecialistReviewInputV2/2.0",
+    "title": "OsbSpecialistReviewInputV2",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "contractVersion",
+      "transformationCheckpointHash",
+      "nativeStateHash",
+      "sourceBasisHash",
+      "authoredExecution",
+      "conservationHash",
+      "reviewScope",
+      "displayedStatement",
+      "meaning",
+      "reason"
+    ],
+    "properties": {
+      "contractVersion": {
+        "const": "OsbSpecialistReviewInputV2@2.0.0"
+      },
+      "transformationCheckpointHash": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/HashRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "algorithm": {
+                "const": "sha-256"
+              },
+              "canonicalizationVersion": {
+                "const": "canonical-json/1.0"
+              },
+              "schemaVersion": {
+                "const": "TransformationCheckpointV2@2.0.0"
+              },
+              "mediaType": {
+                "const": "application/json"
+              },
+              "excludedPaths": {
+                "type": "array",
+                "maxItems": 0
+              }
+            }
+          }
+        ]
+      },
+      "nativeStateHash": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/HashRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "algorithm": {
+                "const": "sha-256"
+              },
+              "canonicalizationVersion": {
+                "const": "canonical-json/1.0"
+              },
+              "schemaVersion": {
+                "const": "OsbPackageNativeStateV1@1.2.0"
+              },
+              "mediaType": {
+                "const": "application/json"
+              },
+              "excludedPaths": {
+                "type": "array",
+                "maxItems": 0
+              }
+            }
+          }
+        ]
+      },
+      "sourceBasisHash": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/HashRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "algorithm": {
+                "const": "sha-256"
+              },
+              "canonicalizationVersion": {
+                "const": "canonical-json/1.0"
+              },
+              "schemaVersion": {
+                "const": "AcceptedCanonicalSourceBasisV1@1.0.0"
+              },
+              "mediaType": {
+                "const": "application/json"
+              },
+              "excludedPaths": {
+                "type": "array",
+                "maxItems": 0
+              }
+            }
+          }
+        ]
+      },
+      "authoredExecution": {
+        "$ref": "#/$defs/AuthoredExecutionReferences"
+      },
+      "conservationHash": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/HashRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "algorithm": {
+                "const": "sha-256"
+              },
+              "canonicalizationVersion": {
+                "const": "canonical-json/1.0"
+              },
+              "schemaVersion": {
+                "const": "AuthoredExecutionConservationV1@1.0.0"
+              },
+              "mediaType": {
+                "const": "application/json"
+              },
+              "excludedPaths": {
+                "type": "array",
+                "maxItems": 0
+              }
+            }
+          }
+        ]
+      },
+      "reviewScope": {
+        "const": "native-evidence-and-accepted-canonical-execution-extensions"
+      },
+      "displayedStatement": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      },
+      "meaning": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      },
+      "reason": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      }
+    },
+    "$defs": {
+      "ArtifactRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "artifactId",
+          "artifactVersionId",
+          "kind",
+          "stableLocator",
+          "payloadHash",
+          "byteSize",
+          "classification",
+          "tenantId",
+          "region",
+          "producerService",
+          "producerEnvironment",
+          "producerVersion",
+          "payloadContract",
+          "payloadContractVersion",
+          "purpose",
+          "createdAt",
+          "descriptorHash"
+        ],
+        "properties": {
+          "contractVersion": {
+            "const": "ArtifactRefV1@1.0.0"
+          },
+          "artifactId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "artifactVersionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "stableLocator": {
+            "type": "string",
+            "minLength": 1
+          },
+          "payloadHash": {
+            "$ref": "#/$defs/HashRef"
+          },
+          "byteSize": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "classification": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tenantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "region": {
+            "type": "string",
+            "minLength": 1
+          },
+          "producerService": {
+            "type": "string",
+            "minLength": 1
+          },
+          "producerEnvironment": {
+            "type": "string",
+            "minLength": 1
+          },
+          "producerVersion": {
+            "type": "string",
+            "minLength": 1
+          },
+          "payloadContract": {
+            "type": "string",
+            "minLength": 1
+          },
+          "payloadContractVersion": {
+            "type": "string",
+            "minLength": 1
+          },
+          "purpose": {
+            "type": "string",
+            "minLength": 1
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "descriptorHash": {
+            "$ref": "#/$defs/HashRef"
+          }
+        }
+      },
+      "AuthoredExecutionReferences": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "carrierArtifact",
+          "carrierHash",
+          "bundleArtifact",
+          "bundlePayloadHash",
+          "crosswalkArtifact",
+          "crosswalkHash",
+          "exportCensusArtifact"
+        ],
+        "properties": {
+          "carrierArtifact": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "carrierHash": {
+            "$ref": "#/$defs/HashRef"
+          },
+          "bundleArtifact": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "bundlePayloadHash": {
+            "$ref": "#/$defs/HashRef"
+          },
+          "crosswalkArtifact": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "crosswalkHash": {
+            "$ref": "#/$defs/HashRef"
+          },
+          "exportCensusArtifact": {
+            "$ref": "#/$defs/ArtifactRef"
+          }
+        }
+      },
+      "HashRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "algorithm",
+          "canonicalizationVersion",
+          "value",
+          "mediaType",
+          "schemaVersion",
+          "excludedPaths"
+        ],
+        "properties": {
+          "algorithm": {
+            "const": "sha-256"
+          },
+          "canonicalizationVersion": {
+            "enum": [
+              "canonical-json/1.0",
+              "raw-bytes/1.0"
+            ]
+          },
+          "value": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "mediaType": {
+            "type": "string",
+            "minLength": 1
+          },
+          "schemaVersion": {
+            "type": "string",
+            "minLength": 1
+          },
+          "excludedPaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "commandInput": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schemas.accuratrials.com/osb/OsbSpecialistReviewCommandInputV2/2.0",
+    "title": "OsbSpecialistReviewCommandInputV2",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "contractVersion",
+      "nativeStateHash",
+      "sourceBasisHash",
+      "authoredExecution",
+      "conservationHash",
+      "reviewScope",
+      "displayedStatement",
+      "meaning",
+      "reason",
+      "transformationCheckpointArtifact",
+      "osbStudyIdentity"
+    ],
+    "properties": {
+      "contractVersion": {
+        "const": "OsbSpecialistReviewCommandInputV2@2.0.0"
+      },
+      "nativeStateHash": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/HashRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "algorithm": {
+                "const": "sha-256"
+              },
+              "canonicalizationVersion": {
+                "const": "canonical-json/1.0"
+              },
+              "schemaVersion": {
+                "const": "OsbPackageNativeStateV1@1.2.0"
+              },
+              "mediaType": {
+                "const": "application/json"
+              },
+              "excludedPaths": {
+                "type": "array",
+                "maxItems": 0
+              }
+            }
+          }
+        ]
+      },
+      "sourceBasisHash": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/HashRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "algorithm": {
+                "const": "sha-256"
+              },
+              "canonicalizationVersion": {
+                "const": "canonical-json/1.0"
+              },
+              "schemaVersion": {
+                "const": "AcceptedCanonicalSourceBasisV1@1.0.0"
+              },
+              "mediaType": {
+                "const": "application/json"
+              },
+              "excludedPaths": {
+                "type": "array",
+                "maxItems": 0
+              }
+            }
+          }
+        ]
+      },
+      "authoredExecution": {
+        "$ref": "#/$defs/AuthoredExecutionReferences"
+      },
+      "conservationHash": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/HashRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "algorithm": {
+                "const": "sha-256"
+              },
+              "canonicalizationVersion": {
+                "const": "canonical-json/1.0"
+              },
+              "schemaVersion": {
+                "const": "AuthoredExecutionConservationV1@1.0.0"
+              },
+              "mediaType": {
+                "const": "application/json"
+              },
+              "excludedPaths": {
+                "type": "array",
+                "maxItems": 0
+              }
+            }
+          }
+        ]
+      },
+      "reviewScope": {
+        "const": "native-evidence-and-accepted-canonical-execution-extensions"
+      },
+      "displayedStatement": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      },
+      "meaning": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      },
+      "reason": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      },
+      "transformationCheckpointArtifact": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "transformation-checkpoint"
+              },
+              "payloadContract": {
+                "const": "accuratrials.csl.TransformationCheckpointV2"
+              },
+              "payloadContractVersion": {
+                "const": "2.0.0"
+              },
+              "payloadHash": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/HashRef"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "algorithm": {
+                        "const": "sha-256"
+                      },
+                      "canonicalizationVersion": {
+                        "const": "canonical-json/1.0"
+                      },
+                      "schemaVersion": {
+                        "const": "TransformationCheckpointV2@2.0.0"
+                      },
+                      "mediaType": {
+                        "const": "application/json"
+                      },
+                      "excludedPaths": {
+                        "type": "array",
+                        "maxItems": 0
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "osbStudyIdentity": {
+        "$ref": "#/$defs/ExternalStudyIdentityV11"
+      }
+    },
+    "$defs": {
+      "ArtifactRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "artifactId",
+          "artifactVersionId",
+          "kind",
+          "stableLocator",
+          "payloadHash",
+          "byteSize",
+          "classification",
+          "tenantId",
+          "region",
+          "producerService",
+          "producerEnvironment",
+          "producerVersion",
+          "payloadContract",
+          "payloadContractVersion",
+          "purpose",
+          "createdAt",
+          "descriptorHash"
+        ],
+        "properties": {
+          "contractVersion": {
+            "const": "ArtifactRefV1@1.0.0"
+          },
+          "artifactId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "artifactVersionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "stableLocator": {
+            "type": "string",
+            "minLength": 1
+          },
+          "payloadHash": {
+            "$ref": "#/$defs/HashRef"
+          },
+          "byteSize": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "classification": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tenantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "region": {
+            "type": "string",
+            "minLength": 1
+          },
+          "producerService": {
+            "type": "string",
+            "minLength": 1
+          },
+          "producerEnvironment": {
+            "type": "string",
+            "minLength": 1
+          },
+          "producerVersion": {
+            "type": "string",
+            "minLength": 1
+          },
+          "payloadContract": {
+            "type": "string",
+            "minLength": 1
+          },
+          "payloadContractVersion": {
+            "type": "string",
+            "minLength": 1
+          },
+          "purpose": {
+            "type": "string",
+            "minLength": 1
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "descriptorHash": {
+            "$ref": "#/$defs/HashRef"
+          }
+        }
+      },
+      "AuthoredExecutionReferences": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "carrierArtifact",
+          "carrierHash",
+          "bundleArtifact",
+          "bundlePayloadHash",
+          "crosswalkArtifact",
+          "crosswalkHash",
+          "exportCensusArtifact"
+        ],
+        "properties": {
+          "carrierArtifact": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "carrierHash": {
+            "$ref": "#/$defs/HashRef"
+          },
+          "bundleArtifact": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "bundlePayloadHash": {
+            "$ref": "#/$defs/HashRef"
+          },
+          "crosswalkArtifact": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "crosswalkHash": {
+            "$ref": "#/$defs/HashRef"
+          },
+          "exportCensusArtifact": {
+            "$ref": "#/$defs/ArtifactRef"
+          }
+        }
+      },
+      "ExternalStudyIdentityV11": {
+        "title": "ExternalStudyIdentityV1",
+        "description": "Versioned, verified binding between one platform study and one native domain root.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "bindingId",
+          "tenantId",
+          "platformStudyId",
+          "system",
+          "namespace",
+          "objectType",
+          "nativeIdentity",
+          "verificationStatus",
+          "verifiedBy",
+          "verifiedAt",
+          "validFrom",
+          "evidence",
+          "createdAt",
+          "createdBy",
+          "nativeVersion",
+          "validTo"
+        ],
+        "properties": {
+          "contractVersion": {
+            "const": "1.1.0"
+          },
+          "bindingId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tenantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "platformStudyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "system": {
+            "const": "osb"
+          },
+          "namespace": {
+            "const": "accuratrials-osb"
+          },
+          "objectType": {
+            "const": "study-draft-root"
+          },
+          "nativeIdentity": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "nativeVersion": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 512
+          },
+          "verificationStatus": {
+            "const": "verified"
+          },
+          "verifiedBy": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "verifiedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "validFrom": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "validTo": {
+            "type": "null"
+          },
+          "evidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "receiptId",
+              "receiptPayloadHash",
+              "signedEnvelopeHash",
+              "trustBundleVersion",
+              "trustBundleHash",
+              "trustedSigningTime"
+            ],
+            "dependentRequired": {
+              "signedEnvelopeHash": [
+                "trustBundleVersion",
+                "trustBundleHash",
+                "trustedSigningTime"
+              ],
+              "trustBundleVersion": [
+                "signedEnvelopeHash",
+                "trustBundleHash",
+                "trustedSigningTime"
+              ],
+              "trustBundleHash": [
+                "signedEnvelopeHash",
+                "trustBundleVersion",
+                "trustedSigningTime"
+              ],
+              "trustedSigningTime": [
+                "signedEnvelopeHash",
+                "trustBundleVersion",
+                "trustBundleHash"
+              ]
+            },
+            "properties": {
+              "receiptId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "receiptPayloadHash": {
+                "$ref": "#/$defs/Identity_hashRef"
+              },
+              "signedEnvelopeHash": {
+                "$ref": "#/$defs/Identity_hashRef"
+              },
+              "trustBundleVersion": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "trustBundleHash": {
+                "$ref": "#/$defs/Identity_hashRef"
+              },
+              "trustedSigningTime": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "evidenceRefs": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+                },
+                "uniqueItems": true,
+                "maxItems": 64
+              }
+            }
+          },
+          "supersedesBindingId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdBy": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedBy": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "contractVersion": {
+                  "const": "1.0.0"
+                }
+              },
+              "required": [
+                "contractVersion"
+              ]
+            },
+            "then": {
+              "properties": {
+                "evidence": {
+                  "type": "object",
+                  "properties": {
+                    "signedEnvelopeHash": false,
+                    "trustBundleVersion": false,
+                    "trustBundleHash": false,
+                    "trustedSigningTime": false
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "HashRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "algorithm",
+          "canonicalizationVersion",
+          "value",
+          "mediaType",
+          "schemaVersion",
+          "excludedPaths"
+        ],
+        "properties": {
+          "algorithm": {
+            "const": "sha-256"
+          },
+          "canonicalizationVersion": {
+            "enum": [
+              "canonical-json/1.0",
+              "raw-bytes/1.0"
+            ]
+          },
+          "value": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "mediaType": {
+            "type": "string",
+            "minLength": 1
+          },
+          "schemaVersion": {
+            "type": "string",
+            "minLength": 1
+          },
+          "excludedPaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Identity_hashRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "algorithm",
+          "canonicalizationVersion",
+          "value",
+          "mediaType",
+          "schemaVersion",
+          "excludedPaths"
+        ],
+        "properties": {
+          "algorithm": {
+            "const": "sha-256"
+          },
+          "canonicalizationVersion": {
+            "const": "canonical-json/1.0"
+          },
+          "value": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "mediaType": {
+            "const": "application/json"
+          },
+          "schemaVersion": {
+            "type": "string",
+            "minLength": 1
+          },
+          "excludedPaths": {
+            "type": "array",
+            "maxItems": 0
+          }
+        }
+      }
+    }
+  },
+  "approval": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schemas.accuratrials.com/platform-control-plane/PreReleaseApprovalV2/2.0",
+    "title": "PreReleaseApprovalV2",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "approval_version",
+      "approval_id",
+      "transformation_checkpoint_hash",
+      "osb_authority_version",
+      "osb_authority_hash",
+      "specialist_review_evidence_hash",
+      "platform_manifest_hash",
+      "displayed_readiness_statement",
+      "readiness_basis",
+      "meaning",
+      "reason",
+      "separation_of_duties_role",
+      "human_signature",
+      "transformation_checkpoint_artifact",
+      "native_state_hash",
+      "source_basis_hash",
+      "authored_execution",
+      "conservation_hash",
+      "source_epoch_hash",
+      "review_scope",
+      "production_eligible",
+      "clinical_approval"
+    ],
+    "properties": {
+      "approval_version": {
+        "const": "PreReleaseApprovalV2"
+      },
+      "approval_id": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "transformation_checkpoint_hash": {
+        "$ref": "#/$defs/LegacyHash"
+      },
+      "osb_authority_version": {
+        "type": "string",
+        "minLength": 1
+      },
+      "osb_authority_hash": {
+        "$ref": "#/$defs/LegacyHash"
+      },
+      "specialist_review_evidence_hash": {
+        "$ref": "#/$defs/LegacyHash"
+      },
+      "platform_manifest_hash": {
+        "$ref": "#/$defs/LegacyHash"
+      },
+      "displayed_readiness_statement": {
+        "type": "string",
+        "minLength": 1
+      },
+      "readiness_basis": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "scope",
+          "sourceBasisKind",
+          "acceptedSnapshotId",
+          "acceptedSnapshotManifestHash",
+          "acceptedProjectionPackageHash",
+          "authorityHash",
+          "readinessHash",
+          "sourceEpochHash",
+          "conservationHash",
+          "counts",
+          "ready",
+          "lossless",
+          "fetchedAt"
+        ],
+        "properties": {
+          "contractVersion": {
+            "const": "AcceptedCanonicalPreReleaseBasisV1@1.0.0"
+          },
+          "scope": {
+            "$ref": "#/$defs/Scope"
+          },
+          "sourceBasisKind": {
+            "enum": [
+              "accepted-authored-canonical",
+              "accepted-osb-canonical",
+              "source-fact-and-accepted-canonical"
+            ]
+          },
+          "acceptedSnapshotId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "acceptedSnapshotManifestHash": {
+            "$ref": "#/$defs/LegacyCslHash"
+          },
+          "acceptedProjectionPackageHash": {
+            "$ref": "#/$defs/LegacyCslHash"
+          },
+          "authorityHash": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/HashRef"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "algorithm": {
+                    "const": "sha-256"
+                  },
+                  "canonicalizationVersion": {
+                    "const": "canonical-json/1.0"
+                  },
+                  "schemaVersion": {
+                    "const": "AcceptedCanonicalStudyAuthorityV1@1.0.0"
+                  },
+                  "mediaType": {
+                    "const": "application/json"
+                  },
+                  "excludedPaths": {
+                    "type": "array",
+                    "maxItems": 0
+                  }
+                }
+              }
+            ]
+          },
+          "readinessHash": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/HashRef"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "algorithm": {
+                    "const": "sha-256"
+                  },
+                  "canonicalizationVersion": {
+                    "const": "canonical-json/1.0"
+                  },
+                  "schemaVersion": {
+                    "const": "AcceptedCanonicalReleaseReadinessV1@1.0.0"
+                  },
+                  "mediaType": {
+                    "const": "application/json"
+                  },
+                  "excludedPaths": {
+                    "type": "array",
+                    "maxItems": 0
+                  }
+                }
+              }
+            ]
+          },
+          "sourceEpochHash": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/HashRef"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "algorithm": {
+                    "const": "sha-256"
+                  },
+                  "canonicalizationVersion": {
+                    "const": "canonical-json/1.0"
+                  },
+                  "schemaVersion": {
+                    "const": "AcceptedCanonicalReleaseEpochV1@1.0.0"
+                  },
+                  "mediaType": {
+                    "const": "application/json"
+                  },
+                  "excludedPaths": {
+                    "type": "array",
+                    "maxItems": 0
+                  }
+                }
+              }
+            ]
+          },
+          "conservationHash": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/HashRef"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "algorithm": {
+                    "const": "sha-256"
+                  },
+                  "canonicalizationVersion": {
+                    "const": "canonical-json/1.0"
+                  },
+                  "schemaVersion": {
+                    "const": "AuthoredExecutionConservationV1@1.0.0"
+                  },
+                  "mediaType": {
+                    "const": "application/json"
+                  },
+                  "excludedPaths": {
+                    "type": "array",
+                    "maxItems": 0
+                  }
+                }
+              }
+            ]
+          },
+          "counts": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "members",
+              "atoms",
+              "nativeObservedAtoms",
+              "acceptedCanonicalExtensionAtoms",
+              "retainedSourceOnlyAtoms",
+              "unmappedAtoms",
+              "multiplyAssignedAtoms",
+              "unsupportedExecutionAtoms"
+            ],
+            "properties": {
+              "members": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "atoms": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "nativeObservedAtoms": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "acceptedCanonicalExtensionAtoms": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "retainedSourceOnlyAtoms": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "unmappedAtoms": {
+                "const": 0
+              },
+              "multiplyAssignedAtoms": {
+                "const": 0
+              },
+              "unsupportedExecutionAtoms": {
+                "const": 0
+              }
+            }
+          },
+          "ready": {
+            "const": true
+          },
+          "lossless": {
+            "const": true
+          },
+          "fetchedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "meaning": {
+        "type": "string",
+        "minLength": 1
+      },
+      "reason": {
+        "type": "string",
+        "minLength": 1
+      },
+      "separation_of_duties_role": {
+        "type": "string",
+        "minLength": 1
+      },
+      "human_signature": {
+        "$ref": "#/$defs/HumanElectronicSignatureV1"
+      },
+      "transformation_checkpoint_artifact": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "transformation-checkpoint"
+              },
+              "payloadContract": {
+                "const": "accuratrials.csl.TransformationCheckpointV2"
+              },
+              "payloadContractVersion": {
+                "const": "2.0.0"
+              },
+              "payloadHash": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/HashRef"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "algorithm": {
+                        "const": "sha-256"
+                      },
+                      "canonicalizationVersion": {
+                        "const": "canonical-json/1.0"
+                      },
+                      "schemaVersion": {
+                        "const": "TransformationCheckpointV2@2.0.0"
+                      },
+                      "mediaType": {
+                        "const": "application/json"
+                      },
+                      "excludedPaths": {
+                        "type": "array",
+                        "maxItems": 0
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "native_state_hash": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/HashRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "algorithm": {
+                "const": "sha-256"
+              },
+              "canonicalizationVersion": {
+                "const": "canonical-json/1.0"
+              },
+              "schemaVersion": {
+                "const": "OsbPackageNativeStateV1@1.2.0"
+              },
+              "mediaType": {
+                "const": "application/json"
+              },
+              "excludedPaths": {
+                "type": "array",
+                "maxItems": 0
+              }
+            }
+          }
+        ]
+      },
+      "source_basis_hash": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/HashRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "algorithm": {
+                "const": "sha-256"
+              },
+              "canonicalizationVersion": {
+                "const": "canonical-json/1.0"
+              },
+              "schemaVersion": {
+                "const": "AcceptedCanonicalSourceBasisV1@1.0.0"
+              },
+              "mediaType": {
+                "const": "application/json"
+              },
+              "excludedPaths": {
+                "type": "array",
+                "maxItems": 0
+              }
+            }
+          }
+        ]
+      },
+      "authored_execution": {
+        "$ref": "#/$defs/AuthoredExecutionReferences"
+      },
+      "conservation_hash": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/HashRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "algorithm": {
+                "const": "sha-256"
+              },
+              "canonicalizationVersion": {
+                "const": "canonical-json/1.0"
+              },
+              "schemaVersion": {
+                "const": "AuthoredExecutionConservationV1@1.0.0"
+              },
+              "mediaType": {
+                "const": "application/json"
+              },
+              "excludedPaths": {
+                "type": "array",
+                "maxItems": 0
+              }
+            }
+          }
+        ]
+      },
+      "source_epoch_hash": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/HashRef"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "algorithm": {
+                "const": "sha-256"
+              },
+              "canonicalizationVersion": {
+                "const": "canonical-json/1.0"
+              },
+              "schemaVersion": {
+                "const": "AcceptedCanonicalReleaseEpochV1@1.0.0"
+              },
+              "mediaType": {
+                "const": "application/json"
+              },
+              "excludedPaths": {
+                "type": "array",
+                "maxItems": 0
+              }
+            }
+          }
+        ]
+      },
+      "review_scope": {
+        "const": "native-evidence-and-accepted-canonical-execution-extensions"
+      },
+      "production_eligible": {
+        "const": false
+      },
+      "clinical_approval": {
+        "const": false
+      }
+    },
+    "$defs": {
+      "ArtifactRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contractVersion",
+          "artifactId",
+          "artifactVersionId",
+          "kind",
+          "stableLocator",
+          "payloadHash",
+          "byteSize",
+          "classification",
+          "tenantId",
+          "region",
+          "producerService",
+          "producerEnvironment",
+          "producerVersion",
+          "payloadContract",
+          "payloadContractVersion",
+          "purpose",
+          "createdAt",
+          "descriptorHash"
+        ],
+        "properties": {
+          "contractVersion": {
+            "const": "ArtifactRefV1@1.0.0"
+          },
+          "artifactId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "artifactVersionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "stableLocator": {
+            "type": "string",
+            "minLength": 1
+          },
+          "payloadHash": {
+            "$ref": "#/$defs/HashRef"
+          },
+          "byteSize": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "classification": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tenantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "region": {
+            "type": "string",
+            "minLength": 1
+          },
+          "producerService": {
+            "type": "string",
+            "minLength": 1
+          },
+          "producerEnvironment": {
+            "type": "string",
+            "minLength": 1
+          },
+          "producerVersion": {
+            "type": "string",
+            "minLength": 1
+          },
+          "payloadContract": {
+            "type": "string",
+            "minLength": 1
+          },
+          "payloadContractVersion": {
+            "type": "string",
+            "minLength": 1
+          },
+          "purpose": {
+            "type": "string",
+            "minLength": 1
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "descriptorHash": {
+            "$ref": "#/$defs/HashRef"
+          }
+        }
+      },
+      "AuthoredExecutionReferences": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "carrierArtifact",
+          "carrierHash",
+          "bundleArtifact",
+          "bundlePayloadHash",
+          "crosswalkArtifact",
+          "crosswalkHash",
+          "exportCensusArtifact"
+        ],
+        "properties": {
+          "carrierArtifact": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "carrierHash": {
+            "$ref": "#/$defs/HashRef"
+          },
+          "bundleArtifact": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "bundlePayloadHash": {
+            "$ref": "#/$defs/HashRef"
+          },
+          "crosswalkArtifact": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "crosswalkHash": {
+            "$ref": "#/$defs/HashRef"
+          },
+          "exportCensusArtifact": {
+            "$ref": "#/$defs/ArtifactRef"
+          }
+        }
+      },
+      "HashRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "algorithm",
+          "canonicalizationVersion",
+          "value",
+          "mediaType",
+          "schemaVersion",
+          "excludedPaths"
+        ],
+        "properties": {
+          "algorithm": {
+            "const": "sha-256"
+          },
+          "canonicalizationVersion": {
+            "enum": [
+              "canonical-json/1.0",
+              "raw-bytes/1.0"
+            ]
+          },
+          "value": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "mediaType": {
+            "type": "string",
+            "minLength": 1
+          },
+          "schemaVersion": {
+            "type": "string",
+            "minLength": 1
+          },
+          "excludedPaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "HumanElectronicSignatureV1": {
+        "title": "HumanElectronicSignatureV1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "signature_version",
+          "issuer",
+          "subject",
+          "tenant_id",
+          "signer_name_snapshot",
+          "native_user_binding",
+          "role_and_assignment",
+          "reauthentication",
+          "record_hash",
+          "displayed_statement",
+          "meaning",
+          "reason",
+          "signed_at",
+          "platform_study_id",
+          "failed_attempt_audit_refs"
+        ],
+        "properties": {
+          "signature_version": {
+            "const": "HumanElectronicSignatureV1"
+          },
+          "issuer": {
+            "type": "string",
+            "format": "uri"
+          },
+          "subject": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tenant_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "signer_name_snapshot": {
+            "type": "string",
+            "minLength": 1
+          },
+          "native_user_binding": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "binding_id",
+              "version",
+              "valid_from"
+            ],
+            "properties": {
+              "binding_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1
+              },
+              "valid_from": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "valid_to": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              }
+            }
+          },
+          "role_and_assignment": {
+            "type": "object",
+            "minProperties": 2
+          },
+          "reauthentication": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "auth_time",
+              "acr",
+              "amr",
+              "session_identifier_hash"
+            ],
+            "properties": {
+              "auth_time": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "acr": {
+                "type": "string",
+                "minLength": 1
+              },
+              "amr": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string"
+                }
+              },
+              "session_identifier_hash": {
+                "$ref": "#/$defs/LegacyHash"
+              }
+            }
+          },
+          "record_hash": {
+            "$ref": "#/$defs/LegacyHash"
+          },
+          "displayed_statement": {
+            "type": "string",
+            "minLength": 1
+          },
+          "meaning": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "signed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "platform_study_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "failed_attempt_audit_refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "LegacyCslHash": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "profile",
+          "value"
+        ],
+        "properties": {
+          "profile": {
+            "const": "csl-semantic-custody/legacy"
+          },
+          "value": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        }
+      },
+      "LegacyHash": {
+        "type": "string",
+        "pattern": "^sha256:[0-9a-f]{64}$"
+      },
+      "Scope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "platformTenantId",
+          "platformStudyId",
+          "nativeCslTenantId",
+          "nativeCslStudyId"
+        ],
+        "properties": {
+          "platformTenantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "platformStudyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "nativeCslTenantId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "nativeCslStudyId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      }
+    }
+  }
+}

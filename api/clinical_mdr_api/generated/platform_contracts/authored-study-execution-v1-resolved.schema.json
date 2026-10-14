@@ -1,0 +1,2478 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:proposal:csl:authored-execution-carrier:3",
+  "description": "Proposed new closed records. External HashRef/ArtifactRef references must be resolved from the locally pinned existing registry schema, not fetched at runtime. Semantic invariants below are mandatory in addition to this structural schema.",
+  "$ref": "#/$defs/Checkpoint",
+  "$defs": {
+    "HashRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "canonicalizationVersion",
+        "value",
+        "mediaType",
+        "schemaVersion",
+        "excludedPaths"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "sha-256"
+        },
+        "canonicalizationVersion": {
+          "enum": [
+            "canonical-json/1.0",
+            "raw-bytes/1.0"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "mediaType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "schemaVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "excludedPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "ArtifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "artifactId",
+        "artifactVersionId",
+        "kind",
+        "stableLocator",
+        "payloadHash",
+        "byteSize",
+        "classification",
+        "tenantId",
+        "region",
+        "producerService",
+        "producerEnvironment",
+        "producerVersion",
+        "payloadContract",
+        "payloadContractVersion",
+        "purpose",
+        "createdAt",
+        "descriptorHash"
+      ],
+      "properties": {
+        "contractVersion": {
+          "const": "ArtifactRefV1@1.0.0"
+        },
+        "artifactId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "artifactVersionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stableLocator": {
+          "type": "string",
+          "minLength": 1
+        },
+        "payloadHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "byteSize": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "classification": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tenantId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "region": {
+          "type": "string",
+          "minLength": 1
+        },
+        "producerService": {
+          "type": "string",
+          "minLength": 1
+        },
+        "producerEnvironment": {
+          "type": "string",
+          "minLength": 1
+        },
+        "producerVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "payloadContract": {
+          "type": "string",
+          "minLength": 1
+        },
+        "payloadContractVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "purpose": {
+          "type": "string",
+          "minLength": 1
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "descriptorHash": {
+          "$ref": "#/$defs/HashRef"
+        }
+      }
+    },
+    "LegacyCslHash": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "value"
+      ],
+      "properties": {
+        "profile": {
+          "const": "csl-semantic-custody/legacy"
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "LegacyEdcBundleHash": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "value"
+      ],
+      "properties": {
+        "profile": {
+          "const": "edc-computeBundleContentHash/legacy"
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "Scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "platformTenantId",
+        "platformStudyId",
+        "nativeCslTenantId",
+        "nativeCslStudyId"
+      ],
+      "properties": {
+        "platformTenantId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "platformStudyId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "nativeCslTenantId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "nativeCslStudyId": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "ClaimPin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claimId",
+        "claimRevisionId",
+        "revision",
+        "contentHash"
+      ],
+      "properties": {
+        "claimId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "claimRevisionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "contentHash": {
+          "$ref": "#/$defs/LegacyCslHash"
+        }
+      }
+    },
+    "EntityPin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entityId",
+        "revisionId",
+        "entityType",
+        "contentHash"
+      ],
+      "properties": {
+        "entityId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "revisionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "entityType": {
+          "const": "CanonicalStudy"
+        },
+        "contentHash": {
+          "$ref": "#/$defs/LegacyCslHash"
+        }
+      }
+    },
+    "ArtifactVersionPin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifactId",
+        "artifactVersionId",
+        "contentHash"
+      ],
+      "properties": {
+        "artifactId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "artifactVersionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "contentHash": {
+          "$ref": "#/$defs/LegacyCslHash"
+        }
+      }
+    },
+    "MappingDecisionPin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decisionId",
+        "contentHash"
+      ],
+      "properties": {
+        "decisionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "contentHash": {
+          "$ref": "#/$defs/LegacyCslHash"
+        }
+      }
+    },
+    "AuthoredSourceReviewPin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reviewId",
+        "requestHash",
+        "receiptHash",
+        "sourceClaim",
+        "acceptedClaim"
+      ],
+      "properties": {
+        "reviewId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "requestHash": {
+          "$ref": "#/$defs/LegacyCslHash"
+        },
+        "receiptHash": {
+          "$ref": "#/$defs/LegacyCslHash"
+        },
+        "sourceClaim": {
+          "$ref": "#/$defs/ClaimPin"
+        },
+        "acceptedClaim": {
+          "$ref": "#/$defs/ClaimPin"
+        }
+      }
+    },
+    "AcceptedSnapshotPin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "snapshotId",
+        "manifestHash",
+        "projectionPackageHash",
+        "projectionPackageArtifact",
+        "protocolVersionId",
+        "mappingSetHash",
+        "terminologySetHash",
+        "profileVersions"
+      ],
+      "properties": {
+        "snapshotId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "manifestHash": {
+          "$ref": "#/$defs/LegacyCslHash"
+        },
+        "projectionPackageHash": {
+          "$ref": "#/$defs/LegacyCslHash"
+        },
+        "projectionPackageArtifact": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "protocolVersionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "mappingSetHash": {
+          "$ref": "#/$defs/LegacyCslHash"
+        },
+        "terminologySetHash": {
+          "$ref": "#/$defs/LegacyCslHash"
+        },
+        "profileVersions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "CanonicalSourcePin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "sourceSystem",
+        "nativeStudyId",
+        "artifact",
+        "sourceReview"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "reviewed-authored",
+            "osb-canonical-source"
+          ]
+        },
+        "sourceSystem": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nativeStudyId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "artifact": {
+          "$ref": "#/$defs/ArtifactVersionPin"
+        },
+        "sourceReview": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AuthoredSourceReviewPin"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "BuildSpecificationPin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contentHash",
+        "artifact"
+      ],
+      "properties": {
+        "contentHash": {
+          "$ref": "#/$defs/LegacyCslHash"
+        },
+        "artifact": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ArtifactVersionPin"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "AcceptedCanonicalAuthority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "scope",
+        "snapshot",
+        "canonicalEntity",
+        "canonicalSource",
+        "supportingClaims",
+        "mappingDecisions",
+        "buildSpecification",
+        "canonicalStudyContentHash"
+      ],
+      "properties": {
+        "contractVersion": {
+          "const": "AcceptedCanonicalStudyAuthorityV1@1.0.0"
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "snapshot": {
+          "$ref": "#/$defs/AcceptedSnapshotPin"
+        },
+        "canonicalEntity": {
+          "$ref": "#/$defs/EntityPin"
+        },
+        "canonicalSource": {
+          "$ref": "#/$defs/CanonicalSourcePin"
+        },
+        "supportingClaims": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ClaimPin"
+          },
+          "minItems": 1
+        },
+        "mappingDecisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MappingDecisionPin"
+          },
+          "minItems": 1
+        },
+        "buildSpecification": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/BuildSpecificationPin"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "canonicalStudyContentHash": {
+          "$ref": "#/$defs/LegacyCslHash"
+        }
+      }
+    },
+    "SourceBasis": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "authorityArtifact"
+          ],
+          "properties": {
+            "kind": {
+              "const": "accepted-authored-canonical"
+            },
+            "authorityArtifact": {
+              "$ref": "#/$defs/ArtifactRef"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "authorityArtifact"
+          ],
+          "properties": {
+            "kind": {
+              "const": "accepted-osb-canonical"
+            },
+            "authorityArtifact": {
+              "$ref": "#/$defs/ArtifactRef"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "authorityArtifact",
+            "sourceFactCheckpointArtifact"
+          ],
+          "properties": {
+            "kind": {
+              "const": "source-fact-and-accepted-canonical"
+            },
+            "authorityArtifact": {
+              "$ref": "#/$defs/ArtifactRef"
+            },
+            "sourceFactCheckpointArtifact": {
+              "$ref": "#/$defs/ArtifactRef"
+            }
+          }
+        }
+      ]
+    },
+    "OsbBindingPin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nativeTenantId",
+        "platformBindingId",
+        "nativeStudyId",
+        "nativeVersion"
+      ],
+      "properties": {
+        "nativeTenantId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "platformBindingId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "nativeStudyId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nativeVersion": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "NativeEvidenceBasis": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "checkpointArtifacts",
+            "nativeEvidenceSetArtifacts"
+          ],
+          "properties": {
+            "kind": {
+              "const": "verified-native-operations"
+            },
+            "checkpointArtifacts": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ArtifactRef"
+              },
+              "minItems": 1
+            },
+            "nativeEvidenceSetArtifacts": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ArtifactRef"
+              },
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "reason"
+          ],
+          "properties": {
+            "kind": {
+              "const": "no-native-operations"
+            },
+            "reason": {
+              "const": "Authored execution is carried under its accepted canonical mapping and must be explicitly reviewed as extensions; no native-operation claim is made."
+            }
+          }
+        }
+      ]
+    },
+    "MemberRef": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "pointer"
+          ],
+          "properties": {
+            "kind": {
+              "const": "definition"
+            },
+            "pointer": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "formRef",
+            "pointer"
+          ],
+          "properties": {
+            "kind": {
+              "const": "form"
+            },
+            "formRef": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pointer": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "formRef",
+            "fieldRef",
+            "pointer"
+          ],
+          "properties": {
+            "kind": {
+              "const": "field"
+            },
+            "formRef": {
+              "type": "string",
+              "minLength": 1
+            },
+            "fieldRef": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pointer": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "formRef",
+            "groupRef",
+            "pointer"
+          ],
+          "properties": {
+            "kind": {
+              "const": "group"
+            },
+            "formRef": {
+              "type": "string",
+              "minLength": 1
+            },
+            "groupRef": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pointer": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "visitRef",
+            "pointer"
+          ],
+          "properties": {
+            "kind": {
+              "const": "visit"
+            },
+            "visitRef": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pointer": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "visitRef",
+            "formRef",
+            "pointer"
+          ],
+          "properties": {
+            "kind": {
+              "const": "visit-form-assignment"
+            },
+            "visitRef": {
+              "type": "string",
+              "minLength": 1
+            },
+            "formRef": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pointer": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "siteRef",
+            "pointer"
+          ],
+          "properties": {
+            "kind": {
+              "const": "site"
+            },
+            "siteRef": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pointer": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "scopePointer",
+            "pointer"
+          ],
+          "properties": {
+            "kind": {
+              "const": "scoped-json-value"
+            },
+            "scopePointer": {
+              "type": "string"
+            },
+            "pointer": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ],
+      "description": "Portable refs are literal identifiers, never display names or path expressions. Use scoped-json-value for studyTasks, studyGroupClasses and other members without an already-defined portable identity; do not invent taskRef/groupClassRef fields."
+    },
+    "NativeFieldMatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nativePointer",
+        "bundlePointer",
+        "observedValueHash",
+        "bundleValueHash"
+      ],
+      "properties": {
+        "nativePointer": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical RFC6901 pointer resolved from the exact verified OsbPackageNativeRecordV1 record.payload object (the complete observed readback). Example /nativeValues/unit, never /unit under an implicit nativeValues root and never /payload/nativeValues/unit under the record wrapper."
+        },
+        "bundlePointer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "observedValueHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "bundleValueHash": {
+          "$ref": "#/$defs/HashRef"
+        }
+      }
+    },
+    "NativeMemberEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "disposition",
+        "evidenceSetArtifactVersionId",
+        "operationId",
+        "bindingKey",
+        "sourceInputHash",
+        "readBackHash",
+        "nativeRecordHash",
+        "targetIdentity",
+        "fieldMatches"
+      ],
+      "properties": {
+        "disposition": {
+          "const": "native-observed"
+        },
+        "evidenceSetArtifactVersionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "operationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "bindingKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceInputHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "readBackHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "nativeRecordHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "targetIdentity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "resourceFamily",
+            "resourceType",
+            "uid",
+            "version"
+          ],
+          "properties": {
+            "resourceFamily": {
+              "type": "string",
+              "minLength": 1
+            },
+            "resourceType": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uid": {
+              "type": "string",
+              "minLength": 1
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "fieldMatches": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/NativeFieldMatch"
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "AuthoredMemberEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "disposition",
+        "authorityHash",
+        "mappingDecisionIds",
+        "canonicalSourcePointers",
+        "reason"
+      ],
+      "properties": {
+        "disposition": {
+          "const": "accepted-canonical-extension"
+        },
+        "authorityHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "mappingDecisionIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "minItems": 1
+        },
+        "canonicalSourcePointers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "RetainedMemberEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "disposition",
+        "authorityHash",
+        "canonicalSourcePointers",
+        "reason"
+      ],
+      "properties": {
+        "disposition": {
+          "const": "retained-source-only"
+        },
+        "authorityHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "canonicalSourcePointers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "CrosswalkRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "member",
+        "memberValueHash",
+        "evidence",
+        "coverageAtoms"
+      ],
+      "properties": {
+        "member": {
+          "$ref": "#/$defs/MemberRef"
+        },
+        "memberValueHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "evidence": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/NativeMemberEvidence"
+            },
+            {
+              "$ref": "#/$defs/AuthoredMemberEvidence"
+            },
+            {
+              "$ref": "#/$defs/RetainedMemberEvidence"
+            }
+          ]
+        },
+        "coverageAtoms": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CoverageAtom"
+          }
+        }
+      }
+    },
+    "Crosswalk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "scope",
+        "sourceBasisHash",
+        "bundlePayloadHash",
+        "osbBinding",
+        "rows",
+        "rowsHash",
+        "coverageProfile"
+      ],
+      "properties": {
+        "contractVersion": {
+          "const": "AuthoredStudyMemberCrosswalkV1@1.0.0"
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "sourceBasisHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "bundlePayloadHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "osbBinding": {
+          "$ref": "#/$defs/OsbBindingPin"
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CrosswalkRow"
+          },
+          "minItems": 0
+        },
+        "rowsHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "coverageProfile": {
+          "const": "authored-execution-terminal-coverage/1.0.0"
+        }
+      }
+    },
+    "BundleCarrier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "scope",
+        "sourceBasisHash",
+        "bundleArtifact",
+        "edcBundleContentHash",
+        "definitionDocumentHash",
+        "definitionSelectionHash",
+        "builder",
+        "crosswalkArtifact",
+        "exportCensusArtifact"
+      ],
+      "properties": {
+        "contractVersion": {
+          "const": "AcceptedStudyExchangeCarrierV1@1.0.0"
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "sourceBasisHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "bundleArtifact": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "edcBundleContentHash": {
+          "$ref": "#/$defs/LegacyEdcBundleHash"
+        },
+        "definitionDocumentHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "definitionSelectionHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "builder": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "version",
+            "sourceClosureHash"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sourceClosureHash": {
+              "$ref": "#/$defs/HashRef"
+            }
+          }
+        },
+        "crosswalkArtifact": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "exportCensusArtifact": {
+          "$ref": "#/$defs/ArtifactRef"
+        }
+      }
+    },
+    "Conservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "bundlePayloadHash",
+        "crosswalkRowsHash",
+        "exportCensusHash",
+        "valueLedgerHash",
+        "counts",
+        "coverageProfile",
+        "terminalSetHash"
+      ],
+      "properties": {
+        "contractVersion": {
+          "const": "AuthoredExecutionConservationV1@1.0.0"
+        },
+        "bundlePayloadHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "crosswalkRowsHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "exportCensusHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "valueLedgerHash": {
+          "$ref": "#/$defs/LegacyCslHash"
+        },
+        "counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "members",
+            "atoms",
+            "nativeObservedAtoms",
+            "acceptedCanonicalExtensionAtoms",
+            "retainedSourceOnlyAtoms",
+            "unmappedAtoms",
+            "multiplyAssignedAtoms",
+            "unsupportedExecutionAtoms"
+          ],
+          "properties": {
+            "members": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "atoms": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "nativeObservedAtoms": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "acceptedCanonicalExtensionAtoms": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "retainedSourceOnlyAtoms": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "unmappedAtoms": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "multiplyAssignedAtoms": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "unsupportedExecutionAtoms": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "coverageProfile": {
+          "const": "authored-execution-terminal-coverage/1.0.0"
+        },
+        "terminalSetHash": {
+          "$ref": "#/$defs/HashRef"
+        }
+      }
+    },
+    "Checkpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "checkpointId",
+        "checkpointVersionId",
+        "scope",
+        "sourceBasis",
+        "sourceBasisHash",
+        "nativeEvidenceBasis",
+        "osbBinding",
+        "expectedNativeStateArtifact",
+        "carrierArtifact",
+        "conservation",
+        "blockers",
+        "productionEligible",
+        "createdAt",
+        "createdBy"
+      ],
+      "properties": {
+        "contractVersion": {
+          "const": "TransformationCheckpointV2@2.0.0"
+        },
+        "checkpointId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "checkpointVersionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope"
+        },
+        "sourceBasis": {
+          "$ref": "#/$defs/SourceBasis"
+        },
+        "sourceBasisHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "nativeEvidenceBasis": {
+          "$ref": "#/$defs/NativeEvidenceBasis"
+        },
+        "osbBinding": {
+          "$ref": "#/$defs/OsbBindingPin"
+        },
+        "expectedNativeStateArtifact": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "carrierArtifact": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "conservation": {
+          "$ref": "#/$defs/Conservation"
+        },
+        "blockers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "code",
+              "memberPointer",
+              "operationId",
+              "evidenceRefs"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "memberPointer": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "operationId": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "evidenceRefs": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "minItems": 0
+              }
+            }
+          },
+          "minItems": 0
+        },
+        "productionEligible": {
+          "const": false
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "createdBy": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "OsbNativeState12": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "tenantId",
+        "platformStudyId",
+        "root",
+        "canonicalDefinitionHash",
+        "contentIndex",
+        "nativeEvidenceBasis",
+        "sourceBasisHash",
+        "carrierHash",
+        "bundlePayloadHash",
+        "crosswalkHash"
+      ],
+      "properties": {
+        "contractVersion": {
+          "const": "OsbPackageNativeStateV1@1.2.0"
+        },
+        "tenantId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "platformStudyId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "root": {
+          "$ref": "#/$defs/OsbLockedStudyRoot"
+        },
+        "canonicalDefinitionHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "contentIndex": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OsbContentIndexEntry"
+          }
+        },
+        "nativeEvidenceBasis": {
+          "$ref": "#/$defs/NativeEvidenceBasis"
+        },
+        "sourceBasisHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "carrierHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "bundlePayloadHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "crosswalkHash": {
+          "$ref": "#/$defs/HashRef"
+        }
+      }
+    },
+    "OsbLockedStudyRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bindingId",
+        "nativeStudyId",
+        "relationship",
+        "nativeVersion",
+        "nativeStatus",
+        "versionTimestamp",
+        "draftEndedAt",
+        "title",
+        "studyNumber",
+        "acronym",
+        "projectNumber"
+      ],
+      "properties": {
+        "bindingId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "nativeStudyId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "relationship": {
+          "const": "LATEST_LOCKED"
+        },
+        "nativeVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nativeStatus": {
+          "type": "string",
+          "pattern": "^[Ll][Oo][Cc][Kk][Ee][Dd]$"
+        },
+        "versionTimestamp": {
+          "type": "string",
+          "minLength": 1
+        },
+        "draftEndedAt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "studyNumber": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "acronym": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectNumber": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "OsbLibraryTargetIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resourceFamily",
+        "resourceType",
+        "uid",
+        "version"
+      ],
+      "properties": {
+        "resourceFamily": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resourceType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "uid": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "OsbMetadataTargetIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resourceFamily",
+        "resourceType",
+        "uid",
+        "version",
+        "metadataPath"
+      ],
+      "properties": {
+        "resourceFamily": {
+          "const": "study_metadata"
+        },
+        "resourceType": {
+          "const": "StudyMetadata"
+        },
+        "uid": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "metadataPath": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "OsbManagedTargetIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resourceType",
+        "resourceFamily",
+        "managedKey",
+        "nativeStudyId",
+        "version"
+      ],
+      "properties": {
+        "resourceType": {
+          "const": "PlatformManagedStudyConcept"
+        },
+        "resourceFamily": {
+          "type": "string",
+          "minLength": 1
+        },
+        "managedKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nativeStudyId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "OsbContentIndexEntry": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operationId",
+            "kind",
+            "resourceFamily",
+            "targetIdentity",
+            "readBackHash",
+            "recordHash"
+          ],
+          "properties": {
+            "operationId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "kind": {
+              "const": "native"
+            },
+            "resourceFamily": {
+              "type": "string",
+              "minLength": 1
+            },
+            "targetIdentity": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/OsbLibraryTargetIdentity"
+                },
+                {
+                  "$ref": "#/$defs/OsbMetadataTargetIdentity"
+                }
+              ]
+            },
+            "readBackHash": {
+              "$ref": "#/$defs/HashRef"
+            },
+            "recordHash": {
+              "$ref": "#/$defs/HashRef"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operationId",
+            "kind",
+            "resourceFamily",
+            "targetIdentity",
+            "readBackHash",
+            "recordHash"
+          ],
+          "properties": {
+            "operationId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "kind": {
+              "const": "managed"
+            },
+            "resourceFamily": {
+              "type": "string",
+              "minLength": 1
+            },
+            "targetIdentity": {
+              "$ref": "#/$defs/OsbManagedTargetIdentity"
+            },
+            "readBackHash": {
+              "$ref": "#/$defs/HashRef"
+            },
+            "recordHash": {
+              "$ref": "#/$defs/HashRef"
+            }
+          }
+        }
+      ]
+    },
+    "ReviewContextCommitments": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "checkpointHash",
+        "nativeStateHash",
+        "sourceBasisHash",
+        "carrierHash",
+        "bundlePayloadHash",
+        "crosswalkHash",
+        "canonicalDefinitionHash"
+      ],
+      "properties": {
+        "contractVersion": {
+          "const": "OsbAuthoredExecutionReviewContextCommitmentsV1@1.0.0"
+        },
+        "checkpointHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "nativeStateHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "sourceBasisHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "carrierHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "bundlePayloadHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "crosswalkHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "canonicalDefinitionHash": {
+          "$ref": "#/$defs/HashRef"
+        }
+      }
+    },
+    "CoverageAtom": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pointer",
+        "type",
+        "valueHash"
+      ],
+      "properties": {
+        "pointer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "enum": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "empty-array",
+            "empty-object"
+          ]
+        },
+        "valueHash": {
+          "$ref": "#/$defs/HashRef"
+        }
+      }
+    },
+    "ProjectionRuleset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "hash"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "hash": {
+          "$ref": "#/$defs/HashRef"
+        }
+      }
+    },
+    "ExclusionPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    },
+    "Package23Profiles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectionRuleset",
+        "exclusionPolicy",
+        "nativeState"
+      ],
+      "properties": {
+        "projectionRuleset": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectionRuleset"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exclusionPolicy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExclusionPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nativeState": {
+          "const": "OsbPackageNativeStateV1@1.2.0"
+        }
+      }
+    },
+    "AuthoredExecutionReferences": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "carrierArtifact",
+        "carrierHash",
+        "bundleArtifact",
+        "bundlePayloadHash",
+        "crosswalkArtifact",
+        "crosswalkHash",
+        "exportCensusArtifact"
+      ],
+      "properties": {
+        "carrierArtifact": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "carrierHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "bundleArtifact": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "bundlePayloadHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "crosswalkArtifact": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "crosswalkHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "exportCensusArtifact": {
+          "$ref": "#/$defs/ArtifactRef"
+        }
+      }
+    },
+    "StudyStandardsReferenceV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "nativeTenantId",
+        "nativeStudyId",
+        "artifactId",
+        "artifactVersionId",
+        "contentHash"
+      ],
+      "properties": {
+        "contractVersion": {
+          "const": "StudyStandardsReferenceV1@1.0.0"
+        },
+        "nativeTenantId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "nativeStudyId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "artifactId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "artifactVersionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "contentHash": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "OsbCanonicalStudyDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "nativeStudyId",
+        "nativeVersion",
+        "document",
+        "selection",
+        "mappingReport",
+        "nativeRecords"
+      ],
+      "properties": {
+        "contractVersion": {
+          "const": "OsbCanonicalStudyDefinitionV1@1.0.0"
+        },
+        "nativeStudyId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nativeVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "document": {
+          "type": "object",
+          "required": [
+            "usdmVersion",
+            "study"
+          ],
+          "properties": {
+            "usdmVersion": {
+              "const": "4.0.0"
+            },
+            "study": {
+              "type": "object"
+            }
+          }
+        },
+        "selection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "versionId",
+            "designId"
+          ],
+          "properties": {
+            "versionId": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "designId": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "mappingReport": {
+          "type": "object",
+          "required": [
+            "state",
+            "studyUid",
+            "studyValueVersion",
+            "issues"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "complete",
+                "incomplete"
+              ]
+            },
+            "studyUid": {
+              "type": "string"
+            },
+            "studyValueVersion": {
+              "type": "string"
+            },
+            "issues": {
+              "type": "array"
+            }
+          }
+        },
+        "nativeRecords": {
+          "type": "array"
+        }
+      }
+    },
+    "Package23ProvenancePins": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidateRequestId",
+        "candidateRequestHash",
+        "candidateSetHash",
+        "decisionHash",
+        "nativeStateHash",
+        "canonicalDefinitionHash",
+        "sourceFactPackageHash",
+        "nativeEvidenceSetHash",
+        "sourceBasisHash",
+        "carrierHash",
+        "bundlePayloadHash",
+        "crosswalkHash"
+      ],
+      "properties": {
+        "candidateRequestId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "candidateRequestHash": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HashRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "candidateSetHash": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HashRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decisionHash": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HashRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nativeStateHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "canonicalDefinitionHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "sourceFactPackageHash": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HashRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nativeEvidenceSetHash": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HashRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceBasisHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "carrierHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "bundlePayloadHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "crosswalkHash": {
+          "$ref": "#/$defs/HashRef"
+        }
+      }
+    },
+    "Package23": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "packageId",
+        "packageVersionId",
+        "tenantId",
+        "platformStudyId",
+        "osbStudyIdentity",
+        "releasedVersion",
+        "authorityHash",
+        "sourceBasis",
+        "sourceBasisHash",
+        "transformationCheckpointArtifact",
+        "transformationCheckpointHash",
+        "specialistReviewLockReceipt",
+        "preReleaseApproval",
+        "platformManifest",
+        "profiles",
+        "studyDesign",
+        "captureDesign",
+        "contentIndex",
+        "contentIndexHash",
+        "terminologyPins",
+        "capabilityManifest",
+        "conservation",
+        "provenancePins",
+        "productionEligible",
+        "createdAt",
+        "createdBy"
+      ],
+      "properties": {
+        "contractVersion": {
+          "const": "OsbNativePackageV2@2.3.0"
+        },
+        "packageId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "packageVersionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "tenantId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "platformStudyId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "osbStudyIdentity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "nativeIdentity",
+            "nativeVersion"
+          ],
+          "properties": {
+            "nativeIdentity": {
+              "type": "string",
+              "minLength": 1
+            },
+            "nativeVersion": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "releasedVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "authorityHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "sourceBasis": {
+          "$ref": "#/$defs/SourceBasis"
+        },
+        "sourceBasisHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "transformationCheckpointArtifact": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "transformationCheckpointHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "specialistReviewLockReceipt": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "preReleaseApproval": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "platformManifest": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "studyStandards": {
+          "$ref": "#/$defs/StudyStandardsReferenceV1"
+        },
+        "profiles": {
+          "$ref": "#/$defs/Package23Profiles"
+        },
+        "studyDesign": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "root",
+            "canonicalDefinition",
+            "managedConcepts",
+            "nativeRecords"
+          ],
+          "properties": {
+            "root": {
+              "$ref": "#/$defs/OsbLockedStudyRoot"
+            },
+            "canonicalDefinition": {
+              "$ref": "#/$defs/OsbCanonicalStudyDefinition"
+            },
+            "managedConcepts": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "description": "Unchanged complete existing OsbPackageNativeRecordV1 objects, validated by existing native_package_state_v2 family-specific readers. Retain each full payload/sourceIntent/candidateRecord/selection/nativeOperationEvidence; this proposal introduces no replacement domain record."
+            },
+            "nativeRecords": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "description": "Unchanged complete existing OsbPackageNativeRecordV1 objects, validated by existing native_package_state_v2 family-specific readers. Retain each full payload/sourceIntent/candidateRecord/selection/nativeOperationEvidence; this proposal introduces no replacement domain record."
+            }
+          }
+        },
+        "captureDesign": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "managedConcepts",
+            "nativeRecords",
+            "authoredExecution"
+          ],
+          "properties": {
+            "managedConcepts": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "description": "Unchanged complete existing OsbPackageNativeRecordV1 objects, validated by existing native_package_state_v2 family-specific readers. Retain each full payload/sourceIntent/candidateRecord/selection/nativeOperationEvidence; this proposal introduces no replacement domain record."
+            },
+            "nativeRecords": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "description": "Unchanged complete existing OsbPackageNativeRecordV1 objects, validated by existing native_package_state_v2 family-specific readers. Retain each full payload/sourceIntent/candidateRecord/selection/nativeOperationEvidence; this proposal introduces no replacement domain record."
+            },
+            "authoredExecution": {
+              "$ref": "#/$defs/AuthoredExecutionReferences"
+            }
+          }
+        },
+        "contentIndex": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OsbContentIndexEntry"
+          }
+        },
+        "contentIndexHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "terminologyPins": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "capabilityManifest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "executionMode",
+            "resourceFamilies",
+            "requestedObjectFamilies"
+          ],
+          "properties": {
+            "executionMode": {
+              "const": "accepted-canonical-carrier/1.0.0"
+            },
+            "resourceFamilies": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "uniqueItems": true
+            },
+            "requestedObjectFamilies": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "uniqueItems": true
+            }
+          }
+        },
+        "conservation": {
+          "$ref": "#/$defs/Conservation"
+        },
+        "provenancePins": {
+          "$ref": "#/$defs/Package23ProvenancePins"
+        },
+        "productionEligible": {
+          "const": false
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "createdBy": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "AttestationV2Verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "packageCanonicalRawBytes",
+        "exactPrerequisitesVerified",
+        "zeroLoss",
+        "rowCount",
+        "atomCount",
+        "canonicalDefinitionHash",
+        "canonicalDefinitionReviewVerified",
+        "acceptedCanonicalAuthorityVerified",
+        "authoredExecutionCarrierVerified",
+        "terminalCoverageVerified",
+        "productionEligible"
+      ],
+      "properties": {
+        "packageCanonicalRawBytes": {
+          "const": true
+        },
+        "exactPrerequisitesVerified": {
+          "const": true
+        },
+        "zeroLoss": {
+          "const": true
+        },
+        "rowCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "atomCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "canonicalDefinitionHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "canonicalDefinitionReviewVerified": {
+          "const": true
+        },
+        "acceptedCanonicalAuthorityVerified": {
+          "const": true
+        },
+        "authoredExecutionCarrierVerified": {
+          "const": true
+        },
+        "terminalCoverageVerified": {
+          "const": true
+        },
+        "studyStandardsCustody": {
+          "const": true
+        },
+        "studyStandardsSourceMembership": {
+          "const": true
+        },
+        "productionEligible": {
+          "const": false
+        }
+      }
+    },
+    "VerifiedStudyStandards": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reference",
+        "semanticSnapshotId",
+        "semanticSnapshotHash"
+      ],
+      "properties": {
+        "reference": {
+          "$ref": "#/$defs/StudyStandardsReferenceV1"
+        },
+        "semanticSnapshotId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "semanticSnapshotHash": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "GovernanceAttestationV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "attestationId",
+        "attestationVersionId",
+        "tenantId",
+        "platformStudyId",
+        "packageArtifact",
+        "packageRawByteHash",
+        "sourceBasis",
+        "sourceBasisHash",
+        "authoredExecution",
+        "transformationCheckpointArtifact",
+        "transformationCheckpointHash",
+        "specialistReviewLockReceipt",
+        "preReleaseApproval",
+        "platformManifest",
+        "policyProfileVersions",
+        "conservationHash",
+        "verification",
+        "signatureState",
+        "productionEligible",
+        "attestedAt",
+        "attestedBy"
+      ],
+      "properties": {
+        "contractVersion": {
+          "const": "GovernanceAttestationV2@2.0.0"
+        },
+        "attestationId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "attestationVersionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "tenantId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "platformStudyId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "packageArtifact": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "packageRawByteHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "sourceBasis": {
+          "$ref": "#/$defs/SourceBasis"
+        },
+        "sourceBasisHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "authoredExecution": {
+          "$ref": "#/$defs/AuthoredExecutionReferences"
+        },
+        "transformationCheckpointArtifact": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "transformationCheckpointHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "specialistReviewLockReceipt": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "preReleaseApproval": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "platformManifest": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "studyStandards": {
+          "$ref": "#/$defs/VerifiedStudyStandards"
+        },
+        "policyProfileVersions": {
+          "$ref": "#/$defs/Package23Profiles"
+        },
+        "conservationHash": {
+          "$ref": "#/$defs/HashRef"
+        },
+        "verification": {
+          "$ref": "#/$defs/AttestationV2Verification"
+        },
+        "signatureState": {
+          "const": "prototype-unsigned"
+        },
+        "productionEligible": {
+          "const": false
+        },
+        "attestedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "attestedBy": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}
