@@ -382,6 +382,41 @@ class USDMMapper:
             "nativeRecords": self._context.native_records,
         }
 
+    def map_with_correspondence_report(
+        self, study: OSBStudy, study_value_version: str | None = None
+    ) -> dict[str, Any]:
+        """Observe explicit mappings without changing ordinary mapper output.
+
+        Allocation events are diagnostics only: authored IDs can bypass the
+        allocator, and allocations can be forward references or discarded.
+        """
+        original_ids = self._id_manager
+        self._id_manager = IdManager(record_trace=True)
+        try:
+            document = self.map(
+                study,
+                study_value_version,
+                allow_incomplete=True,
+                record_correspondence=True,
+            )
+            observations = self._context.correspondence.report(document)
+            observations["allocationEvents"] = [
+                event._asdict() for event in self._id_manager.trace_snapshot()
+            ]
+            return {
+                "document": native_json(document),
+                "mappingReport": {
+                    "state": "incomplete" if self._context.issues else "complete",
+                    "studyUid": study.uid,
+                    "studyValueVersion": study_value_version,
+                    "issues": self._context.issues,
+                },
+                "nativeRecords": self._context.native_records,
+                "correspondenceObservations": observations,
+            }
+        finally:
+            self._id_manager = original_ids
+
     def _load_study_intervention_selections(self, study_uid: str) -> None:
         self._study_compounds = (
             _stable_selection_order(
@@ -738,6 +773,7 @@ class USDMMapper:
         study_value_version: str | None = None,
         *,
         allow_incomplete: bool = False,
+        record_correspondence: bool = False,
     ) -> dict[str, Any]:
         self._study_value_version = study_value_version
         self._study_uid = study.uid
@@ -746,7 +782,10 @@ class USDMMapper:
             "version_timestamp",
             None,
         )
-        self._context = MappingContext(allow_incomplete=allow_incomplete)
+        self._context = MappingContext(
+            allow_incomplete=allow_incomplete,
+            record_correspondence=record_correspondence,
+        )
         self._context.retain("study", study.uid, study)
         self._call_cache = {}
         self._mapping_active = True

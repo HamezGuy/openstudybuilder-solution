@@ -158,6 +158,34 @@ class NativeStudyMapping:
                 "Authored organization IDs collide with native registry organizations"
             )
         version.organizations.extend(authored.organizations)
+        for index, _ in enumerate(authored.documents):
+            self.context.register_authored_copy(
+                "osb.authored-document.copy/1.0.0",
+                study.uid,
+                f"/documents/{index}",
+                f"/study/documentedBy/{index}",
+            )
+            self.context.register_authored_copy(
+                "osb.authored-first-document-version.reference/1.0.0",
+                study.uid,
+                f"/documents/{index}/versions/0/id",
+                f"/study/versions/0/documentVersionIds/{index}",
+            )
+        for index, _ in enumerate(authored.narrative_content_items):
+            self.context.register_authored_copy(
+                "osb.authored-narrative-item.copy/1.0.0",
+                study.uid,
+                f"/narrative_content_items/{index}",
+                f"/study/versions/0/narrativeContentItems/{index}",
+            )
+        offset = len(version.organizations) - len(authored.organizations)
+        for index, _ in enumerate(authored.organizations):
+            self.context.register_authored_copy(
+                "osb.authored-organization.copy/1.0.0",
+                study.uid,
+                f"/organizations/{index}",
+                f"/study/versions/0/organizations/{offset + index}",
+            )
         version.extensionAttributes.append(
             self.extension("authored-document-applicability", study.uid, authored)
         )

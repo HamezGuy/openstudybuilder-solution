@@ -16,6 +16,9 @@ from urllib.parse import quote
 from pydantic import BaseModel, ValidationError
 from usdm_model.extension import BaseQuantity, ExtensionAttribute
 
+from clinical_mdr_api.services.ddf.usdm_correspondence_observations import (
+    CorrespondenceObservations,
+)
 from common.exceptions import ValidationException
 
 
@@ -96,7 +99,9 @@ def accepts_keyword(callback: Callable, name: str) -> bool:
 
 
 class MappingContext:
-    def __init__(self, *, allow_incomplete: bool = False):
+    def __init__(
+        self, *, allow_incomplete: bool = False, record_correspondence: bool = False
+    ):
         self.allow_incomplete = allow_incomplete
         self.issues: list[MappingIssue] = []
         self.native_records: list[dict[str, Any]] = []
@@ -104,6 +109,27 @@ class MappingContext:
         # Populated only while resolving actual native cells to this document.
         # Retained source extensions are never read back as relationship authority.
         self.cell_scopes: dict[str, StudyCellCanonicalScope] = {}
+        self.correspondence = (
+            CorrespondenceObservations() if record_correspondence else None
+        )
+        self._correspondence_sources: dict[str, str] = {}
+
+    def register_authored_copy(
+        self, rule_id: str, study_uid: str, source_pointer: str, output_pointer: str
+    ) -> None:
+        if self.correspondence is None:
+            return
+        source_handle = self._correspondence_sources.get(study_uid)
+        if source_handle is None:
+            raise USDMMappingAuthorityRequired(
+                "USDM_MAPPER_OBSERVATION_SOURCE_REQUIRED: exact retained authored documents"
+            )
+        self.correspondence.register(
+            rule_id=rule_id,
+            source_handle=source_handle,
+            source_pointer=source_pointer,
+            output_pointer=output_pointer,
+        )
 
     def unresolved(
         self,
@@ -196,6 +222,8 @@ class MappingContext:
         if scope is not None:
             entry["scope"] = deepcopy(scope)
         self.native_records.append(entry)
+        if self.correspondence is not None and kind == "studyAuthoredDocuments":
+            self._correspondence_sources[uid] = self.correspondence.retain_source(entry)
 
 
 def source_extension(id_manager, kind: str, uid: str, value: Any) -> ExtensionAttribute:
