@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.accuratrials.invalid/osb/osb-mapper-observation-runtime-v1.schema.json",
+  "title": "Complete installed mapper observation runtime seal; descriptive only",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "sourceCommit",
+    "sourceTreeOid",
+    "apiArchiveSha256",
+    "apiArchiveByteSize",
+    "files",
+    "filesSha256",
+    "pipfileLockSha256",
+    "runtimeImageDigest",
+    "runtimeFiles",
+    "inventoryKernel",
+    "executionQualifiedFamilies"
+  ],
+  "properties": {
+    "contractVersion": {
+      "const": "OsbMapperObservationRuntimeV1@1.0.0"
+    },
+    "sourceCommit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sourceTreeOid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "apiArchiveSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "apiArchiveByteSize": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100000,
+      "items": {
+        "$ref": "#/$defs/File"
+      }
+    },
+    "filesSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "pipfileLockSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "runtimeImageDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "runtimeFiles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "python",
+        "node"
+      ],
+      "properties": {
+        "python": {
+          "$ref": "#/$defs/RuntimeRoot"
+        },
+        "node": {
+          "$ref": "#/$defs/RuntimeRoot"
+        }
+      }
+    },
+    "inventoryKernel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "packageName",
+        "packageVersion",
+        "packagePath",
+        "export",
+        "symbol",
+        "archiveSha256",
+        "archiveByteSize",
+        "archiveIntegrity",
+        "releaseManifestSha256",
+        "sourceTreeSha256",
+        "runtimeTreeSha256",
+        "files",
+        "filesSha256"
+      ],
+      "properties": {
+        "profile": {
+          "const": "usdm-v4-document-inventory/1.0.0"
+        },
+        "packageName": {
+          "const": "@accura-trial/shared-types"
+        },
+        "packageVersion": {
+          "const": "0.2.0"
+        },
+        "packagePath": {
+          "const": "node_modules/@accura-trial/shared-types"
+        },
+        "export": {
+          "const": "@accura-trial/shared-types/usdm/validation"
+        },
+        "symbol": {
+          "const": "inventoryUsdmV4Document"
+        },
+        "archiveSha256": {
+          "const": "114ce8e05c2f24ee1352ff61772d4e54a70990cc0920dc32e986fa2eecd04278"
+        },
+        "archiveByteSize": {
+          "const": 4745319
+        },
+        "archiveIntegrity": {
+          "const": "sha512-9w2vP11UEaHBBh+vfW19vLes3h2zAagv7PuH2MSTD9eRctKih5Phsxraa/4EGmX7g4CbVlVcAY1KxLzwS61z5Q=="
+        },
+        "releaseManifestSha256": {
+          "const": "80797adb4f2246fb2d94528d91c94ffe4d574dbe9242955bf3457195ec42dc49"
+        },
+        "sourceTreeSha256": {
+          "const": "f13375ad50d9e2badd193a4a5a323143d2df12307bca39d1efb6cddb10728671"
+        },
+        "runtimeTreeSha256": {
+          "const": "aec12f597af0ae8d6fca182fec0c43f6d3aed1c6b9c00f99e91b75c6e11bab85"
+        },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100000,
+          "items": {
+            "$ref": "#/$defs/File"
+          }
+        },
+        "filesSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "executionQualifiedFamilies": {
+      "type": "array",
+      "maxItems": 0,
+      "items": false
+    }
+  },
+  "$defs": {
+    "File": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "byteSize",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^(?!/)(?!.*(?:^|/)[.]{1,2}(?:/|$))(?!.*[\\\\:\\x00-\\x1f])[^/]+(?:/[^/]+)*$"
+        },
+        "byteSize": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "RuntimeRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "executable",
+        "version",
+        "files",
+        "filesSha256"
+      ],
+      "properties": {
+        "executable": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^(?!/)(?!.*(?:^|/)[.]{1,2}(?:/|$))(?!.*[\\\\:\\x00-\\x1f])[^/]+(?:/[^/]+)*$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^v?[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100000,
+          "items": {
+            "$ref": "#/$defs/File"
+          }
+        },
+        "filesSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  },
+  "$comment": "All paths are relative to their independently qualified immutable root. Arrays are complete and sorted by UTF-16 code units, with no duplicate/case-fold aliases or links. filesSha256 is SHA256 of platform canonical_json(File[]) UTF-8, not a Git tree hash. API archive regular members exactly equal files. Python root includes interpreter, standard library and installed packages; Node root includes interpreter, installed kernel and all dependencies. Manifest hash uses canonical-json/1.0, application/json, schemaVersion OsbMapperObservationRuntimeV1@1.0.0, no excludes. Image identity, mounted root completeness and process identity require an independent deployment binding; schema-valid producer metadata provides no qualification. No execution family is qualified."
+}

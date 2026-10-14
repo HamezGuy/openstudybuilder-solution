@@ -189,9 +189,22 @@ class USDMService:
 
     @trace_calls(args=[1], kwargs=["uid"])
     def get_by_uid_with_report(
-        self, uid: str, study_value_version: str | None = None
+        self,
+        uid: str,
+        study_value_version: str | None = None,
+        *,
+        observation_runtime=None,
     ) -> dict[str, Any]:
         """Return an honest draft and source issues; this grants no release authority."""
+        if observation_runtime is not None:
+            # Reject stale installation authority before native reads, then let
+            # the runtime recheck after mapping and around the inventory kernel.
+            observation_runtime.assert_current()
+            return self._usdm_mapper.map_with_correspondence_report(
+                self._read_study(uid, study_value_version),
+                study_value_version=study_value_version,
+                observation_runtime=observation_runtime,
+            )
         return self._usdm_mapper.map_with_report(
             self._read_study(uid, study_value_version),
             study_value_version=study_value_version,

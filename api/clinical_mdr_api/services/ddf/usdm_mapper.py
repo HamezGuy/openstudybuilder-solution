@@ -383,7 +383,11 @@ class USDMMapper:
         }
 
     def map_with_correspondence_report(
-        self, study: OSBStudy, study_value_version: str | None = None
+        self,
+        study: OSBStudy,
+        study_value_version: str | None = None,
+        *,
+        observation_runtime=None,
     ) -> dict[str, Any]:
         """Observe explicit mappings without changing ordinary mapper output.
 
@@ -403,7 +407,7 @@ class USDMMapper:
             observations["allocationEvents"] = [
                 event._asdict() for event in self._id_manager.trace_snapshot()
             ]
-            return {
+            result = {
                 "document": native_json(document),
                 "mappingReport": {
                     "state": "incomplete" if self._context.issues else "complete",
@@ -414,6 +418,11 @@ class USDMMapper:
                 "nativeRecords": self._context.native_records,
                 "correspondenceObservations": observations,
             }
+            if observation_runtime is not None:
+                result["observationRuntime"] = observation_runtime.observe(
+                    result["document"]
+                )
+            return result
         finally:
             self._id_manager = original_ids
 

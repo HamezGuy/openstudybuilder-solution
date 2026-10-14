@@ -379,6 +379,38 @@ def read_pinned_canonical_definition(root: dict[str, Any]) -> dict[str, Any]:
     exported = USDMService().get_by_uid_with_report(
         root["nativeStudyId"], study_value_version=root["nativeVersion"]
     )
+    return _canonical_definition_from_export(root, exported)
+
+
+def read_pinned_canonical_definition_with_observations(
+    root: dict[str, Any], *, observation_runtime
+) -> dict[str, Any]:
+    """Carry descriptive evidence beside the unchanged legacy definition.
+
+    Both values come from one mapper invocation at the requested native version.
+    This read alone supplies neither signed capture nor correspondence authority.
+    """
+    _require(observation_runtime is not None, "OSB_OBSERVATION_RUNTIME_REQUIRED")
+    # Constructing native service readers can itself query terminology. Check
+    # installation authority before construction as well as before export.
+    observation_runtime.assert_current()
+    exported = USDMService().get_by_uid_with_report(
+        root["nativeStudyId"],
+        study_value_version=root["nativeVersion"],
+        observation_runtime=observation_runtime,
+    )
+    return {
+        "canonicalDefinition": _canonical_definition_from_export(root, exported),
+        "correspondenceObservations": _record(
+            exported.get("correspondenceObservations")
+        ),
+        "observationRuntime": _record(exported.get("observationRuntime")),
+    }
+
+
+def _canonical_definition_from_export(
+    root: dict[str, Any], exported: dict[str, Any]
+) -> dict[str, Any]:
     report = _record(exported.get("mappingReport"))
     document = _record(exported.get("document"))
     _require(
