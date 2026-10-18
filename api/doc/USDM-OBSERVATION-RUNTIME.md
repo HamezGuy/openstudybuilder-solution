@@ -96,3 +96,63 @@ runtime and ruleset hashes in its signed input, publish their full artifact
 descriptors with the result, and preserve exact journal replay and transactional
 native-state rechecks. Existing carrier V1/V2 inputs and complete-definition
 equality remain unchanged.
+
+### Deployed layout preflight, 15 October 2026
+
+A read-only inspection of the existing `runtime-20261015-full1` API image
+(`sha256:7020e49a9963e2e931b9f4a9da62c8eae0074b202087b0ae26946eb898f37236`)
+confirmed that its current layout cannot supply this runtime seal:
+
+- Node is absent from the image's executable search path, and none of the
+  observation/kernel installation roots are present.
+- Python 3.14.8's standard library lives under `/usr/local/lib/python3.14`,
+  separately from Pipenv's installed application dependencies. The virtualenv
+  contains three interpreter symlinks, which the complete-file verifier refuses.
+- Installed `/app` contains 2,199 regular files, including 1,035 bytecode files;
+  API tests have been removed. It is not byte-identical to the repository source
+  archive. The root filesystem is writable.
+
+The inspection used isolated Python with application imports and bytecode writes
+disabled. It read filesystem metadata and container/image configuration without
+reading secret values, contacting the database, changing configuration, or
+restarting services. The full receipt is retained at
+`D:/codex-task-evidence/01a118b3-5265-70a2-ba67-15b5b7bacfa8/osb-runtime-topology-preflight-20261015.json`,
+SHA256 `356ec53e6998d1f8f533afa40e1730e8d0d2f7ae540151deacdf55d27afc25d1`.
+It is layout evidence only, not runtime or deployment qualification.
+
+The next packaging step must provide complete regular-file Python and Node/kernel
+roots, retain an archive of the exact installed API bytes outside that API root,
+and keep those roots immutable during execution. The existing release verifier
+must independently bind the actual image identity, process, mounts and import
+paths before an `ObservationRuntime` is constructed. Supplying an image digest
+from the manifest back to its own callback cannot establish that binding.
+
+This packaging work is separate from the existing EDC package 2.3 authored
+roundtrip. That path retains the complete accepted bundle and portable IDs and
+requires its existing native-root/checkpoint and authorization checks. It does
+not gain descriptive correspondence authority from this preflight.
+
+### Deferred packaging design
+
+An opt-in `TARGET=observation` can preserve the current development and production
+targets. Its Python prefix must include the interpreter, standard library and
+locked dependencies as regular files; its separate Node root must include a
+compatible Linux executable, the pinned kernel and locked runtime dependencies.
+An exact compatible Node archive/image pin remains an unresolved build input.
+Qualify isolated interpreter startup and the explicit API import path before
+selecting this target for any of the three applications.
+
+Generate the final manifest after the image is built and retain its expected
+hash externally: embedding a manifest containing the final image digest into
+that same image creates a digest cycle. Neither the manifest nor the retained
+API archive may be placed inside a root it inventories.
+
+The current Command Center OSB release verification checks an image tag. Its
+`doVerify` / `emitVerifyScript` path also does not receive the release lock.
+Independent qualification therefore requires carrying the retained image and
+manifest pins through that existing verification path, checking the actual
+container image identity and immutable mounts, and qualifying the observation
+process's own import state. A new `docker exec python` process cannot prove the
+running API worker's import paths or hooks. No production caller currently
+constructs the observation runtime; packaging must not silently opt existing
+M11, EDC export or carrier readers into it.
