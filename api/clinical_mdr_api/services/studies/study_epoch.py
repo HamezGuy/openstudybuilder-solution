@@ -975,6 +975,7 @@ class StudyEpochService(StudySelectionMixin):
 
     @ensure_transaction(db)
     def delete(self, study_uid: str, study_epoch_uid: str):
+        self._lock_mutable_study(study_uid)
         # get the possible connected StudyDesign Cells attached to it
         design_cells_on_epoch = None
         if self.repo.epoch_specific_has_connected_design_cell(

@@ -215,6 +215,7 @@ class StudyDesignCellService(StudySelectionMixin):
     def create(
         self, study_uid: str, design_cell_input: StudyDesignCellCreateInput
     ) -> StudyDesignCell:
+        self._lock_mutable_study(study_uid)
         # all_design_cells: list[StudyDesignCellVO]
         all_design_cells = (
             self._repos.study_design_cell_repository.find_all_design_cells_by_study(
@@ -268,6 +269,7 @@ class StudyDesignCellService(StudySelectionMixin):
     def patch(
         self, study_uid: str, design_cell_update_input: StudyDesignCellEditInput
     ) -> StudyDesignCell:
+        self._lock_mutable_study(study_uid)
         study_design_cell: StudyDesignCellVO = (
             self._repos.study_design_cell_repository.find_by_uid(
                 study_uid=study_uid, uid=design_cell_update_input.study_design_cell_uid
@@ -303,6 +305,7 @@ class StudyDesignCellService(StudySelectionMixin):
     @trace_calls
     @ensure_transaction(db)
     def delete(self, study_uid: str, design_cell_uid: str):
+        self._lock_mutable_study(study_uid)
         study_design_cell = self._repos.study_design_cell_repository.find_by_uid(
             study_uid=study_uid, uid=design_cell_uid
         )

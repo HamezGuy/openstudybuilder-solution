@@ -338,6 +338,7 @@ class StudyElementSelectionService(
     def delete_selection(self, study_uid: str, study_selection_uid: str):
         repos = self._repos
         try:
+            self._lock_mutable_study(study_uid)
             # cascade delete
             # if the element has connected design cells
             design_cells_on_element = None

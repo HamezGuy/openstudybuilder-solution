@@ -5,6 +5,9 @@ from typing import Sequence
 
 from opencensus.trace import execution_context
 
+from clinical_mdr_api.domain_repositories._utils.helpers import (
+    acquire_write_lock_study_value,
+)
 from clinical_mdr_api.domain_repositories.models.controlled_terminology import CTPackage
 from clinical_mdr_api.domains.versioned_object_aggregate import LibraryItemStatus
 from clinical_mdr_api.models.concepts.activities.activity import (
@@ -39,6 +42,17 @@ from common.telemetry import trace_calls
 
 
 class StudySelectionMixin:
+
+    def _lock_mutable_study(self, study_uid: str) -> None:
+        # Route admission may predate a concurrent study lock. Hold the same root
+        # lock as the study lifecycle writer and recheck before reading selections.
+        acquire_write_lock_study_value(study_uid)
+        exceptions.BusinessLogicException.raise_if(
+            self._repos.study_definition_repository.check_if_study_is_locked(
+                study_uid=study_uid
+            ),
+            msg=f"Study with UID '{study_uid}' is locked.",
+        )
 
     def check_if_study_exists(self, study_uid: str):
         exceptions.NotFoundException.raise_if_not(

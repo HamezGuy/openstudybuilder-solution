@@ -278,6 +278,7 @@ class StudyArmSelectionService(StudySelectionMixin):
     def delete_selection(self, study_uid: str, study_selection_uid: str):
         repos = self._repos
         try:
+            self._lock_mutable_study(study_uid)
             # cascade delete
             # delete study branch arms assigned to arm
             branch_arms_on_arm = (

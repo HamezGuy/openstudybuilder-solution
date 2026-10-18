@@ -1,7 +1,14 @@
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
+from threading import Event, get_ident
+from unittest.mock import patch
 
 from neomodel import db
 
+from clinical_mdr_api.domain_repositories._utils.helpers import (
+    acquire_write_lock_study_value,
+)
 from clinical_mdr_api.domain_repositories.models.study import StudyRoot
 from clinical_mdr_api.models.study_selections.study_selection import (
     StudyDesignCellBatchInput,
@@ -9,11 +16,21 @@ from clinical_mdr_api.models.study_selections.study_selection import (
     StudyDesignCellDeleteInput,
     StudyDesignCellEditInput,
 )
+from clinical_mdr_api.services.studies.study import StudyService
+from clinical_mdr_api.services.studies.study_arm_selection import (
+    StudyArmSelectionService,
+)
 from clinical_mdr_api.services.studies.study_design_cell import StudyDesignCellService
+from clinical_mdr_api.services.studies.study_element_selection import (
+    StudyElementSelectionService,
+)
+from clinical_mdr_api.services.studies.study_epoch import StudyEpochService
 from clinical_mdr_api.tests.integration.utils.api import inject_and_clear_db
 from clinical_mdr_api.tests.integration.utils.data_library import (
     STARTUP_CT_CATALOGUE_CYPHER,
     STARTUP_STUDY_LIST_CYPHER,
+    create_reason_for_lock_unlock_terms,
+    fix_study_preferred_time_unit,
 )
 from clinical_mdr_api.tests.integration.utils.method_library import (
     create_codelist,
@@ -23,9 +40,12 @@ from clinical_mdr_api.tests.integration.utils.method_library import (
     create_study_element,
     create_study_epoch,
     create_study_epoch_codelists_ret_cat_and_lib,
+    create_units,
     get_catalogue_name_library_name,
 )
+from clinical_mdr_api.tests.integration.utils.utils import TestUtils
 from common import exceptions
+from common.config import settings
 
 
 class StudyDesignCellTestCase(unittest.TestCase):
@@ -212,6 +232,272 @@ class StudyDesignCellTestCase(unittest.TestCase):
                 arm_uid=self.study_arms[1].arm_uid,
             ),
         ]
+
+    def _assert_waiting_write_rechecks_locked_study(
+        self, operation, concurrent_attachment=False
+    ):
+        lock_terms = create_reason_for_lock_unlock_terms()
+        TestUtils.create_ct_catalogue(catalogue_name=settings.sdtm_ct_catalogue_name)
+        TestUtils.set_study_standard_version(
+            study_uid=self.study.uid, create_codelists_and_terms_for_package=False
+        )
+        create_units()
+        fix_study_preferred_time_unit(self.study.uid)
+        TestUtils.set_study_title(self.study.uid)
+        service = StudyDesignCellService()
+        cell = service.create(
+            self.study.uid,
+            StudyDesignCellCreateInput(
+                study_arm_uid=self.study_arms[2].arm_uid,
+                study_epoch_uid=self.study_epoch.uid,
+                study_element_uid=self.study_elements[0].element_uid,
+                transition_rule="Original rule",
+            ),
+        )
+        service.create(
+            self.study.uid,
+            StudyDesignCellCreateInput(
+                study_arm_uid=self.study_arms[3].arm_uid,
+                study_epoch_uid=self.study_epoch.uid,
+                study_element_uid=self.study_elements[1].element_uid,
+                transition_rule="Following rule",
+            ),
+        )
+        if concurrent_attachment:
+            service.create(
+                self.study.uid,
+                StudyDesignCellCreateInput(
+                    study_arm_uid=self.study_arms[4].arm_uid,
+                    study_epoch_uid=self.study_epoch2.uid,
+                    study_element_uid=self.study_elements[1].element_uid,
+                    transition_rule="Unaffected rule",
+                ),
+            )
+
+        def snapshot():
+            return {
+                "cells": [
+                    item.model_dump(exclude={"study_version"})
+                    for item in service.get_all_design_cells(self.study.uid)
+                ],
+                "native_selections": db.cypher_query(
+                    """MATCH (:StudyRoot {uid:$uid})-[:LATEST]->(:StudyValue)-[r]->(n)
+                    WHERE n:StudyEpoch OR n:StudyElement OR n:StudyArm OR n:StudyBranchArm
+                    RETURN type(r), elementId(n), properties(n)
+                    ORDER BY type(r), elementId(n)""",
+                    {"uid": self.study.uid},
+                )[0],
+            }
+
+        before = snapshot()
+        before_history = service.get_all_design_cells_audit_trail(self.study.uid)
+        # Audit reads close their repository, so the request uses a fresh service.
+        service = StudyDesignCellService()
+        admitted = Event()
+        lock_requested = Event()
+        attached_cell_uid = None
+        holder_thread = get_ident()
+        holder_transaction = None
+
+        def acquire_requested_lock(study_uid):
+            if get_ident() != holder_thread:
+                self.assertIsNotNone(db._active_transaction)
+                self.assertIsNot(db._active_transaction, holder_transaction)
+                lock_requested.set()
+            acquire_write_lock_study_value(study_uid)
+
+        def write():
+            if operation == "epoch-delete":
+                return StudyEpochService().delete(self.study.uid, self.study_epoch.uid)
+            if operation == "element-delete":
+                return StudyElementSelectionService().delete_selection(
+                    self.study.uid, self.study_elements[0].element_uid
+                )
+            if operation == "arm-delete":
+                return StudyArmSelectionService().delete_selection(
+                    self.study.uid, self.study_arms[2].arm_uid
+                )
+            if operation == "create":
+                return service.create(
+                    self.study.uid,
+                    StudyDesignCellCreateInput(
+                        study_arm_uid=self.study_arms[4].arm_uid,
+                        study_epoch_uid=self.study_epoch.uid,
+                        study_element_uid=self.study_elements[1].element_uid,
+                        transition_rule="Must not be written while locked",
+                        order=1,
+                    ),
+                )
+            if operation == "patch":
+                return service.patch(
+                    self.study.uid,
+                    StudyDesignCellEditInput(
+                        study_design_cell_uid=cell.design_cell_uid,
+                        transition_rule="Must not be written while locked",
+                    ),
+                )
+            return service.delete(self.study.uid, cell.design_cell_uid)
+
+        def admitted_writer():
+            self.assertIsNone(db._active_transaction)
+            # This is the router's actual predicate, evaluated before the other
+            # transaction commits LOCKED. The service must not trust that read.
+            self.assertFalse(StudyService().check_if_study_is_locked(self.study.uid))
+            admitted.set()
+            if concurrent_attachment:
+                return write()
+            with self.assertRaisesRegex(
+                exceptions.BusinessLogicException,
+                f"Study with UID '{self.study.uid}' is locked.",
+            ):
+                write()
+            return None
+
+        def lock_study():
+            nonlocal attached_cell_uid
+            self.assertTrue(admitted.is_set(), "The writer must have passed admission")
+            self.assertTrue(
+                lock_requested.is_set(), "The writer must have reached the root lock"
+            )
+            if concurrent_attachment:
+                attached_cell_uid = service.create(
+                    self.study.uid,
+                    StudyDesignCellCreateInput(
+                        study_arm_uid=(
+                            self.study_arms[2].arm_uid
+                            if operation == "arm-delete"
+                            else self.study_arms[4].arm_uid
+                        ),
+                        study_epoch_uid=(
+                            self.study_epoch2.uid
+                            if operation == "arm-delete"
+                            else self.study_epoch.uid
+                        ),
+                        study_element_uid=self.study_elements[0].element_uid,
+                        transition_rule="Attached while deletion waits",
+                        order=1,
+                    ),
+                ).design_cell_uid
+                return
+            StudyService().lock(
+                uid=self.study.uid,
+                reason_for_lock_term_uid=lock_terms["reason_for_lock_terms"][
+                    0
+                ].term_uid,
+                change_description="Concurrent lock regression",
+            )
+
+        with patch(
+            "clinical_mdr_api.services.studies.study_selection_base.acquire_write_lock_study_value",
+            side_effect=acquire_requested_lock,
+        ):
+            # Each service opens its own real transaction. The repository
+            # concurrency helper adds an outer transaction, which cannot wrap
+            # services that already use neomodel's @db.transaction decorator.
+            self.assertIsNone(db._active_transaction)
+            writer_context = copy_context()
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                with db.transaction:
+                    holder_transaction = db._active_transaction
+                    acquire_write_lock_study_value(self.study.uid)
+                    waiting_write = executor.submit(writer_context.run, admitted_writer)
+                    self.assertTrue(lock_requested.wait(timeout=10))
+                    with self.assertRaises(TimeoutError):
+                        waiting_write.result(timeout=0.25)
+                    lock_study()
+                waiting_write.result(timeout=10)
+        if concurrent_attachment:
+            self.assertFalse(StudyService().check_if_study_is_locked(self.study.uid))
+            remaining = service.get_all_design_cells(self.study.uid)
+            self.assertIsNotNone(attached_cell_uid)
+            self.assertNotIn(
+                attached_cell_uid, [item.design_cell_uid for item in remaining]
+            )
+            # API readers require a still-current epoch and element, so they
+            # can hide orphan cells. Check the direct ownership edge as well.
+            self.assertEqual(
+                db.cypher_query(
+                    """MATCH (:StudyRoot {uid:$study})-[:LATEST]->(:StudyValue)
+                    -[:HAS_STUDY_DESIGN_CELL]->(cell:StudyDesignCell)
+                    RETURN cell.uid, cell.order ORDER BY cell.order""",
+                    {"study": self.study.uid},
+                )[0],
+                [[item.design_cell_uid, item.order] for item in remaining],
+            )
+            self.assertEqual(
+                db.cypher_query(
+                    """MATCH (:StudyRoot {uid:$study})-[:AUDIT_TRAIL]->(action:Delete)
+                    -[:BEFORE]->(:StudyDesignCell {uid:$cell})
+                    RETURN count(action)""",
+                    {"study": self.study.uid, "cell": attached_cell_uid},
+                )[0],
+                [[1]],
+            )
+            self.assertEqual(
+                [item.order for item in remaining], list(range(1, len(remaining) + 1))
+            )
+            self.assertEqual(len(remaining), 1 if operation == "epoch-delete" else 2)
+            self._assert_cascade_selection_removed(operation)
+            return
+        self.assertTrue(StudyService().check_if_study_is_locked(self.study.uid))
+        self.assertEqual(snapshot(), before)
+        self.assertEqual(
+            service.get_all_design_cells_audit_trail(self.study.uid), before_history
+        )
+
+        TestUtils.unlock_study(
+            self.study.uid,
+            reason_for_unlock_term_uid=lock_terms["reason_for_unlock_terms"][
+                0
+            ].term_uid,
+        )
+        service = StudyDesignCellService()
+        write()
+        self.assertNotEqual(snapshot(), before)
+        if operation.endswith("-delete"):
+            self._assert_cascade_selection_removed(operation)
+
+    def _assert_cascade_selection_removed(self, operation):
+        deleted_uid = {
+            "epoch-delete": self.study_epoch.uid,
+            "element-delete": self.study_elements[0].element_uid,
+            "arm-delete": self.study_arms[2].arm_uid,
+        }[operation]
+        self.assertEqual(
+            db.cypher_query(
+                """MATCH (:StudyRoot {uid:$study})-[:LATEST]->(:StudyValue)-->(n {uid:$selection})
+                RETURN count(n)""",
+                {"study": self.study.uid, "selection": deleted_uid},
+            )[0],
+            [[0]],
+        )
+
+    def test_create_waits_for_study_lock_and_rechecks_status(self):
+        self._assert_waiting_write_rechecks_locked_study("create")
+
+    def test_patch_waits_for_study_lock_and_rechecks_status(self):
+        self._assert_waiting_write_rechecks_locked_study("patch")
+
+    def test_delete_waits_for_study_lock_and_rechecks_status(self):
+        self._assert_waiting_write_rechecks_locked_study("delete")
+
+    def test_epoch_delete_waits_for_study_lock_and_rechecks_status(self):
+        self._assert_waiting_write_rechecks_locked_study("epoch-delete")
+
+    def test_element_delete_waits_for_study_lock_and_rechecks_status(self):
+        self._assert_waiting_write_rechecks_locked_study("element-delete")
+
+    def test_arm_delete_waits_for_study_lock_and_rechecks_status(self):
+        self._assert_waiting_write_rechecks_locked_study("arm-delete")
+
+    def test_epoch_delete_includes_cell_attached_while_waiting(self):
+        self._assert_waiting_write_rechecks_locked_study("epoch-delete", True)
+
+    def test_element_delete_includes_cell_attached_while_waiting(self):
+        self._assert_waiting_write_rechecks_locked_study("element-delete", True)
+
+    def test_arm_delete_includes_cell_attached_while_waiting(self):
+        self._assert_waiting_write_rechecks_locked_study("arm-delete", True)
 
     def test_create_patch_delete_design_cell(self):
         service = StudyDesignCellService()
