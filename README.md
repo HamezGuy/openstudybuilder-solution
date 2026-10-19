@@ -97,6 +97,64 @@ delivery: it does not enable identity, command, review or production features.
 If rotation replaces the host file itself, recreate the API container with the
 same overlay so its file mount follows the replacement.
 
+### Estate host
+
+The estate host runs this stack from `/opt/accuratrial/OpenSourceBuilder` with three
+compose files, the signing overlay last:
+
+```sh
+docker compose --env-file .env.production -f compose.yaml   -f compose.production.yaml -f compose.production-signing.yml up -d --no-build
+```
+
+`compose.production-signing.yml` sets the production posture for the three API
+services, whatever `.env.production` says. It sets `DEPLOYMENT_ENVIRONMENT=production`,
+`MAPPING_AUTHORITY_MODE=enforced`, OAuth with RBAC and delegated claims, and turns
+the native-identity and platform-command prototypes off. For the main API it also
+turns on review-workspace identity and sends both signing URLs to the host's
+production signing service. It mounts the OSB package token and CA bundle read-only
+from `/etc/accuratrial-production-signing`. The file holds paths only, and the token
+stays on the host. Command Center's release leg (`scripts/deploy/legs/osb.mjs`)
+refuses to deploy without this file and checks the posture it sets. On this host it
+takes the place of `compose.signing.yaml`, which mounts the token at a different path.
+
+The release leg builds the images and pins them in `.env.production`. It does not
+copy compose files, so a change here reaches the host only when someone copies the
+file. Compare with `sha256sum` against `git show origin/main:<file>`. Two network
+facts are not visible in these files:
+
+- The Intelligence Layer's api and worker join `opensourcebuilder_default`, so the
+  name `api` resolves to both APIs on this network. Address this API by container
+  name (`opensourcebuilder-api-1`), as the frontend proxy does.
+- The release leg attaches `opensourcebuilder-api-1` to `accuratrial-edc_edc_private`
+  with `docker network connect` after every recreate. A recreate without the leg
+  loses that attachment.
+
+Host versus git on 2026-10-19:
+
+- `compose.production-signing.yml` existed only on the host until it was added here
+  byte for byte.
+- The host's `compose.production.yaml` is this file plus six `${...:-}` pass-throughs
+  on each API service, added by Command Center's `osb-enable` content leg on
+  2026-09-01. The signing overlay replaced their effect: it forces the three
+  booleans to false, and on the main API it sets two of the three URLs. What still
+  gets through is the development gateway's URLs, and they reach only services whose
+  features are off. They are deliberately not carried here. Removing them from the
+  host file, and the six matching keys from `.env.production`, makes the host file
+  equal to this one.
+- The host's `compose.yaml` is the 2026-08-12 version (`4e9cfff6`). Since then, git
+  has added:
+  - restart policies
+  - the Neo4j stop grace period, a named `/logs` volume and the `IF NOT EXISTS`
+    seed initializer
+  - a loopback API port (5003)
+  - the delegated-claims and platform-control pass-throughs
+  - the extensions API's `API_BASE_URL` (set it by container name, see
+    `.env.production.example`)
+  - a frontend that no longer waits on optional services
+
+  A deployment from git differs from the host on these points until the host
+  adopts them.
+
 ### Running the full stack in Docker
 
 The root `compose.yaml` runs the whole solution (database, the three API apps,

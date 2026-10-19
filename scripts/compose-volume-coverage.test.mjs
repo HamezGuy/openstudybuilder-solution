@@ -35,6 +35,7 @@ const STACKS = [
   { files: ['compose.yaml', 'compose.production.yaml'] },
   { files: ['compose.yaml', 'compose.signing.yaml'] },
   { files: ['compose.yaml', 'compose.production.yaml', 'compose.signing.yaml'] },
+  { files: ['compose.yaml', 'compose.production.yaml', 'compose.production-signing.yml'] },
   { files: ['api/compose.yaml'] },
   { files: ['api/compose.yaml', 'api/compose.dev.yaml'] },
   { files: ['db_schema_migration/compose.yaml'] },

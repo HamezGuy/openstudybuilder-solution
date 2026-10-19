@@ -1,0 +1,66 @@
+{
+  "services": {
+    "api": {
+      "environment": {
+        "DEPLOYMENT_ENVIRONMENT": "production",
+        "MAPPING_AUTHORITY_MODE": "enforced",
+        "ALLOW_UNSAFE_LEGACY_EDC_SEND": "false",
+        "OAUTH_ENABLED": "true",
+        "OAUTH_RBAC_ENABLED": "true",
+        "OIDC_DELEGATED_CLAIMS_REQUIRED": "true",
+        "OSB_NATIVE_IDENTITY_ENDPOINT_ENABLED": "false",
+        "OSB_NATIVE_IDENTITY_INVENTORY_ENABLED": "false",
+        "OSB_PLATFORM_COMMANDS_PROTOTYPE_ENABLED": "false",
+        "OSB_REVIEW_WORKSPACE_IDENTITY_ENABLED": "true",
+        "OSB_NATIVE_IDENTITY_SIGNING_URL": "https://host.docker.internal:8766/v1/sign-command-receipt",
+        "OSB_PLATFORM_COMMAND_SIGNING_URL": "https://host.docker.internal:8766/v1/sign-command-receipt",
+        "OSB_PLATFORM_SIGNING_TOKEN_FILE": "/run/production-signing/osb-package.token",
+        "SSL_CERT_FILE": "/run/production-signing/ca-bundle.pem",
+        "REQUESTS_CA_BUNDLE": "/run/production-signing/ca-bundle.pem"
+      },
+      "volumes": [
+        {
+          "type": "bind",
+          "source": "/etc/accuratrial-production-signing/tokens/osb.package.token",
+          "target": "/run/production-signing/osb-package.token",
+          "read_only": true
+        },
+        {
+          "type": "bind",
+          "source": "/etc/accuratrial-production-signing/public/tls-ca-bundle.pem",
+          "target": "/run/production-signing/ca-bundle.pem",
+          "read_only": true
+        }
+      ],
+      "extra_hosts": [
+        "host.docker.internal:host-gateway"
+      ]
+    },
+    "consumerapi": {
+      "environment": {
+        "DEPLOYMENT_ENVIRONMENT": "production",
+        "MAPPING_AUTHORITY_MODE": "enforced",
+        "ALLOW_UNSAFE_LEGACY_EDC_SEND": "false",
+        "OAUTH_ENABLED": "true",
+        "OAUTH_RBAC_ENABLED": "true",
+        "OIDC_DELEGATED_CLAIMS_REQUIRED": "true",
+        "OSB_NATIVE_IDENTITY_ENDPOINT_ENABLED": "false",
+        "OSB_NATIVE_IDENTITY_INVENTORY_ENABLED": "false",
+        "OSB_PLATFORM_COMMANDS_PROTOTYPE_ENABLED": "false"
+      }
+    },
+    "extensionsapi": {
+      "environment": {
+        "DEPLOYMENT_ENVIRONMENT": "production",
+        "MAPPING_AUTHORITY_MODE": "enforced",
+        "ALLOW_UNSAFE_LEGACY_EDC_SEND": "false",
+        "OAUTH_ENABLED": "true",
+        "OAUTH_RBAC_ENABLED": "true",
+        "OIDC_DELEGATED_CLAIMS_REQUIRED": "true",
+        "OSB_NATIVE_IDENTITY_ENDPOINT_ENABLED": "false",
+        "OSB_NATIVE_IDENTITY_INVENTORY_ENABLED": "false",
+        "OSB_PLATFORM_COMMANDS_PROTOTYPE_ENABLED": "false"
+      }
+    }
+  }
+}
