@@ -18,6 +18,10 @@ services:
   frontend:
     image: "${FRONTEND_IMAGE:?Set immutable FRONTEND_IMAGE}"
     restart: unless-stopped
+    environment:
+      # "api" is ambiguous on this network: the Intelligence Layer's own api service joins it to reach
+      # OpenStudyBuilder, so the proxy dialed both and half its API calls were refused. Name this API exactly.
+      API_HOST: "${OSB_FRONTEND_API_HOST:-opensourcebuilder-api-1}"
 
   documentation:
     image: "${DOCUMENTATION_IMAGE:?Set immutable DOCUMENTATION_IMAGE}"
