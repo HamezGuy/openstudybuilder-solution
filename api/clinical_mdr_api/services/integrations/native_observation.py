@@ -88,6 +88,16 @@ class NativeCollection:
 
 COLLECTIONS = (
     NativeCollection(
+        "study_arm_lifecycle_events",
+        "StudyArmLifecycleEvent",
+        "uid",
+        "study_arm_selection",
+        "StudyArmSelectionService",
+        "get_lifecycle_events",
+        audit=None,
+        paginated=False,
+    ),
+    NativeCollection(
         "study_arms",
         "StudySelectionArm",
         "arm_uid",

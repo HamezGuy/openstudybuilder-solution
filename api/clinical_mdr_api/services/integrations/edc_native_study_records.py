@@ -4,6 +4,7 @@ import inspect
 import json
 from copy import deepcopy
 from dataclasses import dataclass
+from datetime import datetime
 from importlib import import_module
 from typing import Any, Callable, Mapping
 
@@ -27,6 +28,14 @@ class Collection:
 
 
 COLLECTIONS = (
+    Collection(
+        "studyArmLifecycleEvent",
+        "uid",
+        "study_arm_selection",
+        "StudyArmSelectionService",
+        "get_lifecycle_events",
+        paginated=False,
+    ),
     Collection(
         "studyEpoch", "uid", "study_epoch", "StudyEpochService", "get_all_epochs"
     ),
@@ -266,6 +275,7 @@ def collect_study_native_records(
             else _rows(result)
         )
         retained = 0
+        collection_records = []
         for model in selected:
             # Use the model's API JSON representation (including datetime
             # formatting), so retaining a selection does not change its wire
@@ -343,8 +353,17 @@ def collect_study_native_records(
                     entry["scope"]["studyValueVersion"] = study_value_version
                 if instance_uid is not None:
                     entry["scope"]["studyActivityInstanceUid"] = instance_uid
-            records.append(entry)
+            collection_records.append(entry)
             retained += 1
+        if collection.kind == "studyArmLifecycleEvent":
+            collection_records.sort(
+                key=lambda entry: (
+                    datetime.fromisoformat(entry["record"]["effective_date"]),
+                    datetime.fromisoformat(entry["record"]["recorded_at"]),
+                    entry["uid"],
+                )
+            )
+        records.extend(collection_records)
         census.append(
             {
                 "kind": "native_study_collection",

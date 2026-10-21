@@ -5,6 +5,7 @@ version and raw imported carriers never resolve native selections.
 """
 
 import json
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, cast
 
@@ -89,6 +90,7 @@ class NativeStudyMapping:
                 uid = getattr(row, "study_data_supplier_uid", None) or row.study_uid
                 design.extensionAttributes.append(self.extension(kind, uid, row))
         self._cohorts_and_branches(study, design)
+        self._arm_lifecycle(design)
         self._activities(study, design, version)
         self._footnotes(design, version)
         from clinical_mdr_api.services.ddf.usdm_cell_transitions import (
@@ -189,6 +191,47 @@ class NativeStudyMapping:
         version.extensionAttributes.append(
             self.extension("authored-document-applicability", study.uid, authored)
         )
+
+    def _arm_lifecycle(self, design) -> None:
+        """Retain authored history on exact selected targets, including future events."""
+        records = [
+            entry["record"]
+            for entry in self.context.native_records
+            if entry["kind"] == "studyArmLifecycleEvent"
+        ]
+        records.sort(
+            key=lambda row: (
+                datetime.fromisoformat(row["effective_date"]),
+                datetime.fromisoformat(row["recorded_at"]),
+                row["uid"],
+            )
+        )
+        for record in records:
+            kind, target_uid = record["target_kind"], record["target_uid"]
+            source_kind = {"arm": "studyArm", "branch_arm": "studyBranchArm"}.get(kind)
+            selected = [
+                entry
+                for entry in self.context.native_records
+                if entry["kind"] == source_kind and entry["uid"] == target_uid
+            ]
+            arm_key = "branch:" + target_uid if kind == "branch_arm" else target_uid
+            targets = [
+                arm
+                for arm in design.arms
+                if arm.id == self.identifier("StudyArm", arm_key)
+            ]
+            if len(selected) != 1 or len(targets) != 1:
+                self.issue(
+                    "USDM_ARM_LIFECYCLE_TARGET_UNRESOLVED",
+                    f"study-arm-lifecycle-events/{record['uid']}",
+                    "StudyArm/extensionAttributes",
+                    "The lifecycle event does not resolve to one exact selected arm or branch.",
+                    "Resolve its target in the selected study version; native event evidence is retained.",
+                )
+                continue
+            targets[0].extensionAttributes.append(
+                self.extension("studyArmLifecycleEvent", record["uid"], record)
+            )
 
     def _cohorts_and_branches(self, study, design) -> None:
         arms = {

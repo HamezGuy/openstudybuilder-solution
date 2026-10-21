@@ -28,6 +28,7 @@ from clinical_mdr_api.tests.fixtures.usdm_native_study import (
 TERMINOLOGY_PATH = Path(__file__).with_name("usdm_native_terminology.json")
 EXPORT_TIME = datetime(2026, 9, 9, 12, 0, tzinfo=timezone.utc)
 COLLECTION_KEYS = {
+    "studyArmLifecycleEvent": "lifecycle_events",
     "studyArm": "arms",
     "studyVisit": "visits",
     "studyEpoch": "epochs",
@@ -432,6 +433,7 @@ class NativeStudySource:
         return USDMMapper(
             get_osb_study_design_cells=self.read("cells"),
             get_osb_study_arms=self.read("arms"),
+            get_osb_arm_lifecycle_events=self.read("lifecycle_events"),
             get_osb_study_epochs=self.read("epochs"),
             get_osb_study_elements=self.read("elements"),
             get_osb_study_endpoints=self.read("endpoints"),

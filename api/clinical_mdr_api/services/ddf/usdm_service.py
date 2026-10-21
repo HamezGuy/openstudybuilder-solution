@@ -150,6 +150,7 @@ class USDMService:
         self._usdm_mapper = USDMMapper(
             get_osb_study_design_cells=StudyDesignCellService().get_all_design_cells,
             get_osb_study_arms=StudyArmSelectionService().get_all_selection,
+            get_osb_arm_lifecycle_events=StudyArmSelectionService().get_lifecycle_events,
             get_osb_study_epochs=StudyEpochService.get_all_epochs,
             get_osb_study_elements=StudyElementSelectionService().get_all_selection,
             get_osb_study_objectives=StudyObjectiveSelectionService().get_all_selection,

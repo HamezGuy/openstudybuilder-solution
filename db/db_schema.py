@@ -16,6 +16,7 @@ INDEXES = [
     ("StudySelection", "uid"),
     ("StudyVisit", "uid"),
     ("StudyArm", "uid"),
+    ("StudyArmLifecycleEvent", "uid"),
     ("StudyCohort", "uid"),
     ("StudyElement", "uid"),
     ("StudyDesignCell", "uid"),

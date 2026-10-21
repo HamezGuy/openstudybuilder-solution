@@ -25,11 +25,19 @@ from clinical_mdr_api.domain_repositories.models.study_audit_trail import (
     Edit,
     StudyAction,
 )
-from clinical_mdr_api.domain_repositories.models.study_selections import StudyArm
+from clinical_mdr_api.domain_repositories.models.study_selections import (
+    StudyArm,
+    StudyArmLifecycleEvent,
+)
 from clinical_mdr_api.domain_repositories.study_selections.study_arm_origin_repository import (
     StudyArmOriginRepository,
 )
 from clinical_mdr_api.domains.enums import StudyDesignClassEnum
+from clinical_mdr_api.domains.study_selections.study_arm_lifecycle import (
+    LifecycleTargetKind,
+    StudyArmLifecycleEventVO,
+    validate_lifecycle_target,
+)
 from clinical_mdr_api.domains.study_selections.study_arm_origin import (
     STUDY_ARM_ORIGIN_CATALOGUE,
     STUDY_ARM_ORIGIN_CODELIST_UID,
@@ -39,8 +47,14 @@ from clinical_mdr_api.domains.study_selections.study_selection_arm import (
     StudySelectionArmAR,
     StudySelectionArmVO,
 )
+from clinical_mdr_api.services._utils import ensure_transaction
 from common.config import settings
-from common.exceptions import BusinessLogicException, ValidationException
+from common.exceptions import (
+    AlreadyExistsException,
+    BusinessLogicException,
+    NotFoundException,
+    ValidationException,
+)
 from common.telemetry import trace_calls
 from common.utils import convert_to_datetime, get_db_result_as_dict
 
@@ -73,6 +87,243 @@ class SelectionHistoryArm:
 
 
 class StudySelectionArmRepository:
+
+    @staticmethod
+    def _lifecycle_study_value(
+        study_uid: str, study_value_version: str | None = None
+    ) -> tuple[StudyRoot, StudyValue]:
+        if study_value_version is None:
+            query = (
+                "MATCH (root:StudyRoot {uid:$study_uid})-[:LATEST]->(value:StudyValue)"
+            )
+        else:
+            query = (
+                "MATCH (root:StudyRoot {uid:$study_uid})"
+                "-[:HAS_VERSION {status:'RELEASED',version:$version}]->(value:StudyValue)"
+            )
+        rows, _ = db.cypher_query(
+            query + " RETURN DISTINCT root, value",
+            {"study_uid": study_uid, "version": study_value_version},
+            resolve_objects=True,
+        )
+        NotFoundException.raise_if_not(
+            rows, msg="The requested native study version does not exist."
+        )
+        ValidationException.raise_if(
+            len(rows) != 1,
+            msg="Lifecycle history requires one exact native study value.",
+        )
+        return rows[0][0], rows[0][1]
+
+    @staticmethod
+    def _lifecycle_target(value: StudyValue, target_kind: str, target_uid: str):
+        validate_lifecycle_target(target_kind, target_uid)
+        relation, label = (
+            ("HAS_STUDY_ARM", "StudyArm")
+            if target_kind == "arm"
+            else ("HAS_STUDY_BRANCH_ARM", "StudyBranchArm")
+        )
+        rows, _ = db.cypher_query(
+            f"MATCH (value:StudyValue)-[:{relation}]->(target:{label} {{uid:$target_uid}}) "
+            f"WHERE {db.get_id_method()}(value)=$value RETURN target",
+            {"value": value.element_id, "target_uid": target_uid},
+            resolve_objects=True,
+        )
+        NotFoundException.raise_if_not(
+            rows, msg="The lifecycle target is not selected in this study version."
+        )
+        ValidationException.raise_if(
+            len(rows) != 1,
+            msg="Lifecycle history requires one exact selected target.",
+        )
+        return rows[0][0]
+
+    @staticmethod
+    def _restore_lifecycle_event(
+        study_uid: str, record: dict[str, Any]
+    ) -> StudyArmLifecycleEventVO:
+        values = record["event"]
+        target_kind = values.get("target_kind")
+        target_uid = values.get("target_uid")
+        validate_lifecycle_target(target_kind, target_uid)
+        expected_relation, expected_label = (
+            ("STUDY_ARM_HAS_LIFECYCLE_EVENT", "StudyArm")
+            if target_kind == "arm"
+            else ("STUDY_BRANCH_ARM_HAS_LIFECYCLE_EVENT", "StudyBranchArm")
+        )
+        targets = record["targets"]
+        ValidationException.raise_if(
+            values.get("study_uid") != study_uid
+            or set(record["owners"]) != {study_uid}
+            or not targets
+            or any(
+                target["uid"] != target_uid
+                or target["relation"] != expected_relation
+                or expected_label not in target["labels"]
+                or set(target["owners"]) != {study_uid}
+                for target in targets
+            )
+            or sum(target["selected"] for target in targets) != 1,
+            msg="Lifecycle event target or study version ownership is inconsistent.",
+        )
+        actions = record["actions"]
+        ValidationException.raise_if(
+            record["has_before"]
+            or len(actions) != 1
+            or actions[0]["owners"] != [study_uid]
+            or "Create" not in actions[0]["labels"]
+            or any(label in actions[0]["labels"] for label in ("Edit", "Delete")),
+            msg="Lifecycle event must retain exactly one native Create audit record.",
+        )
+        return StudyArmLifecycleEventVO(
+            uid=values.get("uid"),
+            study_uid=study_uid,
+            target_kind=target_kind,
+            target_uid=target_uid,
+            lifecycle_state=values.get("lifecycle_state"),
+            effective_date=convert_to_datetime(value=values.get("effective_date")),
+            decision_reference=values.get("decision_reference"),
+            change_reason=values.get("change_reason"),
+            recorded_at=convert_to_datetime(value=actions[0].get("recorded_at")),
+            author_id=actions[0].get("author_id"),
+        )
+
+    def find_lifecycle_events(
+        self,
+        study_uid: str,
+        study_value_version: str | None = None,
+        target_kind: LifecycleTargetKind | None = None,
+        target_uid: str | None = None,
+    ) -> list[StudyArmLifecycleEventVO]:
+        ValidationException.raise_if(
+            (target_kind is None) != (target_uid is None),
+            msg="Lifecycle target kind and UID must be supplied together.",
+        )
+        _, value = self._lifecycle_study_value(study_uid, study_value_version)
+        if target_kind is not None:
+            assert target_uid is not None
+            self._lifecycle_target(value, target_kind, target_uid)
+        query = f"""
+            MATCH (value:StudyValue) WHERE {db.get_id_method()}(value)=$value
+            MATCH (value)-[:HAS_STUDY_ARM_LIFECYCLE_EVENT]->(event:StudyArmLifecycleEvent)
+            RETURN properties(event) AS event,
+                [(target)-[link:STUDY_ARM_HAS_LIFECYCLE_EVENT|STUDY_BRANCH_ARM_HAS_LIFECYCLE_EVENT]->(event) |
+                    {{uid:target.uid, relation:type(link), labels:labels(target),
+                      owners:[(target_owner:StudyRoot)-[:AUDIT_TRAIL]->(:StudyAction)-[:AFTER]->(target) | target_owner.uid],
+                      selected:CASE type(link)
+                        WHEN 'STUDY_ARM_HAS_LIFECYCLE_EVENT' THEN EXISTS {{ MATCH (value)-[:HAS_STUDY_ARM]->(target) }}
+                        ELSE EXISTS {{ MATCH (value)-[:HAS_STUDY_BRANCH_ARM]->(target) }} END}}] AS targets,
+                [(owner:StudyRoot)-[:HAS_VERSION|LATEST]->(:StudyValue)-[:HAS_STUDY_ARM_LIFECYCLE_EVENT]->(event) | owner.uid] AS owners,
+                [(action:StudyAction)-[:AFTER]->(event) |
+                    {{author_id:action.author_id, recorded_at:action.date, labels:labels(action),
+                      owners:[(audit_owner:StudyRoot)-[:AUDIT_TRAIL]->(action) | audit_owner.uid]}}] AS actions,
+                EXISTS {{ MATCH (:StudyAction)-[:BEFORE]->(event) }} AS has_before
+        """
+        records = utils.db_result_to_list(
+            db.cypher_query(query, {"study_uid": study_uid, "value": value.element_id})
+        )
+        events = [
+            self._restore_lifecycle_event(study_uid, record) for record in records
+        ]
+        ValidationException.raise_if(
+            len({event.uid for event in events}) != len(events),
+            msg="The selected study value contains duplicate lifecycle event identities.",
+        )
+        return sorted(
+            (
+                event
+                for event in events
+                if target_kind is None
+                or (event.target_kind == target_kind and event.target_uid == target_uid)
+            ),
+            key=lambda event: event.sort_key,
+        )
+
+    @ensure_transaction(db)
+    def create_lifecycle_event(
+        self,
+        study_uid: str,
+        target_kind: LifecycleTargetKind,
+        target_uid: str,
+        expected_study_version: str,
+        lifecycle_state: str,
+        effective_date: datetime.datetime,
+        decision_reference: str,
+        change_reason: str,
+        author_id: str,
+    ) -> StudyArmLifecycleEventVO:
+        acquire_write_lock_study_value(study_uid)
+        root, value = self._lifecycle_study_value(study_uid)
+        states, _ = db.cypher_query(
+            "MATCH (:StudyRoot {uid:$study_uid})-[state:HAS_VERSION]->(value:StudyValue) "
+            f"WHERE {db.get_id_method()}(value)=$value AND state.end_date IS NULL "
+            "RETURN state.status, state.version",
+            {"study_uid": study_uid, "value": value.element_id},
+        )
+        BusinessLogicException.raise_if(
+            len(states) != 1 or states[0][0] != "DRAFT",
+            msg="Lifecycle events can only be authored in the current draft study.",
+        )
+        AlreadyExistsException.raise_if(
+            str(states[0][1]) != expected_study_version,
+            msg="Study version changed; reload before adding a lifecycle event.",
+        )
+        target = self._lifecycle_target(value, target_kind, target_uid)
+        # Existing corruption must remain visible, including other targets.
+        self.find_lifecycle_events(study_uid)
+        event = StudyArmLifecycleEventVO(
+            uid=StudyArmLifecycleEvent.get_next_free_uid_and_increment_counter(),
+            study_uid=study_uid,
+            target_kind=target_kind,
+            target_uid=target_uid,
+            lifecycle_state=lifecycle_state,
+            effective_date=effective_date,
+            decision_reference=decision_reference,
+            change_reason=change_reason,
+            recorded_at=datetime.datetime.now(datetime.timezone.utc),
+            author_id=author_id,
+        )
+        node = StudyArmLifecycleEvent(
+            uid=event.uid,
+            study_uid=event.study_uid,
+            target_kind=event.target_kind,
+            target_uid=event.target_uid,
+            lifecycle_state=event.lifecycle_state,
+            effective_date=event.effective_date,
+            decision_reference=event.decision_reference,
+            change_reason=event.change_reason,
+        ).save()
+        value.has_study_arm_lifecycle_event.connect(node)
+        target.has_lifecycle_event.connect(node)
+        _manage_versioning_with_relations(
+            study_root=root,
+            action_type=Create,
+            after=node,
+            date=event.recorded_at,
+            author_id=event.author_id,
+        )
+        return event
+
+    @staticmethod
+    def assert_lifecycle_target_can_be_deleted(
+        study_uid: str, target_kind: LifecycleTargetKind, target_uid: str
+    ) -> None:
+        acquire_write_lock_study_value(study_uid)
+        events = StudySelectionArmRepository().find_lifecycle_events(study_uid)
+        targets = {(target_kind, target_uid)}
+        if target_kind == "arm" and events:
+            rows, _ = db.cypher_query(
+                "MATCH (:StudyRoot {uid:$study_uid})-[:LATEST]->(value:StudyValue)"
+                "-[:HAS_STUDY_ARM]->(:StudyArm {uid:$target_uid})"
+                "-[:STUDY_ARM_HAS_BRANCH_ARM]->(branch:StudyBranchArm)"
+                "<-[:HAS_STUDY_BRANCH_ARM]-(value) RETURN DISTINCT branch.uid",
+                {"study_uid": study_uid, "target_uid": target_uid},
+            )
+            targets.update(("branch_arm", row[0]) for row in rows)
+        BusinessLogicException.raise_if(
+            any((event.target_kind, event.target_uid) in targets for event in events),
+            msg="An arm or branch with lifecycle history cannot be deleted. Retain the selection and author its lifecycle change.",
+        )
 
     def arm_specific_has_connected_cell(self, study_uid: str, arm_uid: str) -> bool:
         """
@@ -378,6 +629,7 @@ class StudySelectionArmRepository:
             return Create()
         return Delete()
 
+    @ensure_transaction(db)
     def save(self, study_selection: StudySelectionArmAR, author_id: str) -> None:
         """
         Persist the set of selected study arms from the aggregate to the database
@@ -504,6 +756,10 @@ class StudySelectionArmRepository:
         for_deletion: bool = False,
         before_node: StudyArm | None = None,
     ):
+        if for_deletion:
+            StudySelectionArmRepository.assert_lifecycle_target_can_be_deleted(
+                study_root.uid, "arm", selection.study_selection_uid
+            )
         validate_study_arm_origin(
             selection.data_origin_type_uid, selection.data_origin_description
         )

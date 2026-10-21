@@ -8,11 +8,18 @@ from neomodel import db
 from clinical_mdr_api.domain_repositories.study_selections.study_arm_repository import (
     SelectionHistoryArm,
 )
+from clinical_mdr_api.domains.study_selections.study_arm_lifecycle import (
+    LifecycleTargetKind,
+)
 from clinical_mdr_api.domains.study_selections.study_selection_arm import (
     StudySelectionArmAR,
     StudySelectionArmVO,
 )
 from clinical_mdr_api.models.controlled_terminologies.ct_term import SimpleTermModel
+from clinical_mdr_api.models.study_selections.study_arm_lifecycle import (
+    StudyArmLifecycleEvent,
+    StudyArmLifecycleEventInput,
+)
 from clinical_mdr_api.models.study_selections.study_selection import (
     STUDY_ARM_CODE_MAX_LENGTH,
     STUDY_ARM_NAME_MAX_LENGTH,
@@ -83,6 +90,47 @@ class StudyArmSelectionService(StudySelectionMixin):
     def __init__(self):
         self._repos = MetaRepository()
         self.author = user().id()
+
+    @ensure_transaction(db)
+    def create_lifecycle_event(
+        self,
+        study_uid: str,
+        target_kind: LifecycleTargetKind,
+        target_uid: str,
+        event_input: StudyArmLifecycleEventInput,
+    ) -> StudyArmLifecycleEvent:
+        try:
+            event = self._repos.study_arm_repository.create_lifecycle_event(
+                study_uid=study_uid,
+                target_kind=target_kind,
+                target_uid=target_uid,
+                author_id=self.author,
+                **event_input.model_dump(),
+            )
+            return StudyArmLifecycleEvent.from_vo(event)
+        finally:
+            self._repos.close()
+
+    @ensure_transaction(db)
+    def get_lifecycle_events(
+        self,
+        study_uid: str,
+        study_value_version: str | None = None,
+        target_kind: LifecycleTargetKind | None = None,
+        target_uid: str | None = None,
+    ) -> list[StudyArmLifecycleEvent]:
+        try:
+            return [
+                StudyArmLifecycleEvent.from_vo(event)
+                for event in self._repos.study_arm_repository.find_lifecycle_events(
+                    study_uid,
+                    study_value_version=study_value_version,
+                    target_kind=target_kind,
+                    target_uid=target_uid,
+                )
+            ]
+        finally:
+            self._repos.close()
 
     def _transform_all_to_response_model(
         self,

@@ -454,6 +454,7 @@ class EdcExportService:
         arms = self._group_classes(study_uid)
         self._retain_source_owned_odm_definitions(source_study_id)
         self._retain_native_associated_records(study_uid)
+        self._project_arm_lifecycle(arms)
         self._retain_linked_definitions()
 
         source_meta = deepcopy(self.source_bundle_meta)
@@ -1537,6 +1538,39 @@ class EdcExportService:
                 )
         return assignments
 
+    def _project_arm_lifecycle(self, group_classes: list[dict[str, Any]]) -> None:
+        """Expose authored events as metadata without selecting an operational state.
+
+        Branch events remain in native records until branch group projection is
+        available. Source-owned execution groups are restored separately and do
+        not acquire authority or native changes through this metadata.
+        """
+        records = getattr(self, "_native_records", [])
+        events = [row["record"] for row in records if row["kind"] == "studyArmLifecycleEvent"]
+        events.sort(key=lambda row: (
+            datetime.fromisoformat(row["effective_date"]),
+            datetime.fromisoformat(row["recorded_at"]),
+            row["uid"],
+        ))
+        seen = set()
+        for event in events:
+            if event["uid"] in seen:
+                raise EdcExportError("OSB_ARM_LIFECYCLE_EVENT_AMBIGUOUS")
+            seen.add(event["uid"])
+            target_kind = {"arm": "studyArm", "branch_arm": "studyBranchArm"}.get(event["target_kind"])
+            selected = [row for row in records
+                        if row["kind"] == target_kind and row["uid"] == event["target_uid"]]
+            if len(selected) != 1:
+                raise EdcExportError("OSB_ARM_LIFECYCLE_TARGET_UNRESOLVED")
+            if event["target_kind"] == "branch_arm":
+                continue
+            groups = [group for group_class in group_classes for group in group_class.get("groups", [])
+                      if group.get("refKey") == event["target_uid"]]
+            if len(groups) != 1:
+                raise EdcExportError("OSB_ARM_LIFECYCLE_GROUP_UNRESOLVED")
+            lifecycle = groups[0].setdefault("extensions", {}).setdefault("osbArmLifecycle", {"events": []})
+            lifecycle["events"].append(deepcopy(event))
+
     def _group_classes(self, study_uid):
         from clinical_mdr_api.services.studies.study_arm_selection import (
             StudyArmSelectionService,
@@ -1554,9 +1588,10 @@ class EdcExportService:
                 if hasattr(arm_model, "model_dump")
                 else dict(arm_model)
             )
-            self._retain_native("studyArm", arm)
+            self._retain_native("studyArm", arm, uid=arm.get("arm_uid"))
             groups.append(
                 {
+                    "refKey": arm.get("arm_uid"),
                     "name": arm.get("name"),
                     **(
                         {"description": arm.get("description")}

@@ -26,6 +26,7 @@ from clinical_mdr_api.domain_repositories.models.study_selections import (
     StudyActivitySchedule,
     StudyActivitySubGroup,
     StudyArm,
+    StudyArmLifecycleEvent,
     StudyBranchArm,
     StudyCohort,
     StudyCompound,
@@ -58,6 +59,13 @@ class StudyValue(ClinicalMdrNode, AuditTrailMixin):
     study_subpart_acronym = StringProperty()
     study_id_prefix = StringProperty()
     description = StringProperty()
+
+    has_study_arm_lifecycle_event = RelationshipTo(
+        StudyArmLifecycleEvent,
+        "HAS_STUDY_ARM_LIFECYCLE_EVENT",
+        model=ClinicalMdrRel,
+        cardinality=ZeroOrMore,
+    )
 
     has_study_subpart = RelationshipTo(
         "StudyValue", "HAS_STUDY_SUBPART", model=ClinicalMdrRel

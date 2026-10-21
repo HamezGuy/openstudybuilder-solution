@@ -23,11 +23,15 @@ from clinical_mdr_api.domain_repositories.models.study_selections import (
     StudyBranchArm,
     StudyCohort,
 )
+from clinical_mdr_api.domain_repositories.study_selections.study_arm_repository import (
+    StudySelectionArmRepository,
+)
 from clinical_mdr_api.domains.study_selections.study_selection_branch_arm import (
     CompactStudyCohortVO,
     StudySelectionBranchArmAR,
     StudySelectionBranchArmVO,
 )
+from clinical_mdr_api.services._utils import ensure_transaction
 from common.exceptions import BusinessLogicException
 from common.utils import convert_to_datetime
 
@@ -456,6 +460,7 @@ class StudySelectionBranchArmRepository:
         return len(sdc_node) == 0
 
     # pylint: disable=unused-argument
+    @ensure_transaction(db)
     def save(self, study_selection: StudySelectionBranchArmAR, author_id: str) -> None:
         """
         Persist the set of selected study branch arms from the aggregate to the database
@@ -652,6 +657,10 @@ class StudySelectionBranchArmRepository:
             - StudyArm - mandatory
             - StudyCohort - optional
         """
+        if for_deletion:
+            StudySelectionArmRepository.assert_lifecycle_target_can_be_deleted(
+                study_root.uid, "branch_arm", selection.study_selection_uid
+            )
         # Create new arm selection
         study_branch_arm_selection_node = StudyBranchArm(
             uid=selection.study_selection_uid,

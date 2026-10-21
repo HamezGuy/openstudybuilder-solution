@@ -90,6 +90,22 @@ class StudySelection(ClinicalMdrNodeWithUID, AuditTrailMixin):
     accepted_version = BooleanProperty()
 
 
+class StudyArmLifecycleEvent(StudySelection):
+    study_uid = StringProperty(required=True)
+    target_kind = StringProperty(required=True)
+    target_uid = StringProperty(required=True)
+    lifecycle_state = StringProperty(required=True)
+    effective_date = ZonedDateTimeProperty(required=True)
+    decision_reference = StringProperty(required=True)
+    change_reason = StringProperty(required=True)
+    study_value = RelationshipFrom(
+        STUDY_VALUE_CLASS_NAME,
+        "HAS_STUDY_ARM_LIFECYCLE_EVENT",
+        model=ClinicalMdrRel,
+        cardinality=ZeroOrMore,
+    )
+
+
 class StudyDataSupplier(StudySelection):
     blinded = BooleanProperty()
     study_value = RelationshipFrom(
@@ -526,6 +542,12 @@ class StudyDesignCell(StudySelection):
 
 
 class StudyArm(StudySelection):
+    has_lifecycle_event = RelationshipTo(
+        StudyArmLifecycleEvent,
+        "STUDY_ARM_HAS_LIFECYCLE_EVENT",
+        model=ClinicalMdrRel,
+        cardinality=ZeroOrMore,
+    )
     name = StringProperty()
     short_name = StringProperty()
     label = StringProperty()
@@ -632,6 +654,12 @@ class StudyActivityInstruction(StudySelection):
 
 
 class StudyBranchArm(StudySelection):
+    has_lifecycle_event = RelationshipTo(
+        StudyArmLifecycleEvent,
+        "STUDY_BRANCH_ARM_HAS_LIFECYCLE_EVENT",
+        model=ClinicalMdrRel,
+        cardinality=ZeroOrMore,
+    )
     name = StringProperty()
     short_name = StringProperty()
     branch_arm_code = StringProperty()
@@ -858,6 +886,7 @@ STUDY_SELECTION_CONCRETE_LABELS: frozenset[str] = frozenset(
         "StudyActivitySchedule",
         "StudyDesignCell",
         "StudyArm",
+        "StudyArmLifecycleEvent",
         "StudyElement",
         "StudyActivityInstruction",
         "StudyBranchArm",

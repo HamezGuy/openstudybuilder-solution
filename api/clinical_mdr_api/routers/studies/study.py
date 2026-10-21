@@ -8,6 +8,10 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import Field
 
 from clinical_mdr_api.models.data_completeness_tag import DataCompletenessTag
+from clinical_mdr_api.models.study_selections.study_arm_lifecycle import (
+    StudyArmLifecycleEvent,
+    StudyArmLifecycleEventInput,
+)
 from clinical_mdr_api.models.study_selections.study_selection import (
     CompactStudyArm,
     StudyActivityGroup,
@@ -5081,6 +5085,71 @@ def post_new_arm_selection_create(
     return service.make_selection(study_uid=study_uid, selection_create_input=selection)
 
 
+@router.post(
+    "/studies/{study_uid}/study-arms/{study_arm_uid}/lifecycle-events",
+    dependencies=[security, rbac.STUDY_WRITE],
+    summary="Record an authored lifecycle event for a study arm",
+    description="Append immutable descriptive history to the current draft. "
+    "This does not approve or execute an operational or statistical decision.",
+    status_code=201,
+    responses={
+        400: {
+            "model": ErrorResponse,
+            "description": "Invalid lifecycle history or locked study.",
+        },
+        403: _generic_descriptions.ERROR_403,
+        404: _generic_descriptions.ERROR_404,
+        409: {
+            "model": ErrorResponse,
+            "description": "The expected study version is stale.",
+        },
+    },
+)
+@decorators.validate_if_study_is_not_locked("study_uid")
+def post_arm_lifecycle_event(
+    study_uid: Annotated[str, studyUID],
+    study_arm_uid: Annotated[str, study_arm_uid_path],
+    event: StudyArmLifecycleEventInput,
+) -> StudyArmLifecycleEvent:
+    return StudyArmSelectionService().create_lifecycle_event(
+        study_uid=study_uid,
+        target_kind="arm",
+        target_uid=study_arm_uid,
+        event_input=event,
+    )
+
+
+@router.get(
+    "/studies/{study_uid}/study-arms/{study_arm_uid}/lifecycle-events",
+    dependencies=[security, rbac.STUDY_READ],
+    summary="Read authored lifecycle history for a study arm",
+    description="Read the exact selected study version. An empty history does not "
+    "imply any lifecycle state.",
+    status_code=200,
+    responses={
+        400: {
+            "model": ErrorResponse,
+            "description": "Lifecycle history is inconsistent.",
+        },
+        403: _generic_descriptions.ERROR_403,
+        404: _generic_descriptions.ERROR_404,
+    },
+)
+def get_arm_lifecycle_events(
+    study_uid: Annotated[str, studyUID],
+    study_arm_uid: Annotated[str, study_arm_uid_path],
+    study_value_version: Annotated[
+        str | None, _generic_descriptions.STUDY_VALUE_VERSION_QUERY
+    ] = None,
+) -> list[StudyArmLifecycleEvent]:
+    return StudyArmSelectionService().get_lifecycle_events(
+        study_uid=study_uid,
+        study_value_version=study_value_version,
+        target_kind="arm",
+        target_uid=study_arm_uid,
+    )
+
+
 @router.get(
     "/studies/{study_uid}/study-arms/{study_arm_uid}/audit-trail",
     dependencies=[security, rbac.STUDY_READ],
@@ -5787,6 +5856,71 @@ def get_selected_branch_arm(
         study_uid=study_uid,
         study_selection_uid=study_branch_arm_uid,
         study_value_version=study_value_version,
+    )
+
+
+@router.post(
+    "/studies/{study_uid}/study-branch-arms/{study_branch_arm_uid}/lifecycle-events",
+    dependencies=[security, rbac.STUDY_WRITE],
+    summary="Record an authored lifecycle event for a study branch arm",
+    description="Append immutable descriptive history to the current draft. "
+    "This does not approve or execute an operational or statistical decision.",
+    status_code=201,
+    responses={
+        400: {
+            "model": ErrorResponse,
+            "description": "Invalid lifecycle history or locked study.",
+        },
+        403: _generic_descriptions.ERROR_403,
+        404: _generic_descriptions.ERROR_404,
+        409: {
+            "model": ErrorResponse,
+            "description": "The expected study version is stale.",
+        },
+    },
+)
+@decorators.validate_if_study_is_not_locked("study_uid")
+def post_branch_arm_lifecycle_event(
+    study_uid: Annotated[str, studyUID],
+    study_branch_arm_uid: Annotated[str, study_branch_arm_uid_path],
+    event: StudyArmLifecycleEventInput,
+) -> StudyArmLifecycleEvent:
+    return StudyArmSelectionService().create_lifecycle_event(
+        study_uid=study_uid,
+        target_kind="branch_arm",
+        target_uid=study_branch_arm_uid,
+        event_input=event,
+    )
+
+
+@router.get(
+    "/studies/{study_uid}/study-branch-arms/{study_branch_arm_uid}/lifecycle-events",
+    dependencies=[security, rbac.STUDY_READ],
+    summary="Read authored lifecycle history for a study branch arm",
+    description="Read the exact selected study version. An empty history does not "
+    "imply any lifecycle state.",
+    status_code=200,
+    responses={
+        400: {
+            "model": ErrorResponse,
+            "description": "Lifecycle history is inconsistent.",
+        },
+        403: _generic_descriptions.ERROR_403,
+        404: _generic_descriptions.ERROR_404,
+    },
+)
+def get_branch_arm_lifecycle_events(
+    study_uid: Annotated[str, studyUID],
+    study_branch_arm_uid: Annotated[str, study_branch_arm_uid_path],
+    study_value_version: Annotated[
+        str | None, _generic_descriptions.STUDY_VALUE_VERSION_QUERY
+    ] = None,
+) -> list[StudyArmLifecycleEvent]:
+    return StudyArmSelectionService().get_lifecycle_events(
+        study_uid=study_uid,
+        study_value_version=study_value_version,
+        target_kind="branch_arm",
+        target_uid=study_branch_arm_uid,
     )
 
 

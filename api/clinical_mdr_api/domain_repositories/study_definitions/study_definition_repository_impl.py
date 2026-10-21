@@ -97,6 +97,7 @@ from common.telemetry import trace_calls
 from common.utils import convert_to_datetime, validate_max_skip_clause
 
 MAINTAIN_RELATIONSHIPS_FOR_NEW_STUDY_VALUE = {
+    "has_study_arm_lifecycle_event",
     "belongs_to_study_parent_part",
     "has_study_data_supplier",
     "has_study_activity",

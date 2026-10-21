@@ -3,7 +3,7 @@
   "info": {
     "title": "OpenStudyBuilder API",
     "description": "\n## NOTICE\n\nThis license information is applicable to the swagger documentation of the clinical-mdr-api, that is the openapi.json.\n\n## License Terms (MIT)\n\nCopyright (C) 2025 Novo Nordisk A/S, Danish company registration no. 24256790\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\n\n## Licenses and Acknowledgements for Incorporated Software\n\nThis component contains software licensed under different licenses when compiled, please refer to the third-party-licenses.md file for further information and full license texts.\n\n## Authentication\n\nSupports OAuth2 [Authorization Code Flow](https://datatracker.ietf.org/doc/html/rfc6749#section-4.1),\nat paths described in the OpenID Connect Discovery metadata document (whose URL is defined by the `OAUTH_METADATA_URL` environment variable).\n\nMicrosoft Identity Platform documentation can be read \n([here](https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-auth-code-flow)).\n\nAuthentication can be turned off with `OAUTH_ENABLED=false` environment variable. \n\nWhen authentication is turned on, all requests to protected API endpoints must provide a valid bearer (JWT) token inside the `Authorization` http header. \n",
-    "version": "3.0.703"
+    "version": "3.0.704"
   },
   "paths": {
     "/": {
@@ -89810,6 +89810,202 @@
         }
       }
     },
+    "/studies/{study_uid}/study-arms/{study_arm_uid}/lifecycle-events": {
+      "post": {
+        "tags": [
+          "Study Selections"
+        ],
+        "summary": "Record an authored lifecycle event for a study arm",
+        "description": "Append immutable descriptive history to the current draft. This does not approve or execute an operational or statistical decision.",
+        "operationId": "post_arm_lifecycle_event_studies__study_uid__study_arms__study_arm_uid__lifecycle_events_post",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "study_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The unique id of the study.",
+              "title": "Study Uid"
+            },
+            "description": "The unique id of the study."
+          },
+          {
+            "name": "study_arm_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The unique id of the study arm.",
+              "title": "Study Arm Uid"
+            },
+            "description": "The unique id of the study arm."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudyArmLifecycleEventInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudyArmLifecycleEvent"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid lifecycle history or locked study.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The expected study version is stale.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Study Selections"
+        ],
+        "summary": "Read authored lifecycle history for a study arm",
+        "description": "Read the exact selected study version. An empty history does not imply any lifecycle state.",
+        "operationId": "get_arm_lifecycle_events_studies__study_uid__study_arms__study_arm_uid__lifecycle_events_get",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "study_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The unique id of the study.",
+              "title": "Study Uid"
+            },
+            "description": "The unique id of the study."
+          },
+          {
+            "name": "study_arm_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The unique id of the study arm.",
+              "title": "Study Arm Uid"
+            },
+            "description": "The unique id of the study arm."
+          },
+          {
+            "name": "study_value_version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "If specified, study data with specified version is returned.\n\n    Only exact matches are considered. \n\n    E.g. 1, 2, 2.1, ...",
+              "title": "Study Value Version",
+              "type": "string",
+              "pattern": "^[0-9]+\\.?[0-9]*$"
+            },
+            "description": "If specified, study data with specified version is returned.\n\n    Only exact matches are considered. \n\n    E.g. 1, 2, 2.1, ..."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StudyArmLifecycleEvent"
+                  },
+                  "title": "Response Get Arm Lifecycle Events Studies  Study Uid  Study Arms  Study Arm Uid  Lifecycle Events Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Lifecycle history is inconsistent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/studies/{study_uid}/study-arms/{study_arm_uid}/audit-trail": {
       "get": {
         "tags": [
@@ -91907,6 +92103,202 @@
           },
           "400": {
             "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/studies/{study_uid}/study-branch-arms/{study_branch_arm_uid}/lifecycle-events": {
+      "post": {
+        "tags": [
+          "Study Selections"
+        ],
+        "summary": "Record an authored lifecycle event for a study branch arm",
+        "description": "Append immutable descriptive history to the current draft. This does not approve or execute an operational or statistical decision.",
+        "operationId": "post_branch_arm_lifecycle_event_studies__study_uid__study_branch_arms__study_branch_arm_uid__lifecycle_events_post",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "study_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The unique id of the study.",
+              "title": "Study Uid"
+            },
+            "description": "The unique id of the study."
+          },
+          {
+            "name": "study_branch_arm_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The unique id of the study branch arm.",
+              "title": "Study Branch Arm Uid"
+            },
+            "description": "The unique id of the study branch arm."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudyArmLifecycleEventInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudyArmLifecycleEvent"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid lifecycle history or locked study.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The expected study version is stale.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Study Selections"
+        ],
+        "summary": "Read authored lifecycle history for a study branch arm",
+        "description": "Read the exact selected study version. An empty history does not imply any lifecycle state.",
+        "operationId": "get_branch_arm_lifecycle_events_studies__study_uid__study_branch_arms__study_branch_arm_uid__lifecycle_events_get",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "study_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The unique id of the study.",
+              "title": "Study Uid"
+            },
+            "description": "The unique id of the study."
+          },
+          {
+            "name": "study_branch_arm_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The unique id of the study branch arm.",
+              "title": "Study Branch Arm Uid"
+            },
+            "description": "The unique id of the study branch arm."
+          },
+          {
+            "name": "study_value_version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "If specified, study data with specified version is returned.\n\n    Only exact matches are considered. \n\n    E.g. 1, 2, 2.1, ...",
+              "title": "Study Value Version",
+              "type": "string",
+              "pattern": "^[0-9]+\\.?[0-9]*$"
+            },
+            "description": "If specified, study data with specified version is returned.\n\n    Only exact matches are considered. \n\n    E.g. 1, 2, 2.1, ..."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StudyArmLifecycleEvent"
+                  },
+                  "title": "Response Get Branch Arm Lifecycle Events Studies  Study Uid  Study Branch Arms  Study Branch Arm Uid  Lifecycle Events Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Lifecycle history is inconsistent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found",
             "content": {
               "application/json": {
                 "schema": {
@@ -164613,6 +165005,111 @@
         },
         "type": "object",
         "title": "StudyActivitySyncLatestVersionInput"
+      },
+      "StudyArmLifecycleEvent": {
+        "properties": {
+          "uid": {
+            "type": "string",
+            "title": "Uid"
+          },
+          "study_uid": {
+            "type": "string",
+            "title": "Study Uid"
+          },
+          "target_kind": {
+            "type": "string",
+            "enum": [
+              "arm",
+              "branch_arm"
+            ],
+            "title": "Target Kind"
+          },
+          "target_uid": {
+            "type": "string",
+            "title": "Target Uid"
+          },
+          "lifecycle_state": {
+            "type": "string",
+            "title": "Lifecycle State"
+          },
+          "effective_date": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Effective Date"
+          },
+          "decision_reference": {
+            "type": "string",
+            "title": "Decision Reference"
+          },
+          "change_reason": {
+            "type": "string",
+            "title": "Change Reason"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Recorded At"
+          },
+          "author_id": {
+            "type": "string",
+            "title": "Author Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "uid",
+          "study_uid",
+          "target_kind",
+          "target_uid",
+          "lifecycle_state",
+          "effective_date",
+          "decision_reference",
+          "change_reason",
+          "recorded_at",
+          "author_id"
+        ],
+        "title": "StudyArmLifecycleEvent"
+      },
+      "StudyArmLifecycleEventInput": {
+        "properties": {
+          "expected_study_version": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Expected Study Version"
+          },
+          "lifecycle_state": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Lifecycle State",
+            "description": "Authored state label. No governed CT or operational state is inferred."
+          },
+          "effective_date": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Effective Date"
+          },
+          "decision_reference": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Decision Reference"
+          },
+          "change_reason": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Change Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_study_version",
+          "lifecycle_state",
+          "effective_date",
+          "decision_reference",
+          "change_reason"
+        ],
+        "title": "StudyArmLifecycleEventInput"
       },
       "StudyArmListing": {
         "properties": {

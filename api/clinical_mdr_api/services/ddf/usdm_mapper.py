@@ -199,6 +199,7 @@ class USDMMapper:
         get_osb_study_data_suppliers: Callable | None = None,
         get_osb_study_design_class: Callable | None = None,
         get_osb_study_source_variable: Callable | None = None,
+        get_osb_arm_lifecycle_events: Callable | None = None,
     ):
         self._get_osb_study_design_cells = get_osb_study_design_cells
         self._get_osb_study_arms = get_osb_study_arms
@@ -225,6 +226,7 @@ class USDMMapper:
         self._call_cache: dict[Any, Any] = {}
         self._study_uid: str | None = None
         self._native_readers = {
+            "studyArmLifecycleEvent": (get_osb_arm_lifecycle_events, "uid"),
             "studyCohort": (get_osb_study_cohorts, "cohort_uid"),
             "studyBranchArm": (get_osb_study_branch_arms, "branch_arm_uid"),
             "studyActivityInstance": (
@@ -300,6 +302,14 @@ class USDMMapper:
                 if kind == "studyActivitySchedule" and kwargs.get("operational"):
                     kind = "studyOperationalActivitySchedule"
                 records = [native_json(row) for row in _items(result)]
+                if kind == "studyArmLifecycleEvent":
+                    records.sort(
+                        key=lambda record: (
+                            datetime.fromisoformat(record["effective_date"]),
+                            datetime.fromisoformat(record["recorded_at"]),
+                            record["uid"],
+                        )
+                    )
                 if kind == "studyOperationalActivitySchedule":
                     schedule_scopes: dict[Any, Any] = {}
                     for record in records:
@@ -325,7 +335,11 @@ class USDMMapper:
                         )
                     )
                 for record in records:
-                    if "study_uid" in record and record["study_uid"] != self._study_uid:
+                    if (
+                        "study_uid" in record and record["study_uid"] != self._study_uid
+                    ) or (
+                        kind == "studyArmLifecycleEvent" and "study_uid" not in record
+                    ):
                         raise USDMMappingAuthorityRequired(
                             f"USDM_SOURCE_STUDY_MISMATCH: {kind}"
                         )
