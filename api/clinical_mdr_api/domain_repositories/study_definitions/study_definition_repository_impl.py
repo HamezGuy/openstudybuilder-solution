@@ -111,6 +111,7 @@ MAINTAIN_RELATIONSHIPS_FOR_NEW_STUDY_VALUE = {
     "has_study_compound",
     "has_study_compound_dosing",
     "has_study_criteria",
+    "has_study_definition_document",
     "has_study_design_cell",
     "has_study_design_class",
     "has_study_disease_milestone",
@@ -834,6 +835,13 @@ class StudyDefinitionRepositoryImpl(StudyDefinitionRepository, RepositoryImpl):
                 getattr(previous_value, relation_name).disconnect_all()
             # add the relation to the new node
             for study_selection_node in study_selection_nodes:
+                if (
+                    relation_name == "has_study_definition_document"
+                    and study_selection_node.authored_documents_json is None
+                ):
+                    # Header-only selections describe their released snapshot.
+                    # Authored content also forms the next draft's starting point.
+                    continue
                 if relation_name in [
                     "has_study_subpart",
                     "belongs_to_study_parent_part",

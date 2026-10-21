@@ -161,7 +161,7 @@ class NativeVisitGraph:
 
 
 @pytest.fixture(scope="module")
-def native_visit_graph():
+def native_visit_graph(request):
     # Reuse only the existing read-only container/network identity check. This
     # fixture has its own seeding, node custody and cleanup; it does not invoke
     # or modify the null-adjudication fixture's lifecycle.
@@ -170,11 +170,14 @@ def native_visit_graph():
     assert db.cypher_query("MATCH (n) RETURN count(n)")[0] == [
         [0]
     ], "Only an empty reserved graph may be seeded"
-    assert db.cypher_query("CALL dbms.components() YIELD edition RETURN edition")[
-        0
-    ] == [["community"]]
+    assert db.cypher_query(
+        "CALL dbms.components() YIELD name, edition "
+        "WHERE name = 'Neo4j Kernel' RETURN edition"
+    )[0] == [["community"]]
     assert db.cypher_query("RETURN apoc.version()")[0][0][0]
     fixture = NativeVisitGraph(dsn, owner, str(uuid4()))
+    seed_mode = getattr(request, "param", "visits")
+    assert seed_mode in ("visits", "study-only")
     try:
         db.cypher_query(
             "CREATE CONSTRAINT study_visit_lock_counter IF NOT EXISTS "
@@ -186,12 +189,19 @@ def native_visit_graph():
             )
             TestUtils.create_ct_catalogue()
             TestUtils.create_ct_codelist()
-            create_study_visit_codelists(
-                create_unit_definitions=False, use_test_utils=True
-            )
-            fixture.day_uid = TestUtils.create_unit_definition(**DAY).uid
-            TestUtils.create_unit_definition(**WEEK)
-            TestUtils.create_study_fields_configuration()
+            if seed_mode == "visits":
+                create_study_visit_codelists(
+                    create_unit_definitions=False, use_test_utils=True
+                )
+                fixture.day_uid = TestUtils.create_unit_definition(**DAY).uid
+                TestUtils.create_unit_definition(**WEEK)
+            else:
+                fixture.day_uid = TestUtils.create_unit_definition(
+                    name=settings.day_unit_name
+                ).uid
+                TestUtils.create_unit_definition(name=settings.week_unit_name)
+            # Study field configuration is static in 2.10. This fixture uses
+            # no trial-summary selections requiring the optional field CT seed.
             yes_no = TestUtils.create_ct_codelist(
                 name="Visit lock Yes No",
                 codelist_uid=settings.ct_uid_boolean_codelist,
@@ -220,7 +230,7 @@ def native_visit_graph():
             json.dumps(
                 {
                     "fixtureOwner": owner,
-                    "seedMode": "actual TestUtils Study/CT and ordinary Epoch/Visit services",
+                    "seedMode": seed_mode,
                     "edition": "community",
                 }
             )

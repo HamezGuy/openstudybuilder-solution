@@ -327,14 +327,14 @@ QUERIES: list[tuple[str, str, str]] = [
     # testing study versions and study definition documents
     (
         "only_one_study_definition_document_per_study_version",
-        "Each StudyDefinitionDocument node must reflect only one StudyVersion node",
+        "Each StudyValue must have at most one StudyDefinitionDocument selection",
         """
         MATCH (study_root:StudyRoot {uid: $study_uid})-[:HAS_VERSION]->(study_value:StudyValue)
+        WITH DISTINCT study_value
         OPTIONAL MATCH (study_value)-[:HAS_STUDY_DEFINITION_DOCUMENT]->(study_definition_document:StudyDefinitionDocument)
-        OPTIONAL MATCH (study_value)-[:HAS_STUDY_VERSION]->(study_version:StudyVersion)
-        WITH study_version, collect(DISTINCT study_definition_document) as study_definition_documents
-        WHERE size(study_definition_documents) > 1
-        """ + build_root_summary_return_statement("study_version"),
+        WITH study_value, count(study_definition_document) as document_count
+        WHERE document_count > 1
+        """ + build_root_summary_return_statement("study_value"),
     ),
     (
         "study_version_exists_if_has_protocol_soa_cell_and_study_definition_document_exists",
@@ -347,10 +347,13 @@ QUERIES: list[tuple[str, str, str]] = [
     ),
     (
         "study_version_exists_if_study_definition_document_exists",
-        "StudyVersion node must exists if there is a StudyDefinitionDocument node for a StudyValue node",
+        "Released, locked and header-only document selections require a StudyVersion; authored draft-only values may be unversioned",
         """
-        MATCH (study_root:StudyRoot {uid: $study_uid})-[:HAS_VERSION]->(study_value:StudyValue)-[:HAS_STUDY_DEFINITION_DOCUMENT]->(study_definition_document:StudyDefinitionDocument)
-        WHERE study_definition_document IS NOT NULL AND NOT (study_value)-[:HAS_STUDY_VERSION]->(:StudyVersion)
+        MATCH (study_root:StudyRoot {uid: $study_uid})-[version:HAS_VERSION]->(study_value:StudyValue)-[:HAS_STUDY_DEFINITION_DOCUMENT]->(study_definition_document:StudyDefinitionDocument)
+        WHERE NOT (study_value)-[:HAS_STUDY_VERSION]->(:StudyVersion)
+          AND (study_definition_document.authored_documents_json IS NULL
+               OR version.status IS NULL OR version.status <> 'DRAFT')
+        WITH DISTINCT study_definition_document
         """ + build_root_summary_return_statement("study_definition_document"),
     ),
     (

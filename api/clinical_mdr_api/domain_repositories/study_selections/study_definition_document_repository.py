@@ -51,34 +51,51 @@ class StudyDefinitionDocumentRepository:
     def get_latest_protocol_header_version(
         self, study_uid: str, study_value_version: str | None = None
     ) -> str | None:
-        params = {
-            "study_uid": study_uid,
-        }
-        if not study_value_version:
-            query = """
-            MATCH (:StudyRoot{uid:$study_uid})-[:HAS_VERSION]->(:StudyValue)-[:HAS_STUDY_DEFINITION_DOCUMENT]->(latest_sdd:StudyDefinitionDocument)
-            WHERE NOT (latest_sdd)-[:BEFORE]-(:StudyAction)
-            RETURN latest_sdd
-            """
-        else:
-            query = """
-                MATCH (:StudyRoot {uid: $study_uid})-[:HAS_VERSION{status:'RELEASED',version:$version}]->(:StudyValue)
-                    -[:HAS_STUDY_DEFINITION_DOCUMENT]->(study_definition_document:StudyDefinitionDocument)
-                RETURN study_definition_document
-            """
-            params["version"] = study_value_version
-        result, _ = db.cypher_query(query, params=params, resolve_objects=True)
-
-        if not result or not result[0]:
-            return None
-
-        study_definition_document = result[0][0]
+        query, params = self._study_value_query(study_uid, study_value_version)
+        rows, _ = db.cypher_query(
+            query
+            + " OPTIONAL MATCH (study_value)-[:HAS_STUDY_DEFINITION_DOCUMENT]->(document:StudyDefinitionDocument)"
+            + " RETURN DISTINCT study_value, document",
+            params=params,
+            resolve_objects=True,
+        )
+        if len(rows) > 1:
+            raise ValidationException(
+                msg="The selected study version has ambiguous document selections"
+            )
+        document = rows[0][1] if rows else None
+        if study_value_version is None and (
+            document is None
+            or document.protocol_header_major_version is None
+            or document.protocol_header_minor_version is None
+        ):
+            # Header-only drafts intentionally have no document selection. Report
+            # the last released header, including after a headerless release, by
+            # snapshot chronology rather than by the mutable audit chain's shape.
+            rows, _ = db.cypher_query(
+                "MATCH (:StudyRoot {uid:$study_uid})-[version:HAS_VERSION {status:'RELEASED'}]->(value:StudyValue)"
+                "-[:HAS_STUDY_DEFINITION_DOCUMENT]->(header:StudyDefinitionDocument) "
+                "WHERE header.protocol_header_major_version IS NOT NULL "
+                "AND header.protocol_header_minor_version IS NOT NULL "
+                "WITH DISTINCT value, version.start_date AS released_at "
+                "ORDER BY released_at DESC LIMIT 1 "
+                "MATCH (value)-[:HAS_STUDY_DEFINITION_DOCUMENT]->(document:StudyDefinitionDocument) "
+                "RETURN DISTINCT value, document",
+                {"study_uid": study_uid},
+                resolve_objects=True,
+            )
+            if len(rows) > 1:
+                raise ValidationException(
+                    msg="The released study has ambiguous protocol headers"
+                )
+            document = rows[0][1] if rows else None
         if (
-            study_definition_document.protocol_header_major_version is None
-            or study_definition_document.protocol_header_minor_version is None
+            document is None
+            or document.protocol_header_major_version is None
+            or document.protocol_header_minor_version is None
         ):
             return None
-        return f"{study_definition_document.protocol_header_major_version}.{study_definition_document.protocol_header_minor_version}"
+        return f"{document.protocol_header_major_version}.{document.protocol_header_minor_version}"
 
     @ensure_transaction(db)
     def get_authored_documents(
@@ -191,84 +208,63 @@ class StudyDefinitionDocumentRepository:
         query, params = self._study_value_query(study_uid, version=version)
 
         query += """
-        OPTIONAL MATCH (study_root)--(:StudyValue)-[:HAS_STUDY_DEFINITION_DOCUMENT]->(existing_sdd:StudyDefinitionDocument)
-        WHERE NOT (existing_sdd)-[:BEFORE]-(:StudyAction)
-        RETURN study_root, existing_sdd
+        OPTIONAL MATCH (study_value)-[:HAS_STUDY_DEFINITION_DOCUMENT]->(document:StudyDefinitionDocument)
+        RETURN DISTINCT study_root, study_value, document
         """
-
-        result, _ = db.cypher_query(query, params, resolve_objects=True)
-
-        if not result or not result[0]:
-            raise ValueError(f"Study with UID {study_uid} not found")
-
-        study_root = result[0][0]
-        existing_study_definition_document = (
-            result[0][1] if len(result[0]) > 1 else None
-        )
-        if existing_study_definition_document:
-            before_node = existing_study_definition_document
-            update_query, params = self._study_value_query(study_uid, version=version)
-            params.update(
-                {
-                    "study_definition_document": before_node.uid,
-                    "protocol_header_major_version": protocol_header_major_version,
-                    "protocol_header_minor_version": protocol_header_minor_version,
-                }
+        rows, _ = db.cypher_query(query, params, resolve_objects=True)
+        if not rows:
+            raise NotFoundException("Study version", study_uid)
+        if len(rows) != 1:
+            raise ValidationException(
+                msg="The selected study version has ambiguous document selections"
             )
-            update_query += """
-            CREATE (new_sdd:StudyDefinitionDocument:StudySelection)
-            SET new_sdd = $existing_properties
-            SET new_sdd.uid = $study_definition_document,
-                new_sdd.protocol_header_major_version = $protocol_header_major_version,
-                new_sdd.protocol_header_minor_version = $protocol_header_minor_version
-            WITH new_sdd, study_value
-            OPTIONAL MATCH (old_sdd:StudyDefinitionDocument {uid: $study_definition_document})<-[old_rel:HAS_STUDY_DEFINITION_DOCUMENT]-(study_value)
-            WHERE NOT (old_sdd)-[:BEFORE]-(:StudyAction)
-            DELETE old_rel
-            CREATE (study_value)-[:HAS_STUDY_DEFINITION_DOCUMENT]->(new_sdd)
-            RETURN new_sdd
-            """
-            result, _ = db.cypher_query(
-                update_query,
-                {**params, "existing_properties": before_node.to_dict()},
+        root, value, before = rows[0]
+        if before is None:
+            # Legacy header-only snapshots do not carry a document into a draft.
+            # Keep their header audit chain without sourcing authored content from
+            # any other StudyValue.
+            rows, _ = db.cypher_query(
+                "MATCH (:StudyRoot {uid:$study_uid})-[:HAS_VERSION]->(:StudyValue)"
+                "-[:HAS_STUDY_DEFINITION_DOCUMENT]->(document:StudyDefinitionDocument) "
+                "WHERE document.authored_documents_json IS NULL "
+                "AND NOT (document)-[:BEFORE]-(:StudyAction) "
+                "RETURN DISTINCT document",
+                {"study_uid": study_uid},
                 resolve_objects=True,
             )
-            after_node = result[0][0] if result and result[0] else None
-            if not after_node:
-                raise ValueError(
-                    f"Failed to create new StudyDefinitionDocument with uid: {before_node.uid}"
+            if len(rows) > 1:
+                raise ValidationException(
+                    msg="The study has ambiguous protocol headers"
                 )
+            before = rows[0][0] if rows else None
 
-            _manage_versioning_with_relations(
-                study_root=study_root,
-                action_type=Edit,
-                before=before_node,
-                after=after_node,
-                author_id=self.author_id,
-            )
-
-            return after_node
-
-        new_version = StudyDefinitionDocument(
+        # A release creates its next draft before updating the released header.
+        # The audit helper unlinks BEFORE from LATEST, so retain that shared
+        # authored selection explicitly after the header's copy-on-write.
+        latest = root.latest_value.single()
+        shared_draft = (
+            before is not None
+            and before.authored_documents_json is not None
+            and latest is not None
+            and latest.element_id != value.element_id
+            and latest.has_study_definition_document.is_connected(before)
+        )
+        properties = before.to_dict() if before is not None else {}
+        properties.update(
             protocol_header_major_version=protocol_header_major_version,
             protocol_header_minor_version=protocol_header_minor_version,
-        ).save()
-
-        connect_query, params = self._study_value_query(study_uid, version=version)
-        params.update({"study_definition_document_uid": new_version.uid})
-        connect_query += """
-        MATCH (sdd:StudyDefinitionDocument {uid: $study_definition_document_uid})
-        CREATE (study_value)-[:HAS_STUDY_DEFINITION_DOCUMENT]->(sdd)
-        """
-        db.cypher_query(
-            connect_query,
-            params,
         )
+        after = StudyDefinitionDocument(**properties).save()
+        if before is not None:
+            value.has_study_definition_document.disconnect(before)
+        value.has_study_definition_document.connect(after)
         _manage_versioning_with_relations(
-            study_root=study_root,
-            action_type=Create,
-            after=new_version,
+            study_root=root,
+            action_type=Edit if before is not None else Create,
+            before=before,
+            after=after,
             author_id=self.author_id,
         )
-
-        return new_version
+        if shared_draft:
+            latest.has_study_definition_document.connect(after)
+        return after
