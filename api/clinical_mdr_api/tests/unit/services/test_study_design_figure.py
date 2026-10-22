@@ -1,5 +1,8 @@
 import datetime
+import re
 from collections import OrderedDict
+
+from PIL import features
 
 from clinical_mdr_api.models.controlled_terminologies.ct_term import (
     SimpleCodelistTermModel,
@@ -2326,12 +2329,44 @@ def test_select_first_visits():
     assert visit_ids == VISIT_IDS
 
 
+# The exact goldens below were rendered with Pillow's Raqm text layout, which
+# the API image has (its libpango packages bring libfribidi, which Pillow's
+# bundled Raqm loads at run time). Without libfribidi Pillow falls back to its
+# basic layout, whose text widths differ by about a pixel. Off Raqm, every
+# label, class, identifier and text is still compared exactly; only the
+# numbers that come from text measurement are not.
+RAQM_LAYOUT = features.check("raqm")
+NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
+
+
+def without_geometry(value):
+    """The same structure with every number replaced, for non-Raqm hosts."""
+    if isinstance(value, bool) or value is None:
+        return value
+    if isinstance(value, (int, float)):
+        return 0
+    if isinstance(value, str):
+        return NUMBER.sub("0", value)
+    if isinstance(value, dict):
+        return {key: without_geometry(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return type(value)(without_geometry(item) for item in value)
+    return value
+
+
+def assert_layout_equal(actual, expected):
+    if RAQM_LAYOUT:
+        assert actual == expected
+    else:
+        assert without_geometry(actual) == without_geometry(expected)
+
+
 def test_mk_timeline():
     # pylint: disable=unused-argument
     def draw_svg(table, timeline, doc_width, doc_height):
         # pylint: disable=unused-variable
         __tracebackhide__ = True
-        assert timeline == TIMELINE
+        assert_layout_equal(timeline, TIMELINE)
 
     service = MockStudyDesignFigureService()
     service.draw_svg = draw_svg
@@ -2376,4 +2411,4 @@ def test_get_svg_document():
     ), 'class="visit-arrow" not found, missing visit arrows?'
     assert "markerWidth" in doc, '"markerWidth" found, missing arrowhead markers?'
 
-    assert doc == SVG_DOCUMENT
+    assert_layout_equal(doc, SVG_DOCUMENT)

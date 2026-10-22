@@ -64,12 +64,20 @@ class StudyArmActionAuthorTest(TestCase):
             data_origin_type_uid=None,
             data_origin_description=None,
         )
+        study_root = MagicMock(uid="Study_000001")
         with (
             patch.object(module, "StudyArm") as node,
             patch.object(module, "_manage_versioning_with_relations") as version,
+            # Deletion first runs the lifecycle guard (1033700b), a database
+            # query covered natively by the arm lifecycle suite. This test is
+            # about the action author and the copied selection.
+            patch.object(
+                module.StudySelectionArmRepository,
+                "assert_lifecycle_target_can_be_deleted",
+            ) as guard,
         ):
             module.StudySelectionArmRepository._add_new_selection(
-                MagicMock(),
+                study_root,
                 MagicMock(),
                 1,
                 selection,
@@ -78,6 +86,7 @@ class StudyArmActionAuthorTest(TestCase):
                 for_deletion=True,
                 before_node=MagicMock(),
             )
+        guard.assert_called_once_with("Study_000001", "arm", "arm1")
         self.assertEqual(version.call_args.kwargs["author_id"], "deleting-editor")
         self.assertEqual(node.call_args.kwargs["description"], selection.description)
         self.assertEqual(node.call_args.kwargs["number_of_subjects"], 0)
