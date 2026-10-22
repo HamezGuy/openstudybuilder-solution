@@ -1,6 +1,7 @@
 """Offline checks for authored endpoint applicability to arms, cohorts and epochs."""
 
 import json
+from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -31,6 +32,11 @@ from clinical_mdr_api.domains.study_selections.study_selection_scope import (
     StudySelectionScopeVO,
     canonical_scope,
 )
+from clinical_mdr_api.models.listings.listings_study import (
+    StudyCriteriaListingModel,
+    StudyEndpointListingModel,
+    StudyObjectiveListingModel,
+)
 from clinical_mdr_api.models.study_selections.study_selection import (
     StudySelectionCriteria,
     StudySelectionCriteriaApplicabilityInput,
@@ -49,9 +55,13 @@ from clinical_mdr_api.services.studies import (
 from clinical_mdr_api.services.studies.study_endpoint_selection import (
     StudyEndpointSelectionService,
 )
+from clinical_mdr_api.services.studies.study_objectives import StudyObjectivesService
 from clinical_mdr_api.services.user_info import UserInfoService
 from clinical_mdr_api.tests.fixtures.usdm_native_source import NativeStudySource
 from clinical_mdr_api.tests.fixtures.usdm_native_study import AS_OF, STUDY_UID, VERSION
+from clinical_mdr_api.tests.unit.services import (
+    test_study_objectives as objectives_fixture,
+)
 from common.exceptions import (
     AlreadyExistsException,
     BusinessLogicException,
@@ -461,3 +471,127 @@ def test_m11_preview_lists_each_authored_dimension_without_combining_them():
         )
         == "arms StudyArm_1, StudyArm_2; epochs StudyEpoch_1"
     )
+
+
+def scoped_objectives_tree():
+    """The existing objectives fixture tree with scope on one objective and endpoint."""
+    tree = deepcopy(objectives_fixture.STANDARD_TREE)
+    level, objectives = next(iter(tree.values()))
+    objective_uid, (selected, endpoint_levels) = next(iter(objectives.items()))
+    scoped_objective = selected.model_copy(
+        update={"applies_to_arm_uids": ["StudyArm_000002", "StudyArm_000001"]}
+    )
+    endpoint_level, endpoints = next(iter(endpoint_levels.values()))
+    endpoint_uid, endpoint_value = next(iter(endpoints.items()))
+    endpoints[endpoint_uid] = endpoint_value.model_copy(
+        update={"applies_to_epoch_uids": ["StudyEpoch_000003"]}
+    )
+    objectives[objective_uid] = (scoped_objective, endpoint_levels)
+    assert level is not None and endpoint_level is not None
+    return tree
+
+
+def test_objectives_documents_show_authored_scope_only_when_authored():
+    service = StudyObjectivesService()
+    plain_html = service._build_standard_html(objectives_fixture.STANDARD_TREE)
+    assert "Authored scope" not in plain_html
+    tree = scoped_objectives_tree()
+    html = service._build_standard_html(tree)
+    assert (
+        "Authored scope: arms StudyArm_000001, StudyArm_000002 "
+        "(combination not stated)" in html
+    )
+    assert "Authored scope: epochs StudyEpoch_000003 (combination not stated)" in html
+    document = service._build_standard_docx(tree).document
+    text = "\n".join(
+        paragraph.text
+        for row in document.tables[0].rows
+        for cell in row.cells
+        for paragraph in cell.paragraphs
+    )
+    assert "Authored scope: arms StudyArm_000001, StudyArm_000002" in text
+    assert "Authored scope: epochs StudyEpoch_000003" in text
+    plain = service._build_standard_docx(objectives_fixture.STANDARD_TREE).document
+    assert "Authored scope" not in "\n".join(
+        cell.text for row in plain.tables[0].rows for cell in row.cells
+    )
+
+
+def scoped_condensed_tree():
+    """The condensed fixture tree with scope on one objective and one endpoint."""
+    tree = deepcopy(objectives_fixture.CONDENSED_TREE)
+    _, objectives, endpoint_levels = next(iter(tree.values()))
+    objective_uid, selected = next(iter(objectives.items()))
+    objectives[objective_uid] = selected.model_copy(
+        update={"applies_to_cohort_uids": ["StudyCohort_000001"]}
+    )
+    _, endpoints = next(iter(endpoint_levels.values()))
+    endpoint_uid, endpoint_value = next(iter(endpoints.items()))
+    endpoints[endpoint_uid] = endpoint_value.model_copy(
+        update={"applies_to_arm_uids": ["StudyArm_000004"]}
+    )
+    return tree
+
+
+def test_condensed_objectives_documents_show_authored_scope_only_when_authored():
+    service = StudyObjectivesService()
+    plain = objectives_fixture.CONDENSED_TREE
+    assert "Authored scope" not in service._build_condensed_html(plain)
+    tree = scoped_condensed_tree()
+    expected = (
+        "Authored scope: cohorts StudyCohort_000001 (combination not stated)",
+        "Authored scope: arms StudyArm_000004 (combination not stated)",
+    )
+    html = service._build_condensed_html(tree)
+    assert all(line in html for line in expected)
+    document = service._build_condensed_docx(tree).document
+    text = "\n".join(
+        paragraph.text
+        for row in document.tables[0].rows
+        for cell in row.cells
+        for paragraph in cell.paragraphs
+    )
+    assert all(line in text for line in expected)
+    plain_document = service._build_condensed_docx(plain).document
+    assert "Authored scope" not in "\n".join(
+        cell.text for row in plain_document.tables[0].rows for cell in row.cells
+    )
+
+
+def test_objective_listing_reads_scope_from_the_selection_revision(monkeypatch):
+    monkeypatch.setattr(
+        "clinical_mdr_api.models.listings.listings_study.Objective.from_objective_ar",
+        classmethod(lambda _, name: SimpleNamespace(name_plain=name)),
+    )
+    listing = StudyObjectiveListingModel.from_study_objective_vo(
+        objective("StudyObjective_1"),
+        find_term_by_uid=lambda uid: None,
+        find_objective_by_uid=lambda uid: "Synthetic objective",
+    )
+    assert listing.text == "Synthetic objective"
+    assert listing.applies_to_arm_uids == ["StudyArm_1", "StudyArm_2"]
+    assert listing.applies_to_cohort_uids == ["StudyCohort_1"]
+    assert listing.applies_to_epoch_uids == []
+    unscoped = StudyObjectiveListingModel.from_study_objective_vo(
+        objective("StudyObjective_2", scope=StudySelectionScopeVO()),
+        find_term_by_uid=lambda uid: None,
+        find_objective_by_uid=lambda uid: "Synthetic objective",
+    )
+    assert (
+        unscoped.applies_to_arm_uids,
+        unscoped.applies_to_cohort_uids,
+        unscoped.applies_to_epoch_uids,
+    ) == ([], [], [])
+
+
+def test_study_listings_carry_each_scope_dimension():
+    for model in (
+        StudyEndpointListingModel,
+        StudyObjectiveListingModel,
+        StudyCriteriaListingModel,
+    ):
+        assert {
+            "applies_to_arm_uids",
+            "applies_to_cohort_uids",
+            "applies_to_epoch_uids",
+        } <= set(model.model_fields), model

@@ -73,5 +73,17 @@ class StudySelectionScopeVO:
     def is_unscoped(self) -> bool:
         return not any(self.identity())
 
+    def description(self) -> str:
+        """Each populated dimension listed in order; empty when none is authored."""
+        return "; ".join(
+            f"{label} {', '.join(uids)}"
+            for label, uids in (
+                ("arms", self.applies_to_arm_uids),
+                ("cohorts", self.applies_to_cohort_uids),
+                ("epochs", self.applies_to_epoch_uids),
+            )
+            if uids
+        )
+
     def as_lists(self) -> dict[str, list[str]]:
         return {name: list(getattr(self, name)) for name in SCOPE_FIELDS}

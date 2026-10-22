@@ -4,6 +4,9 @@ from typing import Any
 from docx.enum.style import WD_STYLE_TYPE
 from yattag.doc import Doc
 
+from clinical_mdr_api.domains.study_selections.study_selection_scope import (
+    StudySelectionScopeVO,
+)
 from clinical_mdr_api.services.studies.study import StudyService
 from clinical_mdr_api.services.studies.study_endpoint_selection import (
     StudyEndpointSelectionService,
@@ -17,6 +20,20 @@ def _gettext(x):
 
 
 log = getLogger(__name__)
+
+
+def authored_scope_text(selection) -> str | None:
+    """Readable authored scope, or None so unscoped output keeps its bytes."""
+    description = StudySelectionScopeVO.from_record(selection).description()
+    if not description:
+        return None
+    return (
+        _gettext("Authored scope")
+        + f": {description} ("
+        + _gettext("combination not stated")
+        + ")"
+    )
+
 
 # pylint: disable=no-member
 STYLES = {
@@ -178,6 +195,10 @@ class StudyObjectivesService:
                                         objectives.values(), key=lambda o: o.order
                                     ):
                                         doc.asis(study_objective.objective.name)
+                                        if scope := authored_scope_text(
+                                            study_objective
+                                        ):
+                                            line("p", scope, klass="authored-scope")
 
                                 with tag("td"):
                                     for endpoint_level, study_endpoints in sorted(
@@ -198,6 +219,14 @@ class StudyObjectivesService:
                                                     doc.asis(
                                                         study_endpoint.endpoint.name
                                                     )
+                                                    if scope := authored_scope_text(
+                                                        study_endpoint
+                                                    ):
+                                                        line(
+                                                            "p",
+                                                            scope,
+                                                            klass="authored-scope",
+                                                        )
 
         return doc.getvalue()
 
@@ -258,6 +287,14 @@ class StudyObjectivesService:
                                                 ),
                                             ):
                                                 doc.asis(study_objective.objective.name)
+                                                if scope := authored_scope_text(
+                                                    study_objective
+                                                ):
+                                                    line(
+                                                        "p",
+                                                        scope,
+                                                        klass="authored-scope",
+                                                    )
                                             line(
                                                 "th",
                                                 endpoint_level.term_name,
@@ -279,6 +316,14 @@ class StudyObjectivesService:
                                         with tag("tr"):
                                             with tag("td", klass="endpoint"):
                                                 doc.asis(study_endpoint.endpoint.name)
+                                                if scope := authored_scope_text(
+                                                    study_endpoint
+                                                ):
+                                                    line(
+                                                        "p",
+                                                        scope,
+                                                        klass="authored-scope",
+                                                    )
 
                                             with tag("td", klass="timeframe"):
                                                 if study_endpoint.timeframe:
@@ -327,6 +372,8 @@ class StudyObjectivesService:
                 docx.add_html(
                     cell, study_objective.objective.name, default_style="objective"
                 )
+                if scope := authored_scope_text(study_objective):
+                    cell.add_paragraph(scope, style=STYLES["timeframe"][0])
 
             cell = row.cells[1]
             for endpoint_level, study_endpoints in sorted(
@@ -343,6 +390,8 @@ class StudyObjectivesService:
                     docx.add_html(
                         cell, study_endpoint.endpoint.name, default_style="endpoint"
                     )
+                    if scope := authored_scope_text(study_endpoint):
+                        cell.add_paragraph(scope, style=STYLES["timeframe"][0])
             if len(cell.paragraphs) > 1:
                 # Remove first empty paragraph added automatically to cell
                 docx.delete_paragraph(cell.paragraphs[0])
@@ -400,6 +449,8 @@ class StudyObjectivesService:
                 if len(row.cells[0].paragraphs) > 1:
                     # Remove first empty paragraph of cell
                     docx.delete_paragraph(row.cells[0].paragraphs[0])
+                if scope := authored_scope_text(study_objective):
+                    row.cells[0].add_paragraph(scope, style=STYLES["timeframe"][0])
 
                 for epl_idx, epl_ste in enumerate(
                     sorted(
@@ -445,6 +496,10 @@ class StudyObjectivesService:
                         if len(row.cells[1].paragraphs) > 1:
                             # Remove first empty paragraph of cell
                             docx.delete_paragraph(row.cells[1].paragraphs[0])
+                        if scope := authored_scope_text(study_endpoint):
+                            row.cells[1].add_paragraph(
+                                scope, style=STYLES["timeframe"][0]
+                            )
 
                         if study_endpoint.timeframe:
                             docx.add_html(

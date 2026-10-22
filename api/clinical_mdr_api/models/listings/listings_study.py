@@ -949,6 +949,9 @@ class StudyVisitListingModel(BaseModel):
 class StudyCriteriaListingModel(BaseModel):
     type: Annotated[str, Field()]
     text: Annotated[str, Field()]
+    applies_to_arm_uids: Annotated[list[str], Field()]
+    applies_to_cohort_uids: Annotated[list[str], Field()]
+    applies_to_epoch_uids: Annotated[list[str], Field()]
 
     @classmethod
     def from_study_criteria_vo(
@@ -968,6 +971,9 @@ class StudyCriteriaListingModel(BaseModel):
                 find_term_by_uid=find_term_by_uid,
             ),
             text=none_to_empty_str(Criteria.from_criteria_ar(criteria_ar).name_plain),
+            applies_to_arm_uids=list(study_criteria_vo.scope.applies_to_arm_uids),
+            applies_to_cohort_uids=list(study_criteria_vo.scope.applies_to_cohort_uids),
+            applies_to_epoch_uids=list(study_criteria_vo.scope.applies_to_epoch_uids),
         )
 
     @staticmethod
@@ -993,6 +999,9 @@ class StudyObjectiveListingModel(BaseModel):
     uid: Annotated[str, Field()]
     type: Annotated[str, Field()]
     text: Annotated[str, Field()]
+    applies_to_arm_uids: Annotated[list[str], Field()]
+    applies_to_cohort_uids: Annotated[list[str], Field()]
+    applies_to_epoch_uids: Annotated[list[str], Field()]
 
     @classmethod
     def from_study_objective_vo(
@@ -1019,6 +1028,11 @@ class StudyObjectiveListingModel(BaseModel):
             text=none_to_empty_str(
                 Objective.from_objective_ar(objective_ar).name_plain
             ),
+            applies_to_arm_uids=list(study_objective_vo.scope.applies_to_arm_uids),
+            applies_to_cohort_uids=list(
+                study_objective_vo.scope.applies_to_cohort_uids
+            ),
+            applies_to_epoch_uids=list(study_objective_vo.scope.applies_to_epoch_uids),
         )
 
     @staticmethod
@@ -1047,6 +1061,9 @@ class StudyEndpointListingModel(BaseModel):
     objective_uid: Annotated[str, Field()]
     timeframe: Annotated[str, Field()]
     endpoint_unit: Annotated[str, Field()]
+    applies_to_arm_uids: Annotated[list[str], Field()]
+    applies_to_cohort_uids: Annotated[list[str], Field()]
+    applies_to_epoch_uids: Annotated[list[str], Field()]
 
     @classmethod
     def from_study_endpoint_vo(
@@ -1105,6 +1122,9 @@ class StudyEndpointListingModel(BaseModel):
                 else None
             ),
             endpoint_unit=ep_unit,
+            applies_to_arm_uids=list(study_endpoint_vo.scope.applies_to_arm_uids),
+            applies_to_cohort_uids=list(study_endpoint_vo.scope.applies_to_cohort_uids),
+            applies_to_epoch_uids=list(study_endpoint_vo.scope.applies_to_epoch_uids),
         )
 
     @staticmethod

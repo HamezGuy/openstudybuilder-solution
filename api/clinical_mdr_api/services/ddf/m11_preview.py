@@ -2,6 +2,9 @@
 
 from typing import Any
 
+from clinical_mdr_api.domains.study_selections.study_selection_scope import (
+    StudySelectionScopeVO,
+)
 from clinical_mdr_api.models.study_selections.study_definition_document import (
     AuthoredProtocolDocuments,
 )
@@ -278,16 +281,7 @@ class _PreviewSources:
 
 def _authored_scope_text(source: dict[str, Any]) -> str:
     """Native scope of one criterion; dimensions are listed, never combined."""
-    parts = [
-        f"{label} {', '.join(uids)}"
-        for label, key in (
-            ("arms", "applies_to_arm_uids"),
-            ("cohorts", "applies_to_cohort_uids"),
-            ("epochs", "applies_to_epoch_uids"),
-        )
-        if (uids := [str(uid) for uid in source.get(key) or []])
-    ]
-    return "; ".join(parts) if parts else "none authored"
+    return StudySelectionScopeVO.from_record(source).description() or "none authored"
 
 
 def _eligibility_for_preview(
