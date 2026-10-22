@@ -1,6 +1,6 @@
 {
   "contractVersion": "OsbVocabularyRegistryV1@1.1.0",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "owner": "ClinicalSemanticLayer",
   "canonicalNames": "OpenStudyBuilder resource type names, as its proposal target taxonomy names them; the IL ruleset uses the same names from 1.17.0 (formerNames records what 1.16.0 and earlier called three of them)",
   "sources": {
@@ -679,10 +679,10 @@
       "cslCapability": null,
       "cslExecutable": false,
       "osbCapability": "native_study_mutation",
-      "osbNativeExecutor": true,
+      "osbNativeExecutor": false,
       "osbSelection": false,
       "osbDualMode": false,
-      "osbCreateRequest": true,
+      "osbCreateRequest": false,
       "osbDeclinable": false,
       "osbFamily": null,
       "osbFamilyBlockerOnly": false,
@@ -692,13 +692,10 @@
       ],
       "apiPath": "/studies/{studyUid}/study-cohorts",
       "semanticMismatch": false,
-      "note": "Executed by resource type through the study executor. Its optional arm_uids and branch_arm_uids name existing StudyArm and StudyBranchArm selections, so those resolve first. No IL rule asserts a cohort yet, so CSL routes no candidate to it and states no CSL capability.",
+      "note": "OSB executes no cohort row by itself: cohorts are created inside its one-transaction regimen command (POST /studies/{study_uid}/regimens, OSB 199d4545), after the arms and branch arms they name. Its optional arm_uids and branch_arm_uids name existing StudyArm and StudyBranchArm selections. No IL rule asserts a cohort yet, so CSL routes no candidate to it and states no CSL capability.",
       "captureReadbackResourceType": null,
       "cslCandidateRouting": null,
-      "cslNativeRoute": {
-        "route": "/studies/{study_uid}/study-cohorts",
-        "method": "POST"
-      },
+      "cslNativeRoute": null,
       "uiSurface": "Cohorts",
       "dependencies": [
         "study-arm",
@@ -714,10 +711,10 @@
       "cslCapability": null,
       "cslExecutable": false,
       "osbCapability": "native_study_mutation",
-      "osbNativeExecutor": true,
+      "osbNativeExecutor": false,
       "osbSelection": false,
       "osbDualMode": false,
-      "osbCreateRequest": true,
+      "osbCreateRequest": false,
       "osbDeclinable": false,
       "osbFamily": null,
       "osbFamilyBlockerOnly": false,
@@ -727,17 +724,13 @@
       ],
       "apiPath": "/studies/{studyUid}/study-branch-arms",
       "semanticMismatch": false,
-      "note": "Executed by resource type through the study executor. A branch arm subdivides its required parent arm (arm_uid) and may name an existing cohort (study_cohort_uid). USDM 4.0 and CSL register no branch arm type, so CSL maps none and routes no candidate to it.",
+      "note": "OSB executes no branch arm row by itself: branch arms are created inside its one-transaction regimen command (POST /studies/{study_uid}/regimens, OSB 199d4545), after their required parent arm (arm_uid) and before the cohorts that name them; a branch arm names only an existing cohort, so the cohort is not a dependency. USDM 4.0 and CSL register no branch arm type, so CSL maps none and routes no candidate to it.",
       "captureReadbackResourceType": null,
       "cslCandidateRouting": null,
-      "cslNativeRoute": {
-        "route": "/studies/{study_uid}/study-branch-arms",
-        "method": "POST"
-      },
+      "cslNativeRoute": null,
       "uiSurface": "Branch arms",
       "dependencies": [
-        "study-arm",
-        "study-cohort"
+        "study-arm"
       ]
     },
     {
@@ -1770,5 +1763,5 @@
       "dependencies": []
     }
   ],
-  "registryHash": "sha256:bba344450c29c94c3b35c961c50693bfc9c33fcaa4a52e7ddd746d076f039fbd"
+  "registryHash": "sha256:a2026b309959b663cc7a52edc45dcc4060059569c9aecb70fd9c8d34b1de59e5"
 }

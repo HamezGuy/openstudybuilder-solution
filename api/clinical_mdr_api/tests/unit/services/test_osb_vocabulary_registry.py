@@ -95,8 +95,10 @@ def test_target_capabilities_and_native_sets_are_the_registry_rows() -> None:
     assert TARGET_CAPABILITIES["CTTerm"] == "governed_library_reference"
     assert TARGET_CAPABILITIES["IntegrationExtension"] == "governed_extension"
     assert TARGET_CAPABILITIES["Unresolved"] == "unresolved"
-    # Registry 1.3.0 (CSL 83bd58c): cohorts and branch arms are native study
-    # mutations with create requests, outside every selection family.
+    # Registry 1.3.1 (CSL c966054): cohorts and branch arms are native study
+    # mutations outside every selection family. No OSB resource-type executor
+    # or create request is claimed; the governed route is the regimen command.
+    # A branch arm depends only on its arm, so the two rows form no cycle.
     for name, path in (
         ("StudySelectionCohort", "/studies/{studyUid}/study-cohorts"),
         ("StudySelectionBranchArm", "/studies/{studyUid}/study-branch-arms"),
@@ -104,9 +106,12 @@ def test_target_capabilities_and_native_sets_are_the_registry_rows() -> None:
         assert TARGET_CAPABILITIES[name] == "native_study_mutation"
         assert ROWS[name]["apiPath"] == path
         assert ROWS[name]["osbFamily"] is None
-        assert name in NATIVE_CREATE_REQUEST_RESOURCE_TYPES
+        assert name not in NATIVE_EXECUTOR_RESOURCE_TYPES
+        assert name not in NATIVE_CREATE_REQUEST_RESOURCE_TYPES
     assert ROWS["StudySelectionCohort"]["cslObjectType"] == "StudyCohort"
     assert ROWS["StudySelectionBranchArm"]["cslObjectType"] is None
+    assert ROWS["StudySelectionBranchArm"]["dependencies"] == ["study-arm"]
+    assert "study-branch-arm" in ROWS["StudySelectionCohort"]["dependencies"]
     assert {
         "StudyMetadata",
         "StudyVisit",
