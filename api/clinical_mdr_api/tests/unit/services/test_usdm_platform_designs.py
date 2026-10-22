@@ -13,18 +13,94 @@ from clinical_mdr_api.services.ddf.usdm_platform_designs import (
     compose_platform_document,
 )
 from clinical_mdr_api.tests.fixtures.usdm_native_source import NativeStudySource
-from clinical_mdr_api.tests.fixtures.usdm_native_study import STUDY_UID, VERSION
+from clinical_mdr_api.tests.fixtures.usdm_native_study import (
+    STUDY_UID,
+    VERSION,
+    native_study_graph,
+)
 
 SUBPART_UID = "Study_000099"
 
 
-def report(scope=None):
-    source = NativeStudySource()
+# A subpart is its own StudyRoot, so its arms, branch arms, cohorts and design
+# cells are its own native records (test_platform_designs_neo4j shows the same
+# on the graph). Earlier this fixture reused the master's records, so CSL C11
+# saw the master's arm UIDs in the subpart design and refused the arm in two
+# designs, correctly.
+SUBPART_NATIVE_UIDS = {
+    "Arm_1": "Arm_99",
+    "Branch_1": "Branch_99",
+    "Cohort_1": "Cohort_98",
+    "Cohort_2": "Cohort_99",
+    "Cell_1": "Cell_99",
+}
+
+
+def subpart_graph():
+    """The fixture content as a subpart holds it: its own native record UIDs.
+
+    The offline source serves one study identity, and the mapper refuses a
+    record of another study, so these records keep the fixture's study_uid.
+    The native suite shows real subpart records under their own study.
+    """
+    graph = native_study_graph()
+    arm = graph["arms"][0].model_copy(update={"arm_uid": SUBPART_NATIVE_UIDS["Arm_1"]})
+    branch = graph["branches"][0].model_copy(
+        update={
+            "branch_arm_uid": SUBPART_NATIVE_UIDS["Branch_1"],
+            "arm_root": arm,
+        }
+    )
+    graph["arms"], graph["branches"] = [arm], [branch]
+    graph["cohorts"] = [
+        cohort.model_copy(
+            update={
+                "cohort_uid": SUBPART_NATIVE_UIDS[cohort.cohort_uid],
+                "arm_roots": [arm] if cohort.arm_roots else cohort.arm_roots,
+                "branch_arm_roots": (
+                    [branch] if cohort.branch_arm_roots else cohort.branch_arm_roots
+                ),
+            }
+        )
+        for cohort in graph["cohorts"]
+    ]
+    graph["cells"] = [
+        cell.model_copy(
+            update={
+                "design_cell_uid": SUBPART_NATIVE_UIDS[cell.design_cell_uid],
+                "study_arm_uid": SUBPART_NATIVE_UIDS[cell.study_arm_uid],
+                "study_branch_arm_uid": SUBPART_NATIVE_UIDS[cell.study_branch_arm_uid],
+            }
+        )
+        for cell in graph["cells"]
+    ]
+    return graph
+
+
+def report(scope=None, graph=None):
+    source = NativeStudySource(graph)
     with source.isolated():
         mapper = source.mapper()
         if scope is not None:
             mapper._id_manager = DesignScopedIdManager(scope)
         return mapper.map_with_report(source.graph["study"], VERSION)
+
+
+def native_arm_uids(design):
+    """The native arm and branch arm UIDs a design's USDM arms carry."""
+    found = set()
+    for arm in design.get("arms") or []:
+        for extension in arm.get("extensionAttributes") or []:
+            if extension["url"].rsplit("/", 1)[-1] not in {
+                "studyArm",
+                "studyBranchArm",
+            }:
+                continue
+            for child in extension.get("extensionAttributes") or []:
+                name = child["url"].rsplit("/", 1)[-1]
+                if name in {"arm_uid", "branch_arm_uid"} and child.get("valueString"):
+                    found.add(child["valueString"])
+    return found
 
 
 def sources():
@@ -33,7 +109,7 @@ def sources():
         "subpart",
         SUBPART_UID,
         "1",
-        report(SUBPART_UID),
+        report(SUBPART_UID, subpart_graph()),
         parent_study_uid=STUDY_UID,
         subpart_acronym="SYN-A",
     )
@@ -217,3 +293,14 @@ def test_a_study_without_design_content_is_reported_not_invented():
     issues = [issue["code"] for issue in result["mappingReport"]["issues"]]
     assert issues.count("USDM_PLATFORM_DESIGN_ABSENT") == 1
     assert result["mappingReport"]["state"] == "incomplete"
+
+
+def test_each_design_carries_only_its_own_native_arms():
+    master, subpart = sources()
+    result = compose_platform_document(master, [subpart])
+    designs = result["document"]["study"]["versions"][0]["studyDesigns"]
+    master_arms, subpart_arms = (native_arm_uids(design) for design in designs)
+    assert master_arms and subpart_arms
+    assert master_arms.isdisjoint(subpart_arms)
+    assert subpart_arms <= set(SUBPART_NATIVE_UIDS.values())
+    assert master_arms <= set(SUBPART_NATIVE_UIDS)

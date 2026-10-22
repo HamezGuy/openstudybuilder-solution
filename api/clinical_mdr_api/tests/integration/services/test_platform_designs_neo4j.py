@@ -278,3 +278,58 @@ def test_http_appendix_locks_against_the_exact_locked_parent(
     response = client.get(f"/studies/{parent}", params={"study_value_version": "1"})
     assert response.status_code == 200, response.text
     assert child in response.json()["study_subpart_uids"]
+
+
+def test_http_subparts_hold_their_own_arms_never_the_masters(
+    protocol_graph, platform_client
+):
+    """CSL C11 refuses an arm in two designs; native subparts never share one."""
+    fixture, _ = protocol_graph
+    client = platform_client
+    parent = _create_protocol_study(fixture, client, title="Synthetic arm ownership")
+    with fixture.principal():
+        master_arm = TestUtils.create_study_arm(
+            parent, name="Synthetic shared placebo", short_name="PBO"
+        ).arm_uid
+        master_branch = TestUtils.create_study_branch_arm(
+            parent,
+            name="Synthetic placebo branch",
+            short_name="PBOB",
+            study_arm_uid=master_arm,
+        ).branch_arm_uid
+    # A subpart created after the master has arms starts with none of them.
+    child = _subpart(client, fixture, parent, "SYNO")
+    response = client.get(f"/studies/{child}/study-arms")
+    assert response.status_code == 200, response.text
+    assert response.json()["items"] == []
+    with fixture.principal():
+        # The same authored name gets a new native record of the subpart.
+        child_arm = TestUtils.create_study_arm(
+            child, name="Synthetic shared placebo", short_name="PBO"
+        ).arm_uid
+        child_branch = TestUtils.create_study_branch_arm(
+            child,
+            name="Synthetic placebo branch",
+            short_name="PBOB",
+            study_arm_uid=child_arm,
+        ).branch_arm_uid
+    assert {child_arm, child_branch}.isdisjoint({master_arm, master_branch})
+    for study_uid, expected in ((parent, master_arm), (child, child_arm)):
+        response = client.get(f"/studies/{study_uid}/study-arms")
+        assert [item["arm_uid"] for item in response.json()["items"]] == [expected]
+    # Every arm and branch arm node belongs to the values of exactly one study.
+    db.set_connection(url=fixture.dsn)
+    rows, _ = db.cypher_query(
+        "MATCH (root:StudyRoot)-[:LATEST|HAS_VERSION]->(:StudyValue)"
+        "-[:HAS_STUDY_ARM|HAS_STUDY_BRANCH_ARM]->(arm) "
+        "WHERE root.uid IN $uids "
+        "RETURN arm.uid, collect(DISTINCT root.uid)",
+        {"uids": [parent, child]},
+    )
+    owners = {uid: set(roots) for uid, roots in rows}
+    assert owners == {
+        master_arm: {parent},
+        master_branch: {parent},
+        child_arm: {child},
+        child_branch: {child},
+    }
