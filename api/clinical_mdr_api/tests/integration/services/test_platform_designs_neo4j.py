@@ -3,17 +3,31 @@
 # Pytest resolves the imported fixture functions by parameter name.
 # pylint: disable=redefined-outer-name
 
+import json
+import os
+from pathlib import Path
+
 import pytest
 from neomodel import db
 
 from clinical_mdr_api.domain_repositories.study_selections.study_version_repository import (
     StudyVersionRepository,
 )
+from clinical_mdr_api.domains.study_selections.study_arm_origin import (
+    STUDY_ARM_ORIGIN_CATALOGUE,
+    STUDY_ARM_ORIGIN_CODELIST_UID,
+)
+from clinical_mdr_api.models.study_selections.study_selection import (
+    StudySelectionArmCreateInput,
+)
 from clinical_mdr_api.routers.ddf import study_definitions
 from clinical_mdr_api.services.ddf.usdm_mapping_context import (
     USDMMappingAuthorityRequired,
 )
 from clinical_mdr_api.services.ddf.usdm_service import USDMService
+from clinical_mdr_api.services.studies.study_arm_selection import (
+    StudyArmSelectionService,
+)
 from clinical_mdr_api.tests.integration.services.test_authored_protocol_documents_neo4j import (  # noqa: F401  pylint: disable=unused-import
     _author_first_protocol_documents,
     _create_protocol_study,
@@ -28,6 +42,7 @@ from clinical_mdr_api.tests.integration.services.test_study_arm_lifecycle_neo4j 
     lifecycle_client,
 )
 from clinical_mdr_api.tests.integration.utils.utils import TestUtils
+from common.config import settings
 
 pytestmark = [
     pytest.mark.estate_fixture,
@@ -333,3 +348,235 @@ def test_http_subparts_hold_their_own_arms_never_the_masters(
         child_arm: {child},
         child_branch: {child},
     }
+
+
+@pytest.fixture(scope="module")
+def design_terms(protocol_graph):
+    """The governed terms a locked design states: study type and arm data origin.
+
+    The interventional study type on its configured codelist (C99077), and one
+    arm data origin on the DDF CT codelist the arm origin rule governs (C188727).
+    """
+    fixture, _ = protocol_graph
+    db.set_connection(url=fixture.dsn)
+    with fixture.principal():
+        TestUtils.create_ct_codelist(
+            codelist_uid="C99077",
+            name="Synthetic study type",
+            submission_value="STYPE",
+            extensible=True,
+            approve=True,
+        )
+        TestUtils.create_ct_term(
+            codelist_uid="C99077",
+            term_uid="C98388",
+            concept_id="C98388",
+            submission_value="INTERVENTIONAL",
+            sponsor_preferred_name="Interventional Study",
+            sponsor_preferred_name_sentence_case="interventional study",
+        )
+        TestUtils.create_ct_catalogue(catalogue_name=STUDY_ARM_ORIGIN_CATALOGUE)
+        TestUtils.create_ct_codelist(
+            catalogue_name=STUDY_ARM_ORIGIN_CATALOGUE,
+            codelist_uid=STUDY_ARM_ORIGIN_CODELIST_UID,
+            name="Synthetic study arm data origin type",
+            submission_value="ARMORIGIN",
+            extensible=True,
+            approve=True,
+        )
+        TestUtils.create_ct_term(
+            catalogue_name=STUDY_ARM_ORIGIN_CATALOGUE,
+            codelist_uid=STUDY_ARM_ORIGIN_CODELIST_UID,
+            term_uid="C176263",
+            concept_id="C176263",
+            submission_value="SYNTHETIC",
+            sponsor_preferred_name="Synthetic data",
+            sponsor_preferred_name_sentence_case="synthetic data",
+        )
+        # A released code needs a CDISC library term in a CDISC package.
+        TestUtils.create_library(name="CDISC", is_editable=True)
+        # OSB selects arm types from the SDTM CT catalogue's ARMTTP codelist.
+        TestUtils.create_ct_codelist(
+            catalogue_name=settings.sdtm_ct_catalogue_name,
+            codelist_uid="C174222",
+            name="Synthetic arm type",
+            submission_value=settings.study_arm_type_cl_submval,
+            extensible=True,
+            approve=True,
+        )
+        TestUtils.create_ct_term(
+            catalogue_name=settings.sdtm_ct_catalogue_name,
+            codelist_uid="C174222",
+            term_uid="C174266",
+            concept_id="C174266",
+            library_name="CDISC",
+            submission_value="EXPERIMENTAL",
+            sponsor_preferred_name="Experimental Arm",
+            sponsor_preferred_name_sentence_case="experimental arm",
+        )
+        # The DDF terminology package that pins the origin and arm type terms.
+        # Real packages come from the standards import; this one contains
+        # exactly these codelists and terms, as the import writes them.
+        package_uid = f"{STUDY_ARM_ORIGIN_CATALOGUE} platform {fixture.nonce}"
+        db.cypher_query(
+            """
+            MATCH (catalogue:CTCatalogue {name: $catalogue})
+            CREATE (catalogue)-[:CONTAINS_PACKAGE]->(:CTPackage {
+                uid: $package_uid, name: $package_uid, author_id: 'TEST',
+                import_date: datetime(), effective_date: date()})
+            """,
+            {"catalogue": STUDY_ARM_ORIGIN_CATALOGUE, "package_uid": package_uid},
+        )
+        for codelist_uid, term_uid in (
+            (STUDY_ARM_ORIGIN_CODELIST_UID, "C176263"),
+            ("C174222", "C174266"),
+        ):
+            db.cypher_query(
+                """
+                MATCH (package:CTPackage {uid: $package_uid})
+                MATCH (:CTCodelistRoot {uid: $codelist_uid})-[:HAS_ATTRIBUTES_ROOT]->
+                      (:CTCodelistAttributesRoot)-[:LATEST]->(codelist:CTCodelistAttributesValue)
+                MATCH (:CTTermRoot {uid: $term_uid})-[:HAS_ATTRIBUTES_ROOT]->
+                      (:CTTermAttributesRoot)-[:LATEST]->(term:CTTermAttributesValue)
+                CREATE (package)-[:CONTAINS_CODELIST]->(package_codelist:CTPackageCodelist {
+                    uid: $package_uid + '_' + $codelist_uid})
+                      -[:CONTAINS_ATTRIBUTES]->(codelist)
+                CREATE (package_codelist)-[:CONTAINS_TERM]->(:CTPackageTerm {uid: $term_uid})
+                      -[:CONTAINS_ATTRIBUTES]->(term)
+                """,
+                {
+                    "package_uid": package_uid,
+                    "codelist_uid": codelist_uid,
+                    "term_uid": term_uid,
+                },
+            )
+    return {
+        "study_type": "C98388",
+        "arm_origin": "C176263",
+        "arm_type": "C174266",
+        "ddf_package": package_uid,
+    }
+
+
+def _arm(study_uid, terms, name, short_name):
+    return (
+        StudyArmSelectionService()
+        .make_selection(
+            study_uid,
+            StudySelectionArmCreateInput(
+                name=name,
+                short_name=short_name,
+                arm_type_uid=terms["arm_type"],
+                data_origin_type_uid=terms["arm_origin"],
+                data_origin_description="Synthetic arm authored for the platform release test.",
+            ),
+        )
+        .arm_uid
+    )
+
+
+def _set_study_type(client, study_uid, term_uid, parent_uid=None):
+    body = {
+        "current_metadata": {
+            "high_level_study_design": {"study_type_code": {"term_uid": term_uid}}
+        }
+    }
+    if parent_uid is not None:
+        # An ordinary PATCH reads an omitted parent as removal from the parent.
+        body["study_parent_part_uid"] = parent_uid
+    response = client.patch(f"/studies/{study_uid}", json=body)
+    assert response.status_code == 200, response.text
+
+
+def test_http_locked_platform_version_is_one_executable_release(
+    protocol_graph, platform_client, design_terms
+):
+    """A locked platform version releases the master and every subpart design."""
+    fixture, reasons = protocol_graph
+    client = platform_client
+    # Package UIDs follow OSB's convention of naming their catalogue, which the
+    # lock's existing standard version check relies on.
+    parent = _create_protocol_study(
+        fixture,
+        client,
+        title="Synthetic executable platform",
+        package_name=f"{settings.sdtm_ct_catalogue_name} platform {fixture.nonce}",
+    )
+    children = [_subpart(client, fixture, parent, name) for name in ("SYXA", "SYXB")]
+    _set_study_type(client, parent, design_terms["study_type"])
+    for study_uid in children:
+        _set_study_type(
+            client, study_uid, design_terms["study_type"], parent_uid=parent
+        )
+    with fixture.principal():
+        for study_uid in (parent, *children):
+            TestUtils.create_study_standard_version(
+                study_uid=study_uid, ct_package_uid=design_terms["ddf_package"]
+            )
+        placebo = _arm(parent, design_terms, "Synthetic shared placebo", "PBO")
+        arm_a = _arm(children[0], design_terms, "Synthetic regimen A", "RA")
+        branch_a = TestUtils.create_study_branch_arm(
+            children[0],
+            name="Synthetic regimen A high dose",
+            short_name="RAH",
+            study_arm_uid=arm_a,
+        ).branch_arm_uid
+        arm_b = _arm(children[1], design_terms, "Synthetic regimen B", "RB")
+
+    draft = client.get(f"/studyDefinitions/{parent}/platform-designs")
+    assert draft.status_code == 200, draft.text
+    assert draft.json()["executableRelease"]["selected"] is False
+    assert "draft" in draft.json()["executableRelease"]["reason"]
+
+    _lock(client, parent, reasons)
+    pins = {
+        pin["study_uid"]: pin["study_value_version"]
+        for pin in _pins(fixture, parent, "1")
+    }
+    assert pins == {uid: "1" for uid in children}
+    response = client.get(
+        f"/studyDefinitions/{parent}/platform-designs",
+        params={"study_value_version": "1"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    release = body["executableRelease"]
+    assert release["selected"] is True, release
+    assert release["contract"] == "csl-platform-release-designs/1"
+    assert release["masterLineageId"] == parent
+    ordered = sorted(children)
+    assert [design["designKey"] for design in release["designs"]] == [
+        "master",
+        *(f"subpart:{uid}" for uid in ordered),
+    ]
+    assert [design["designScope"] for design in release["designs"]] == [
+        {"level": "master", "studyUid": parent, "studyValueVersion": "1"},
+        *(
+            {
+                "level": "subpart",
+                "studyUid": uid,
+                "studyValueVersion": "1",
+                "parentStudyUid": parent,
+            }
+            for uid in ordered
+        ),
+    ]
+    arms = {
+        design["designKey"]: {
+            (arm["osbArmUid"], arm["osbBranchArmUid"]) for arm in design["arms"]
+        }
+        for design in release["designs"]
+    }
+    assert arms == {
+        "master": {(placebo, None)},
+        f"subpart:{children[0]}": {(arm_a, None), (arm_a, branch_a)},
+        f"subpart:{children[1]}": {(arm_b, None)},
+    }
+    designs = body["document"]["study"]["versions"][0]["studyDesigns"]
+    assert [design["usdmDesignId"] for design in release["designs"]] == [
+        design["id"] for design in designs
+    ]
+    # Evidence for the CSL cross-check: the exact body a release would register.
+    target = os.environ.get("OSB_PLATFORM_DESIGNS_EXPORT_PATH", "")
+    if target:
+        Path(target).write_text(json.dumps(body), encoding="utf-8")

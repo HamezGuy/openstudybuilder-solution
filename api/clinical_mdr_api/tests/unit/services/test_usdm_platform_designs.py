@@ -185,7 +185,8 @@ def test_master_and_subpart_designs_share_one_version_with_scoped_identities():
         "parentStudyUid": STUDY_UID,
         "subpartAcronym": "SYN-A",
     }
-    assert result["executableRelease"]["selected"] is False
+    # Both designs are pinned to exact versions, so both are selected.
+    assert result["executableRelease"]["selected"] is True
     # Every entity identity is unique and the design references resolve.
     issues = [issue["code"] for issue in result["mappingReport"]["issues"]]
     assert "USDM_DUPLICATE_ENTITY_ID" not in issues
@@ -304,3 +305,74 @@ def test_each_design_carries_only_its_own_native_arms():
     assert master_arms.isdisjoint(subpart_arms)
     assert subpart_arms <= set(SUBPART_NATIVE_UIDS.values())
     assert master_arms <= set(SUBPART_NATIVE_UIDS)
+
+
+def test_a_locked_platform_version_selects_every_design_for_one_release():
+    master, subpart = sources()
+    result = compose_platform_document(master, [subpart])
+    designs = result["document"]["study"]["versions"][0]["studyDesigns"]
+    release = result["executableRelease"]
+    assert release["selected"] is True
+    assert release["contract"] == "csl-platform-release-designs/1"
+    assert release["masterLineageId"] == STUDY_UID
+    assert [design["designKey"] for design in release["designs"]] == [
+        "master",
+        f"subpart:{SUBPART_UID}",
+    ]
+    assert release["designs"][0]["designScope"] == {
+        "level": "master",
+        "studyUid": STUDY_UID,
+        "studyValueVersion": VERSION,
+    }
+    assert release["designs"][1]["designScope"] == {
+        "level": "subpart",
+        "studyUid": SUBPART_UID,
+        "studyValueVersion": "1",
+        "parentStudyUid": STUDY_UID,
+    }
+    for selected, design in zip(release["designs"], designs):
+        assert selected["usdmDesignId"] == design["id"]
+        assert [arm["usdmArmId"] for arm in selected["arms"]] == [
+            arm["id"] for arm in design["arms"]
+        ]
+        # The selection names exactly the native arms the design carries.
+        assert {
+            arm["osbBranchArmUid"] or arm["osbArmUid"] for arm in selected["arms"]
+        } == native_arm_uids(design)
+    master_arms, subpart_arms = (
+        release["designs"][0]["arms"],
+        release["designs"][1]["arms"],
+    )
+    assert {"Arm_1"} == {arm["osbArmUid"] for arm in master_arms}
+    assert {"Arm_99"} == {arm["osbArmUid"] for arm in subpart_arms}
+    assert {arm["osbBranchArmUid"] for arm in subpart_arms} == {None, "Branch_99"}
+    # A branch arm names the arm it branches from.
+    branch = next(arm for arm in subpart_arms if arm["osbBranchArmUid"])
+    assert branch["osbArmUid"] == "Arm_99"
+
+
+def test_a_draft_platform_version_selects_nothing():
+    master, subpart = sources()
+    draft = PlatformDesignSource("master", STUDY_UID, None, master.report)
+    release = compose_platform_document(draft, [subpart])["executableRelease"]
+    assert release["selected"] is False
+    assert "draft" in release["reason"]
+    assert "designs" not in release
+
+
+def test_an_arm_in_two_designs_or_an_absent_design_selects_nothing():
+    master, _ = sources()
+    shared = PlatformDesignSource(
+        "subpart", SUBPART_UID, "1", report(SUBPART_UID), parent_study_uid=STUDY_UID
+    )
+    release = compose_platform_document(master, [shared])["executableRelease"]
+    assert release["selected"] is False
+    assert "sits in two designs" in release["reason"]
+    empty = deepcopy(master.report)
+    empty["document"]["study"]["versions"][0]["studyDesigns"] = []
+    _, subpart = sources()
+    release = compose_platform_document(
+        PlatformDesignSource("master", STUDY_UID, VERSION, empty), [subpart]
+    )["executableRelease"]
+    assert release["selected"] is False
+    assert "USDM_PLATFORM_DESIGN_ABSENT" in release["reason"]

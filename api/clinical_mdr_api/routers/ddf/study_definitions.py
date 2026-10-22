@@ -91,7 +91,7 @@ def get_study(
         403: _generic_descriptions.ERROR_403,
         404: _generic_descriptions.ERROR_404,
     },
-    summary="Return one descriptive USDM document with the master and every subpart design",
+    summary="Return one USDM document with the master and every subpart design",
     description="""
 One study version holds the master design and one design for each native subpart
 that the selected master version links (decision DD-4). Each subpart is read at
@@ -99,8 +99,11 @@ the exact value its parent version pins and mapped with design-scoped identifier
 Each design carries a designScope extension and its own mapping report.
 
 The single-design export at /studyDefinitions/{study_uid} is unchanged.
-This document is descriptive: it selects no executable design and grants no
-release authority. Executable multi-design release waits for the CSL C11 contract.
+A draft version is descriptive and selects no executable design. For a locked
+version every design is pinned, and executableRelease selects all of them for
+one release in the shape of the CSL C11 design set (csl-platform-release-designs/1):
+design keys master and subpart:<study uid>, each with its arms as OSB arm uid,
+OSB branch arm uid and USDM StudyArm id. When it cannot select, it says why.
 """,
 )
 def get_study_platform_designs(

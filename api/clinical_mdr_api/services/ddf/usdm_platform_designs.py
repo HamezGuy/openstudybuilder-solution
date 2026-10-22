@@ -6,14 +6,22 @@ single-design mapper with identifiers scoped by its native study UID, so no
 mapping code is duplicated and no identifier is rewritten after the fact. Only
 the subpart's design and the study version resources it carries are merged.
 
-This is a descriptive export. It grants no release or execution authority: the
-executable multi-design release stays gated until the CSL C11 platform release
-contract is published and adopted by Command Center and the EDC.
+A draft composition is descriptive and selects nothing. For a locked platform
+version every design is pinned to an exact study value version, and the export
+selects all of them for one executable release (decision DD-4) in the shape of
+the CSL C11 design set (`csl-platform-release-designs/1`, CSL 291e9ab): the
+master keyed `master` and each subpart keyed `subpart:<study uid>`, each with
+its arms as OSB arm uid, OSB branch arm uid and USDM StudyArm id. CSL reads the
+same facts from the document itself and signs the set into the release; this
+selection states what OSB releases, and why it selects nothing when it cannot.
+Mapping completeness of each design is reported beside it, never hidden.
 """
 
+from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Literal
+from urllib.parse import quote
 from uuid import NAMESPACE_URL, uuid5
 
 from clinical_mdr_api.services.ddf.usdm_mapping_context import (
@@ -30,9 +38,12 @@ from clinical_mdr_api.services.ddf.usdm_utils import (
 
 DesignLevel = Literal["master", "subpart"]
 DESIGN_SCOPE_KIND = "designScope"
-EXECUTABLE_RELEASE_GATE = (
-    "CSL C11 platform release contract is not published; this document is "
-    "descriptive and selects no executable design."
+EXECUTABLE_RELEASE_CONTRACT = "csl-platform-release-designs/1"
+NATIVE_EXTENSION = "https://openstudybuilder.org/usdm/extensions/native/"
+NATIVE_VALUE_SHAPE = "https://openstudybuilder.org/usdm/extensions/native-value-shape"
+DRAFT_NOT_EXECUTABLE = (
+    "A draft platform version is descriptive and selects no executable design; "
+    "lock the master study to pin every design."
 )
 # StudyVersion fields that identify the master version itself. A subpart's
 # values for these fields describe the subpart study, not the platform version.
@@ -176,6 +187,138 @@ def _merge(target: list, items: list, context: MappingContext, path: str) -> Non
             target.append(deepcopy(item))
 
 
+def _native(target: dict, kind: str) -> dict | None:
+    """The one native source extension of `kind` on a USDM object, if any."""
+    url = NATIVE_EXTENSION + quote(kind, safe="")
+    found = [
+        item
+        for item in target.get("extensionAttributes") or []
+        if isinstance(item, dict) and item.get("url") == url
+    ]
+    if len(found) > 1:
+        raise ValueError(f"Two native {kind} extensions on {target.get('id')}")
+    return found[0] if found else None
+
+
+def _native_text(extension: dict | None, *path: str) -> str | None:
+    """A text member of a native extension tree, by its field path."""
+    current = extension
+    for name in path:
+        if current is None:
+            return None
+        url = current["url"] + "/" + quote(name, safe="")
+        current = next(
+            (
+                item
+                for item in current.get("extensionAttributes") or []
+                if isinstance(item, dict) and item.get("url") == url
+            ),
+            None,
+        )
+    value = None if current is None else current.get("valueString")
+    return value if isinstance(value, str) and value else None
+
+
+def _design_arms(design: dict) -> list[dict[str, Any]] | None:
+    """Each USDM arm as its native identity; None when one cannot be named."""
+    arms = []
+    for arm in design.get("arms") or []:
+        native, branch = _native(arm, "studyArm"), _native(arm, "studyBranchArm")
+        if native is not None and branch is None:
+            arm_uid, branch_uid = _native_text(native, "arm_uid"), None
+        elif branch is not None and native is None:
+            arm_uid = _native_text(branch, "arm_root", "arm_uid")
+            branch_uid = _native_text(branch, "branch_arm_uid")
+            if branch_uid is None:
+                return None
+        else:
+            return None
+        if arm_uid is None:
+            return None
+        arms.append(
+            {
+                "osbArmUid": arm_uid,
+                "osbBranchArmUid": branch_uid,
+                "usdmArmId": arm["id"],
+            }
+        )
+    return arms
+
+
+def _release_scope(source: PlatformDesignSource) -> dict[str, Any]:
+    scope = {
+        "level": source.level,
+        "studyUid": source.study_uid,
+        "studyValueVersion": source.study_value_version,
+    }
+    if source.level == "subpart":
+        scope["parentStudyUid"] = source.parent_study_uid
+    return scope
+
+
+def executable_release(
+    sources: list[PlatformDesignSource],
+    design_ids: dict[str, str | None],
+    document: dict[str, Any],
+    issues: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Select every design for one release, or state exactly why none is selected."""
+    reasons = []
+    if any(source.study_value_version is None for source in sources):
+        reasons.append(DRAFT_NOT_EXECUTABLE)
+    if any(design_ids[source.study_uid] is None for source in sources):
+        reasons.append(
+            "A design scope has no design content (USDM_PLATFORM_DESIGN_ABSENT)."
+        )
+    if any(
+        issue.get("code") == "USDM_PLATFORM_RESOURCE_ID_COLLISION" for issue in issues
+    ):
+        reasons.append(
+            "Two designs carry different resources with one identifier "
+            "(USDM_PLATFORM_RESOURCE_ID_COLLISION)."
+        )
+    designs = {
+        design["id"]: design
+        for design in document["study"]["versions"][0].get("studyDesigns") or []
+    }
+    selected = []
+    owners: dict[str, str] = {}
+    for source in sources:
+        design = designs.get(design_ids[source.study_uid] or "")
+        if design is None:
+            continue
+        arms = _design_arms(design)
+        if arms is None:
+            reasons.append(
+                f"A StudyArm of {source.study_uid} names no native arm or branch arm."
+            )
+            continue
+        key = "master" if source.level == "master" else f"subpart:{source.study_uid}"
+        for arm in arms:
+            if owners.setdefault(arm["osbArmUid"], key) != key:
+                reasons.append(
+                    f"Native arm {arm['osbArmUid']} sits in two designs; one arm "
+                    "belongs to exactly one design."
+                )
+        selected.append(
+            {
+                "designKey": key,
+                "designScope": _release_scope(source),
+                "usdmDesignId": design["id"],
+                "mappingState": source.report.get("mappingReport", {}).get("state"),
+                "arms": arms,
+            }
+        )
+    if reasons:
+        return {"selected": False, "reason": " ".join(dict.fromkeys(reasons))}
+    return {
+        "selected": True,
+        "contract": EXECUTABLE_RELEASE_CONTRACT,
+        "masterLineageId": sources[0].study_uid,
+        "designs": selected,
+    }
+
+
 def compose_platform_document(
     master: PlatformDesignSource, subparts: list[PlatformDesignSource]
 ) -> dict[str, Any]:
@@ -261,5 +404,7 @@ def compose_platform_document(
                 for source in reports
             ],
         },
-        "executableRelease": {"selected": False, "reason": EXECUTABLE_RELEASE_GATE},
+        "executableRelease": executable_release(
+            reports, design_ids, document, context.issues
+        ),
     }

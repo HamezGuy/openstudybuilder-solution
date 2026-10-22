@@ -100,7 +100,9 @@ def _snapshot_headers(client, path):
     return headers
 
 
-def _create_protocol_study(fixture, client, title="Synthetic platform"):
+def _create_protocol_study(
+    fixture, client, title="Synthetic platform", package_name=None
+):
     fixture.created += 1
     with fixture.principal():
         study = TestUtils.create_study(
@@ -111,7 +113,7 @@ def _create_protocol_study(fixture, client, title="Synthetic platform"):
         fixture.auth.user.study_ids.add(study.uid)
         TestUtils.set_study_standard_version(
             study_uid=study.uid,
-            package_name=f"Documents CT {fixture.nonce}",
+            package_name=package_name or f"Documents CT {fixture.nonce}",
             effective_date=datetime.now(timezone.utc),
             create_codelists_and_terms_for_package=False,
         )
