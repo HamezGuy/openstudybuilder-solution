@@ -81,6 +81,10 @@ class NativeVisitGraph:
             "TemplateParameter",
             "Objective",
             "Criteria",
+            # The governed regimen worker tests: the platform command journal, its
+            # domain audit records and their synthetic active OSB binding.
+            "Platform",
+            "DomainAudit",
         )
         for labels, mark in rows:
             assert mark in (None, self.nonce), "Another fixture wrote into this graph"

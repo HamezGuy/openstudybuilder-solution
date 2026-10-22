@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.accuratrials.com/osb/OsbRegimenOnboardEffectV1/1.0",
+  "title": "OsbRegimenOnboardEffectV1",
+  "description": "effectPayload of a succeeded osb.regimen.onboard receipt: OSB StudyRegimenCreated, the native UIDs actually created keyed by the request-local keys, with the post-commit study version and authored document hash.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "osbStudyIdentity",
+    "studyVersion",
+    "created",
+    "lifecycleEventUids",
+    "protocolDocumentsContentHash"
+  ],
+  "properties": {
+    "contractVersion": {
+      "const": "OsbRegimenOnboardEffectV1@1.0.0"
+    },
+    "osbStudyIdentity": {
+      "$ref": "#/$defs/OsbStudyIdentity"
+    },
+    "studyVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "created": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "arms",
+        "branch_arms",
+        "cohorts",
+        "elements",
+        "compounds",
+        "compound_dosings",
+        "design_cells"
+      ],
+      "properties": {
+        "arms": {
+          "$ref": "#/$defs/UidMap"
+        },
+        "branch_arms": {
+          "$ref": "#/$defs/UidMap"
+        },
+        "cohorts": {
+          "$ref": "#/$defs/UidMap"
+        },
+        "elements": {
+          "$ref": "#/$defs/UidMap"
+        },
+        "compounds": {
+          "$ref": "#/$defs/UidMap"
+        },
+        "compound_dosings": {
+          "$ref": "#/$defs/UidMap"
+        },
+        "design_cells": {
+          "$ref": "#/$defs/UidMap"
+        }
+      }
+    },
+    "lifecycleEventUids": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      }
+    },
+    "protocolDocumentsContentHash": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "OsbStudyIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "namespace",
+        "objectType",
+        "nativeIdentity"
+      ],
+      "description": "The OSB study draft root the command targets. It must equal the platform study's single active verified OSB binding, to which the worker token is scoped.",
+      "properties": {
+        "namespace": {
+          "const": "accuratrials-osb"
+        },
+        "objectType": {
+          "const": "study-draft-root"
+        },
+        "nativeIdentity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^*\\s]+$"
+        }
+      }
+    },
+    "LocalKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "description": "Request-local key. It is never stored and never becomes a native UID."
+    },
+    "UidMap": {
+      "type": "object",
+      "maxProperties": 100,
+      "propertyNames": {
+        "$ref": "#/$defs/LocalKey"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      }
+    }
+  }
+}

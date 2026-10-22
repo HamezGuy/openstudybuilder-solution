@@ -89,6 +89,15 @@ from clinical_mdr_api.services.integrations.native_package_v2 import (
 from clinical_mdr_api.services.integrations.platform_command import (
     Neo4jOsbPlatformCommandStore,
 )
+from clinical_mdr_api.services.integrations.regimen_onboard import (
+    ACTION as REGIMEN_ONBOARD_ACTION,
+)
+from clinical_mdr_api.services.integrations.regimen_onboard import (
+    CAPABILITY as REGIMEN_ONBOARD_CAPABILITY,
+)
+from clinical_mdr_api.services.integrations.regimen_onboard import (
+    onboard_regimen,
+)
 from clinical_mdr_api.services.integrations.review_workspace_migration import (
     is_review_workspace_claim,
 )
@@ -879,6 +888,62 @@ def execute_mapping_decision_command(body: dict[str, Any], request: Request) -> 
     except (PlatformCommandError, OsbCandidateSetError) as error:
         raise HTTPException(status_code=error.status_code,
                             detail={"code": error.code, "message": str(error)}) from error
+
+
+@router.post(
+    "/commands/regimen",
+    dependencies=[platform_security],
+    summary="Add one authored regimen to the bound OSB draft study (osb.regimen.onboard)",
+)
+def execute_regimen_onboard_command(body: dict[str, Any]) -> dict[str, Any]:
+    """Command Center's governed regimen command, through the native regimen service.
+
+    Admitted only for the platform study's single active OSB binding in the
+    worker token's scope, with the reviewed draft version and authored document
+    hash checked under the study writer lock in the command's transaction. The
+    signed receipt carries OsbRegimenOnboardEffectV1. An authored design only.
+    """
+    if (
+        not settings.platform_commands_prototype_enabled
+        or settings.deployment_environment.strip().lower() in {"prod", "production"}
+    ):
+        raise HTTPException(status_code=503, detail="OSB_PLATFORM_COMMANDS_DISABLED")
+    if (
+        body.get("action") != REGIMEN_ONBOARD_ACTION
+        or body.get("targetCapability") != REGIMEN_ONBOARD_CAPABILITY
+    ):
+        raise HTTPException(status_code=422, detail="OSB_REGIMEN_COMMAND_UNSUPPORTED")
+    principal = _platform_principal(
+        REGIMEN_ONBOARD_CAPABILITY, str(body.get("platformStudyId") or "")
+    )
+
+    def handler(_tx) -> dict[str, Any]:
+        return onboard_regimen(
+            body, tenant_id=principal.tenant_id, study_ids=principal.study_ids
+        )
+
+    try:
+        result = execute_osb_atomic_signed_command(
+            body,
+            PlatformCommandPrincipalV1(
+                tenant_id=principal.tenant_id,
+                study_ids=tuple(sorted(principal.study_ids)),
+                subject=principal.sub,
+                actor_chain=tuple(principal.actor_chain),
+                roles=tuple(sorted(principal.roles)),
+                purpose=principal.purpose,
+                capabilities=tuple(sorted(principal.capabilities)),
+            ),
+            "osb",
+            platform_command_store,
+            handler,
+        )
+        return {"ok": True, "data": result}
+    except (PlatformCommandError, OsbCandidateSetError) as error:
+        raise HTTPException(
+            status_code=error.status_code,
+            detail={"code": error.code, "message": str(error)},
+        ) from error
 
 
 @router.get(

@@ -1,0 +1,427 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.accuratrials.com/osb/OsbRegimenOnboardCommandInputV1/1.0",
+  "title": "OsbRegimenOnboardCommandInputV1",
+  "description": "inputPayload of the governed command osb.regimen.onboard (target osb, capability regimen:onboard): one authored regimen added to an OSB draft study in one native transaction. It records an authored design only; no approval, allocation or execution is implied. The live preconditions are the command's expectedTargetState (OsbRegimenOnboardExpectedStateV1); a succeeded receipt's effectPayload is OsbRegimenOnboardEffectV1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "osbStudyIdentity",
+    "regimen",
+    "reason"
+  ],
+  "properties": {
+    "contractVersion": {
+      "const": "OsbRegimenOnboardCommandInputV1@1.0.0"
+    },
+    "osbStudyIdentity": {
+      "$ref": "#/$defs/OsbStudyIdentity"
+    },
+    "regimen": {
+      "$ref": "#/$defs/Regimen"
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 5,
+      "maxLength": 4000,
+      "pattern": "\\S",
+      "description": "Why the regimen is added, retained with the command."
+    }
+  },
+  "$defs": {
+    "OsbStudyIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "namespace",
+        "objectType",
+        "nativeIdentity"
+      ],
+      "description": "The OSB study draft root the command targets. It must equal the platform study's single active verified OSB binding, to which the worker token is scoped.",
+      "properties": {
+        "namespace": {
+          "const": "accuratrials-osb"
+        },
+        "objectType": {
+          "const": "study-draft-root"
+        },
+        "nativeIdentity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^*\\s]+$"
+        }
+      }
+    },
+    "LocalKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "description": "Request-local key. It is never stored and never becomes a native UID."
+    },
+    "LocalReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "local_key"
+      ],
+      "properties": {
+        "local_key": {
+          "$ref": "#/$defs/LocalKey"
+        }
+      }
+    },
+    "NativeUid": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "description": "An existing native OSB UID."
+    },
+    "Reference": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/LocalReference"
+        },
+        {
+          "$ref": "#/$defs/NativeUid"
+        }
+      ]
+    },
+    "ArmEntry": {
+      "type": "object",
+      "description": "OSB StudySelectionArmCreateInput plus local_key.",
+      "required": [
+        "local_key"
+      ],
+      "properties": {
+        "local_key": {
+          "$ref": "#/$defs/LocalKey"
+        }
+      }
+    },
+    "BranchArmEntry": {
+      "type": "object",
+      "description": "OSB StudySelectionBranchArmCreateInput plus local_key. The branch belongs to a new regimen arm.",
+      "required": [
+        "local_key",
+        "arm_uid"
+      ],
+      "properties": {
+        "local_key": {
+          "$ref": "#/$defs/LocalKey"
+        },
+        "arm_uid": {
+          "$ref": "#/$defs/LocalReference"
+        }
+      }
+    },
+    "CohortEntry": {
+      "type": "object",
+      "description": "OSB StudySelectionCohortCreateInput plus local_key.",
+      "required": [
+        "local_key"
+      ],
+      "properties": {
+        "local_key": {
+          "$ref": "#/$defs/LocalKey"
+        },
+        "arm_uids": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "minItems": 0,
+              "maxItems": 100,
+              "items": {
+                "$ref": "#/$defs/Reference"
+              }
+            }
+          ]
+        },
+        "branch_arm_uids": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "minItems": 0,
+              "maxItems": 100,
+              "items": {
+                "$ref": "#/$defs/Reference"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "ElementEntry": {
+      "type": "object",
+      "description": "OSB StudySelectionElementCreateInput plus local_key.",
+      "required": [
+        "local_key"
+      ],
+      "properties": {
+        "local_key": {
+          "$ref": "#/$defs/LocalKey"
+        }
+      }
+    },
+    "CompoundEntry": {
+      "type": "object",
+      "description": "OSB StudySelectionCompoundCreateInput plus local_key.",
+      "required": [
+        "local_key"
+      ],
+      "properties": {
+        "local_key": {
+          "$ref": "#/$defs/LocalKey"
+        }
+      }
+    },
+    "CompoundDosingEntry": {
+      "type": "object",
+      "description": "OSB StudyCompoundDosingInput plus local_key.",
+      "required": [
+        "local_key",
+        "study_compound_uid",
+        "study_element_uid"
+      ],
+      "properties": {
+        "local_key": {
+          "$ref": "#/$defs/LocalKey"
+        },
+        "study_compound_uid": {
+          "$ref": "#/$defs/Reference"
+        },
+        "study_element_uid": {
+          "$ref": "#/$defs/Reference"
+        }
+      }
+    },
+    "DesignCellEntry": {
+      "type": "object",
+      "description": "OSB StudyDesignCellCreateInput plus local_key: a cell, in an existing native epoch, of exactly one new arm or one new branch arm.",
+      "required": [
+        "local_key",
+        "study_element_uid"
+      ],
+      "properties": {
+        "local_key": {
+          "$ref": "#/$defs/LocalKey"
+        },
+        "study_arm_uid": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/LocalReference"
+            }
+          ]
+        },
+        "study_branch_arm_uid": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/LocalReference"
+            }
+          ]
+        },
+        "study_element_uid": {
+          "$ref": "#/$defs/Reference"
+        }
+      }
+    },
+    "LifecycleEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Authored lifecycle history for a new arm or branch arm, not an executed decision.",
+      "required": [
+        "target_kind",
+        "target",
+        "lifecycle_state",
+        "effective_date",
+        "decision_reference",
+        "change_reason"
+      ],
+      "properties": {
+        "target_kind": {
+          "enum": [
+            "arm",
+            "branch_arm"
+          ]
+        },
+        "target": {
+          "$ref": "#/$defs/LocalReference"
+        },
+        "lifecycle_state": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "effective_date": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "(Z|[+-][0-9]{2}:[0-9]{2})$"
+        },
+        "decision_reference": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "change_reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        }
+      }
+    },
+    "ProtocolDocuments": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reason",
+        "content"
+      ],
+      "description": "The complete authored protocol document bundle, saved through OSB's existing document path. A binding arm UID equal to a declared token is replaced by the UID of the new arm it names; every other binding arm UID must already be native.",
+      "properties": {
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000,
+          "pattern": "\\S"
+        },
+        "arm_tokens": {
+          "type": "object",
+          "maxProperties": 100,
+          "propertyNames": {
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/LocalKey"
+          }
+        },
+        "content": {
+          "type": "object",
+          "description": "OSB AuthoredProtocolDocuments, validated by OSB.",
+          "required": [
+            "synthetic"
+          ],
+          "properties": {
+            "synthetic": {
+              "type": "boolean"
+            },
+            "bindings": {
+              "type": "array",
+              "maxItems": 100,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "arm_uids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Regimen": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "arms"
+      ],
+      "description": "OSB StudyRegimenCreateInput (OSB 199d4545, POST /studies/{uid}/regimens) without expected_study_version and without protocol_documents.expected_content_hash. Those two are live preconditions and travel in the command's expectedTargetState. Entry fields other than local_key and the reference fields named here are OSB's canonical create inputs, validated by OSB.",
+      "properties": {
+        "arms": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/ArmEntry"
+          }
+        },
+        "branch_arms": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/BranchArmEntry"
+          }
+        },
+        "cohorts": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/CohortEntry"
+          }
+        },
+        "elements": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/ElementEntry"
+          }
+        },
+        "compounds": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/CompoundEntry"
+          }
+        },
+        "compound_dosings": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/CompoundDosingEntry"
+          }
+        },
+        "design_cells": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/DesignCellEntry"
+          }
+        },
+        "lifecycle_events": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/LifecycleEvent"
+          }
+        },
+        "protocol_documents": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/ProtocolDocuments"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

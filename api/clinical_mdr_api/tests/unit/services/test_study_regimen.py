@@ -102,6 +102,7 @@ class Recorder:
         self.calls = []
         self.version = version
         self.fail = fail
+        self.documents_hash = None
         counter = iter(range(1, 1000))
         recorder = self
 
@@ -180,6 +181,10 @@ class Recorder:
                 recorder.calls.append(("documents", study_uid, request, ()))
                 return {"content_hash": request.content.content_hash()}
 
+            def get(self, study_uid):
+                recorder.calls.append(("documents-read", study_uid, None, ()))
+                return {"content_hash": recorder.documents_hash}
+
         monkeypatch.setattr(service_module, "StudyService", Study)
         monkeypatch.setattr(service_module, "StudyDefinitionDocumentService", Documents)
         monkeypatch.setattr(
@@ -195,10 +200,10 @@ class Recorder:
         return [call[2] for call in self.calls if call[0] == kind]
 
 
-def create(payload):
+def create(payload, **kwargs):
     # The undecorated method runs the composition without a database driver.
     return StudyRegimenService.create.__wrapped__(  # type: ignore[attr-defined]
-        StudyRegimenService(), STUDY_UID, StudyRegimenCreateInput(**payload)
+        StudyRegimenService(), STUDY_UID, StudyRegimenCreateInput(**payload), **kwargs
     )
 
 
@@ -384,3 +389,37 @@ def test_token_equal_to_a_native_arm_uid_refuses(monkeypatch):
     with pytest.raises(ValidationException, match="collide"):
         create(payload)
     assert "documents" not in recorder.kinds()
+
+
+def test_governed_caller_pins_the_bundle_hash_of_a_regimen_without_documents(
+    monkeypatch,
+):
+    recorder = Recorder(monkeypatch)
+    recorder.documents_hash = "c" * 64
+    with pytest.raises(AlreadyExistsException, match="documents changed"):
+        create(regimen_payload(), expected_documents_hash="d" * 64)
+    assert recorder.kinds() == ["lock", "locked", "version", "documents-read"]
+    recorder.calls.clear()
+    result = create(regimen_payload(), expected_documents_hash="c" * 64)
+    assert recorder.kinds()[:4] == ["lock", "locked", "version", "documents-read"]
+    assert result.protocol_documents_content_hash is None
+    # A study without a bundle is pinned by None, never by an absent check.
+    recorder.calls.clear()
+    recorder.documents_hash = None
+    with pytest.raises(AlreadyExistsException):
+        create(regimen_payload(), expected_documents_hash="c" * 64)
+    create(regimen_payload(), expected_documents_hash=None)
+    # The native route keeps its contract: no bundle read without documents.
+    recorder.calls.clear()
+    create(regimen_payload())
+    assert "documents-read" not in recorder.kinds()
+
+
+def test_regimen_with_documents_leaves_its_hash_to_the_document_save(monkeypatch):
+    recorder = Recorder(monkeypatch)
+    recorder.documents_hash = "c" * 64
+    payload = regimen_payload()
+    payload["protocol_documents"] = documents_payload()
+    create(payload, expected_documents_hash="d" * 64)
+    assert "documents-read" not in recorder.kinds()
+    assert recorder.payloads("documents")[0].expected_content_hash == "a" * 64

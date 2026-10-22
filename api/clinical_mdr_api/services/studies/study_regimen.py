@@ -66,6 +66,10 @@ from common.exceptions import (
     ValidationException,
 )
 
+# Default of StudyRegimenService.create: the native route checks the authored
+# document hash only when the regimen saves documents.
+DOCUMENTS_HASH_NOT_CHECKED = object()
+
 
 def _canonical(entry, model, **references: Any):
     """Rebuild the canonical create input exactly as the client supplied it."""
@@ -136,8 +140,19 @@ class StudyRegimenService:
 
     @ensure_transaction(db)
     def create(
-        self, study_uid: str, regimen: StudyRegimenCreateInput
+        self,
+        study_uid: str,
+        regimen: StudyRegimenCreateInput,
+        *,
+        expected_documents_hash: str | None | object = DOCUMENTS_HASH_NOT_CHECKED,
     ) -> StudyRegimenCreated:
+        """Add the regimen; a governed caller may also pin the authored documents.
+
+        When the regimen saves documents, their expected hash is checked by the
+        document save. A caller passing ``expected_documents_hash`` has the
+        current bundle hash checked under the same lock for a regimen without
+        documents as well (None when the study has no bundle).
+        """
         # Route admission may predate a concurrent lock. Hold the study writer
         # lock for the whole regimen and recheck the draft under it.
         acquire_write_lock_study_value(study_uid)
@@ -150,6 +165,17 @@ class StudyRegimenService:
             version != regimen.expected_study_version,
             msg="Study version changed; reload before adding a regimen.",
         )
+        if (
+            expected_documents_hash is not DOCUMENTS_HASH_NOT_CHECKED
+            and regimen.protocol_documents is None
+        ):
+            current_hash = StudyDefinitionDocumentService().get(study_uid)[
+                "content_hash"
+            ]
+            AlreadyExistsException.raise_if(
+                current_hash != expected_documents_hash,
+                msg="Authored protocol documents changed; reload before adding a regimen.",
+            )
         existing_arm_uids = {
             item.arm_uid
             for item in StudyArmSelectionService()

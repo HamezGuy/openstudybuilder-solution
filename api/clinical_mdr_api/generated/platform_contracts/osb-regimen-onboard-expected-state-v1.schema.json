@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.accuratrials.com/osb/OsbRegimenOnboardExpectedStateV1/1.0",
+  "title": "OsbRegimenOnboardExpectedStateV1",
+  "description": "expectedTargetState of osb.regimen.onboard. Both values are live preconditions the OSB executor checks under its study writer lock, in the same native transaction as the regimen. studyVersion is passed as expected_study_version (the current draft version token, which detects lock transitions). protocolDocumentsContentHash is the current authored protocol document bundle hash, null when the study has none, and is passed as protocol_documents.expected_content_hash when the regimen saves documents. A mismatch writes nothing and is a terminal precondition failure, never a retry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "osbStudyIdentity",
+    "studyVersion",
+    "protocolDocumentsContentHash"
+  ],
+  "properties": {
+    "contractVersion": {
+      "const": "OsbRegimenOnboardExpectedStateV1@1.0.0"
+    },
+    "osbStudyIdentity": {
+      "$ref": "#/$defs/OsbStudyIdentity"
+    },
+    "studyVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "protocolDocumentsContentHash": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "OsbStudyIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "namespace",
+        "objectType",
+        "nativeIdentity"
+      ],
+      "description": "The OSB study draft root the command targets. It must equal the platform study's single active verified OSB binding, to which the worker token is scoped.",
+      "properties": {
+        "namespace": {
+          "const": "accuratrials-osb"
+        },
+        "objectType": {
+          "const": "study-draft-root"
+        },
+        "nativeIdentity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^*\\s]+$"
+        }
+      }
+    }
+  }
+}
