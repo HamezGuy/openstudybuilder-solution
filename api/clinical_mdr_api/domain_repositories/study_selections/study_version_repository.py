@@ -1,3 +1,4 @@
+import json
 from typing import Any
 
 from neomodel import db
@@ -92,6 +93,110 @@ class StudyVersionRepository:
         if record is not None:
             self.amendment_from_record(record)
         return root, value, record
+
+    @ensure_transaction(db)
+    def get_subpart_pins(
+        self, study_uid: str, version: str | None = None
+    ) -> list[dict[str, Any]]:
+        """The exact subpart values one selected parent value composes.
+
+        Draft edits keep superseded child values linked, so a parent value can
+        link several values of one subpart. A draft parent composes each
+        subpart's current draft. A locked or released parent composes, per
+        subpart, the value with the latest immutable state at or before the
+        parent's own lock. Child LATEST never stands in for a historical pin.
+        """
+        _, value, _ = self.get_selected_version(study_uid, version)
+        parent_start = None
+        if version is not None:
+            starts, _ = db.cypher_query(
+                """
+                MATCH (:StudyRoot {uid:$study_uid})-[state:HAS_VERSION]->(value:StudyValue)
+                WHERE elementId(value)=$value_id AND state.version=$version
+                  AND state.status IN ['LOCKED', 'RELEASED']
+                RETURN min(state.start_date)
+                """,
+                {
+                    "study_uid": study_uid,
+                    "value_id": value.element_id,
+                    "version": version,
+                },
+            )
+            parent_start = starts[0][0] if starts else None
+            ValidationException.raise_if(
+                parent_start is None,
+                msg="A platform version must be a locked or released parent version",
+            )
+        rows, _ = db.cypher_query(
+            """
+            MATCH (parent:StudyValue)-[:HAS_STUDY_SUBPART]->(child:StudyValue)
+            WHERE elementId(parent)=$value_id
+            WITH DISTINCT child
+            RETURN elementId(child), child.study_subpart_acronym,
+                [(root:StudyRoot)-[:LATEST|HAS_VERSION]->(child) | root.uid],
+                [(root:StudyRoot)-[state:HAS_VERSION]->(child)
+                    WHERE state.status IN ['LOCKED', 'RELEASED']
+                    | [state.version, state.start_date]],
+                exists((:StudyRoot)-[:LATEST]->(child))
+            """,
+            {"value_id": value.element_id},
+        )
+        candidates: dict[str, list[dict[str, Any]]] = {}
+        for _, acronym, owners, states, is_latest in rows:
+            owner_set = set(owners)
+            ValidationException.raise_if(
+                len(owner_set) != 1,
+                msg="A subpart value has ambiguous or foreign ownership",
+            )
+            usable = [
+                (start, str(label))
+                for label, start in states
+                if start is not None
+                and label is not None
+                and (parent_start is None or start <= parent_start)
+            ]
+            candidates.setdefault(next(iter(owner_set)), []).append(
+                {
+                    "acronym": acronym,
+                    "is_latest": is_latest,
+                    "latest_state": max(usable) if usable else None,
+                }
+            )
+        pins = []
+        for child_uid, values in sorted(candidates.items()):
+            if version is None:
+                current = [item for item in values if item["is_latest"]]
+                ValidationException.raise_if(
+                    len(current) != 1,
+                    msg=f"A draft platform must link exactly one current draft of subpart {child_uid}",
+                )
+                pins.append(
+                    {
+                        "study_uid": child_uid,
+                        "study_value_version": None,
+                        "subpart_acronym": current[0]["acronym"],
+                    }
+                )
+                continue
+            locked = [item for item in values if item["latest_state"] is not None]
+            ValidationException.raise_if(
+                not locked,
+                msg=f"Subpart {child_uid} has no immutable version at the parent lock",
+            )
+            newest = max(item["latest_state"] for item in locked)
+            chosen = [item for item in locked if item["latest_state"] == newest]
+            ValidationException.raise_if(
+                len(chosen) != 1,
+                msg=f"Subpart {child_uid} has an ambiguous pinned value",
+            )
+            pins.append(
+                {
+                    "study_uid": child_uid,
+                    "study_value_version": newest[1],
+                    "subpart_acronym": chosen[0]["acronym"],
+                }
+            )
+        return pins
 
     @ensure_transaction(db)
     def carry_forward_draft_reasons(
@@ -200,6 +305,7 @@ class StudyVersionRepository:
         previous_version: StudyVersion | None = None,
         amendment: StudyAmendmentVO | None = None,
         previous_locked_version: str | None = None,
+        parent_pin: dict[str, Any] | None = None,
     ) -> StudyVersion:
         """Write one exact version and carry only explicitly selected reason facts."""
         acquire_write_lock_study_value(study_uid)
@@ -207,9 +313,9 @@ class StudyVersionRepository:
         source = previous_version if previous_version is not None else selected_before
         if not reason_for_unlock_term_uid and source is not None:
             other_reason_for_unlocking = source.other_reason_for_unlocking
-        if amendment is not None and version is None:
+        if (amendment is not None or parent_pin is not None) and version is None:
             raise ValidationException(
-                msg="An amendment belongs to a locked study version"
+                msg="An amendment or parent pin belongs to a locked study version"
             )
         after = StudyVersion(
             uid=source.uid if source is not None else None,
@@ -217,6 +323,11 @@ class StudyVersionRepository:
             other_reason_for_unlocking=other_reason_for_unlocking,
             amendment_json=amendment.to_json() if amendment is not None else None,
             previous_locked_version=previous_locked_version,
+            parent_pin_json=(
+                json.dumps(parent_pin, sort_keys=True, separators=(",", ":"))
+                if parent_pin is not None
+                else None
+            ),
         ).save()
         if selected_before is not None:
             value.has_study_version.disconnect(selected_before)
@@ -370,6 +481,7 @@ class StudyVersionRepository:
             elementId(sv) AS _record_id,
             [(owner_value:StudyValue)-[:HAS_STUDY_VERSION]->(sv) | elementId(owner_value)] AS _record_values,
             sv.amendment_json AS _amendment_json,
+            sv.parent_pin_json AS _parent_pin_json,
             CASE WHEN statuses=["DRAFT"] THEN
                 [(current_root:StudyRoot {uid:$study_uid})-[:LATEST]->(current_value:StudyValue) | elementId(current_value)]
             ELSE
@@ -409,6 +521,7 @@ class StudyVersionRepository:
             record_id = entry.pop("_record_id")
             record_values = entry.pop("_record_values")
             amendment_json = entry.pop("_amendment_json")
+            parent_pin_json = entry.pop("_parent_pin_json")
             version_values = entry.pop("_version_values")
             if set(owners) != {study_uid}:
                 raise ValidationException(
@@ -427,6 +540,9 @@ class StudyVersionRepository:
                     msg="The selected version record belongs to another study value"
                 )
             entry["amendment"] = self.amendment_from_json(amendment_json)
+            entry["parent_pin"] = (
+                json.loads(parent_pin_json) if parent_pin_json is not None else None
+            )
         # If only_latest_major_protocol_version is requested, we have to leave only
         # major protocol header versions and leave only latest available version of it (with highest metadata version)
         if only_latest_major_protocol_version:

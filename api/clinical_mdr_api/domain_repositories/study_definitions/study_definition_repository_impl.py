@@ -2746,9 +2746,11 @@ MATCH (sr:StudyRoot)-[:LATEST]->(sv)
                     head([(sr)-[lr:LATEST_RELEASED]->(lrn) | {lrr:lr, svr: lrn}]) AS released,
                     head([(sr)-[ld:LATEST_DRAFT]->(sdr) | {ldr:ld, sdr: sdr}]) AS draft,
                     head([(sr)-[hv:HAS_VERSION {status: 'LOCKED'}]->(hvn) | {has_version:hv, svlh:hvn}]) AS locked,
-                    head([(sv)<-[:HAS_STUDY_SUBPART]-(:StudyValue)<-[:LATEST]-(parent:StudyRoot) | parent.uid]) AS study_parent_part_uid,
-                    [(sv)-[:HAS_STUDY_SUBPART]->(:StudyValue)<-[:LATEST]-(sub:StudyRoot)
-                     | sub.uid] AS study_subpart_uids,
+                    // Ownership through any version, not child or parent LATEST:
+                    // a historical value keeps the composition it was locked with.
+                    head(apoc.coll.toSet([(sv)<-[:HAS_STUDY_SUBPART]-(:StudyValue)<-[:LATEST|HAS_VERSION]-(parent:StudyRoot) | parent.uid])) AS study_parent_part_uid,
+                    apoc.coll.toSet([(sv)-[:HAS_STUDY_SUBPART]->(:StudyValue)<-[:LATEST|HAS_VERSION]-(sub:StudyRoot)
+                     | sub.uid]) AS study_subpart_uids,
                     exists((sr)-[:LATEST_LOCKED]->()) AS has_latest_locked,
                     exists((sr)-[:LATEST_DRAFT]->()) AS has_latest_draft,
                     exists((sr)-[:LATEST_RELEASED]->()) AS has_latest_released,

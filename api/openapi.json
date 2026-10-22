@@ -3,7 +3,7 @@
   "info": {
     "title": "OpenStudyBuilder API",
     "description": "\n## NOTICE\n\nThis license information is applicable to the swagger documentation of the clinical-mdr-api, that is the openapi.json.\n\n## License Terms (MIT)\n\nCopyright (C) 2025 Novo Nordisk A/S, Danish company registration no. 24256790\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\n\n## Licenses and Acknowledgements for Incorporated Software\n\nThis component contains software licensed under different licenses when compiled, please refer to the third-party-licenses.md file for further information and full license texts.\n\n## Authentication\n\nSupports OAuth2 [Authorization Code Flow](https://datatracker.ietf.org/doc/html/rfc6749#section-4.1),\nat paths described in the OpenID Connect Discovery metadata document (whose URL is defined by the `OAUTH_METADATA_URL` environment variable).\n\nMicrosoft Identity Platform documentation can be read \n([here](https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-auth-code-flow)).\n\nAuthentication can be turned off with `OAUTH_ENABLED=false` environment variable. \n\nWhen authentication is turned on, all requests to protected API endpoints must provide a valid bearer (JWT) token inside the `Authorization` http header. \n",
-    "version": "3.0.707"
+    "version": "3.0.708"
   },
   "paths": {
     "/": {
@@ -115880,6 +115880,87 @@
         }
       }
     },
+    "/usdm/v4/studyDefinitions/{study_uid}/platform-designs": {
+      "get": {
+        "tags": [
+          "USDM endpoints"
+        ],
+        "summary": "Return one descriptive USDM document with the master and every subpart design",
+        "description": "One study version holds the master design and one design for each native subpart\nthat the selected master version links (decision DD-4). Each subpart is read at\nthe exact value its parent version pins and mapped with design-scoped identifiers.\nEach design carries a designScope extension and its own mapping report.\n\nThe single-design export at /studyDefinitions/{study_uid} is unchanged.\nThis document is descriptive: it selects no executable design and grants no\nrelease authority. Executable multi-design release waits for the CSL C11 contract.",
+        "operationId": "get_study_platform_designs_usdm_v4_studyDefinitions__study_uid__platform_designs_get",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "study_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The unique uid of the master study.",
+              "title": "Study Uid"
+            },
+            "description": "The unique uid of the master study."
+          },
+          {
+            "name": "study_value_version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Optional explicit master study value version. Subparts are read at the values this version pins.",
+              "title": "Study Value Version",
+              "type": "string"
+            },
+            "description": "Optional explicit master study value version. Subparts are read at the values this version pins."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The selected version links subparts without exact unique pins.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/usdm/v4/studyDefinitions/{study_uid}/m11": {
       "get": {
         "tags": [
@@ -171293,6 +171374,16 @@
                 "type": "null"
               }
             ]
+          },
+          "parent_pin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StudyParentPin"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -172194,6 +172285,40 @@
           "registry_identifiers"
         ],
         "title": "StudyParentPart"
+      },
+      "StudyParentPin": {
+        "properties": {
+          "parent_study_version": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Parent Study Version"
+          },
+          "master_document_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Master Document Id"
+          },
+          "master_document_version": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Master Document Version"
+          },
+          "master_documents_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Master Documents Hash"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "parent_study_version",
+          "master_document_id",
+          "master_document_version",
+          "master_documents_hash"
+        ],
+        "title": "StudyParentPin",
+        "description": "The exact locked parent version and master document an appendix locks against.\n\nAn OSB lock records a design state. It is not a regulatory or IRB approval."
       },
       "StudyPatchRequestJsonModel": {
         "properties": {
@@ -185120,6 +185245,16 @@
               }
             ]
           },
+          "parent_pin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StudyVersionParentPin"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "study_status": {
             "items": {
               "$ref": "#/components/schemas/StudyStatus"
@@ -185339,6 +185474,44 @@
         },
         "type": "object",
         "title": "StudyVersionMetadataJsonModel"
+      },
+      "StudyVersionParentPin": {
+        "properties": {
+          "parent_study_version": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Parent Study Version"
+          },
+          "master_document_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Master Document Id"
+          },
+          "master_document_version": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Master Document Version"
+          },
+          "master_documents_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Master Documents Hash"
+          },
+          "parent_study_uid": {
+            "type": "string",
+            "title": "Parent Study Uid"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "parent_study_version",
+          "master_document_id",
+          "master_document_version",
+          "master_documents_hash",
+          "parent_study_uid"
+        ],
+        "title": "StudyVersionParentPin"
       },
       "StudyVersionSnapshot": {
         "properties": {

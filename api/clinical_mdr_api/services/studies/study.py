@@ -86,6 +86,7 @@ from clinical_mdr_api.models.study_selections.study import (
     StudyOtherAttributeBatchOutput,
     StudyOtherAttributeInput,
     StudyOtherAttributePatchInput,
+    StudyParentPin,
     StudyPatchRequestJsonModel,
     StudyPopulationJsonModel,
     StudyPreferredTimeUnit,
@@ -105,6 +106,9 @@ from clinical_mdr_api.models.study_selections.study import (
     StudyTemplateInput,
     StudyTemplatePatchInput,
     StudyVersionHistory,
+)
+from clinical_mdr_api.models.study_selections.study_definition_document import (
+    authored_content_from_json,
 )
 from clinical_mdr_api.models.utils import GenericFilteringReturn
 from clinical_mdr_api.repositories._utils import FilterOperator
@@ -841,6 +845,7 @@ class StudyService:
         protocol_header_major_version: int | None = None,
         protocol_header_minor_version: int | None = None,
         amendment: StudyAmendment | None = None,
+        parent_pin: StudyParentPin | None = None,
     ) -> Study:
         # avoid circular imports
         from clinical_mdr_api.services.studies.study_flowchart import (
@@ -860,10 +865,7 @@ class StudyService:
             if study_definition is None:
                 raise NotFoundException("Study Definition", uid)
 
-            BusinessLogicException.raise_if(
-                study_definition.study_parent_part_uid,
-                msg=f"Study Subparts cannot be locked independently from its Study Parent Part with UID '{study_definition.study_parent_part_uid}'.",
-            )
+            parent_pin_record = self._appendix_parent_pin(study_definition, parent_pin)
             _, _, previous_version = (
                 self._repos.study_version_repository.get_selected_version(uid)
             )
@@ -1034,6 +1036,7 @@ class StudyService:
                 previous_version=previous_version,
                 amendment=amendment_vo,
                 previous_locked_version=previous_locked_version,
+                parent_pin=parent_pin_record,
             )
 
             # Update StudyDefinitionDocument
@@ -1067,7 +1070,12 @@ class StudyService:
                     study_subpart = self._repos.study_definition_repository.find_by_uid(
                         study_subpart_uid, for_update=True
                     )
-                    if study_subpart:
+                    if (
+                        study_subpart
+                        and study_subpart.study_status == StudyStatus.DRAFT
+                    ):
+                        # A subpart already locked against an earlier parent
+                        # version keeps that lock; this parent version composes it.
                         _, _, child_previous_version = (
                             self._repos.study_version_repository.get_selected_version(
                                 study_subpart_uid
@@ -1109,6 +1117,95 @@ class StudyService:
         finally:
             self._close_all_repos()
 
+    def _appendix_parent_pin(
+        self,
+        study_definition: StudyDefinitionAR,
+        parent_pin: StudyParentPin | None,
+    ) -> dict[str, Any] | None:
+        """Validate an appendix lock against its exact locked parent, under lock.
+
+        A study without a parent cannot pin one. A subpart locks on its own clock
+        only against the parent's latest locked version and the master document
+        that version retains; the pin is recorded, never inferred.
+        """
+        parent_uid = study_definition.study_parent_part_uid
+        if not parent_uid:
+            BusinessLogicException.raise_if(
+                parent_pin is not None,
+                msg="Only a study subpart can lock against a parent version.",
+            )
+            return None
+        BusinessLogicException.raise_if(
+            parent_pin is None,
+            msg=f"Study Subparts lock only against an explicit locked version of their Study Parent Part with UID '{parent_uid}' (parent_pin).",
+        )
+        assert parent_pin is not None
+        parent = self._repos.study_definition_repository.find_by_uid(
+            parent_uid, for_update=True
+        )
+        if parent is None:
+            raise NotFoundException("Study Definition", parent_uid)
+        latest_locked = parent.latest_locked_metadata
+        BusinessLogicException.raise_if(
+            latest_locked is None
+            or str(latest_locked.ver_metadata.version_number)
+            != parent_pin.parent_study_version,
+            msg="An appendix locks only against its parent's latest locked version.",
+        )
+        selection = (
+            self._repos.study_definition_document_repository.get_authored_documents(
+                parent_uid, parent_pin.parent_study_version
+            )
+        )
+        content = authored_content_from_json(
+            getattr(selection, "authored_documents_json", None)
+        )
+        BusinessLogicException.raise_if(
+            content is None
+            or getattr(selection, "authored_documents_hash", None)
+            != parent_pin.master_documents_hash
+            or content.content_hash() != parent_pin.master_documents_hash,
+            msg="The parent version does not retain the pinned master documents.",
+        )
+        assert content is not None
+        masters = [
+            binding.document_id
+            for binding in content.bindings
+            if binding.role == "master-protocol"
+        ]
+        documents = {document.id: document for document in content.documents}
+        master = documents.get(parent_pin.master_document_id)
+        BusinessLogicException.raise_if(
+            masters != [parent_pin.master_document_id]
+            or master is None
+            or [version.version for version in master.versions]
+            != [parent_pin.master_document_version],
+            msg="The pinned document is not the parent version's master protocol at that version.",
+        )
+        return {"parent_study_uid": parent_uid, **parent_pin.model_dump()}
+
+    def _check_appendix_unlock(
+        self, study_definition: StudyDefinitionAR, current_record: Any
+    ) -> None:
+        """An appendix unlocks alone only from its own lock, under a drafting parent.
+
+        The parent draft then composes the new appendix draft. Locked parent
+        versions keep the appendix value they were locked with.
+        """
+        parent_uid = study_definition.study_parent_part_uid
+        BusinessLogicException.raise_if(
+            current_record is None
+            or getattr(current_record, "parent_pin_json", None) is None,
+            msg=f"Study Subparts cannot be unlocked independently from its Study Parent Part with UID '{parent_uid}' unless they were locked on their own clock.",
+        )
+        parent = self._repos.study_definition_repository.find_by_uid(
+            parent_uid, for_update=True
+        )
+        BusinessLogicException.raise_if(
+            parent is None or parent.study_status != StudyStatus.DRAFT,
+            msg="An appendix unlocks on its own clock only while its parent is in draft.",
+        )
+
     @ensure_transaction(db)
     def unlock(
         self,
@@ -1126,13 +1223,11 @@ class StudyService:
             if study_definition is None:
                 raise NotFoundException("Study Definition", uid)
 
-            BusinessLogicException.raise_if(
-                study_definition.study_parent_part_uid,
-                msg=f"Study Subparts cannot be unlocked independently from its Study Parent Part with UID '{study_definition.study_parent_part_uid}'.",
-            )
             _, _, previous_version = (
                 self._repos.study_version_repository.get_selected_version(uid)
             )
+            if study_definition.study_parent_part_uid:
+                self._check_appendix_unlock(study_definition, previous_version)
             study_definition.unlock(self.author_id)
             self._repos.study_definition_repository.save(study_definition)
 
@@ -1174,7 +1269,10 @@ class StudyService:
                     study_subpart = self._repos.study_definition_repository.find_by_uid(
                         study_subpart_uid, for_update=True
                     )
-                    if study_subpart:
+                    if (
+                        study_subpart
+                        and study_subpart.study_status == StudyStatus.LOCKED
+                    ):
                         _, _, child_previous_version = (
                             self._repos.study_version_repository.get_selected_version(
                                 study_subpart_uid
@@ -1613,10 +1711,6 @@ class StudyService:
                 study_uid, study_value_version
             )
         )
-        from clinical_mdr_api.models.study_selections.study_definition_document import (
-            authored_content_from_json,
-        )
-
         authored = authored_content_from_json(
             getattr(document, "authored_documents_json", None)
         )
@@ -1989,7 +2083,7 @@ class StudyService:
                     study_create_input.study_parent_part_uid
                 )
                 parent_part_ar = self._repos.study_definition_repository.find_by_uid(
-                    study_create_input.study_parent_part_uid
+                    study_create_input.study_parent_part_uid, for_update=True
                 )
                 BusinessLogicException.raise_if_not(
                     parent_part_ar,
@@ -1998,6 +2092,12 @@ class StudyService:
                 BusinessLogicException.raise_if(
                     parent_part_ar.study_parent_part_uid,
                     msg=f"Provided study_parent_part_uid '{study_create_input.study_parent_part_uid}' is a Study Subpart UID.",
+                )
+                # A locked parent version's composition is frozen; a new subpart
+                # joins the parent's next draft, as a PATCH reparent already does.
+                BusinessLogicException.raise_if(
+                    parent_part_ar.study_status == StudyStatus.LOCKED,
+                    msg=f"Study Parent Part with UID '{study_create_input.study_parent_part_uid}' is locked.",
                 )
                 study_subpart_acronym = study_create_input.study_subpart_acronym
                 validate_study_subpart_acronym(study_subpart_acronym)

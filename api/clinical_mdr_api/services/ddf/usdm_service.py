@@ -1,11 +1,19 @@
 from copy import deepcopy
 from typing import Any
 
+from clinical_mdr_api.domain_repositories.study_selections.study_version_repository import (
+    StudyVersionRepository,
+)
 from clinical_mdr_api.domains.study_definition_aggregates.study_metadata import (
     StudyComponentEnum,
 )
 from clinical_mdr_api.models.study_selections.study_visit import StudyVisit
 from clinical_mdr_api.services.ddf.usdm_mapper import USDMMapper
+from clinical_mdr_api.services.ddf.usdm_platform_designs import (
+    DesignScopedIdManager,
+    PlatformDesignSource,
+    compose_platform_document,
+)
 from clinical_mdr_api.services.studies.study import StudyService
 from clinical_mdr_api.services.studies.study_activity_group import (
     StudyActivityGroupService,
@@ -71,6 +79,9 @@ from clinical_mdr_api.services.studies.study_source_variable import (
 )
 from clinical_mdr_api.services.studies.study_standard_version_selection import (
     StudyStandardVersionService,
+)
+from clinical_mdr_api.services.studies.study_visibility import (
+    assert_study_uid_visible,
 )
 from clinical_mdr_api.services.studies.study_visit import StudyVisitService
 from common.telemetry import trace_calls
@@ -210,6 +221,44 @@ class USDMService:
             self._read_study(uid, study_value_version),
             study_value_version=study_value_version,
         )
+
+    @trace_calls(args=[1], kwargs=["uid"])
+    def get_platform_designs(
+        self, uid: str, study_value_version: str | None = None
+    ) -> dict[str, Any]:
+        """One descriptive document: the master design plus every pinned subpart.
+
+        Each subpart is read at the exact value its parent version links and is
+        mapped by an independent single-design mapper with design-scoped IDs.
+        """
+        master = PlatformDesignSource(
+            level="master",
+            study_uid=uid,
+            study_value_version=study_value_version,
+            report=self.get_by_uid_with_report(
+                uid, study_value_version=study_value_version
+            ),
+        )
+        subparts = []
+        for pin in StudyVersionRepository().get_subpart_pins(uid, study_value_version):
+            # Every design in the document must be readable by this caller.
+            assert_study_uid_visible(pin["study_uid"])
+            service = USDMService()
+            service._usdm_mapper._id_manager = DesignScopedIdManager(pin["study_uid"])
+            subparts.append(
+                PlatformDesignSource(
+                    level="subpart",
+                    study_uid=pin["study_uid"],
+                    study_value_version=pin["study_value_version"],
+                    report=service.get_by_uid_with_report(
+                        pin["study_uid"],
+                        study_value_version=pin["study_value_version"],
+                    ),
+                    parent_study_uid=uid,
+                    subpart_acronym=pin["subpart_acronym"],
+                )
+            )
+        return compose_platform_document(master, subparts)
 
     @staticmethod
     def _read_study(uid: str, study_value_version: str | None):

@@ -1,5 +1,6 @@
 """Offline checks for exact version ownership and authored amendment facts."""
 
+import json
 from copy import deepcopy
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -217,6 +218,7 @@ def captured_history_row():
         "_record_id": "captured-record",
         "_record_values": ["captured-draft"],
         "_amendment_json": None,
+        "_parent_pin_json": None,
         "_version_values": ["captured-draft"],
     }
 
@@ -518,3 +520,37 @@ def test_definition_reason_copy_rejects_unpersisted_values(
             SimpleNamespace(element_id=current_id),
         )
     factory.assert_not_called()
+
+
+def test_appendix_parent_pin_is_explicit_and_complete():
+    pin = {
+        "parent_study_version": "1",
+        "master_document_id": "authored-master",
+        "master_document_version": "1.0",
+        "master_documents_hash": "a" * 64,
+    }
+    assert StudyLockInput(reason_for_change_uid="CT_1").parent_pin is None
+    assert StudyLockInput(reason_for_change_uid="CT_1", parent_pin=pin).parent_pin
+    for change in (
+        {"master_documents_hash": "A" * 64},
+        {"master_documents_hash": "a" * 63},
+        {"parent_study_version": ""},
+        {"master_document_id": 5},
+        {"unexpected": "field"},
+    ):
+        with pytest.raises(ValidationError):
+            StudyLockInput(reason_for_change_uid="CT_1", parent_pin={**pin, **change})
+
+
+def test_history_reads_the_recorded_parent_pin_of_the_same_row(monkeypatch):
+    pin = {
+        "parent_study_uid": "Study_1",
+        "parent_study_version": "1",
+        "master_document_id": "authored-master",
+        "master_document_version": "1.0",
+        "master_documents_hash": "a" * 64,
+    }
+    row = {**captured_history_row(), "_parent_pin_json": json.dumps(pin)}
+    repo, _ = history_read(monkeypatch, [row])
+    history, _ = repo.retrieve_study_snapshot_history("Study_1", page_size=0)
+    assert history[0]["parent_pin"] == pin

@@ -2672,6 +2672,11 @@ ALL_ROUTES_METHODS_ROLES = (  # type: ignore[var-annotated]
         "GET",
         {"Study.Read"},
     ),
+    (
+        "/usdm/v4/studyDefinitions/{study_uid}/platform-designs",
+        "GET",
+        {"Study.Read"},
+    ),
     ("/data-suppliers", "GET", {"Library.Read"}),
     ("/data-suppliers/headers", "GET", {"Library.Read"}),
     ("/data-suppliers/{data_supplier_uid}", "GET", {"Library.Read"}),

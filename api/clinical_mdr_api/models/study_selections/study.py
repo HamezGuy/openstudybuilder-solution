@@ -1993,8 +1993,27 @@ class StudyAmendment(BaseModel):
         )
 
 
+class StudyParentPin(BaseModel):
+    """The exact locked parent version and master document an appendix locks against.
+
+    An OSB lock records a design state. It is not a regulatory or IRB approval.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    parent_study_version: Annotated[str, Field(min_length=1, strict=True)]
+    master_document_id: Annotated[str, Field(min_length=1, strict=True)]
+    master_document_version: Annotated[str, Field(min_length=1, strict=True)]
+    master_documents_hash: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$", strict=True)]
+
+
+class StudyVersionParentPin(StudyParentPin):
+    parent_study_uid: str
+
+
 class StudyVersionHistory(BaseModel):
     amendment: StudyAmendment | None = None
+    parent_pin: StudyVersionParentPin | None = None
     study_status: Annotated[
         list[StudyStatus],
         Field(description="List of StudyStatuses for specific study version"),
@@ -2081,6 +2100,7 @@ class StudyVersionHistory(BaseModel):
     ) -> Self:
         return cls(
             amendment=val.get("amendment"),
+            parent_pin=val.get("parent_pin"),
             study_status=[StudyStatus(status) for status in val["statuses"]],
             reason_for_lock_name=val.get("reason_for_lock"),
             reason_for_unlock_name=val.get("reason_for_unlock"),
@@ -2433,6 +2453,8 @@ class LockReleaseInput(BaseModel):
 
 class StudyLockInput(LockReleaseInput):
     amendment: StudyAmendment | None = None
+    # Required to lock a study subpart (an appendix) on its own clock.
+    parent_pin: StudyParentPin | None = None
 
 
 class UnlockInput(BaseModel):

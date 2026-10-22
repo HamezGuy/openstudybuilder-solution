@@ -857,6 +857,8 @@ class StudyVersion(StudySelection):
     other_reason_for_unlocking = StringProperty()
     amendment_json = StringProperty()
     previous_locked_version = StringProperty()
+    # An appendix locked on its own clock pins its exact locked parent.
+    parent_pin_json = StringProperty()
 
     has_reason_for_lock = RelationshipTo(
         CTTermContext,

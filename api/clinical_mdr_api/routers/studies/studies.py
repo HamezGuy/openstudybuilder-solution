@@ -630,6 +630,7 @@ def lock(
         protocol_header_major_version=lock_description.protocol_header_major_version,
         protocol_header_minor_version=lock_description.protocol_header_minor_version,
         amendment=lock_description.amendment,
+        parent_pin=lock_description.parent_pin,
     )
 
 

@@ -79,6 +79,45 @@ def get_study(
 
 
 @router.get(
+    path="/{study_uid}/platform-designs",
+    dependencies=[security, rbac.STUDY_READ],
+    response_class=PrettyJSONResponse,
+    status_code=200,
+    responses={
+        400: {
+            "model": ErrorResponse,
+            "description": "The selected version links subparts without exact unique pins.",
+        },
+        403: _generic_descriptions.ERROR_403,
+        404: _generic_descriptions.ERROR_404,
+    },
+    summary="Return one descriptive USDM document with the master and every subpart design",
+    description="""
+One study version holds the master design and one design for each native subpart
+that the selected master version links (decision DD-4). Each subpart is read at
+the exact value its parent version pins and mapped with design-scoped identifiers.
+Each design carries a designScope extension and its own mapping report.
+
+The single-design export at /studyDefinitions/{study_uid} is unchanged.
+This document is descriptive: it selects no executable design and grants no
+release authority. Executable multi-design release waits for the CSL C11 contract.
+""",
+)
+def get_study_platform_designs(
+    study_uid: Annotated[str, Path(description="The unique uid of the master study.")],
+    study_value_version: Annotated[
+        str | None,
+        Query(
+            description="Optional explicit master study value version. Subparts are read at the values this version pins."
+        ),
+    ] = None,
+) -> dict[str, Any]:
+    return USDMService().get_platform_designs(
+        study_uid, study_value_version=study_value_version
+    )
+
+
+@router.get(
     path="/{study_uid}/m11",
     dependencies=[security, rbac.STUDY_READ],
     responses={
