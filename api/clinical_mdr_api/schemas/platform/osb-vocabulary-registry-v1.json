@@ -1,12 +1,12 @@
 {
   "contractVersion": "OsbVocabularyRegistryV1@1.1.0",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "owner": "ClinicalSemanticLayer",
   "canonicalNames": "OpenStudyBuilder resource type names, as its proposal target taxonomy names them; the IL ruleset uses the same names from 1.17.0 (formerNames records what 1.16.0 and earlier called three of them)",
   "sources": {
     "ruleset": {
       "path": "packages/mappings/il-to-usdm-v4.rules.json",
-      "version": "1.24.0"
+      "version": "1.26.0"
     },
     "generatedModule": "packages/semantic-core/src/generated/osb-vocabulary-registry.ts (scripts/generate-osb-vocabulary.mjs, part of contracts:generate and contracts:check)",
     "osbCopy": "clinical_mdr_api/schemas/platform/osb-vocabulary-registry-v1.json (registry:export-osb-vocabulary; byte identical)",
@@ -669,6 +669,76 @@
       },
       "uiSurface": "Arms",
       "dependencies": []
+    },
+    {
+      "osbResourceType": "StudySelectionCohort",
+      "formerNames": [],
+      "cslObjectType": "StudyCohort",
+      "correspondence": "exact",
+      "cslAssertionTypes": [],
+      "cslCapability": null,
+      "cslExecutable": false,
+      "osbCapability": "native_study_mutation",
+      "osbNativeExecutor": true,
+      "osbSelection": false,
+      "osbDualMode": false,
+      "osbCreateRequest": true,
+      "osbDeclinable": false,
+      "osbFamily": null,
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": null,
+      "osbNodeLabels": [
+        "StudyCohort"
+      ],
+      "apiPath": "/studies/{studyUid}/study-cohorts",
+      "semanticMismatch": false,
+      "note": "Executed by resource type through the study executor. Its optional arm_uids and branch_arm_uids name existing StudyArm and StudyBranchArm selections, so those resolve first. No IL rule asserts a cohort yet, so CSL routes no candidate to it and states no CSL capability.",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": null,
+      "cslNativeRoute": {
+        "route": "/studies/{study_uid}/study-cohorts",
+        "method": "POST"
+      },
+      "uiSurface": "Cohorts",
+      "dependencies": [
+        "study-arm",
+        "study-branch-arm"
+      ]
+    },
+    {
+      "osbResourceType": "StudySelectionBranchArm",
+      "formerNames": [],
+      "cslObjectType": null,
+      "correspondence": "none",
+      "cslAssertionTypes": [],
+      "cslCapability": null,
+      "cslExecutable": false,
+      "osbCapability": "native_study_mutation",
+      "osbNativeExecutor": true,
+      "osbSelection": false,
+      "osbDualMode": false,
+      "osbCreateRequest": true,
+      "osbDeclinable": false,
+      "osbFamily": null,
+      "osbFamilyBlockerOnly": false,
+      "osbReadModel": null,
+      "osbNodeLabels": [
+        "StudyBranchArm"
+      ],
+      "apiPath": "/studies/{studyUid}/study-branch-arms",
+      "semanticMismatch": false,
+      "note": "Executed by resource type through the study executor. A branch arm subdivides its required parent arm (arm_uid) and may name an existing cohort (study_cohort_uid). USDM 4.0 and CSL register no branch arm type, so CSL maps none and routes no candidate to it.",
+      "captureReadbackResourceType": null,
+      "cslCandidateRouting": null,
+      "cslNativeRoute": {
+        "route": "/studies/{study_uid}/study-branch-arms",
+        "method": "POST"
+      },
+      "uiSurface": "Branch arms",
+      "dependencies": [
+        "study-arm",
+        "study-cohort"
+      ]
     },
     {
       "osbResourceType": "StudySelectionElement",
@@ -1700,5 +1770,5 @@
       "dependencies": []
     }
   ],
-  "registryHash": "sha256:81e3c0d886b303445c7b96e17c107a4c01b70e7ae519c482cc4689cfa12e0b62"
+  "registryHash": "sha256:bba344450c29c94c3b35c961c50693bfc9c33fcaa4a52e7ddd746d076f039fbd"
 }

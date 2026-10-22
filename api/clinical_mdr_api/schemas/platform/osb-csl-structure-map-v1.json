@@ -55,6 +55,20 @@
       "note": "StudyRoot is the identity (uid), StudyValue the versioned attributes; CSL keeps one Study entity and revisions."
     },
     {
+      "cslObjectType": "CanonicalStudy",
+      "profile": "canonical-study",
+      "dataPlane": "global-definition",
+      "osbClasses": [],
+      "osbResourceTypes": [],
+      "ilAssertionTypes": [],
+      "correspondence": "none",
+      "standardsBasis": [
+        "StudyExchangeBundle 2.0",
+        "canonical-study 1.0.0"
+      ],
+      "note": "A retained CSL study exchange and its source custody; OSB holds the native study it may describe, not this retained definition."
+    },
+    {
       "cslObjectType": "Organization",
       "profile": "usdm-study-design",
       "dataPlane": "global-definition",
@@ -112,6 +126,7 @@
       ],
       "osbResourceTypes": [],
       "ilAssertionTypes": [
+        "ABBREVIATION_DEFINITION",
         "AESI_DEFINITION",
         "AE_REPORTING_RULES",
         "CDASH_VARIABLE_BINDING",
@@ -166,7 +181,9 @@
       "osbClasses": [
         "StudyCohort"
       ],
-      "osbResourceTypes": [],
+      "osbResourceTypes": [
+        "StudySelectionCohort"
+      ],
       "ilAssertionTypes": [],
       "correspondence": "exact",
       "standardsBasis": [
@@ -1681,9 +1698,22 @@
       "standardsBasis": [
         "ADaM population flags",
         "ICH E9 analysis set",
-        "USDM 4.0 (StatisticalConsideration analysis set)"
+        "USDM 4.0 AnalysisPopulation"
       ],
       "note": "Analysis domain; OSB has none."
+    },
+    {
+      "cslObjectType": "ControlPool",
+      "profile": "protocol-statistics",
+      "dataPlane": "global-definition",
+      "osbClasses": [],
+      "osbResourceTypes": [],
+      "ilAssertionTypes": [],
+      "correspondence": "none",
+      "standardsBasis": [
+        "Platform master protocol and regimen statistical analysis plan"
+      ],
+      "note": "Analysis domain; OSB has none yet. OSB lane O7 plans a thin StudyControlPool reference to the published CSL definition."
     },
     {
       "cslObjectType": "AnalysisOutput",
@@ -3456,6 +3486,15 @@
       "cslLinkType": null,
       "correspondence": "exact",
       "note": ""
+    },
+    {
+      "osbClass": "StudyArmLifecycleEvent",
+      "file": "study_selections.py",
+      "base": "StudySelection",
+      "cslObjectType": null,
+      "cslLinkType": null,
+      "correspondence": "none",
+      "note": "Authored arm and branch arm lifecycle design records (OSB O2, 1033700b). CSL registers no ArmLifecycleEvent until lane item C7, which waits on the executed EDC operations stream (E12); an authored event is a design record, not an executed decision."
     },
     {
       "osbClass": "StudyArrayField",
@@ -5673,6 +5712,16 @@
       "note": ""
     },
     {
+      "type": "HAS_STUDY_ARM_LIFECYCLE_EVENT",
+      "declaredOn": [
+        "StudyArmLifecycleEvent:from:StudyValue",
+        "StudyValue:to:StudyArmLifecycleEvent"
+      ],
+      "correspondence": "none",
+      "target": null,
+      "note": "Study version membership of an authored arm lifecycle event; CSL registers none until C7."
+    },
+    {
       "type": "HAS_STUDY_BRANCH_ARM",
       "declaredOn": [
         "StudyBranchArm:from:StudyValue",
@@ -7009,6 +7058,15 @@
       "note": "The three design-cell relationships are one typed CSL link (inverse direction)."
     },
     {
+      "type": "STUDY_ARM_HAS_LIFECYCLE_EVENT",
+      "declaredOn": [
+        "StudyArm:to:StudyArmLifecycleEvent"
+      ],
+      "correspondence": "none",
+      "target": null,
+      "note": "An authored lifecycle event of an arm; CSL registers none until C7."
+    },
+    {
       "type": "STUDY_BRANCH_ARM_HAS_COHORT",
       "declaredOn": [
         "StudyBranchArm:to:StudyCohort",
@@ -7027,6 +7085,15 @@
       "correspondence": "none",
       "target": null,
       "note": "Branch arms; CSL registers none."
+    },
+    {
+      "type": "STUDY_BRANCH_ARM_HAS_LIFECYCLE_EVENT",
+      "declaredOn": [
+        "StudyBranchArm:to:StudyArmLifecycleEvent"
+      ],
+      "correspondence": "none",
+      "target": null,
+      "note": "An authored lifecycle event of a branch arm; CSL registers no branch arm or lifecycle event."
     },
     {
       "type": "STUDY_COMPOUND_HAS_COMPOUND_DOSING",
@@ -7309,5 +7376,5 @@
       "note": "Domain audit export bundle; no CSL table."
     }
   ],
-  "mapHash": "sha256:8a2c75eb0944f2fb5011b7a14c749996c4f7b40e8fa38ba873116ba5a2f154ae"
+  "mapHash": "sha256:175293f17757c096a623bb67166a4b5f06689d6f11a2a87acb2aafeb8ad6b907"
 }
