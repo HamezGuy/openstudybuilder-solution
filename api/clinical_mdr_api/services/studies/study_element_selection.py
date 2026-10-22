@@ -229,6 +229,7 @@ class StudyElementSelectionService(
         finally:
             repos.close()
 
+    @ensure_transaction(db)
     def make_selection(
         self,
         study_uid: str,
@@ -238,68 +239,67 @@ class StudyElementSelectionService(
 
         try:
             # Load aggregate
-            with db.transaction:
-                # create new VO to add
-                new_selection = StudySelectionElementVO.from_input_values(
-                    study_uid=study_uid,
-                    author_id=self.author,
-                    name=selection_create_input.name,
-                    short_name=selection_create_input.short_name,
-                    code=selection_create_input.code,
-                    description=selection_create_input.description,
-                    planned_duration=(
-                        create_duration_object_from_api_input(
-                            value=selection_create_input.planned_duration.duration_value,
-                            unit=get_unit_def_uid_or_none(
-                                selection_create_input.planned_duration.duration_unit_code
-                            ),
-                            find_duration_name_by_code=self._repos.unit_definition_repository.find_by_uid_2,
-                        )
-                        if selection_create_input.planned_duration
-                        else None
-                    ),
-                    start_rule=selection_create_input.start_rule,
-                    end_rule=selection_create_input.end_rule,
-                    element_colour=selection_create_input.element_colour,
-                    element_subtype_uid=selection_create_input.element_subtype_uid,
-                    study_compound_dosing_count=0,
-                    generate_uid_callback=repos.study_element_repository.generate_uid,
-                )
-                # add VO to aggregate
-                selection_aggregate: StudySelectionElementAR = (
-                    repos.study_element_repository.find_by_study(
-                        study_uid=study_uid, for_update=True
+            # create new VO to add
+            new_selection = StudySelectionElementVO.from_input_values(
+                study_uid=study_uid,
+                author_id=self.author,
+                name=selection_create_input.name,
+                short_name=selection_create_input.short_name,
+                code=selection_create_input.code,
+                description=selection_create_input.description,
+                planned_duration=(
+                    create_duration_object_from_api_input(
+                        value=selection_create_input.planned_duration.duration_value,
+                        unit=get_unit_def_uid_or_none(
+                            selection_create_input.planned_duration.duration_unit_code
+                        ),
+                        find_duration_name_by_code=self._repos.unit_definition_repository.find_by_uid_2,
                     )
+                    if selection_create_input.planned_duration
+                    else None
+                ),
+                start_rule=selection_create_input.start_rule,
+                end_rule=selection_create_input.end_rule,
+                element_colour=selection_create_input.element_colour,
+                element_subtype_uid=selection_create_input.element_subtype_uid,
+                study_compound_dosing_count=0,
+                generate_uid_callback=repos.study_element_repository.generate_uid,
+            )
+            # add VO to aggregate
+            selection_aggregate: StudySelectionElementAR = (
+                repos.study_element_repository.find_by_study(
+                    study_uid=study_uid, for_update=True
                 )
-                assert selection_aggregate is not None
-                selection_aggregate.add_element_selection(
-                    new_selection,
-                    self._repos.ct_term_name_repository.term_specific_exists_by_uid,
-                )
+            )
+            assert selection_aggregate is not None
+            selection_aggregate.add_element_selection(
+                new_selection,
+                self._repos.ct_term_name_repository.term_specific_exists_by_uid,
+            )
 
-                ## sync with DB and save the update
-                repos.study_element_repository.save(selection_aggregate, self.author)
+            ## sync with DB and save the update
+            repos.study_element_repository.save(selection_aggregate, self.author)
 
-                # Fetch the new selection which was just added
-                (
-                    new_selection,
-                    order,
-                ) = selection_aggregate.get_specific_element_selection(
-                    new_selection.study_selection_uid
-                )
-                terms_at_specific_datetime = (
-                    self._extract_study_standards_effective_date(study_uid=study_uid)
-                )
-                # add the element and return
-                return StudySelectionElement.from_study_selection_element_ar_and_order(
-                    study_uid=study_uid,
-                    selection=new_selection,
-                    order=order,
-                    get_term_element_type_by_element_subtype=repos.study_element_repository.get_element_type_term_uid_by_element_subtype_term_uid,
-                    find_codelist_term_by_uid_and_submval=self._repos.ct_codelist_name_repository.get_codelist_term_by_uid_and_submval,
-                    find_all_study_time_units=self._repos.unit_definition_repository.find_all,
-                    terms_at_specific_datetime=terms_at_specific_datetime,
-                )
+            # Fetch the new selection which was just added
+            (
+                new_selection,
+                order,
+            ) = selection_aggregate.get_specific_element_selection(
+                new_selection.study_selection_uid
+            )
+            terms_at_specific_datetime = self._extract_study_standards_effective_date(
+                study_uid=study_uid
+            )
+            # add the element and return
+            return StudySelectionElement.from_study_selection_element_ar_and_order(
+                study_uid=study_uid,
+                selection=new_selection,
+                order=order,
+                get_term_element_type_by_element_subtype=repos.study_element_repository.get_element_type_term_uid_by_element_subtype_term_uid,
+                find_codelist_term_by_uid_and_submval=self._repos.ct_codelist_name_repository.get_codelist_term_by_uid_and_submval,
+                find_all_study_time_units=self._repos.unit_definition_repository.find_all,
+                terms_at_specific_datetime=terms_at_specific_datetime,
+            )
         finally:
             repos.close()
 

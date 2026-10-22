@@ -3,7 +3,7 @@
   "info": {
     "title": "OpenStudyBuilder API",
     "description": "\n## NOTICE\n\nThis license information is applicable to the swagger documentation of the clinical-mdr-api, that is the openapi.json.\n\n## License Terms (MIT)\n\nCopyright (C) 2025 Novo Nordisk A/S, Danish company registration no. 24256790\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\n\n## Licenses and Acknowledgements for Incorporated Software\n\nThis component contains software licensed under different licenses when compiled, please refer to the third-party-licenses.md file for further information and full license texts.\n\n## Authentication\n\nSupports OAuth2 [Authorization Code Flow](https://datatracker.ietf.org/doc/html/rfc6749#section-4.1),\nat paths described in the OpenID Connect Discovery metadata document (whose URL is defined by the `OAUTH_METADATA_URL` environment variable).\n\nMicrosoft Identity Platform documentation can be read \n([here](https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-auth-code-flow)).\n\nAuthentication can be turned off with `OAUTH_ENABLED=false` environment variable. \n\nWhen authentication is turned on, all requests to protected API endpoints must provide a valid bearer (JWT) token inside the `Authorization` http header. \n",
-    "version": "3.0.705"
+    "version": "3.0.706"
   },
   "paths": {
     "/": {
@@ -89904,6 +89904,97 @@
         }
       }
     },
+    "/studies/{study_uid}/regimens": {
+      "post": {
+        "tags": [
+          "Study Selections"
+        ],
+        "summary": "Add one authored regimen to a draft study in one transaction",
+        "description": "Create the arms, branch arms, cohorts, elements, compounds, compound dosings,\ndesign cells, authored lifecycle events and authored protocol documents of one\nregimen through their existing canonical services, in one native transaction.\n\nEntries name each other only through explicit request-local keys, and the\nresponse maps each key to the native UID actually created. Any failure rolls\nback every record, audit action and UID counter of the regimen.\n\nThis records an authored design. It does not approve the regimen, allocate\nparticipants, or execute any operational or statistical decision.",
+        "operationId": "post_study_regimen_studies__study_uid__regimens_post",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "study_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The unique id of the study.",
+              "title": "Study Uid"
+            },
+            "description": "The unique id of the study."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudyRegimenCreateInput",
+                "description": "The complete authored regimen."
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudyRegimenCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid regimen, unresolved reference or locked study.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The expected study version or authored document hash is stale.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/studies/{study_uid}/study-arms/{study_arm_uid}/lifecycle-events": {
       "post": {
         "tags": [
@@ -172974,6 +173065,1049 @@
         },
         "type": "object",
         "title": "StudyProtocolTitle"
+      },
+      "StudyRegimenArmInput": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name",
+            "description": "name for the study arm"
+          },
+          "short_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Name",
+            "description": "short name for the study arm"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label",
+            "description": "label for the study arm"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code",
+            "description": "code for the study arm"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "description for the study arm"
+          },
+          "randomization_group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Randomization Group",
+            "description": "randomization group for the study arm"
+          },
+          "number_of_subjects": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMaximum": 9.223372036854776e+18,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Number Of Subjects",
+            "description": "number of subjects for the study arm"
+          },
+          "arm_type_uid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arm Type Uid",
+            "description": "uid for the study arm"
+          },
+          "data_origin_type_uid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Origin Type Uid",
+            "description": "Explicit term UID from the DDF Study Arm Data Origin codelist"
+          },
+          "data_origin_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Origin Description",
+            "description": "Native description supporting the selected study arm data origin"
+          },
+          "merge_branch_for_this_arm_for_sdtm_adam": {
+            "type": "boolean",
+            "title": "Merge Branch For This Arm For Sdtm Adam",
+            "description": "Indicates whether to merge branches for this arm for SDTM/ADM",
+            "default": false
+          },
+          "local_key": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "title": "Local Key",
+            "description": "Request-local key. It is never stored and never becomes a native UID."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "local_key"
+        ],
+        "title": "StudyRegimenArmInput"
+      },
+      "StudyRegimenBranchArmInput": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name",
+            "description": "name for the study Brancharm"
+          },
+          "short_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Name",
+            "description": "short name for the study Brancharm"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code",
+            "description": "code for the study Brancharm"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "description for the study Brancharm"
+          },
+          "randomization_group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Randomization Group",
+            "description": "randomization group for the study Brancharm"
+          },
+          "number_of_subjects": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMaximum": 9.223372036854776e+18,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Number Of Subjects",
+            "description": "number of subjects for the study Brancharm"
+          },
+          "study_cohort_uid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Study Cohort Uid",
+            "description": "the uid of the related study cohort"
+          },
+          "arm_uid": {
+            "$ref": "#/components/schemas/StudyRegimenLocalReference"
+          },
+          "local_key": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "title": "Local Key",
+            "description": "Request-local key. It is never stored and never becomes a native UID."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "arm_uid",
+          "local_key"
+        ],
+        "title": "StudyRegimenBranchArmInput",
+        "description": "A branch of one of the new regimen arms.\n\nNew cohorts are created after branches and name their branches, so a branch\nmay only join an existing cohort here."
+      },
+      "StudyRegimenCohortInput": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name",
+            "description": "name for the study Cohort"
+          },
+          "short_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Name",
+            "description": "short name for the study Cohort"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code",
+            "description": "code for the study Cohort"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "description for the study Cohort"
+          },
+          "number_of_subjects": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Number Of Subjects",
+            "description": "number of subjects for the study Cohort"
+          },
+          "branch_arm_uids": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/StudyRegimenLocalReference"
+                    },
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "Existing native UID"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Arm Uids"
+          },
+          "arm_uids": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/StudyRegimenLocalReference"
+                    },
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "Existing native UID"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arm Uids"
+          },
+          "local_key": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "title": "Local Key",
+            "description": "Request-local key. It is never stored and never becomes a native UID."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "local_key"
+        ],
+        "title": "StudyRegimenCohortInput"
+      },
+      "StudyRegimenCompoundDosingInput": {
+        "properties": {
+          "study_compound_uid": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StudyRegimenLocalReference"
+              },
+              {
+                "type": "string",
+                "minLength": 1,
+                "description": "Existing native UID"
+              }
+            ],
+            "title": "Study Compound Uid"
+          },
+          "study_element_uid": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StudyRegimenLocalReference"
+              },
+              {
+                "type": "string",
+                "minLength": 1,
+                "description": "Existing native UID"
+              }
+            ],
+            "title": "Study Element Uid"
+          },
+          "dose_value_uid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dose Value Uid",
+            "description": "compound dose defined for the study selection",
+            "nullable": true
+          },
+          "dose_frequency_uid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dose Frequency Uid",
+            "description": "dose frequency defined for the study selection",
+            "nullable": true
+          },
+          "composition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Composition",
+            "description": "Composition of active substances for the compound dosing",
+            "nullable": true
+          },
+          "local_key": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "title": "Local Key",
+            "description": "Request-local key. It is never stored and never becomes a native UID."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "study_compound_uid",
+          "study_element_uid",
+          "local_key"
+        ],
+        "title": "StudyRegimenCompoundDosingInput"
+      },
+      "StudyRegimenCompoundInput": {
+        "properties": {
+          "compound_alias_uid": {
+            "type": "string",
+            "title": "Compound Alias Uid",
+            "description": "uid for the library compound alias"
+          },
+          "medicinal_product_uid": {
+            "type": "string",
+            "title": "Medicinal Product Uid",
+            "description": "uid for the medicinal product"
+          },
+          "type_of_treatment_uid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type Of Treatment Uid",
+            "description": "type of treatment defined for the selection"
+          },
+          "other_info": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Info",
+            "description": "any other information logged regarding the study compound"
+          },
+          "reason_for_missing_null_value_uid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason For Missing Null Value Uid",
+            "description": "Reason why no compound is used in the study selection, e.g. exploratory study"
+          },
+          "local_key": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "title": "Local Key",
+            "description": "Request-local key. It is never stored and never becomes a native UID."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "compound_alias_uid",
+          "medicinal_product_uid",
+          "local_key"
+        ],
+        "title": "StudyRegimenCompoundInput"
+      },
+      "StudyRegimenCreateInput": {
+        "properties": {
+          "expected_study_version": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Expected Study Version",
+            "description": "Current draft version token. It detects lock transitions, not every intervening draft edit."
+          },
+          "arms": {
+            "items": {
+              "$ref": "#/components/schemas/StudyRegimenArmInput"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Arms"
+          },
+          "branch_arms": {
+            "items": {
+              "$ref": "#/components/schemas/StudyRegimenBranchArmInput"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Branch Arms"
+          },
+          "cohorts": {
+            "items": {
+              "$ref": "#/components/schemas/StudyRegimenCohortInput"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Cohorts"
+          },
+          "elements": {
+            "items": {
+              "$ref": "#/components/schemas/StudyRegimenElementInput"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Elements"
+          },
+          "compounds": {
+            "items": {
+              "$ref": "#/components/schemas/StudyRegimenCompoundInput"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Compounds"
+          },
+          "compound_dosings": {
+            "items": {
+              "$ref": "#/components/schemas/StudyRegimenCompoundDosingInput"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Compound Dosings"
+          },
+          "design_cells": {
+            "items": {
+              "$ref": "#/components/schemas/StudyRegimenDesignCellInput"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Design Cells"
+          },
+          "lifecycle_events": {
+            "items": {
+              "$ref": "#/components/schemas/StudyRegimenLifecycleEventInput"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Lifecycle Events"
+          },
+          "protocol_documents": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StudyRegimenProtocolDocumentsInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_study_version",
+          "arms"
+        ],
+        "title": "StudyRegimenCreateInput"
+      },
+      "StudyRegimenCreated": {
+        "properties": {
+          "study_uid": {
+            "type": "string",
+            "title": "Study Uid"
+          },
+          "study_version": {
+            "type": "string",
+            "title": "Study Version"
+          },
+          "arms": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Arms"
+          },
+          "branch_arms": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Branch Arms"
+          },
+          "cohorts": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Cohorts"
+          },
+          "elements": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Elements"
+          },
+          "compounds": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Compounds"
+          },
+          "compound_dosings": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Compound Dosings"
+          },
+          "design_cells": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Design Cells"
+          },
+          "lifecycle_event_uids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Lifecycle Event Uids"
+          },
+          "protocol_documents_content_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol Documents Content Hash"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "study_uid",
+          "study_version",
+          "arms",
+          "branch_arms",
+          "cohorts",
+          "elements",
+          "compounds",
+          "compound_dosings",
+          "design_cells",
+          "lifecycle_event_uids"
+        ],
+        "title": "StudyRegimenCreated",
+        "description": "Native UIDs actually created, keyed by the request-local keys."
+      },
+      "StudyRegimenDesignCellInput": {
+        "properties": {
+          "study_arm_uid": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StudyRegimenLocalReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "study_branch_arm_uid": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StudyRegimenLocalReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "study_epoch_uid": {
+            "type": "string",
+            "title": "Study Epoch Uid",
+            "description": "the uid of the related study epoch"
+          },
+          "study_element_uid": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StudyRegimenLocalReference"
+              },
+              {
+                "type": "string",
+                "minLength": 1,
+                "description": "Existing native UID"
+              }
+            ],
+            "title": "Study Element Uid"
+          },
+          "transition_rule": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transition Rule",
+            "description": "Optionally, a transition rule for the cell"
+          },
+          "order": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMaximum": 9.223372036854776e+18,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order",
+            "description": "The ordering of the selection"
+          },
+          "local_key": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "title": "Local Key",
+            "description": "Request-local key. It is never stored and never becomes a native UID."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "study_epoch_uid",
+          "study_element_uid",
+          "local_key"
+        ],
+        "title": "StudyRegimenDesignCellInput",
+        "description": "A cell of a new regimen arm or branch in an existing native epoch."
+      },
+      "StudyRegimenElementInput": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name",
+            "description": "name for the study element"
+          },
+          "short_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Name",
+            "description": "short name for the study element"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code",
+            "description": "code for the study element"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "description for the study element"
+          },
+          "planned_duration": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DurationJsonModel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "planned_duration for the study element"
+          },
+          "start_rule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Rule",
+            "description": "start_rule for the study element"
+          },
+          "end_rule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Rule",
+            "description": "end_rule for the study element"
+          },
+          "element_colour": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Element Colour",
+            "description": "element_colour for the study element"
+          },
+          "element_subtype_uid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Element Subtype Uid",
+            "description": "uid for the study element"
+          },
+          "local_key": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "title": "Local Key",
+            "description": "Request-local key. It is never stored and never becomes a native UID."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "local_key"
+        ],
+        "title": "StudyRegimenElementInput"
+      },
+      "StudyRegimenLifecycleEventInput": {
+        "properties": {
+          "target_kind": {
+            "type": "string",
+            "enum": [
+              "arm",
+              "branch_arm"
+            ],
+            "title": "Target Kind"
+          },
+          "target": {
+            "$ref": "#/components/schemas/StudyRegimenLocalReference"
+          },
+          "lifecycle_state": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Lifecycle State"
+          },
+          "effective_date": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Effective Date"
+          },
+          "decision_reference": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Decision Reference"
+          },
+          "change_reason": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Change Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "target_kind",
+          "target",
+          "lifecycle_state",
+          "effective_date",
+          "decision_reference",
+          "change_reason"
+        ],
+        "title": "StudyRegimenLifecycleEventInput",
+        "description": "Authored lifecycle history for a new arm or branch, not an executed decision."
+      },
+      "StudyRegimenLocalReference": {
+        "properties": {
+          "local_key": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "title": "Local Key",
+            "description": "Request-local key. It is never stored and never becomes a native UID."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "local_key"
+        ],
+        "title": "StudyRegimenLocalReference",
+        "description": "Reference to another entry of the same regimen request."
+      },
+      "StudyRegimenProtocolDocumentsInput": {
+        "properties": {
+          "expected_content_hash": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Content Hash"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Reason"
+          },
+          "arm_tokens": {
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+              "description": "Request-local key. It is never stored and never becomes a native UID."
+            },
+            "propertyNames": {
+              "minLength": 1
+            },
+            "type": "object",
+            "maxProperties": 100,
+            "title": "Arm Tokens"
+          },
+          "content": {
+            "$ref": "#/components/schemas/AuthoredProtocolDocuments"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_content_hash",
+          "reason",
+          "content"
+        ],
+        "title": "StudyRegimenProtocolDocumentsInput",
+        "description": "The complete authored bundle, saved through the existing document path.\n\nBinding arm UIDs equal to a declared token are replaced by the UID of the\nnew arm it names. Every other entry must already be a native arm UID."
       },
       "StudySelectionActivity": {
         "properties": {

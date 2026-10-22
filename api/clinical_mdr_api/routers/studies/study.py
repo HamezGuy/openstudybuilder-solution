@@ -12,6 +12,10 @@ from clinical_mdr_api.models.study_selections.study_arm_lifecycle import (
     StudyArmLifecycleEvent,
     StudyArmLifecycleEventInput,
 )
+from clinical_mdr_api.models.study_selections.study_regimen import (
+    StudyRegimenCreated,
+    StudyRegimenCreateInput,
+)
 from clinical_mdr_api.models.study_selections.study_selection import (
     CompactStudyArm,
     StudyActivityGroup,
@@ -152,6 +156,7 @@ from clinical_mdr_api.services.studies.study_objective_selection import (
     StudyObjectiveSelectionService,
 )
 from clinical_mdr_api.services.studies.study_objectives import StudyObjectivesService
+from clinical_mdr_api.services.studies.study_regimen import StudyRegimenService
 from clinical_mdr_api.services.studies.study_soa_group import StudySoAGroupService
 from common.auth import rbac
 from common.auth.dependencies import security
@@ -5083,6 +5088,47 @@ def post_new_arm_selection_create(
 ) -> StudySelectionArm:
     service = StudyArmSelectionService()
     return service.make_selection(study_uid=study_uid, selection_create_input=selection)
+
+
+@router.post(
+    "/studies/{study_uid}/regimens",
+    dependencies=[security, rbac.STUDY_WRITE],
+    summary="Add one authored regimen to a draft study in one transaction",
+    description="""
+Create the arms, branch arms, cohorts, elements, compounds, compound dosings,
+design cells, authored lifecycle events and authored protocol documents of one
+regimen through their existing canonical services, in one native transaction.
+
+Entries name each other only through explicit request-local keys, and the
+response maps each key to the native UID actually created. Any failure rolls
+back every record, audit action and UID counter of the regimen.
+
+This records an authored design. It does not approve the regimen, allocate
+participants, or execute any operational or statistical decision.
+""",
+    status_code=201,
+    responses={
+        400: {
+            "model": ErrorResponse,
+            "description": "Invalid regimen, unresolved reference or locked study.",
+        },
+        403: _generic_descriptions.ERROR_403,
+        404: _generic_descriptions.ERROR_404,
+        409: {
+            "model": ErrorResponse,
+            "description": "The expected study version or authored document hash is stale.",
+        },
+    },
+)
+@decorators.validate_if_study_is_not_locked("study_uid")
+def post_study_regimen(
+    study_uid: Annotated[str, studyUID],
+    regimen: Annotated[
+        StudyRegimenCreateInput,
+        Body(description="The complete authored regimen."),
+    ],
+) -> StudyRegimenCreated:
+    return StudyRegimenService().create(study_uid=study_uid, regimen=regimen)
 
 
 @router.post(

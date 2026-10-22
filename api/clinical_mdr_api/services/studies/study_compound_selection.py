@@ -19,6 +19,7 @@ from clinical_mdr_api.models.utils import GenericFilteringReturn
 from clinical_mdr_api.repositories._utils import FilterOperator
 from clinical_mdr_api.services._meta_repository import MetaRepository
 from clinical_mdr_api.services._utils import (
+    ensure_transaction,
     fill_missing_values_in_base_model_from_reference_base_model,
     service_level_generic_filtering,
     service_level_generic_header_filtering,
@@ -116,7 +117,7 @@ class StudyCompoundSelectionService(
         )
         return result
 
-    @db.transaction
+    @ensure_transaction(db)
     def make_selection(
         self,
         study_uid: str,

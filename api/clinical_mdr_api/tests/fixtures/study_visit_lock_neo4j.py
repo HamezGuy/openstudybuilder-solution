@@ -73,6 +73,9 @@ class NativeVisitGraph:
             "NumericValue",
             "TimePoint",
             "VisitName",
+            # Approved library compounds selected by native regimen tests.
+            "Compound",
+            "MedicinalProduct",
         )
         for labels, mark in rows:
             assert mark in (None, self.nonce), "Another fixture wrote into this graph"
