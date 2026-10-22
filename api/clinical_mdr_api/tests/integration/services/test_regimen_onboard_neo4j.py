@@ -189,20 +189,10 @@ def _post(worker, command):
 
 
 def _code(response):
-    """The machine code in the API's shared ErrorResponse message."""
-    message = response.json()["message"]
-    codes = [
-        code
-        for code in (
-            "OSB_REGIMEN_EXPECTED_STATE_MISMATCH",
-            "OSB_REGIMEN_NATIVE_REFUSED",
-            "OSB_REGIMEN_STUDY_SCOPE_DENIED",
-            "OSB_PLATFORM_COMMAND_SCOPE_DENIED",
-        )
-        if code in message
-    ]
-    assert len(codes) == 1, message
-    return codes[0]
+    """The top-level machine code; the message still carries the same code."""
+    body = response.json()
+    assert body["code"] in body["message"], body
+    return body["code"]
 
 
 def _content_fingerprint(fixture):
@@ -356,6 +346,7 @@ def test_worker_regimen_requires_the_regimen_capability_and_study_scope(
     worker.auth.user.capabilities = {"package:release"}
     response = _post(worker, command)
     assert response.status_code == 403, response.text
+    assert _code(response) == "OSB_PLATFORM_COMMAND_SCOPE_DENIED"
     worker.auth.user.capabilities = {CAPABILITY}
     worker.auth.user.study_ids = {worker.platform_study_id}
     response = _post(worker, command)

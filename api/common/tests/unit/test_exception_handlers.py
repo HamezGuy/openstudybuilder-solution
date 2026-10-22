@@ -110,3 +110,75 @@ def test_consumer_value_errors_and_extension_http_errors_keep_their_original_han
     response = TestClient(extensions).get("/failure")
     assert response.status_code == 403
     assert response.json() == {"detail": "Forbidden"}
+
+
+@pytest.mark.parametrize(
+    "factory,status_code,message,code",
+    [
+        (
+            lambda: HTTPException(
+                409,
+                detail={
+                    "code": "OSB_REGIMEN_EXPECTED_STATE_MISMATCH",
+                    "message": "Study version changed",
+                },
+            ),
+            409,
+            "{'code': 'OSB_REGIMEN_EXPECTED_STATE_MISMATCH', "
+            "'message': 'Study version changed'}",
+            "OSB_REGIMEN_EXPECTED_STATE_MISMATCH",
+        ),
+        (
+            lambda: HTTPException(503, detail="OSB_PLATFORM_COMMANDS_DISABLED"),
+            503,
+            "OSB_PLATFORM_COMMANDS_DISABLED",
+            "OSB_PLATFORM_COMMANDS_DISABLED",
+        ),
+        (
+            lambda: HTTPException(404, detail="Not found here"),
+            404,
+            "Not found here",
+            None,
+        ),
+        (
+            lambda: HTTPException(409, detail={"code": "lower_case", "message": "x"}),
+            409,
+            "{'code': 'lower_case', 'message': 'x'}",
+            None,
+        ),
+        (
+            lambda: BusinessLogicException(msg="OSB_LOOKS_LIKE_A_CODE"),
+            400,
+            "OSB_LOOKS_LIKE_A_CODE",
+            None,
+        ),
+        (invalid_payload, 400, "The request failed due to validation errors", None),
+    ],
+    ids=["dict-detail", "string-detail", "text", "not-a-code", "domain", "validation"],
+)
+def test_machine_codes_are_added_at_top_level_without_changing_message_or_status(
+    factory, status_code, message, code
+):
+    app = FastAPI()
+    register_exception_handlers(app)
+    exception = factory()
+
+    @app.get("/failure")
+    def failure():
+        raise exception
+
+    with patch(
+        "common.exception_handlers.log_exception",
+        AsyncMock(return_value={"rejectionId": "unit-rejection"}),
+    ):
+        response = TestClient(app).get("/failure")
+
+    body = response.json()
+    assert response.status_code == status_code
+    assert body["message"] == message
+    if code is None:
+        # Errors without a machine code keep exactly their previous keys.
+        assert "code" not in body
+        assert set(body) == {"time", "path", "method", "type", "message", "details"}
+    else:
+        assert body["code"] == code

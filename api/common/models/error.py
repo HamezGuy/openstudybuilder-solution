@@ -1,10 +1,12 @@
 import datetime
+import re
 from typing import Annotated, Any
 
 from fastapi import Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field, ValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 
 class ValidationDetail(BaseModel):
@@ -14,6 +16,23 @@ class ValidationDetail(BaseModel):
     ctx: Annotated[Any, Field()]
 
 
+# A machine code as the platform-control routes raise it, for example
+# OSB_REGIMEN_EXPECTED_STATE_MISMATCH.
+MACHINE_CODE = re.compile(r"^[A-Z][A-Z0-9_]{2,127}$")
+
+
+def machine_code(exception: Exception) -> str | None:
+    """The machine code an HTTPException carries, as a string or detail["code"]."""
+    if not isinstance(exception, StarletteHTTPException):
+        return None
+    detail = exception.detail
+    if isinstance(detail, dict):
+        detail = detail.get("code")
+    if isinstance(detail, str) and MACHINE_CODE.fullmatch(detail):
+        return detail
+    return None
+
+
 class ErrorResponse(BaseModel):
     time: Annotated[datetime.datetime, Field()]
     path: Annotated[str, Field()]
@@ -21,6 +40,15 @@ class ErrorResponse(BaseModel):
     type: Annotated[str, Field()]
     message: Annotated[str, Field()]
     details: list[ValidationDetail] = Field(default_factory=list)
+    code: Annotated[
+        str | None,
+        Field(
+            description="Machine code of the refusal, as the platform-control routes "
+            "raise it (for example OSB_REGIMEN_EXPECTED_STATE_MISMATCH). The same code "
+            "also appears in message. Omitted when the error carries none.",
+            exclude_if=lambda value: value is None,
+        ),
+    ] = None
 
     def __init__(
         self,
@@ -37,6 +65,8 @@ class ErrorResponse(BaseModel):
             )
             or "An error occurred"
         )
+
+        data.setdefault("code", machine_code(exception))
 
         if isinstance(exception, (RequestValidationError, ValidationError)):
             data["message"] = "The request failed due to validation errors"
