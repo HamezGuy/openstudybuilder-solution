@@ -2911,7 +2911,12 @@ class Import360i(BaseImporter):
     def run(self, study_id=None):
         # Retired authority path. Keep the implementation readable for historical
         # replay/forensics, but never let a normal shadow/enforced environment mutate
-        # OSB from the EDC-shaped V1 carrier. Proposal V2 is the sole runtime route.
+        # OSB from the EDC-shaped V1 carrier. Proposal V2 delivery is retired too:
+        # run_import_osb_proposal_v2 refuses with OSB_PROPOSAL_V2_DELIVERY_RETIRED
+        # before opening a client. The governed inbound route is the CSL decision
+        # path through Command Center, served by the /integrations/platform-control
+        # routes (routers/integrations/native_identity.py). Production refuses
+        # those writes except the explicitly enabled review-workspace root binding.
         assert_unsafe_legacy_mutation_allowed("run_import_360i")
         study_id = study_id or load_env("ECRF_STUDY_ID")
         self.log.info("Importing 360i study '%s' into OSB", study_id)
