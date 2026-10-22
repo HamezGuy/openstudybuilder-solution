@@ -51,6 +51,9 @@ from clinical_mdr_api.services.studies.study_compound_dosing_selection import (
 from clinical_mdr_api.services.studies.study_compound_selection import (
     StudyCompoundSelectionService,
 )
+from clinical_mdr_api.services.studies.study_control_pool import (
+    StudyControlPoolService,
+)
 from clinical_mdr_api.services.studies.study_criteria_selection import (
     StudyCriteriaSelectionService,
 )
@@ -162,6 +165,8 @@ class USDMService:
             get_osb_study_design_cells=StudyDesignCellService().get_all_design_cells,
             get_osb_study_arms=StudyArmSelectionService().get_all_selection,
             get_osb_arm_lifecycle_events=StudyArmSelectionService().get_lifecycle_events,
+            get_osb_study_control_pools=StudyControlPoolService().get_control_pools,
+            get_osb_study_adaptation_references=StudyControlPoolService().get_adaptation_references,
             get_osb_study_epochs=StudyEpochService.get_all_epochs,
             get_osb_study_elements=StudyElementSelectionService().get_all_selection,
             get_osb_study_objectives=StudyObjectiveSelectionService().get_all_selection,

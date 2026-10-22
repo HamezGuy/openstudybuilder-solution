@@ -200,6 +200,8 @@ class USDMMapper:
         get_osb_study_design_class: Callable | None = None,
         get_osb_study_source_variable: Callable | None = None,
         get_osb_arm_lifecycle_events: Callable | None = None,
+        get_osb_study_control_pools: Callable | None = None,
+        get_osb_study_adaptation_references: Callable | None = None,
     ):
         self._get_osb_study_design_cells = get_osb_study_design_cells
         self._get_osb_study_arms = get_osb_study_arms
@@ -228,6 +230,8 @@ class USDMMapper:
         self._study_uid: str | None = None
         self._native_readers = {
             "studyArmLifecycleEvent": (get_osb_arm_lifecycle_events, "uid"),
+            "studyControlPool": (get_osb_study_control_pools, "uid"),
+            "studyAdaptationReference": (get_osb_study_adaptation_references, "uid"),
             "studyCohort": (get_osb_study_cohorts, "cohort_uid"),
             "studyBranchArm": (get_osb_study_branch_arms, "branch_arm_uid"),
             "studyActivityInstance": (

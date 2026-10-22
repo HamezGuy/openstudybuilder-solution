@@ -12,6 +12,12 @@ from clinical_mdr_api.models.study_selections.study_arm_lifecycle import (
     StudyArmLifecycleEvent,
     StudyArmLifecycleEventInput,
 )
+from clinical_mdr_api.models.study_selections.study_control_pool import (
+    StudyAdaptationReference,
+    StudyAdaptationReferenceInput,
+    StudyControlPool,
+    StudyControlPoolInput,
+)
 from clinical_mdr_api.models.study_selections.study_regimen import (
     StudyRegimenCreated,
     StudyRegimenCreateInput,
@@ -140,6 +146,9 @@ from clinical_mdr_api.services.studies.study_cohort_selection import (
 from clinical_mdr_api.services.studies.study_compound_selection import (
     StudyCompoundSelectionService,
 )
+from clinical_mdr_api.services.studies.study_control_pool import (
+    StudyControlPoolService,
+)
 from clinical_mdr_api.services.studies.study_criteria_selection import (
     StudyCriteriaSelectionService,
 )
@@ -166,6 +175,11 @@ from common.exceptions import ValidationException
 from common.models.error import ErrorResponse
 
 router = APIRouter(dependencies=[Depends(enforce_visible_study)])
+CONTROL_POOL_REFERENCE_NOTE = (
+    "References pin a published CSL statistical fact and are never resolved, "
+    "copied or verified by OSB. Nothing here allocates participants, sets a "
+    "concurrency window or grants statistical or execution authority."
+)
 
 studyUID = Path(description="The unique id of the study.")
 study_objective_uid_path = Path(description="The unique id of the study objective.")
@@ -5124,6 +5138,211 @@ def post_new_arm_selection_create(
 ) -> StudySelectionArm:
     service = StudyArmSelectionService()
     return service.make_selection(study_uid=study_uid, selection_create_input=selection)
+
+
+@router.get(
+    "/studies/{study_uid}/study-control-pools",
+    dependencies=[security, rbac.STUDY_READ],
+    summary="List the authored control pools of an exact study version",
+    description=CONTROL_POOL_REFERENCE_NOTE,
+    status_code=200,
+    responses={
+        403: _generic_descriptions.ERROR_403,
+        404: _generic_descriptions.ERROR_404,
+    },
+)
+def get_study_control_pools(
+    study_uid: Annotated[str, studyUID],
+    study_value_version: Annotated[
+        str | None, _generic_descriptions.STUDY_VALUE_VERSION_QUERY
+    ] = None,
+) -> list[StudyControlPool]:
+    return StudyControlPoolService().get_control_pools(
+        study_uid, study_value_version=study_value_version
+    )
+
+
+@router.post(
+    "/studies/{study_uid}/study-control-pools",
+    dependencies=[security, rbac.STUDY_WRITE],
+    summary="Author a control pool in the current draft",
+    description=CONTROL_POOL_REFERENCE_NOTE,
+    status_code=201,
+    responses={
+        400: {"model": ErrorResponse, "description": "Invalid record or locked study."},
+        403: _generic_descriptions.ERROR_403,
+        404: _generic_descriptions.ERROR_404,
+        409: {
+            "model": ErrorResponse,
+            "description": "The expected study version is stale.",
+        },
+    },
+)
+@decorators.validate_if_study_is_not_locked("study_uid")
+def post_study_control_pool(
+    study_uid: Annotated[str, studyUID],
+    record: Annotated[StudyControlPoolInput, Body()],
+) -> StudyControlPool:
+    return StudyControlPoolService().create_control_pool(study_uid, record)
+
+
+@router.put(
+    "/studies/{study_uid}/study-control-pools/{control_pool_uid}",
+    dependencies=[security, rbac.STUDY_WRITE],
+    summary="Replace a control pool in the current draft with a new revision",
+    description="Locked versions keep the revision they were locked with. "
+    + CONTROL_POOL_REFERENCE_NOTE,
+    status_code=200,
+    responses={
+        400: {"model": ErrorResponse, "description": "Invalid record or locked study."},
+        403: _generic_descriptions.ERROR_403,
+        404: _generic_descriptions.ERROR_404,
+        409: {
+            "model": ErrorResponse,
+            "description": "The expected study version is stale.",
+        },
+    },
+)
+@decorators.validate_if_study_is_not_locked("study_uid")
+def put_study_control_pool(
+    study_uid: Annotated[str, studyUID],
+    control_pool_uid: Annotated[str, Path()],
+    record: Annotated[StudyControlPoolInput, Body()],
+) -> StudyControlPool:
+    return StudyControlPoolService().update_control_pool(
+        study_uid, control_pool_uid, record
+    )
+
+
+@router.delete(
+    "/studies/{study_uid}/study-control-pools/{control_pool_uid}",
+    dependencies=[security, rbac.STUDY_WRITE],
+    summary="Remove a control pool from the current draft",
+    description="Locked versions keep their revision and its audit trail.",
+    status_code=204,
+    responses={
+        400: {"model": ErrorResponse, "description": "Locked study."},
+        403: _generic_descriptions.ERROR_403,
+        404: _generic_descriptions.ERROR_404,
+        409: {
+            "model": ErrorResponse,
+            "description": "The expected study version is stale.",
+        },
+    },
+)
+@decorators.validate_if_study_is_not_locked("study_uid")
+def delete_study_control_pool(
+    study_uid: Annotated[str, studyUID],
+    control_pool_uid: Annotated[str, Path()],
+    expected_study_version: Annotated[str, Query(min_length=1)],
+) -> None:
+    StudyControlPoolService().delete(
+        "control_pool", study_uid, control_pool_uid, expected_study_version
+    )
+
+
+@router.get(
+    "/studies/{study_uid}/study-adaptation-references",
+    dependencies=[security, rbac.STUDY_READ],
+    summary="List the authored adaptation references of an exact study version",
+    description=CONTROL_POOL_REFERENCE_NOTE,
+    status_code=200,
+    responses={
+        403: _generic_descriptions.ERROR_403,
+        404: _generic_descriptions.ERROR_404,
+    },
+)
+def get_study_adaptation_references(
+    study_uid: Annotated[str, studyUID],
+    study_value_version: Annotated[
+        str | None, _generic_descriptions.STUDY_VALUE_VERSION_QUERY
+    ] = None,
+) -> list[StudyAdaptationReference]:
+    return StudyControlPoolService().get_adaptation_references(
+        study_uid, study_value_version=study_value_version
+    )
+
+
+@router.post(
+    "/studies/{study_uid}/study-adaptation-references",
+    dependencies=[security, rbac.STUDY_WRITE],
+    summary="Author a adaptation reference in the current draft",
+    description=CONTROL_POOL_REFERENCE_NOTE,
+    status_code=201,
+    responses={
+        400: {"model": ErrorResponse, "description": "Invalid record or locked study."},
+        403: _generic_descriptions.ERROR_403,
+        404: _generic_descriptions.ERROR_404,
+        409: {
+            "model": ErrorResponse,
+            "description": "The expected study version is stale.",
+        },
+    },
+)
+@decorators.validate_if_study_is_not_locked("study_uid")
+def post_study_adaptation_reference(
+    study_uid: Annotated[str, studyUID],
+    record: Annotated[StudyAdaptationReferenceInput, Body()],
+) -> StudyAdaptationReference:
+    return StudyControlPoolService().create_adaptation_reference(study_uid, record)
+
+
+@router.put(
+    "/studies/{study_uid}/study-adaptation-references/{adaptation_reference_uid}",
+    dependencies=[security, rbac.STUDY_WRITE],
+    summary="Replace a adaptation reference in the current draft with a new revision",
+    description="Locked versions keep the revision they were locked with. "
+    + CONTROL_POOL_REFERENCE_NOTE,
+    status_code=200,
+    responses={
+        400: {"model": ErrorResponse, "description": "Invalid record or locked study."},
+        403: _generic_descriptions.ERROR_403,
+        404: _generic_descriptions.ERROR_404,
+        409: {
+            "model": ErrorResponse,
+            "description": "The expected study version is stale.",
+        },
+    },
+)
+@decorators.validate_if_study_is_not_locked("study_uid")
+def put_study_adaptation_reference(
+    study_uid: Annotated[str, studyUID],
+    adaptation_reference_uid: Annotated[str, Path()],
+    record: Annotated[StudyAdaptationReferenceInput, Body()],
+) -> StudyAdaptationReference:
+    return StudyControlPoolService().update_adaptation_reference(
+        study_uid, adaptation_reference_uid, record
+    )
+
+
+@router.delete(
+    "/studies/{study_uid}/study-adaptation-references/{adaptation_reference_uid}",
+    dependencies=[security, rbac.STUDY_WRITE],
+    summary="Remove a adaptation reference from the current draft",
+    description="Locked versions keep their revision and its audit trail.",
+    status_code=204,
+    responses={
+        400: {"model": ErrorResponse, "description": "Locked study."},
+        403: _generic_descriptions.ERROR_403,
+        404: _generic_descriptions.ERROR_404,
+        409: {
+            "model": ErrorResponse,
+            "description": "The expected study version is stale.",
+        },
+    },
+)
+@decorators.validate_if_study_is_not_locked("study_uid")
+def delete_study_adaptation_reference(
+    study_uid: Annotated[str, studyUID],
+    adaptation_reference_uid: Annotated[str, Path()],
+    expected_study_version: Annotated[str, Query(min_length=1)],
+) -> None:
+    StudyControlPoolService().delete(
+        "adaptation_reference",
+        study_uid,
+        adaptation_reference_uid,
+        expected_study_version,
+    )
 
 
 @router.post(

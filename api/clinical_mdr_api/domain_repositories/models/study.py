@@ -25,12 +25,14 @@ from clinical_mdr_api.domain_repositories.models.study_selections import (
     StudyActivityInstruction,
     StudyActivitySchedule,
     StudyActivitySubGroup,
+    StudyAdaptationReference,
     StudyArm,
     StudyArmLifecycleEvent,
     StudyBranchArm,
     StudyCohort,
     StudyCompound,
     StudyCompoundDosing,
+    StudyControlPool,
     StudyCriteria,
     StudyDataSupplier,
     StudyDefinitionDocument,
@@ -63,6 +65,18 @@ class StudyValue(ClinicalMdrNode, AuditTrailMixin):
     has_study_arm_lifecycle_event = RelationshipTo(
         StudyArmLifecycleEvent,
         "HAS_STUDY_ARM_LIFECYCLE_EVENT",
+        model=ClinicalMdrRel,
+        cardinality=ZeroOrMore,
+    )
+    has_study_control_pool = RelationshipTo(
+        StudyControlPool,
+        "HAS_STUDY_CONTROL_POOL",
+        model=ClinicalMdrRel,
+        cardinality=ZeroOrMore,
+    )
+    has_study_adaptation_reference = RelationshipTo(
+        StudyAdaptationReference,
+        "HAS_STUDY_ADAPTATION_REFERENCE",
         model=ClinicalMdrRel,
         cardinality=ZeroOrMore,
     )

@@ -3,7 +3,7 @@
   "info": {
     "title": "OpenStudyBuilder API",
     "description": "\n## NOTICE\n\nThis license information is applicable to the swagger documentation of the clinical-mdr-api, that is the openapi.json.\n\n## License Terms (MIT)\n\nCopyright (C) 2025 Novo Nordisk A/S, Danish company registration no. 24256790\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\n\n## Licenses and Acknowledgements for Incorporated Software\n\nThis component contains software licensed under different licenses when compiled, please refer to the third-party-licenses.md file for further information and full license texts.\n\n## Authentication\n\nSupports OAuth2 [Authorization Code Flow](https://datatracker.ietf.org/doc/html/rfc6749#section-4.1),\nat paths described in the OpenID Connect Discovery metadata document (whose URL is defined by the `OAUTH_METADATA_URL` environment variable).\n\nMicrosoft Identity Platform documentation can be read \n([here](https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-auth-code-flow)).\n\nAuthentication can be turned off with `OAUTH_ENABLED=false` environment variable. \n\nWhen authentication is turned on, all requests to protected API endpoints must provide a valid bearer (JWT) token inside the `Authorization` http header. \n",
-    "version": "3.0.709"
+    "version": "3.0.710"
   },
   "paths": {
     "/": {
@@ -89996,6 +89996,732 @@
         }
       }
     },
+    "/studies/{study_uid}/study-control-pools": {
+      "get": {
+        "tags": [
+          "Study Selections"
+        ],
+        "summary": "List the authored control pools of an exact study version",
+        "description": "References pin a published CSL statistical fact and are never resolved, copied or verified by OSB. Nothing here allocates participants, sets a concurrency window or grants statistical or execution authority.",
+        "operationId": "get_study_control_pools_studies__study_uid__study_control_pools_get",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "study_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The unique id of the study.",
+              "title": "Study Uid"
+            },
+            "description": "The unique id of the study."
+          },
+          {
+            "name": "study_value_version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "If specified, study data with specified version is returned.\n\n    Only exact matches are considered. \n\n    E.g. 1, 2, 2.1, ...",
+              "title": "Study Value Version",
+              "type": "string",
+              "pattern": "^[0-9]+\\.?[0-9]*$"
+            },
+            "description": "If specified, study data with specified version is returned.\n\n    Only exact matches are considered. \n\n    E.g. 1, 2, 2.1, ..."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StudyControlPool"
+                  },
+                  "title": "Response Get Study Control Pools Studies  Study Uid  Study Control Pools Get"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Study Selections"
+        ],
+        "summary": "Author a control pool in the current draft",
+        "description": "References pin a published CSL statistical fact and are never resolved, copied or verified by OSB. Nothing here allocates participants, sets a concurrency window or grants statistical or execution authority.",
+        "operationId": "post_study_control_pool_studies__study_uid__study_control_pools_post",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "study_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The unique id of the study.",
+              "title": "Study Uid"
+            },
+            "description": "The unique id of the study."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudyControlPoolInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudyControlPool"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid record or locked study.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The expected study version is stale.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/studies/{study_uid}/study-control-pools/{control_pool_uid}": {
+      "put": {
+        "tags": [
+          "Study Selections"
+        ],
+        "summary": "Replace a control pool in the current draft with a new revision",
+        "description": "Locked versions keep the revision they were locked with. References pin a published CSL statistical fact and are never resolved, copied or verified by OSB. Nothing here allocates participants, sets a concurrency window or grants statistical or execution authority.",
+        "operationId": "put_study_control_pool_studies__study_uid__study_control_pools__control_pool_uid__put",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "study_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The unique id of the study.",
+              "title": "Study Uid"
+            },
+            "description": "The unique id of the study."
+          },
+          {
+            "name": "control_pool_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Control Pool Uid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudyControlPoolInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudyControlPool"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid record or locked study.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The expected study version is stale.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Study Selections"
+        ],
+        "summary": "Remove a control pool from the current draft",
+        "description": "Locked versions keep their revision and its audit trail.",
+        "operationId": "delete_study_control_pool_studies__study_uid__study_control_pools__control_pool_uid__delete",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "study_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The unique id of the study.",
+              "title": "Study Uid"
+            },
+            "description": "The unique id of the study."
+          },
+          {
+            "name": "control_pool_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Control Pool Uid"
+            }
+          },
+          {
+            "name": "expected_study_version",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "title": "Expected Study Version"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Locked study.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The expected study version is stale.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/studies/{study_uid}/study-adaptation-references": {
+      "get": {
+        "tags": [
+          "Study Selections"
+        ],
+        "summary": "List the authored adaptation references of an exact study version",
+        "description": "References pin a published CSL statistical fact and are never resolved, copied or verified by OSB. Nothing here allocates participants, sets a concurrency window or grants statistical or execution authority.",
+        "operationId": "get_study_adaptation_references_studies__study_uid__study_adaptation_references_get",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "study_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The unique id of the study.",
+              "title": "Study Uid"
+            },
+            "description": "The unique id of the study."
+          },
+          {
+            "name": "study_value_version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "If specified, study data with specified version is returned.\n\n    Only exact matches are considered. \n\n    E.g. 1, 2, 2.1, ...",
+              "title": "Study Value Version",
+              "type": "string",
+              "pattern": "^[0-9]+\\.?[0-9]*$"
+            },
+            "description": "If specified, study data with specified version is returned.\n\n    Only exact matches are considered. \n\n    E.g. 1, 2, 2.1, ..."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StudyAdaptationReference"
+                  },
+                  "title": "Response Get Study Adaptation References Studies  Study Uid  Study Adaptation References Get"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Study Selections"
+        ],
+        "summary": "Author a adaptation reference in the current draft",
+        "description": "References pin a published CSL statistical fact and are never resolved, copied or verified by OSB. Nothing here allocates participants, sets a concurrency window or grants statistical or execution authority.",
+        "operationId": "post_study_adaptation_reference_studies__study_uid__study_adaptation_references_post",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "study_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The unique id of the study.",
+              "title": "Study Uid"
+            },
+            "description": "The unique id of the study."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudyAdaptationReferenceInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudyAdaptationReference"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid record or locked study.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The expected study version is stale.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/studies/{study_uid}/study-adaptation-references/{adaptation_reference_uid}": {
+      "put": {
+        "tags": [
+          "Study Selections"
+        ],
+        "summary": "Replace a adaptation reference in the current draft with a new revision",
+        "description": "Locked versions keep the revision they were locked with. References pin a published CSL statistical fact and are never resolved, copied or verified by OSB. Nothing here allocates participants, sets a concurrency window or grants statistical or execution authority.",
+        "operationId": "put_study_adaptation_reference_studies__study_uid__study_adaptation_references__adaptation_reference_uid__put",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "study_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The unique id of the study.",
+              "title": "Study Uid"
+            },
+            "description": "The unique id of the study."
+          },
+          {
+            "name": "adaptation_reference_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Adaptation Reference Uid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudyAdaptationReferenceInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudyAdaptationReference"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid record or locked study.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The expected study version is stale.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Study Selections"
+        ],
+        "summary": "Remove a adaptation reference from the current draft",
+        "description": "Locked versions keep their revision and its audit trail.",
+        "operationId": "delete_study_adaptation_reference_studies__study_uid__study_adaptation_references__adaptation_reference_uid__delete",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "study_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The unique id of the study.",
+              "title": "Study Uid"
+            },
+            "description": "The unique id of the study."
+          },
+          {
+            "name": "adaptation_reference_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Adaptation Reference Uid"
+            }
+          },
+          {
+            "name": "expected_study_version",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "title": "Expected Study Version"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Locked study.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The expected study version is stale.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/studies/{study_uid}/regimens": {
       "post": {
         "tags": [
@@ -134954,6 +135680,55 @@
         ],
         "title": "CslPlanAssociationPins"
       },
+      "CslStatisticalReference": {
+        "properties": {
+          "publication_entity_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^\\S(.*\\S)?$",
+            "title": "Publication Entity Id"
+          },
+          "publication_hash": {
+            "type": "string",
+            "pattern": "^(sha256:)?[0-9a-f]{64}$",
+            "title": "Publication Hash"
+          },
+          "analysis_model_hash": {
+            "type": "string",
+            "pattern": "^(sha256:)?[0-9a-f]{64}$",
+            "title": "Analysis Model Hash"
+          },
+          "collection": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^\\S(.*\\S)?$",
+            "title": "Collection"
+          },
+          "entry_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^\\S(.*\\S)?$",
+            "title": "Entry Id"
+          },
+          "entry_hash": {
+            "type": "string",
+            "pattern": "^(sha256:)?[0-9a-f]{64}$",
+            "title": "Entry Hash"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "publication_entity_id",
+          "publication_hash",
+          "analysis_model_hash",
+          "collection",
+          "entry_id",
+          "entry_hash"
+        ],
+        "title": "CslStatisticalReference",
+        "description": "Pins of one entry of a published `csl-biometrics-publication`.\n\nFor a control pool the entry is a `controlPools` record of the\n`control-pool-report/1` carried by `csl-biometrics-analysis-model/4`."
+      },
       "CustomPage": {
         "properties": {
           "items": {
@@ -165364,6 +166139,164 @@
         "type": "object",
         "title": "StudyActivitySyncLatestVersionInput"
       },
+      "StudyAdaptationReference": {
+        "properties": {
+          "uid": {
+            "type": "string",
+            "title": "Uid"
+          },
+          "study_uid": {
+            "type": "string",
+            "title": "Study Uid"
+          },
+          "adaptation_type": {
+            "type": "string",
+            "title": "Adaptation Type"
+          },
+          "csl_reference": {
+            "$ref": "#/components/schemas/CslStatisticalReference"
+          },
+          "reference_verified_by_osb": {
+            "type": "boolean",
+            "title": "Reference Verified By Osb",
+            "default": false
+          },
+          "affected_arm_uids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Affected Arm Uids"
+          },
+          "affected_epoch_uids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Affected Epoch Uids"
+          },
+          "trigger_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trigger Reference"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start Date"
+          },
+          "author_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Username"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "uid",
+          "study_uid",
+          "adaptation_type",
+          "csl_reference",
+          "affected_arm_uids",
+          "affected_epoch_uids",
+          "trigger_reference",
+          "description",
+          "start_date",
+          "author_username"
+        ],
+        "title": "StudyAdaptationReference"
+      },
+      "StudyAdaptationReferenceInput": {
+        "properties": {
+          "expected_study_version": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Expected Study Version"
+          },
+          "adaptation_type": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Adaptation Type",
+            "description": "Authored label; no governed CT is inferred."
+          },
+          "csl_reference": {
+            "$ref": "#/components/schemas/CslStatisticalReference",
+            "description": "OSB records these pins and does not verify the referenced fact; CSL and Workbench own verification and statistical authority."
+          },
+          "affected_arm_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^\\S(.*\\S)?$"
+            },
+            "type": "array",
+            "title": "Affected Arm Uids"
+          },
+          "affected_epoch_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^\\S(.*\\S)?$"
+            },
+            "type": "array",
+            "title": "Affected Epoch Uids"
+          },
+          "trigger_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trigger Reference"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_study_version",
+          "adaptation_type",
+          "csl_reference"
+        ],
+        "title": "StudyAdaptationReferenceInput"
+      },
       "StudyAmendment": {
         "properties": {
           "amendment_type": {
@@ -166856,6 +167789,158 @@
           "study_element_uid"
         ],
         "title": "StudyCompoundDosingInput"
+      },
+      "StudyControlPool": {
+        "properties": {
+          "uid": {
+            "type": "string",
+            "title": "Uid"
+          },
+          "study_uid": {
+            "type": "string",
+            "title": "Study Uid"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "donor_arm_uids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Donor Arm Uids"
+          },
+          "focal_arm_uids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Focal Arm Uids"
+          },
+          "csl_reference": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CslStatisticalReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reference_verified_by_osb": {
+            "type": "boolean",
+            "title": "Reference Verified By Osb",
+            "default": false
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start Date"
+          },
+          "author_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Username"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "uid",
+          "study_uid",
+          "name",
+          "description",
+          "donor_arm_uids",
+          "focal_arm_uids",
+          "csl_reference",
+          "start_date",
+          "author_username"
+        ],
+        "title": "StudyControlPool"
+      },
+      "StudyControlPoolInput": {
+        "properties": {
+          "expected_study_version": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Expected Study Version"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "donor_arm_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^\\S(.*\\S)?$"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Donor Arm Uids"
+          },
+          "focal_arm_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^\\S(.*\\S)?$"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Focal Arm Uids"
+          },
+          "csl_reference": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CslStatisticalReference"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Exact control-pool-report/1 entry pins; null means not yet referenced. OSB records these pins and does not verify the referenced fact; CSL and Workbench own verification and statistical authority."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_study_version",
+          "name",
+          "donor_arm_uids",
+          "focal_arm_uids"
+        ],
+        "title": "StudyControlPoolInput"
       },
       "StudyCopyComponentEnum": {
         "type": "string",

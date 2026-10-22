@@ -434,6 +434,8 @@ class NativeStudySource:
             get_osb_study_design_cells=self.read("cells"),
             get_osb_study_arms=self.read("arms"),
             get_osb_arm_lifecycle_events=self.read("lifecycle_events"),
+            get_osb_study_control_pools=self.read("control_pools"),
+            get_osb_study_adaptation_references=self.read("adaptation_references"),
             get_osb_study_epochs=self.read("epochs"),
             get_osb_study_elements=self.read("elements"),
             get_osb_study_endpoints=self.read("endpoints"),

@@ -111,6 +111,41 @@ class StudyArmLifecycleEvent(StudySelection):
     )
 
 
+class StudyControlPool(StudySelection):
+    """Authored donor and focal arm membership; no statistical rule is stored."""
+
+    study_uid = StringProperty(required=True)
+    name = StringProperty(required=True)
+    description = StringProperty()
+    donor_arm_uids = ArrayProperty(StringProperty(), required=True)
+    focal_arm_uids = ArrayProperty(StringProperty(), required=True)
+    csl_reference_json = StringProperty()
+    study_value = RelationshipFrom(
+        STUDY_VALUE_CLASS_NAME,
+        "HAS_STUDY_CONTROL_POOL",
+        model=ClinicalMdrRel,
+        cardinality=ZeroOrMore,
+    )
+
+
+class StudyAdaptationReference(StudySelection):
+    """An authored adaptation pointing at an exact published CSL fact."""
+
+    study_uid = StringProperty(required=True)
+    adaptation_type = StringProperty(required=True)
+    description = StringProperty()
+    trigger_reference = StringProperty()
+    affected_arm_uids = ArrayProperty(StringProperty())
+    affected_epoch_uids = ArrayProperty(StringProperty())
+    csl_reference_json = StringProperty(required=True)
+    study_value = RelationshipFrom(
+        STUDY_VALUE_CLASS_NAME,
+        "HAS_STUDY_ADAPTATION_REFERENCE",
+        model=ClinicalMdrRel,
+        cardinality=ZeroOrMore,
+    )
+
+
 class StudyDataSupplier(StudySelection):
     blinded = BooleanProperty()
     study_value = RelationshipFrom(
@@ -895,6 +930,8 @@ class StudyDefinitionDocument(StudySelection):
 STUDY_SELECTION_CONCRETE_LABELS: frozenset[str] = frozenset(
     {
         "StudyDataSupplier",
+        "StudyControlPool",
+        "StudyAdaptationReference",
         "StudyObjective",
         "StudyEndpoint",
         "StudyCompound",

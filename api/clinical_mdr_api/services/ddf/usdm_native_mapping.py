@@ -91,6 +91,7 @@ class NativeStudyMapping:
                 design.extensionAttributes.append(self.extension(kind, uid, row))
         self._cohorts_and_branches(study, design)
         self._arm_lifecycle(design)
+        self._control_pools_and_adaptations(design)
         self._activities(study, design, version)
         self._footnotes(design, version)
         from clinical_mdr_api.services.ddf.usdm_cell_transitions import (
@@ -232,6 +233,17 @@ class NativeStudyMapping:
             targets[0].extensionAttributes.append(
                 self.extension("studyArmLifecycleEvent", record["uid"], record)
             )
+
+    def _control_pools_and_adaptations(self, design) -> None:
+        """Descriptive records only: USDM 4.0 has no control pool class.
+
+        Each extension says it is not executable. The CSL pins are retained as
+        authored; their facts are not resolved, copied or verified here.
+        """
+        for kind in ("studyControlPool", "studyAdaptationReference"):
+            for row in self.rows.get(kind, []):
+                record = {**native_json(row), "nativeExecutable": False}
+                design.extensionAttributes.append(self.extension(kind, row.uid, record))
 
     def _cohorts_and_branches(self, study, design) -> None:
         arms = {

@@ -1706,14 +1706,17 @@
       "cslObjectType": "ControlPool",
       "profile": "protocol-statistics",
       "dataPlane": "global-definition",
-      "osbClasses": [],
+      "osbClasses": [
+        "StudyControlPool"
+      ],
       "osbResourceTypes": [],
       "ilAssertionTypes": [],
-      "correspondence": "none",
+      "correspondence": "narrower",
       "standardsBasis": [
-        "Platform master protocol and regimen statistical analysis plan"
+        "Platform master protocol and regimen statistical analysis plan",
+        "OSB:StudyControlPool (authored membership only)"
       ],
-      "note": "Analysis domain; OSB has none yet. OSB lane O7 plans a thin StudyControlPool reference to the published CSL definition."
+      "note": "OSB O7 authors a pool's donor and focal arm membership with optional pins of one control-pool-report/1 entry; the CSL definition also states concurrency, eligibility subsetting, dose grouping and re-entry. Neither side computes participant membership."
     },
     {
       "cslObjectType": "AnalysisOutput",
@@ -1728,6 +1731,34 @@
         "Define-XML"
       ],
       "note": "Analysis domain; OSB has none."
+    },
+    {
+      "cslObjectType": "ArmLifecycleEvent",
+      "profile": "operations",
+      "dataPlane": "external-system",
+      "osbClasses": [],
+      "osbResourceTypes": [],
+      "ilAssertionTypes": [],
+      "correspondence": "none",
+      "standardsBasis": [
+        "EDC acc_arm_lifecycle_event (edc-operations/1)",
+        "Platform master protocol arm adaptation"
+      ],
+      "note": "Executed platform operations retained from the EDC operations stream (edc-operations/1); OpenStudyBuilder authors arm lifecycle as a design description only, never an executed decision or scheme."
+    },
+    {
+      "cslObjectType": "RandomizationScheme",
+      "profile": "operations",
+      "dataPlane": "external-system",
+      "osbClasses": [],
+      "osbResourceTypes": [],
+      "ilAssertionTypes": [],
+      "correspondence": "none",
+      "standardsBasis": [
+        "EDC acc_randomization_ratio_history (edc-operations/1)",
+        "RTSM allocation ratio history"
+      ],
+      "note": "Executed platform operations retained from the EDC operations stream (edc-operations/1); OpenStudyBuilder authors arm lifecycle as a design description only, never an executed decision or scheme."
     },
     {
       "cslObjectType": "SourceSystem",
@@ -3488,13 +3519,22 @@
       "note": ""
     },
     {
+      "osbClass": "StudyAdaptationReference",
+      "file": "study_selections.py",
+      "base": "StudySelection",
+      "cslObjectType": null,
+      "cslLinkType": null,
+      "correspondence": "none",
+      "note": "An authored adaptation type with affected arms and epochs and required pins of one CSL biometrics publication entry (OSB O7). A reference to a published CSL analysis, not a CSL object; executed adaptations are EDC ArmLifecycleEvent and RandomizationScheme records (C7)."
+    },
+    {
       "osbClass": "StudyArmLifecycleEvent",
       "file": "study_selections.py",
       "base": "StudySelection",
       "cslObjectType": null,
       "cslLinkType": null,
       "correspondence": "none",
-      "note": "Authored arm and branch arm lifecycle design records (OSB O2, 1033700b). CSL registers no ArmLifecycleEvent until lane item C7, which waits on the executed EDC operations stream (E12); an authored event is a design record, not an executed decision."
+      "note": "Authored arm and branch arm lifecycle design records (OSB O2, 1033700b). CSL ArmLifecycleEvent (C7) is an executed EDC decision from the operations stream; an authored event is a design record and never stands in for one, so there is no counterpart."
     },
     {
       "osbClass": "StudyArrayField",
@@ -3531,6 +3571,15 @@
       "cslLinkType": null,
       "correspondence": "exact",
       "note": ""
+    },
+    {
+      "osbClass": "StudyControlPool",
+      "file": "study_selections.py",
+      "base": "StudySelection",
+      "cslObjectType": "ControlPool",
+      "cslLinkType": null,
+      "correspondence": "narrower",
+      "note": "Authored donor and focal arm membership of a shared control pool, with optional pins of one controlPools entry of control-pool-report/1 (OSB O7). It stores no statistical rule; the CSL ControlPool definition carries those."
     },
     {
       "osbClass": "StudyCompound",
@@ -5719,7 +5768,7 @@
       ],
       "correspondence": "none",
       "target": null,
-      "note": "Study version membership of an authored arm lifecycle event; CSL registers none until C7."
+      "note": "Study version membership of an authored arm lifecycle event; CSL registers no authored lifecycle event; C7 ArmLifecycleEvent records executed EDC decisions."
     },
     {
       "type": "HAS_STUDY_BRANCH_ARM",
@@ -5740,6 +5789,26 @@
       "correspondence": "link",
       "target": "hasCohort",
       "note": ""
+    },
+    {
+      "type": "HAS_STUDY_CONTROL_POOL",
+      "declaredOn": [
+        "StudyControlPool:from:StudyValue",
+        "StudyValue:to:StudyControlPool"
+      ],
+      "correspondence": "scope",
+      "target": null,
+      "note": "Study version membership of an authored control pool; the CSL ControlPool is a study-scoped definition."
+    },
+    {
+      "type": "HAS_STUDY_ADAPTATION_REFERENCE",
+      "declaredOn": [
+        "StudyAdaptationReference:from:StudyValue",
+        "StudyValue:to:StudyAdaptationReference"
+      ],
+      "correspondence": "none",
+      "target": null,
+      "note": "Study version membership of an authored adaptation reference; CSL registers no such object."
     },
     {
       "type": "HAS_STUDY_COMPOUND",
@@ -7064,7 +7133,7 @@
       ],
       "correspondence": "none",
       "target": null,
-      "note": "An authored lifecycle event of an arm; CSL registers none until C7."
+      "note": "An authored lifecycle event of an arm; CSL registers no authored lifecycle event; C7 ArmLifecycleEvent records executed EDC decisions."
     },
     {
       "type": "STUDY_BRANCH_ARM_HAS_COHORT",
@@ -7376,5 +7445,5 @@
       "note": "Domain audit export bundle; no CSL table."
     }
   ],
-  "mapHash": "sha256:175293f17757c096a623bb67166a4b5f06689d6f11a2a87acb2aafeb8ad6b907"
+  "mapHash": "sha256:ca287568753abd5a60503ff17bc02eff4bffd53a3b8c8102314a30449f59ee6d"
 }

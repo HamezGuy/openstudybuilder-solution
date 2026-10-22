@@ -2179,6 +2179,30 @@ ALL_ROUTES_METHODS_ROLES = (  # type: ignore[var-annotated]
     ("/studies/{study_uid}/study-arms/{study_arm_uid}", "DELETE", {"Study.Write"}),
     ("/studies/{study_uid}/study-arms/batch", "POST", {"Study.Write"}),
     ("/studies/{study_uid}/regimens", "POST", {"Study.Write"}),
+    ("/studies/{study_uid}/study-control-pools", "GET", {"Study.Read"}),
+    ("/studies/{study_uid}/study-control-pools", "POST", {"Study.Write"}),
+    (
+        "/studies/{study_uid}/study-control-pools/{control_pool_uid}",
+        "PUT",
+        {"Study.Write"},
+    ),
+    (
+        "/studies/{study_uid}/study-control-pools/{control_pool_uid}",
+        "DELETE",
+        {"Study.Write"},
+    ),
+    ("/studies/{study_uid}/study-adaptation-references", "GET", {"Study.Read"}),
+    ("/studies/{study_uid}/study-adaptation-references", "POST", {"Study.Write"}),
+    (
+        "/studies/{study_uid}/study-adaptation-references/{adaptation_reference_uid}",
+        "PUT",
+        {"Study.Write"},
+    ),
+    (
+        "/studies/{study_uid}/study-adaptation-references/{adaptation_reference_uid}",
+        "DELETE",
+        {"Study.Write"},
+    ),
     (
         "/studies/{study_uid}/study-arms/copy-from-study/{study_source_uid}",
         "POST",

@@ -14,6 +14,15 @@ SCOPED_SELECTION_RELATIONS = (
     "HAS_STUDY_OBJECTIVE",
     "HAS_STUDY_CRITERIA",
 )
+RECORD_RELATIONS = ("HAS_STUDY_CONTROL_POOL", "HAS_STUDY_ADAPTATION_REFERENCE")
+RECORD_TARGET_PROPERTIES = {
+    "applies_to_arm_uids": (
+        "donor_arm_uids",
+        "focal_arm_uids",
+        "affected_arm_uids",
+    ),
+    "applies_to_epoch_uids": ("affected_epoch_uids",),
+}
 
 
 class StudySelectionScopeRepository:
@@ -60,7 +69,26 @@ class StudySelectionScopeRepository:
             """,
             {"study_uid": study_uid, "target_uid": target_uid, "field": field},
         )
-        return [row[0] for row in rows]
+        references = [row[0] for row in rows]
+        # O7 control pools and adaptation references name arms and epochs too.
+        properties = RECORD_TARGET_PROPERTIES.get(field, ())
+        if properties:
+            rows, _ = db.cypher_query(
+                f"""
+                MATCH (:StudyRoot {{uid:$study_uid}})-[:LATEST]->(:StudyValue)
+                    -[:{'|'.join(RECORD_RELATIONS)}]->(record:StudySelection)
+                WHERE any(name IN $properties
+                    WHERE $target_uid IN coalesce(record[name], []))
+                RETURN DISTINCT record.uid ORDER BY record.uid
+                """,
+                {
+                    "study_uid": study_uid,
+                    "target_uid": target_uid,
+                    "properties": list(properties),
+                },
+            )
+            references.extend(row[0] for row in rows)
+        return references
 
     @classmethod
     def refuse_referenced_target(
@@ -70,7 +98,7 @@ class StudySelectionScopeRepository:
         references = cls.current_references(study_uid, field, target_uid)
         BusinessLogicException.raise_if(
             bool(references),
-            msg=f"'{target_uid}' is the authored scope of study selections "
+            msg=f"'{target_uid}' is named by the authored scope of study selections "
             + ", ".join(references)
             + ". Clear or change that scope first.",
         )
