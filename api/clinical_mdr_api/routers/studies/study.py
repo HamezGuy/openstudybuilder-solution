@@ -68,6 +68,7 @@ from clinical_mdr_api.models.study_selections.study_selection import (
     StudySelectionCompoundEditInput,
     StudySelectionCompoundNewOrder,
     StudySelectionCriteria,
+    StudySelectionCriteriaApplicabilityInput,
     StudySelectionCriteriaCore,
     StudySelectionCriteriaCreateInput,
     StudySelectionCriteriaInput,
@@ -3203,6 +3204,41 @@ def patch_criteria_selection_key_criteria_property(
         study_uid=study_uid,
         study_selection_uid=study_criteria_uid,
         key_criteria=key_criteria_input.key_criteria,
+    )
+
+
+@router.patch(
+    "/studies/{study_uid}/study-criteria/{study_criteria_uid}/applicability",
+    dependencies=[security, rbac.STUDY_WRITE],
+    summary="Change the authored arm, cohort and epoch scope of a study criteria",
+    description="An omitted dimension keeps its value, [] clears it and null is refused. "
+    "Scope targets must be selections of the current draft. Several populated "
+    "dimensions are retained with their combination not stated. The reusable "
+    "library criteria is not changed.",
+    response_model_exclude_unset=True,
+    status_code=200,
+    responses={
+        400: {
+            "model": ErrorResponse,
+            "description": "A scope target is not selected in this study, or the study is locked.",
+        },
+        403: _generic_descriptions.ERROR_403,
+        404: _generic_descriptions.ERROR_404,
+    },
+)
+@decorators.validate_if_study_is_not_locked("study_uid")
+def patch_criteria_selection_applicability(
+    study_uid: Annotated[str, studyUID],
+    study_criteria_uid: Annotated[str, study_criteria_uid_path],
+    applicability: Annotated[
+        StudySelectionCriteriaApplicabilityInput,
+        Body(description="The scope dimensions to change."),
+    ],
+) -> StudySelectionCriteria:
+    return StudyCriteriaSelectionService().set_applicability(
+        study_uid=study_uid,
+        study_selection_uid=study_criteria_uid,
+        applicability=applicability,
     )
 
 

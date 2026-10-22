@@ -7,6 +7,9 @@ from neomodel import db
 from clinical_mdr_api.domain_repositories.study_selections.study_cohort_repository import (
     SelectionHistoryCohort,
 )
+from clinical_mdr_api.domain_repositories.study_selections.study_selection_scope_repository import (
+    StudySelectionScopeRepository,
+)
 from clinical_mdr_api.domains.study_selections.study_selection_cohort import (
     StudySelectionCohortAR,
     StudySelectionCohortVO,
@@ -172,6 +175,10 @@ class StudyCohortSelectionService(StudySelectionMixin):
     ):
         repos = self._repos
         try:
+            self._lock_mutable_study(study_uid)
+            StudySelectionScopeRepository.refuse_referenced_target(
+                study_uid, "applies_to_cohort_uids", study_selection_uid
+            )
             branch_arms_on_cohort = (
                 repos.study_branch_arm_repository.get_branch_arms_connected_to_cohort(
                     study_uid=study_uid, study_cohort_uid=study_selection_uid

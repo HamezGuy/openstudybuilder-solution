@@ -6,10 +6,10 @@
 
 {% macro criteria(rows, category) -%}
 <section id="m11-criteria-{{ category }}" data-m11-section="{{ '5.2' if category == 'inclusion' else '5.3' if category == 'exclusion' else '5-unclassified' }}">
-<p class="source-note">Selected study-level criteria. The native criteria model does not specify arm restrictions; no arm applicability is inferred.</p>
+<p class="source-note">Selected criteria with their authored arm, cohort and epoch scope. An empty scope records no authored restriction; no applicability beyond the authored scope is inferred, and several scope dimensions are shown without a stated combination.</p>
 {% for row in rows %}<article class="source-record" data-source-uid="{{ row.uid }}" data-canonical-id="{{ row.id }}" data-source-order="{{ row.order }}">
 <p><strong>Source order {{ row.order }} — {{ row.uid }}</strong><br>{{ row.text }}</p>
-<small>Selected criterion {{ row.definition_uid }} @ {{ row.source_version }}; key criterion: {{ row.key }}; category: {{ row.category }}.</small>
+<small>Selected criterion {{ row.definition_uid }} @ {{ row.source_version }}; key criterion: {{ row.key }}; category: {{ row.category }}; authored scope: {{ row.scope }}.</small>
 {% if row.template_only %}<p>Only a template is selected. An instantiated criterion is not available.</p>{% endif %}
 </article>{% else %}<p>Not available in the selected source. No eligibility decision can be inferred.</p>{% endfor %}
 </section>

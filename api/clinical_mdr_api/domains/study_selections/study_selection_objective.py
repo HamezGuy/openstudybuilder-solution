@@ -2,6 +2,9 @@ import datetime
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Iterable, Self
 
+from clinical_mdr_api.domains.study_selections.study_selection_scope import (
+    StudySelectionScopeVO,
+)
 from clinical_mdr_api.services.user_info import UserInfoService
 from clinical_mdr_api.utils import normalize_string
 from common import exceptions
@@ -26,6 +29,8 @@ class StudySelectionObjectiveVO:
     author_id: str
     author_username: str | None = None
     accepted_version: bool = False
+    # Authored arm, cohort and epoch applicability; empty means not authored.
+    scope: StudySelectionScopeVO = field(default_factory=StudySelectionScopeVO)
 
     @classmethod
     def from_input_values(
@@ -41,6 +46,7 @@ class StudySelectionObjectiveVO:
         start_date: datetime.datetime | None = None,
         generate_uid_callback: Callable[[], str] = lambda: "",
         accepted_version: bool = False,
+        scope: StudySelectionScopeVO | None = None,
     ):
         if not objective_level_order:
             objective_level_order = 0
@@ -63,6 +69,7 @@ class StudySelectionObjectiveVO:
             author_id=normalize_string(author_id),
             author_username=UserInfoService.get_author_username_from_id(author_id),
             accepted_version=accepted_version,
+            scope=scope if scope is not None else StudySelectionScopeVO(),
         )
 
     def validate(
@@ -192,14 +199,13 @@ class StudySelectionObjectivesAR:
         selected_value, old_order = self.get_specific_objective_selection(
             study_selection_uid
         )
-        # We have to reset the selected value so it can be set to edit in the domain
-        selected_value = StudySelectionObjectiveVO.from_input_values(
-            objective_uid=selected_value.objective_uid,
-            objective_level_uid=selected_value.objective_level_uid,
-            author_id=author_id,
-            study_selection_uid=selected_value.study_selection_uid,
-            objective_level_order=selected_value.objective_level_order,
-            objective_version=selected_value.objective_version,
+        # A reorder is a new revision by this author. Every authored field,
+        # including template identity, version acceptance and scope, stays.
+        selected_value = replace(
+            selected_value,
+            author_id=normalize_string(author_id),
+            author_username=UserInfoService.get_author_username_from_id(author_id),
+            start_date=datetime.datetime.now(datetime.timezone.utc),
         )
         # change the order
         updated_selections: list[Any] = []
@@ -305,8 +311,9 @@ class StudySelectionObjectivesAR:
     def validate(self):
         objectives = []
         for selection in self.study_objectives_selection:
+            identity = (selection.objective_uid, selection.scope.identity())
             exceptions.AlreadyExistsException.raise_if(
-                selection.objective_uid in objectives,
-                msg=f"There is already a study selection to the Objective with UID '{selection.objective_uid}'.",
+                identity in objectives,
+                msg=f"There is already a study selection to the Objective with UID '{selection.objective_uid}' and the same scope.",
             )
-            objectives.append(selection.objective_uid)
+            objectives.append(identity)

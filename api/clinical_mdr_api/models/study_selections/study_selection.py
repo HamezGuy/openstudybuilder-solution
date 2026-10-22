@@ -180,6 +180,19 @@ from common.config import settings
 from common.exceptions import BusinessLogicException
 from common.utils import version_string_to_tuple
 
+ScopeTargetUid = Annotated[str, Field(min_length=1)]
+
+
+def applies_to_field(target: str) -> Any:
+    """A fresh field per model: empty means no authored scope, not every target."""
+    return Field(
+        default_factory=list,
+        description=f"Authored applicability to exact native study {target} UIDs. "
+        "Several populated dimensions are retained with their combination not "
+        "stated; an empty list records no authored scope in that dimension.",
+    )
+
+
 STUDY_UID_DESC = "The uid of the study"
 STUDY_ACTIVITY_UID_DESC = "uid for the study activity"
 STUDY_ACTIVITY_INSTANCE_UID_DESC = "uid for the study activity instance"
@@ -427,6 +440,9 @@ class StudySelectionObjectiveCore(StudySelection):
     status: Annotated[str | None, STATUS_FIELD] = None
 
     change_type: Annotated[str | None, CHANGE_TYPE_FIELD] = None
+    applies_to_arm_uids: list[ScopeTargetUid] = applies_to_field("arm")
+    applies_to_cohort_uids: list[ScopeTargetUid] = applies_to_field("cohort")
+    applies_to_epoch_uids: list[ScopeTargetUid] = applies_to_field("epoch")
 
     @classmethod
     def from_study_selection_history(
@@ -466,6 +482,13 @@ class StudySelectionObjectiveCore(StudySelection):
             status=study_selection_history.status,
             change_type=study_selection_history.change_type,
             author_username=study_selection_history.author_username,
+            applies_to_arm_uids=list(study_selection_history.scope.applies_to_arm_uids),
+            applies_to_cohort_uids=list(
+                study_selection_history.scope.applies_to_cohort_uids
+            ),
+            applies_to_epoch_uids=list(
+                study_selection_history.scope.applies_to_epoch_uids
+            ),
         )
 
 
@@ -550,6 +573,13 @@ class StudySelectionObjective(StudySelectionObjectiveCore):
             author_username=single_study_selection.author_username,
             project_name=project.name,
             project_number=project.project_number,
+            applies_to_arm_uids=list(single_study_selection.scope.applies_to_arm_uids),
+            applies_to_cohort_uids=list(
+                single_study_selection.scope.applies_to_cohort_uids
+            ),
+            applies_to_epoch_uids=list(
+                single_study_selection.scope.applies_to_epoch_uids
+            ),
         )
 
     @classmethod
@@ -632,6 +662,13 @@ class StudySelectionObjective(StudySelectionObjectiveCore):
             author_username=single_study_selection.author_username,
             project_name=project.name,
             project_number=project.project_number,
+            applies_to_arm_uids=list(single_study_selection.scope.applies_to_arm_uids),
+            applies_to_cohort_uids=list(
+                single_study_selection.scope.applies_to_cohort_uids
+            ),
+            applies_to_epoch_uids=list(
+                single_study_selection.scope.applies_to_epoch_uids
+            ),
         )
 
 
@@ -643,6 +680,9 @@ class StudySelectionObjectiveCreateInput(PostInputModel):
         ObjectiveCreateInput,
         Field(description="Objective data to create new objective"),
     ]
+    applies_to_arm_uids: list[ScopeTargetUid] = applies_to_field("arm")
+    applies_to_cohort_uids: list[ScopeTargetUid] = applies_to_field("cohort")
+    applies_to_epoch_uids: list[ScopeTargetUid] = applies_to_field("epoch")
 
 
 class StudySelectionObjectiveInput(InputModel):
@@ -653,6 +693,9 @@ class StudySelectionObjectiveInput(InputModel):
     objective_level_uid: Annotated[
         str | None, Field(description=OBJECTIVE_LEVEL_DESC)
     ] = None
+    applies_to_arm_uids: list[ScopeTargetUid] = applies_to_field("arm")
+    applies_to_cohort_uids: list[ScopeTargetUid] = applies_to_field("cohort")
+    applies_to_epoch_uids: list[ScopeTargetUid] = applies_to_field("epoch")
 
 
 class StudySelectionObjectiveTemplateSelectInput(PostInputModel):
@@ -675,6 +718,9 @@ class StudySelectionObjectiveTemplateSelectInput(PostInputModel):
             "If not specified: The library of the objective template will be used.",
         ),
     ] = None
+    applies_to_arm_uids: list[ScopeTargetUid] = applies_to_field("arm")
+    applies_to_cohort_uids: list[ScopeTargetUid] = applies_to_field("cohort")
+    applies_to_epoch_uids: list[ScopeTargetUid] = applies_to_field("epoch")
 
 
 class StudySelectionObjectiveNewOrder(PatchInputModel):
@@ -809,6 +855,9 @@ class StudySelectionEndpoint(StudySelection):
             json_schema_extra={"nullable": True},
         ),
     ] = None
+    applies_to_arm_uids: list[ScopeTargetUid] = applies_to_field("arm")
+    applies_to_cohort_uids: list[ScopeTargetUid] = applies_to_field("cohort")
+    applies_to_epoch_uids: list[ScopeTargetUid] = applies_to_field("epoch")
 
     @classmethod
     def from_study_selection_endpoint_template_ar_and_order(
@@ -869,6 +918,13 @@ class StudySelectionEndpoint(StudySelection):
             author_username=single_study_selection.author_username,
             project_name=project.name,
             project_number=project.project_number,
+            applies_to_arm_uids=list(single_study_selection.scope.applies_to_arm_uids),
+            applies_to_cohort_uids=list(
+                single_study_selection.scope.applies_to_cohort_uids
+            ),
+            applies_to_epoch_uids=list(
+                single_study_selection.scope.applies_to_epoch_uids
+            ),
         )
 
     @classmethod
@@ -991,6 +1047,9 @@ class StudySelectionEndpoint(StudySelection):
             author_username=study_selection.author_username,
             project_name=project.name,
             project_number=project.project_number,
+            applies_to_arm_uids=list(study_selection.scope.applies_to_arm_uids),
+            applies_to_cohort_uids=list(study_selection.scope.applies_to_cohort_uids),
+            applies_to_epoch_uids=list(study_selection.scope.applies_to_epoch_uids),
             **model,  # type: ignore[arg-type]
         )
 
@@ -1080,6 +1139,13 @@ class StudySelectionEndpoint(StudySelection):
             status=study_selection_history.status,
             change_type=study_selection_history.change_type,
             order=study_selection_history.order,
+            applies_to_arm_uids=list(study_selection_history.scope.applies_to_arm_uids),
+            applies_to_cohort_uids=list(
+                study_selection_history.scope.applies_to_cohort_uids
+            ),
+            applies_to_epoch_uids=list(
+                study_selection_history.scope.applies_to_epoch_uids
+            ),
         )
 
 
@@ -1101,6 +1167,9 @@ class StudySelectionEndpointCreateInput(PostInputModel):
     timeframe_uid: Annotated[str | None, Field(description="uid for a timeframe")] = (
         None
     )
+    applies_to_arm_uids: list[ScopeTargetUid] = applies_to_field("arm")
+    applies_to_cohort_uids: list[ScopeTargetUid] = applies_to_field("cohort")
+    applies_to_epoch_uids: list[ScopeTargetUid] = applies_to_field("epoch")
 
 
 class StudySelectionEndpointInput(PatchInputModel):
@@ -1130,6 +1199,9 @@ class StudySelectionEndpointInput(PatchInputModel):
             description="hold the units used in the study endpoint",
         ),
     ] = None
+    applies_to_arm_uids: list[ScopeTargetUid] = applies_to_field("arm")
+    applies_to_cohort_uids: list[ScopeTargetUid] = applies_to_field("cohort")
+    applies_to_epoch_uids: list[ScopeTargetUid] = applies_to_field("epoch")
 
 
 class StudySelectionEndpointTemplateSelectInput(PostInputModel):
@@ -1153,6 +1225,9 @@ class StudySelectionEndpointTemplateSelectInput(PostInputModel):
             "If not specified: The library of the endpoint template will be used.",
         ),
     ] = None
+    applies_to_arm_uids: list[ScopeTargetUid] = applies_to_field("arm")
+    applies_to_cohort_uids: list[ScopeTargetUid] = applies_to_field("cohort")
+    applies_to_epoch_uids: list[ScopeTargetUid] = applies_to_field("epoch")
 
 
 class StudySelectionEndpointNewOrder(PatchInputModel):
@@ -1554,6 +1629,9 @@ class StudySelectionCriteriaCore(StudySelection):
     status: Annotated[str | None, STATUS_FIELD] = None
 
     change_type: Annotated[str | None, CHANGE_TYPE_FIELD] = None
+    applies_to_arm_uids: list[ScopeTargetUid] = applies_to_field("arm")
+    applies_to_cohort_uids: list[ScopeTargetUid] = applies_to_field("cohort")
+    applies_to_epoch_uids: list[ScopeTargetUid] = applies_to_field("epoch")
     key_criteria: Annotated[
         bool | None, Field(json_schema_extra={"nullable": True})
     ] = False
@@ -1583,6 +1661,13 @@ class StudySelectionCriteriaCore(StudySelection):
                 study_selection_history.author_id
             ),
             key_criteria=study_selection_history.key_criteria,
+            applies_to_arm_uids=list(study_selection_history.scope.applies_to_arm_uids),
+            applies_to_cohort_uids=list(
+                study_selection_history.scope.applies_to_cohort_uids
+            ),
+            applies_to_epoch_uids=list(
+                study_selection_history.scope.applies_to_epoch_uids
+            ),
         )
 
     @classmethod
@@ -1608,6 +1693,13 @@ class StudySelectionCriteriaCore(StudySelection):
                 study_selection_history.author_id
             ),
             key_criteria=study_selection_history.key_criteria,
+            applies_to_arm_uids=list(study_selection_history.scope.applies_to_arm_uids),
+            applies_to_cohort_uids=list(
+                study_selection_history.scope.applies_to_cohort_uids
+            ),
+            applies_to_epoch_uids=list(
+                study_selection_history.scope.applies_to_epoch_uids
+            ),
         )
 
 
@@ -1710,6 +1802,13 @@ class StudySelectionCriteria(StudySelectionCriteriaCore):
             project_name=project.name,
             project_number=project.project_number,
             key_criteria=single_study_selection.key_criteria,
+            applies_to_arm_uids=list(single_study_selection.scope.applies_to_arm_uids),
+            applies_to_cohort_uids=list(
+                single_study_selection.scope.applies_to_cohort_uids
+            ),
+            applies_to_epoch_uids=list(
+                single_study_selection.scope.applies_to_epoch_uids
+            ),
         )
 
     @classmethod
@@ -1789,6 +1888,13 @@ class StudySelectionCriteria(StudySelectionCriteriaCore):
             project_name=project.name,
             project_number=project.project_number,
             key_criteria=single_study_selection.key_criteria,
+            applies_to_arm_uids=list(single_study_selection.scope.applies_to_arm_uids),
+            applies_to_cohort_uids=list(
+                single_study_selection.scope.applies_to_cohort_uids
+            ),
+            applies_to_epoch_uids=list(
+                single_study_selection.scope.applies_to_epoch_uids
+            ),
         )
 
     @classmethod
@@ -1857,6 +1963,15 @@ class StudySelectionCriteria(StudySelectionCriteriaCore):
             project_name=project.name,
             project_number=project.project_number,
             key_criteria=study_selection_criteria_vo.key_criteria,
+            applies_to_arm_uids=list(
+                study_selection_criteria_vo.scope.applies_to_arm_uids
+            ),
+            applies_to_cohort_uids=list(
+                study_selection_criteria_vo.scope.applies_to_cohort_uids
+            ),
+            applies_to_epoch_uids=list(
+                study_selection_criteria_vo.scope.applies_to_epoch_uids
+            ),
         )
 
     @classmethod
@@ -1927,6 +2042,15 @@ class StudySelectionCriteria(StudySelectionCriteriaCore):
             project_name=project.name,
             project_number=project.project_number,
             key_criteria=study_selection_criteria_vo.key_criteria,
+            applies_to_arm_uids=list(
+                study_selection_criteria_vo.scope.applies_to_arm_uids
+            ),
+            applies_to_cohort_uids=list(
+                study_selection_criteria_vo.scope.applies_to_cohort_uids
+            ),
+            applies_to_epoch_uids=list(
+                study_selection_criteria_vo.scope.applies_to_epoch_uids
+            ),
         )
 
 
@@ -1935,10 +2059,16 @@ class StudySelectionCriteriaCreateInput(PostInputModel):
         CriteriaCreateInput,
         Field(description="Criteria data to create new criteria"),
     ]
+    applies_to_arm_uids: list[ScopeTargetUid] = applies_to_field("arm")
+    applies_to_cohort_uids: list[ScopeTargetUid] = applies_to_field("cohort")
+    applies_to_epoch_uids: list[ScopeTargetUid] = applies_to_field("epoch")
 
 
 class StudySelectionCriteriaInput(PostInputModel):
     criteria_uid: Annotated[str, Field()]
+    applies_to_arm_uids: list[ScopeTargetUid] = applies_to_field("arm")
+    applies_to_cohort_uids: list[ScopeTargetUid] = applies_to_field("cohort")
+    applies_to_epoch_uids: list[ScopeTargetUid] = applies_to_field("epoch")
 
 
 class StudySelectionCriteriaTemplateSelectInput(PostInputModel):
@@ -1961,6 +2091,22 @@ class StudySelectionCriteriaTemplateSelectInput(PostInputModel):
             "If not specified: The library of the criteria template will be used.",
         ),
     ]
+    applies_to_arm_uids: list[ScopeTargetUid] = applies_to_field("arm")
+    applies_to_cohort_uids: list[ScopeTargetUid] = applies_to_field("cohort")
+    applies_to_epoch_uids: list[ScopeTargetUid] = applies_to_field("epoch")
+
+
+class StudySelectionCriteriaApplicabilityInput(PatchInputModel):
+    """Selection-specific scope edit; the reusable library criteria is untouched.
+
+    An omitted dimension keeps its current value, [] clears it, null is refused.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    applies_to_arm_uids: list[ScopeTargetUid] = applies_to_field("arm")
+    applies_to_cohort_uids: list[ScopeTargetUid] = applies_to_field("cohort")
+    applies_to_epoch_uids: list[ScopeTargetUid] = applies_to_field("epoch")
 
 
 class StudySelectionCriteriaNewOrder(PatchInputModel):

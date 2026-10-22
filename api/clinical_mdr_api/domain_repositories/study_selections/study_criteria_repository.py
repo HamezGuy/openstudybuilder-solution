@@ -1,5 +1,5 @@
 import datetime
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from neomodel import db
@@ -29,6 +29,9 @@ from clinical_mdr_api.domains.study_selections.study_selection_criteria import (
     StudySelectionCriteriaAR,
     StudySelectionCriteriaVO,
 )
+from clinical_mdr_api.domains.study_selections.study_selection_scope import (
+    StudySelectionScopeVO,
+)
 from common.exceptions import BusinessLogicException
 from common.utils import convert_to_datetime
 
@@ -49,6 +52,7 @@ class SelectionHistory:
     syntax_object_version: str | None
     is_instance: bool = True
     key_criteria: bool = False
+    scope: StudySelectionScopeVO = field(default_factory=StudySelectionScopeVO)
 
 
 class StudySelectionCriteriaRepository:
@@ -133,6 +137,9 @@ class StudySelectionCriteriaRepository:
                 sc.order AS criteria_type_order,
                 sc.uid AS study_selection_uid,
                 sc.accepted_version AS accepted_version,
+                sc.applies_to_arm_uids AS applies_to_arm_uids,
+                sc.applies_to_cohort_uids AS applies_to_cohort_uids,
+                sc.applies_to_epoch_uids AS applies_to_epoch_uids,
                 obj.uid AS syntax_object_uid,
                 sa.date AS start_date,
                 sa.author_id AS author_id,
@@ -159,6 +166,7 @@ class StudySelectionCriteriaRepository:
                 start_date=convert_to_datetime(value=selection["start_date"]),
                 author_id=selection["author_id"],
                 accepted_version=acv,
+                scope=StudySelectionScopeVO.from_record(selection),
             )
             all_selections.append(selection_vo)
         return tuple(all_selections)
@@ -460,6 +468,15 @@ class StudySelectionCriteriaRepository:
         )
         study_criteria_selection_node.uid = selection.study_selection_uid
         study_criteria_selection_node.accepted_version = selection.accepted_version
+        study_criteria_selection_node.applies_to_arm_uids = list(
+            selection.scope.applies_to_arm_uids
+        )
+        study_criteria_selection_node.applies_to_cohort_uids = list(
+            selection.scope.applies_to_cohort_uids
+        )
+        study_criteria_selection_node.applies_to_epoch_uids = list(
+            selection.scope.applies_to_epoch_uids
+        )
         study_criteria_selection_node.save()
         if not for_deletion:
             # Connect new node with study value
@@ -552,7 +569,10 @@ class StudySelectionCriteriaRepository:
                 bsa.date AS end_date,
                 ver.version AS syntax_object_version,
                 is_instance AS is_instance,
-                all_sc.key_criteria as key_criteria
+                all_sc.key_criteria as key_criteria,
+                all_sc.applies_to_arm_uids AS applies_to_arm_uids,
+                all_sc.applies_to_cohort_uids AS applies_to_cohort_uids,
+                all_sc.applies_to_epoch_uids AS applies_to_epoch_uids
             """
         )
         specific_criteria_selections_audit_trail = db.cypher_query(
@@ -587,6 +607,7 @@ class StudySelectionCriteriaRepository:
                     syntax_object_version=res["syntax_object_version"],
                     is_instance=res["is_instance"],
                     key_criteria=res["key_criteria"],
+                    scope=StudySelectionScopeVO.from_record(res),
                 )
             )
         return result

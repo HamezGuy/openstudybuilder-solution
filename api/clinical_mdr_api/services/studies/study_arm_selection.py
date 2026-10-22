@@ -8,6 +8,9 @@ from neomodel import db
 from clinical_mdr_api.domain_repositories.study_selections.study_arm_repository import (
     SelectionHistoryArm,
 )
+from clinical_mdr_api.domain_repositories.study_selections.study_selection_scope_repository import (
+    StudySelectionScopeRepository,
+)
 from clinical_mdr_api.domains.study_selections.study_arm_lifecycle import (
     LifecycleTargetKind,
 )
@@ -327,6 +330,9 @@ class StudyArmSelectionService(StudySelectionMixin):
         repos = self._repos
         try:
             self._lock_mutable_study(study_uid)
+            StudySelectionScopeRepository.refuse_referenced_target(
+                study_uid, "applies_to_arm_uids", study_selection_uid
+            )
             # cascade delete
             # delete study branch arms assigned to arm
             branch_arms_on_arm = (

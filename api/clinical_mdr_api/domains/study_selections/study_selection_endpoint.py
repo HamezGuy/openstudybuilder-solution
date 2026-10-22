@@ -5,6 +5,9 @@ from typing import Annotated, Any, Callable, Iterable, Self
 
 from pydantic import Field
 
+from clinical_mdr_api.domains.study_selections.study_selection_scope import (
+    StudySelectionScopeVO,
+)
 from clinical_mdr_api.models.utils import BaseModel
 from clinical_mdr_api.services.user_info import UserInfoService
 from clinical_mdr_api.utils import normalize_string
@@ -68,6 +71,7 @@ class StudyEndpointSelectionHistory:
     order: int
     status: str | None
     author_username: str | None = None
+    scope: StudySelectionScopeVO = field(default_factory=StudySelectionScopeVO)
 
 
 @dataclass(frozen=True)
@@ -94,6 +98,8 @@ class StudySelectionEndpointVO:
     author_id: str
     author_username: str | None = None
     accepted_version: bool = False
+    # Authored arm, cohort and epoch applicability; empty means not authored.
+    scope: StudySelectionScopeVO = field(default_factory=StudySelectionScopeVO)
 
     @classmethod
     def from_input_values(
@@ -115,6 +121,7 @@ class StudySelectionEndpointVO:
         start_date: datetime.datetime | None = None,
         accepted_version: bool = False,
         generate_uid_callback: Callable[[], str] = lambda: "",
+        scope: StudySelectionScopeVO | None = None,
     ):
         """
         Factory method
@@ -172,6 +179,7 @@ class StudySelectionEndpointVO:
             author_username=UserInfoService.get_author_username_from_id(author_id),
             start_date=start_date,
             accepted_version=accepted_version,
+            scope=scope if scope is not None else StudySelectionScopeVO(),
         )
 
     def validate(
@@ -504,23 +512,9 @@ class StudySelectionEndpointsAR:
         updated_selection = []
         for selection in self.study_endpoints_selection:
             if selection.study_objective_uid == study_objective_uid:
-                updated_selection.append(
-                    StudySelectionEndpointVO.from_input_values(
-                        endpoint_uid=selection.endpoint_uid,
-                        endpoint_version=selection.endpoint_version,
-                        endpoint_level_uid=selection.endpoint_level_uid,
-                        endpoint_sublevel_uid=selection.endpoint_sublevel_uid,
-                        unit_separator=selection.unit_separator,
-                        study_objective_uid=None,
-                        study_selection_uid=selection.study_selection_uid,
-                        start_date=selection.start_date,
-                        timeframe_uid=selection.timeframe_uid,
-                        timeframe_version=selection.timeframe_version,
-                        endpoint_units=selection.endpoint_units,
-                        endpoint_level_order=selection.endpoint_level_order,
-                        author_id=selection.author_id,
-                    )
-                )
+                # Only the objective link changes. Scope, template identity
+                # and version acceptance stay as authored.
+                updated_selection.append(replace(selection, study_objective_uid=None))
             else:
                 updated_selection.append(selection)
         self._study_endpoints_selection = tuple(updated_selection)
@@ -534,6 +528,7 @@ class StudySelectionEndpointsAR:
                     selection.endpoint_uid,
                     selection.timeframe_uid,
                     *selection.endpoint_units,
+                    selection.scope.identity(),
                 )
                 in endpoints_timeframes,
                 msg="There is already a study endpoint created for the selected endpoint, timeframe and unit combination",
@@ -544,5 +539,6 @@ class StudySelectionEndpointsAR:
                     selection.endpoint_uid,
                     selection.timeframe_uid,
                     *selection.endpoint_units,
+                    selection.scope.identity(),
                 )
             )

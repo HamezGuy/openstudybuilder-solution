@@ -10,6 +10,9 @@ from clinical_mdr_api.domain_repositories._utils.helpers import (
 from clinical_mdr_api.domain_repositories.study_selections.study_epoch_repository import (
     StudyEpochRepository,
 )
+from clinical_mdr_api.domain_repositories.study_selections.study_selection_scope_repository import (
+    StudySelectionScopeRepository,
+)
 from clinical_mdr_api.domain_repositories.study_selections.study_visit_repository import (
     StudyVisitRepository,
 )
@@ -976,6 +979,9 @@ class StudyEpochService(StudySelectionMixin):
     @ensure_transaction(db)
     def delete(self, study_uid: str, study_epoch_uid: str):
         self._lock_mutable_study(study_uid)
+        StudySelectionScopeRepository.refuse_referenced_target(
+            study_uid, "applies_to_epoch_uids", study_epoch_uid
+        )
         # get the possible connected StudyDesign Cells attached to it
         design_cells_on_epoch = None
         if self.repo.epoch_specific_has_connected_design_cell(

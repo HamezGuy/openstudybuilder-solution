@@ -3,7 +3,7 @@
   "info": {
     "title": "OpenStudyBuilder API",
     "description": "\n## NOTICE\n\nThis license information is applicable to the swagger documentation of the clinical-mdr-api, that is the openapi.json.\n\n## License Terms (MIT)\n\nCopyright (C) 2025 Novo Nordisk A/S, Danish company registration no. 24256790\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\n\n## Licenses and Acknowledgements for Incorporated Software\n\nThis component contains software licensed under different licenses when compiled, please refer to the third-party-licenses.md file for further information and full license texts.\n\n## Authentication\n\nSupports OAuth2 [Authorization Code Flow](https://datatracker.ietf.org/doc/html/rfc6749#section-4.1),\nat paths described in the OpenID Connect Discovery metadata document (whose URL is defined by the `OAUTH_METADATA_URL` environment variable).\n\nMicrosoft Identity Platform documentation can be read \n([here](https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-auth-code-flow)).\n\nAuthentication can be turned off with `OAUTH_ENABLED=false` environment variable. \n\nWhen authentication is turned on, all requests to protected API endpoints must provide a valid bearer (JWT) token inside the `Authorization` http header. \n",
-    "version": "3.0.706"
+    "version": "3.0.707"
   },
   "paths": {
     "/": {
@@ -84234,6 +84234,98 @@
           },
           "400": {
             "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/studies/{study_uid}/study-criteria/{study_criteria_uid}/applicability": {
+      "patch": {
+        "tags": [
+          "Study Selections"
+        ],
+        "summary": "Change the authored arm, cohort and epoch scope of a study criteria",
+        "description": "An omitted dimension keeps its value, [] clears it and null is refused. Scope targets must be selections of the current draft. Several populated dimensions are retained with their combination not stated. The reusable library criteria is not changed.",
+        "operationId": "patch_criteria_selection_applicability_studies__study_uid__study_criteria__study_criteria_uid__applicability_patch",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "study_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The unique id of the study.",
+              "title": "Study Uid"
+            },
+            "description": "The unique id of the study."
+          },
+          {
+            "name": "study_criteria_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The unique id of the study criteria.",
+              "title": "Study Criteria Uid"
+            },
+            "description": "The unique id of the study criteria."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudySelectionCriteriaApplicabilityInput",
+                "description": "The scope dimensions to change."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudySelectionCriteria"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A scope target is not selected in this study, or the study is locked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found",
             "content": {
               "application/json": {
                 "schema": {
@@ -179802,6 +179894,33 @@
             "description": "Type of last change for the version",
             "nullable": true
           },
+          "applies_to_arm_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Arm Uids",
+            "description": "Authored applicability to exact native study arm UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
+          "applies_to_cohort_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Cohort Uids",
+            "description": "Authored applicability to exact native study cohort UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
+          "applies_to_epoch_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Epoch Uids",
+            "description": "Authored applicability to exact native study epoch UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
           "key_criteria": {
             "anyOf": [
               {
@@ -179861,6 +179980,41 @@
           "start_date"
         ],
         "title": "StudySelectionCriteria"
+      },
+      "StudySelectionCriteriaApplicabilityInput": {
+        "properties": {
+          "applies_to_arm_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Arm Uids",
+            "description": "Authored applicability to exact native study arm UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
+          "applies_to_cohort_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Cohort Uids",
+            "description": "Authored applicability to exact native study cohort UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
+          "applies_to_epoch_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Epoch Uids",
+            "description": "Authored applicability to exact native study epoch UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "StudySelectionCriteriaApplicabilityInput",
+        "description": "Selection-specific scope edit; the reusable library criteria is untouched.\n\nAn omitted dimension keeps its current value, [] clears it, null is refused."
       },
       "StudySelectionCriteriaCore": {
         "properties": {
@@ -180044,6 +180198,33 @@
             "description": "Type of last change for the version",
             "nullable": true
           },
+          "applies_to_arm_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Arm Uids",
+            "description": "Authored applicability to exact native study arm UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
+          "applies_to_cohort_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Cohort Uids",
+            "description": "Authored applicability to exact native study cohort UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
+          "applies_to_epoch_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Epoch Uids",
+            "description": "Authored applicability to exact native study epoch UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
           "key_criteria": {
             "anyOf": [
               {
@@ -180072,6 +180253,33 @@
           "criteria_data": {
             "$ref": "#/components/schemas/CriteriaCreateInput",
             "description": "Criteria data to create new criteria"
+          },
+          "applies_to_arm_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Arm Uids",
+            "description": "Authored applicability to exact native study arm UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
+          "applies_to_cohort_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Cohort Uids",
+            "description": "Authored applicability to exact native study cohort UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
+          "applies_to_epoch_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Epoch Uids",
+            "description": "Authored applicability to exact native study epoch UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
           }
         },
         "type": "object",
@@ -180085,6 +180293,33 @@
           "criteria_uid": {
             "type": "string",
             "title": "Criteria Uid"
+          },
+          "applies_to_arm_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Arm Uids",
+            "description": "Authored applicability to exact native study arm UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
+          "applies_to_cohort_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Cohort Uids",
+            "description": "Authored applicability to exact native study cohort UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
+          "applies_to_epoch_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Epoch Uids",
+            "description": "Authored applicability to exact native study epoch UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
           }
         },
         "type": "object",
@@ -180142,6 +180377,33 @@
             "type": "string",
             "title": "Library Name",
             "description": "If specified: The name of the library to which the criteria will be linked. The following rules apply: \n* The library needs to be present, it will not be created with this request. The *[GET] /libraries* criteria can help. And \n* The library needs to allow the creation: The 'is_editable' property of the library needs to be true. \n\nIf not specified: The library of the criteria template will be used."
+          },
+          "applies_to_arm_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Arm Uids",
+            "description": "Authored applicability to exact native study arm UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
+          "applies_to_cohort_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Cohort Uids",
+            "description": "Authored applicability to exact native study cohort UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
+          "applies_to_epoch_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Epoch Uids",
+            "description": "Authored applicability to exact native study epoch UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
           }
         },
         "type": "object",
@@ -181767,6 +182029,33 @@
             "title": "Accepted Version",
             "description": "Denotes if user accepted obsolete endpoint versions",
             "nullable": true
+          },
+          "applies_to_arm_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Arm Uids",
+            "description": "Authored applicability to exact native study arm UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
+          "applies_to_cohort_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Cohort Uids",
+            "description": "Authored applicability to exact native study cohort UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
+          "applies_to_epoch_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Epoch Uids",
+            "description": "Authored applicability to exact native study epoch UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
           }
         },
         "type": "object",
@@ -181842,6 +182131,33 @@
             ],
             "title": "Timeframe Uid",
             "description": "uid for a timeframe"
+          },
+          "applies_to_arm_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Arm Uids",
+            "description": "Authored applicability to exact native study arm UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
+          "applies_to_cohort_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Cohort Uids",
+            "description": "Authored applicability to exact native study cohort UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
+          "applies_to_epoch_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Epoch Uids",
+            "description": "Authored applicability to exact native study epoch UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
           }
         },
         "type": "object",
@@ -181922,6 +182238,33 @@
               }
             ],
             "description": "hold the units used in the study endpoint"
+          },
+          "applies_to_arm_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Arm Uids",
+            "description": "Authored applicability to exact native study arm UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
+          "applies_to_cohort_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Cohort Uids",
+            "description": "Authored applicability to exact native study cohort UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
+          "applies_to_epoch_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Epoch Uids",
+            "description": "Authored applicability to exact native study epoch UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
           }
         },
         "type": "object",
@@ -181981,6 +182324,33 @@
             ],
             "title": "Library Name",
             "description": "If specified: The name of the library to which the endpoint will be linked. The following rules apply: \n* The library needs to be present, it will not be created with this request. The *[GET] /libraries* endpoint can help. And \n* The library needs to allow the creation: The 'is_editable' property of the library needs to be true. \n\nIf not specified: The library of the endpoint template will be used."
+          },
+          "applies_to_arm_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Arm Uids",
+            "description": "Authored applicability to exact native study arm UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
+          "applies_to_cohort_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Cohort Uids",
+            "description": "Authored applicability to exact native study cohort UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
+          "applies_to_epoch_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Epoch Uids",
+            "description": "Authored applicability to exact native study epoch UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
           }
         },
         "type": "object",
@@ -182171,6 +182541,33 @@
             "title": "Change Type",
             "description": "Type of last change for the version",
             "nullable": true
+          },
+          "applies_to_arm_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Arm Uids",
+            "description": "Authored applicability to exact native study arm UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
+          "applies_to_cohort_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Cohort Uids",
+            "description": "Authored applicability to exact native study cohort UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
+          "applies_to_epoch_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Epoch Uids",
+            "description": "Authored applicability to exact native study epoch UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
           },
           "endpoint_count": {
             "anyOf": [
@@ -182402,6 +182799,33 @@
             "title": "Change Type",
             "description": "Type of last change for the version",
             "nullable": true
+          },
+          "applies_to_arm_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Arm Uids",
+            "description": "Authored applicability to exact native study arm UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
+          "applies_to_cohort_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Cohort Uids",
+            "description": "Authored applicability to exact native study cohort UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
+          "applies_to_epoch_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Epoch Uids",
+            "description": "Authored applicability to exact native study epoch UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
           }
         },
         "type": "object",
@@ -182430,6 +182854,33 @@
           "objective_data": {
             "$ref": "#/components/schemas/ObjectiveCreateInput",
             "description": "Objective data to create new objective"
+          },
+          "applies_to_arm_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Arm Uids",
+            "description": "Authored applicability to exact native study arm UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
+          "applies_to_cohort_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Cohort Uids",
+            "description": "Authored applicability to exact native study cohort UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
+          "applies_to_epoch_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Epoch Uids",
+            "description": "Authored applicability to exact native study epoch UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
           }
         },
         "type": "object",
@@ -182463,6 +182914,33 @@
             ],
             "title": "Objective Level Uid",
             "description": "level defining the objective"
+          },
+          "applies_to_arm_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Arm Uids",
+            "description": "Authored applicability to exact native study arm UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
+          "applies_to_cohort_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Cohort Uids",
+            "description": "Authored applicability to exact native study cohort UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
+          "applies_to_epoch_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Epoch Uids",
+            "description": "Authored applicability to exact native study epoch UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
           }
         },
         "type": "object",
@@ -182510,6 +182988,33 @@
             ],
             "title": "Library Name",
             "description": "If specified: The name of the library to which the objective will be linked. The following rules apply: \n* The library needs to be present, it will not be created with this request. The *[GET] /libraries* objective can help. And \n* The library needs to allow the creation: The 'is_editable' property of the library needs to be true. \n\nIf not specified: The library of the objective template will be used."
+          },
+          "applies_to_arm_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Arm Uids",
+            "description": "Authored applicability to exact native study arm UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
+          "applies_to_cohort_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Cohort Uids",
+            "description": "Authored applicability to exact native study cohort UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
+          },
+          "applies_to_epoch_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Applies To Epoch Uids",
+            "description": "Authored applicability to exact native study epoch UIDs. Several populated dimensions are retained with their combination not stated; an empty list records no authored scope in that dimension."
           }
         },
         "type": "object",

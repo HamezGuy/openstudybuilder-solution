@@ -1,3 +1,5 @@
+from dataclasses import replace
+from datetime import datetime, timezone
 from typing import Any
 
 from neomodel import db
@@ -5,15 +7,22 @@ from neomodel import db
 from clinical_mdr_api.domain_repositories.study_selections.study_criteria_repository import (
     SelectionHistory,
 )
+from clinical_mdr_api.domain_repositories.study_selections.study_selection_scope_repository import (
+    StudySelectionScopeRepository,
+)
 from clinical_mdr_api.domains.study_selections.study_selection_criteria import (
     StudySelectionCriteriaAR,
     StudySelectionCriteriaVO,
+)
+from clinical_mdr_api.domains.study_selections.study_selection_scope import (
+    StudySelectionScopeVO,
 )
 from clinical_mdr_api.domains.syntax_instances.criteria import CriteriaAR
 from clinical_mdr_api.domains.versioned_object_aggregate import LibraryItemStatus
 from clinical_mdr_api.models.study_selections.study_selection import (
     Criteria,
     StudySelectionCriteria,
+    StudySelectionCriteriaApplicabilityInput,
     StudySelectionCriteriaCore,
     StudySelectionCriteriaCreateInput,
     StudySelectionCriteriaInput,
@@ -55,6 +64,17 @@ class StudyCriteriaSelectionService(StudySelectionMixin):
     def __init__(self):
         self._repos = MetaRepository()
         self.author = user().id()
+
+    @staticmethod
+    def _scope(study_uid: str, source) -> StudySelectionScopeVO:
+        """Authored scope of one input, resolved against the current draft."""
+        scope = StudySelectionScopeVO.from_values(
+            applies_to_arm_uids=source.applies_to_arm_uids,
+            applies_to_cohort_uids=source.applies_to_cohort_uids,
+            applies_to_epoch_uids=source.applies_to_epoch_uids,
+        )
+        StudySelectionScopeRepository.validate_targets(study_uid, scope)
+        return scope
 
     def _transform_all_to_response_model(
         self,
@@ -168,6 +188,7 @@ class StudyCriteriaSelectionService(StudySelectionMixin):
                         is_instance=False,
                         criteria_type_uid=criteria_type_uid,
                         generate_uid_callback=repos.study_criteria_repository.generate_uid,
+                        scope=self._scope(study_uid, template_input),
                     )
 
                     # Add template to selection
@@ -218,7 +239,10 @@ class StudyCriteriaSelectionService(StudySelectionMixin):
                                 criteria_template_uid=template_input.criteria_template_uid,
                                 parameter_terms=parameter_terms,
                                 library_name=template_input.library_name,
-                            )
+                            ),
+                            applies_to_arm_uids=template_input.applies_to_arm_uids,
+                            applies_to_cohort_uids=template_input.applies_to_cohort_uids,
+                            applies_to_epoch_uids=template_input.applies_to_epoch_uids,
                         ),
                     )
                     selections.append(new_selection)
@@ -314,6 +338,7 @@ class StudyCriteriaSelectionService(StudySelectionMixin):
                     study_selection_uid=current_vo.study_selection_uid,
                     start_date=current_vo.start_date,
                     accepted_version=current_vo.accepted_version,
+                    scope=current_vo.scope,
                 )
                 # let the aggregate update the value object
                 selection_aggregate.update_study_criteria_on_aggregated(
@@ -378,6 +403,7 @@ class StudyCriteriaSelectionService(StudySelectionMixin):
                 criteria_type_uid=criteria_type_uid,
                 generate_uid_callback=self._repos.study_criteria_repository.generate_uid,
                 author_id=self.author,
+                scope=self._scope(study_uid, selection_create_input),
             )
 
             if new_selection.syntax_object_uid is not None:
@@ -427,6 +453,7 @@ class StudyCriteriaSelectionService(StudySelectionMixin):
         finally:
             self._repos.close()
 
+    @ensure_transaction(db)
     def make_selection_create_criteria(
         self,
         study_uid: str,
@@ -434,6 +461,8 @@ class StudyCriteriaSelectionService(StudySelectionMixin):
     ) -> StudySelectionCriteria:
         repos = self._repos
         try:
+            # Refuse an invalid scope before a reusable library criteria exists.
+            scope = self._scope(study_uid, selection_create_input)
             # get criteria type uid from the criteria template
             criteria_type_uid = repos.criteria_template_repository.get_template_type_uid(
                 self._repos.criteria_template_repository.root_class.nodes.get_or_none(
@@ -458,6 +487,7 @@ class StudyCriteriaSelectionService(StudySelectionMixin):
                 syntax_object_version=criteria_ar.item_metadata.version,
                 criteria_type_uid=criteria_type_uid,
                 generate_uid_callback=repos.study_criteria_repository.generate_uid,
+                scope=scope,
             )
 
             # add VO to aggregate
@@ -468,6 +498,9 @@ class StudyCriteriaSelectionService(StudySelectionMixin):
                 criteria_repo.check_exists_final_version,
                 self._repos.ct_term_name_repository.term_specific_exists_by_uid,
             )
+
+            # The same duplicate rule as a direct selection, including scope.
+            selection_aggregate.validate()
 
             # sync with DB and save the update
             repos.study_criteria_repository.save(selection_aggregate, self.author)
@@ -532,6 +565,7 @@ class StudyCriteriaSelectionService(StudySelectionMixin):
                     syntax_object_version=criteria_ar.item_metadata.version,
                     criteria_type_uid=criteria_type_uid,
                     generate_uid_callback=lambda: "preview",
+                    scope=self._scope(study_uid, selection_create_input),
                 )
 
                 # add VO to aggregate
@@ -794,6 +828,16 @@ class StudyCriteriaSelectionService(StudySelectionMixin):
         study_selection_uid: str,
         study_value_version: str | None = None,
     ) -> StudySelectionCriteria:
+        return self._specific_selection_response(
+            study_uid, study_selection_uid, study_value_version
+        )
+
+    def _specific_selection_response(
+        self,
+        study_uid: str,
+        study_selection_uid: str,
+        study_value_version: str | None = None,
+    ) -> StudySelectionCriteria:
         repos = self._repos
         (
             selection_aggregate,
@@ -958,6 +1002,52 @@ class StudyCriteriaSelectionService(StudySelectionMixin):
         finally:
             repos.close()
 
+    @ensure_transaction(db)
+    def set_applicability(
+        self,
+        study_uid: str,
+        study_selection_uid: str,
+        applicability: StudySelectionCriteriaApplicabilityInput,
+    ) -> StudySelectionCriteria:
+        """Change only the authored scope of one criteria selection."""
+        repos = self._repos
+        try:
+            self._lock_mutable_study(study_uid)
+            selection_aggregate = repos.study_criteria_repository.find_by_study(
+                study_uid=study_uid, for_update=True
+            )
+            current_vo, _ = selection_aggregate.get_specific_criteria_selection(
+                study_criteria_uid=study_selection_uid
+            )
+            values = {
+                name: (
+                    getattr(applicability, name)
+                    if name in applicability.model_fields_set
+                    else getattr(current_vo.scope, name)
+                )
+                for name in (
+                    "applies_to_arm_uids",
+                    "applies_to_cohort_uids",
+                    "applies_to_epoch_uids",
+                )
+            }
+            scope = StudySelectionScopeVO.from_values(**values)
+            StudySelectionScopeRepository.validate_targets(study_uid, scope)
+            updated_selection = replace(
+                current_vo,
+                scope=scope,
+                author_id=self.author,
+                start_date=datetime.now(timezone.utc),
+            )
+            selection_aggregate.update_study_criteria_on_aggregated(
+                updated_study_criteria_selection=updated_selection,
+            )
+            selection_aggregate.validate()
+            repos.study_criteria_repository.save(selection_aggregate, self.author)
+            return self._specific_selection_response(study_uid, study_selection_uid)
+        finally:
+            repos.close()
+
     @db.transaction
     def set_key_criteria(
         self, study_uid: str, study_selection_uid: str, key_criteria: bool
@@ -986,6 +1076,7 @@ class StudyCriteriaSelectionService(StudySelectionMixin):
                 study_selection_uid=current_vo.study_selection_uid,
                 start_date=current_vo.start_date,
                 accepted_version=current_vo.accepted_version,
+                scope=current_vo.scope,
             )
 
             # let the aggregate update the value object

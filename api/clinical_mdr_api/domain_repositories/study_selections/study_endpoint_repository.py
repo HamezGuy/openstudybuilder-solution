@@ -45,6 +45,9 @@ from clinical_mdr_api.domains.study_selections.study_selection_endpoint import (
     StudySelectionEndpointsAR,
     StudySelectionEndpointVO,
 )
+from clinical_mdr_api.domains.study_selections.study_selection_scope import (
+    StudySelectionScopeVO,
+)
 from common.config import settings
 from common.exceptions import BusinessLogicException
 from common.utils import convert_to_datetime
@@ -156,6 +159,9 @@ class StudySelectionEndpointRepository:
                 se.uid AS study_endpoint_uid,
                 se.order AS order,
                 se.accepted_version AS accepted_version,
+                se.applies_to_arm_uids AS applies_to_arm_uids,
+                se.applies_to_cohort_uids AS applies_to_cohort_uids,
+                se.applies_to_epoch_uids AS applies_to_epoch_uids,
                 obj.uid AS endpoint_uid,
                 has_term.order AS endpoint_order,
                 tr.uid AS timeframe_uid,
@@ -211,6 +217,7 @@ class StudySelectionEndpointRepository:
                 start_date=convert_to_datetime(value=selection["start_date"]),
                 author_id=selection["author_id"],
                 accepted_version=acv,
+                scope=StudySelectionScopeVO.from_record(selection),
             )
             all_selections.append(selection_vo)
         return tuple(all_selections)
@@ -441,6 +448,7 @@ class StudySelectionEndpointRepository:
             order=order,
             uid=selection.study_selection_uid,
             accepted_version=selection.accepted_version,
+            **selection.scope.as_lists(),
         ).save()
 
         # Connect new node with StudyEndpoint template parameter
@@ -665,6 +673,9 @@ class StudySelectionEndpointRepository:
                 endpoint_sublevel.uid AS endpoint_sublevel,
                 so.uid AS study_objective_uid,
                 all_se.text AS text,
+                all_se.applies_to_arm_uids AS applies_to_arm_uids,
+                all_se.applies_to_cohort_uids AS applies_to_cohort_uids,
+                all_se.applies_to_epoch_uids AS applies_to_epoch_uids,
                 values,
                 sa.date AS start_date,
                 sa.status AS status,
@@ -713,6 +724,7 @@ class StudySelectionEndpointRepository:
                     end_date=end_date,
                     order=res["order"],
                     status=res["status"],
+                    scope=StudySelectionScopeVO.from_record(res),
                 )
             )
         return result

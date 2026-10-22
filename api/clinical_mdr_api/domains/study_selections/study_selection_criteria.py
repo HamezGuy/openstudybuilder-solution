@@ -2,6 +2,9 @@ import datetime
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Iterable, Self
 
+from clinical_mdr_api.domains.study_selections.study_selection_scope import (
+    StudySelectionScopeVO,
+)
 from clinical_mdr_api.services.user_info import UserInfoService
 from clinical_mdr_api.utils import normalize_string
 from common import exceptions
@@ -26,6 +29,8 @@ class StudySelectionCriteriaVO:
     author_id: str
     accepted_version: bool = False
     author_username: str | None = None
+    # Authored arm, cohort and epoch applicability; empty means not authored.
+    scope: StudySelectionScopeVO = field(default_factory=StudySelectionScopeVO)
 
     @classmethod
     def from_input_values(
@@ -42,6 +47,7 @@ class StudySelectionCriteriaVO:
         start_date: datetime.datetime | None = None,
         generate_uid_callback: Callable[[], str] = lambda: "",
         accepted_version: bool = False,
+        scope: StudySelectionScopeVO | None = None,
     ):
         if study_selection_uid is None:
             study_selection_uid = generate_uid_callback()
@@ -62,6 +68,7 @@ class StudySelectionCriteriaVO:
             author_id=normalize_string(author_id),
             author_username=UserInfoService.get_author_username_from_id(author_id),
             accepted_version=accepted_version,
+            scope=scope if scope is not None else StudySelectionScopeVO(),
         )
 
     def validate(
@@ -228,16 +235,13 @@ class StudySelectionCriteriaAR:
             selected_value.criteria_type_order is not None
         ), "Criteria type order should not be None at this point"
         old_order = selected_value.criteria_type_order
-        # We have to reset the selected value so it can be set to edit in the domain
-        selected_value = StudySelectionCriteriaVO.from_input_values(
-            syntax_object_uid=selected_value.syntax_object_uid,
-            criteria_type_uid=selected_value.criteria_type_uid,
-            author_id=author_id,
-            study_selection_uid=selected_value.study_selection_uid,
-            criteria_type_order=selected_value.criteria_type_order,
-            syntax_object_version=selected_value.syntax_object_version,
-            is_instance=selected_value.is_instance,
-            key_criteria=selected_value.key_criteria,
+        # A reorder is a new revision by this author. Every authored field,
+        # including version acceptance and scope, stays.
+        selected_value = replace(
+            selected_value,
+            author_id=normalize_string(author_id),
+            author_username=UserInfoService.get_author_username_from_id(author_id),
+            start_date=datetime.datetime.now(datetime.timezone.utc),
         )
         # change the order
         # to do so, first filter on criteria selection with the same criteria type as the selected one
@@ -291,8 +295,9 @@ class StudySelectionCriteriaAR:
     def validate(self):
         criteria = []
         for selection in self.study_criteria_selection:
+            identity = (selection.syntax_object_uid, selection.scope.identity())
             exceptions.AlreadyExistsException.raise_if(
-                selection.syntax_object_uid in criteria,
-                msg=f"There is already a Study Selection to a criteria with UID '{selection.syntax_object_uid}'.",
+                identity in criteria,
+                msg=f"There is already a Study Selection to a criteria with UID '{selection.syntax_object_uid}' and the same scope.",
             )
-            criteria.append(selection.syntax_object_uid)
+            criteria.append(identity)

@@ -4,10 +4,16 @@ from typing import Any, Sequence
 
 from neomodel import db
 
+from clinical_mdr_api.domain_repositories.study_selections.study_selection_scope_repository import (
+    StudySelectionScopeRepository,
+)
 from clinical_mdr_api.domains.study_selections.study_selection_endpoint import (
     StudyEndpointSelectionHistory,
     StudySelectionEndpointsAR,
     StudySelectionEndpointVO,
+)
+from clinical_mdr_api.domains.study_selections.study_selection_scope import (
+    StudySelectionScopeVO,
 )
 from clinical_mdr_api.domains.syntax_instances.endpoint import EndpointAR
 from clinical_mdr_api.domains.syntax_instances.timeframe import TimeframeAR
@@ -57,6 +63,17 @@ class StudyEndpointSelectionService(StudySelectionMixin):
     def __init__(self):
         self._repos = MetaRepository()
         self.author = user().id()
+
+    @staticmethod
+    def _scope(study_uid: str, source) -> StudySelectionScopeVO:
+        """Authored scope of one input, resolved against the current draft."""
+        scope = StudySelectionScopeVO.from_values(
+            applies_to_arm_uids=source.applies_to_arm_uids,
+            applies_to_cohort_uids=source.applies_to_cohort_uids,
+            applies_to_epoch_uids=source.applies_to_epoch_uids,
+        )
+        StudySelectionScopeRepository.validate_targets(study_uid, scope)
+        return scope
 
     def _transform_single_study_objective_to_model(
         self,
@@ -262,6 +279,7 @@ class StudyEndpointSelectionService(StudySelectionMixin):
                 generate_uid_callback=repos.study_endpoint_repository.generate_uid,
                 author_id=self.author,
                 endpoint_level_order=endpoint_level_order,
+                scope=self._scope(study_uid, selection_create_input),
             )
 
             # add VO to aggregate
@@ -396,6 +414,7 @@ class StudyEndpointSelectionService(StudySelectionMixin):
                 generate_uid_callback=repos.study_endpoint_repository.generate_uid,
                 author_id=self.author,
                 endpoint_level_order=endpoint_level_order,
+                scope=self._scope(study_uid, selection_create_input),
             )
             # add VO to aggregate
             endpoint_repo = repos.endpoint_repository
@@ -496,6 +515,7 @@ class StudyEndpointSelectionService(StudySelectionMixin):
                         endpoint_units=None,
                         endpoint_level_order=None,
                         generate_uid_callback=repos.study_endpoint_repository.generate_uid,
+                        scope=self._scope(study_uid, template_input),
                     )
 
                     # Add template to selection
@@ -542,11 +562,15 @@ class StudyEndpointSelectionService(StudySelectionMixin):
                     new_selection = self.make_selection_create_endpoint(
                         study_uid=study_uid,
                         selection_create_input=StudySelectionEndpointCreateInput(
+                            study_objective_uid=template_input.study_objective_uid,
                             endpoint_data=EndpointCreateInput(
                                 endpoint_template_uid=template_input.endpoint_template_uid,
                                 parameter_terms=parameter_terms,
                                 library_name=template_input.library_name,
-                            )
+                            ),
+                            applies_to_arm_uids=template_input.applies_to_arm_uids,
+                            applies_to_cohort_uids=template_input.applies_to_cohort_uids,
+                            applies_to_epoch_uids=template_input.applies_to_epoch_uids,
                         ),
                     )
                     selections.append(new_selection)
@@ -616,6 +640,7 @@ class StudyEndpointSelectionService(StudySelectionMixin):
                     generate_uid_callback=lambda: "preview",
                     author_id=self.author,
                     endpoint_level_order=None,
+                    scope=self._scope(study_uid, selection_create_input),
                 )
                 # add VO to aggregate
                 selection_aggregate.add_endpoint_selection(
@@ -979,6 +1004,7 @@ class StudyEndpointSelectionService(StudySelectionMixin):
         self,
         request_study_endpoint: StudySelectionEndpointInput,
         current_study_endpoint: StudySelectionEndpointVO,
+        study_uid: str | None = None,
     ) -> StudySelectionEndpointVO:
         endpoint_repo = self._repos.endpoint_repository
         timeframe_repo = self._repos.timeframe_repository
@@ -1012,6 +1038,13 @@ class StudyEndpointSelectionService(StudySelectionMixin):
             ),
             study_objective_uid=current_study_endpoint.study_objective_uid,
             timeframe_uid=current_study_endpoint.timeframe_uid,
+            applies_to_arm_uids=list(current_study_endpoint.scope.applies_to_arm_uids),
+            applies_to_cohort_uids=list(
+                current_study_endpoint.scope.applies_to_cohort_uids
+            ),
+            applies_to_epoch_uids=list(
+                current_study_endpoint.scope.applies_to_epoch_uids
+            ),
         )
 
         # fill the missing from the inputs
@@ -1053,6 +1086,12 @@ class StudyEndpointSelectionService(StudySelectionMixin):
             study_selection_uid=current_study_endpoint.study_selection_uid,
             endpoint_level_order=endpoint_level_order,
             author_id=self.author,
+            # Omitted scope fields were filled from the current selection
+            # above; an explicit [] clears only that dimension.
+            scope=self._scope(
+                study_uid or current_study_endpoint.study_uid or "",
+                request_study_endpoint,
+            ),
         )
 
     @db.transaction
@@ -1078,6 +1117,7 @@ class StudyEndpointSelectionService(StudySelectionMixin):
             updated_selection = self._patch_prepare_new_study_endpoint(
                 request_study_endpoint=selection_update_input,
                 current_study_endpoint=current_vo,
+                study_uid=study_uid,
             )
 
             endpoint_repo = self._repos.endpoint_repository

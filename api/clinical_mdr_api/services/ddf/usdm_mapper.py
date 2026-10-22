@@ -221,6 +221,7 @@ class USDMMapper:
         self._study_compounds: list[Any] = []
         self._study_compound_dosings: list[Any] = []
         self._study_criteria: list[Any] = []
+        self._scoped_criterion_ids: set[str] = set()
         self._context = MappingContext()
         self._mapping_active = False
         self._call_cache: dict[Any, Any] = {}
@@ -880,8 +881,12 @@ class USDMMapper:
             ]
             version.studyDesigns[0].eligibilityCriteria = eligibility_criteria
             if version.studyDesigns[0].population is not None:
+                # A criterion with authored arm, cohort or epoch scope must not
+                # be broadened into the whole-study population.
                 version.studyDesigns[0].population.criterionIds = [
-                    criterion.id for criterion in eligibility_criteria
+                    criterion.id
+                    for criterion in eligibility_criteria
+                    if criterion.id not in self._scoped_criterion_ids
                 ]
         usdm_study.versions = [version]
         from clinical_mdr_api.services.ddf.usdm_native_mapping import NativeStudyMapping
@@ -899,10 +904,44 @@ class USDMMapper:
             self._context,
         )
 
+    def _selection_scope_extensions(
+        self, kind: str, selection_uid: str, selection: Any, target: str
+    ) -> list[USDMExtensionAttribute]:
+        """Native authored scope, retained without a standard USDM placement.
+
+        The dimensions are kept side by side with their combination not stated.
+        No signed CSL definition-scope report is implied by this native record.
+        """
+        scope = {
+            name: list(getattr(selection, name, None) or [])
+            for name in (
+                "applies_to_arm_uids",
+                "applies_to_cohort_uids",
+                "applies_to_epoch_uids",
+            )
+        }
+        if not any(scope.values()):
+            return []
+        self._context.unresolved(
+            "USDM_SELECTION_SCOPE_NOT_STANDARD",
+            f"{kind}/{selection_uid}/applies_to",
+            f"{target}/extensionAttributes",
+            "The authored arm, cohort or epoch scope has no standard USDM 4.0 placement.",
+            "Use the retained native scope; a governed scope needs a signed CSL definition-scope report.",
+        )
+        return [
+            self._native_extension(
+                kind + "Scope",
+                selection_uid,
+                {**scope, "combination": "not-stated"},
+            )
+        ]
+
     def _get_eligibility_criteria(
         self,
     ) -> tuple[list[USDMEligibilityCriterionItem], list[USDMEligibilityCriterion]]:
         """Keep selected criteria visible without treating template text as facts."""
+        self._scoped_criterion_ids = set()
         selections = [
             selection
             for selection in self._study_criteria
@@ -951,6 +990,9 @@ class USDMMapper:
             )
             category_term = getattr(selection, "criteria_type", None)
             category_uid = getattr(category_term, "term_uid", None)
+            scope_extensions = self._selection_scope_extensions(
+                "studyCriteria", selection_uid, selection, "EligibilityCriterion"
+            )
             criterion = USDMEligibilityCriterion(
                 id=criterion_ids[index],
                 name=display,
@@ -986,9 +1028,12 @@ class USDMMapper:
                         if getattr(selection, "key_criteria", None) is not None
                         else []
                     ),
+                    *scope_extensions,
                 ],
                 instanceType="EligibilityCriterion",
             )
+            if scope_extensions:
+                self._scoped_criterion_ids.add(criterion.id)
             items.append(item)
             criteria.append(criterion)
         return items, criteria
@@ -1513,13 +1558,21 @@ class USDMMapper:
                     endpoints=endpoints_by_objective.get(
                         selection.study_objective_uid, []
                     ),
+                    extensionAttributes=self._selection_scope_extensions(
+                        "studyObjective",
+                        str(selection.study_objective_uid),
+                        selection,
+                        "Objective",
+                    ),
                 )
             )
         return result
 
     def _get_endpoint_extensions(self, selection: Any) -> list[USDMExtensionAttribute]:
-        extensions = []
         selection_uid = str(getattr(selection, "study_endpoint_uid", None) or "")
+        extensions = self._selection_scope_extensions(
+            "studyEndpoint", selection_uid, selection, "Endpoint"
+        )
         sublevel = getattr(selection, "endpoint_sublevel", None)
         if sublevel is not None:
             extensions.append(

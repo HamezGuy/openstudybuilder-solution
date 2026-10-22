@@ -11,6 +11,9 @@ from neomodel import db
 from clinical_mdr_api.domain_repositories.study_selections.study_design_cell_repository import (
     StudyDesignCellRepository,
 )
+from clinical_mdr_api.domain_repositories.study_selections.study_selection_scope_repository import (
+    StudySelectionScopeRepository,
+)
 from clinical_mdr_api.domain_repositories.study_selections.study_visit_repository import (
     StudyVisitRepository,
 )
@@ -144,6 +147,12 @@ def fixture_cascade(request, monkeypatch):
     )
     visits = observed([], "read-visits")
     monkeypatch.setattr(StudyVisitRepository, "find_all_visits_by_study_uid", visits)
+    # O5 scope guard: a referenced arm, cohort or epoch refuses deletion.
+    monkeypatch.setattr(
+        StudySelectionScopeRepository,
+        "current_references",
+        observed([], "read-scope-references"),
+    )
     selection = Mock()
     selection_repository = SimpleNamespace(
         find_by_study=observed(selection, "read-selection"),

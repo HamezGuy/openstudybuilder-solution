@@ -11,9 +11,15 @@ from clinical_mdr_api.domain_repositories.models.syntax import (
 from clinical_mdr_api.domain_repositories.study_selections.study_objective_repository import (
     SelectionHistory,
 )
+from clinical_mdr_api.domain_repositories.study_selections.study_selection_scope_repository import (
+    StudySelectionScopeRepository,
+)
 from clinical_mdr_api.domains.study_selections.study_selection_objective import (
     StudySelectionObjectivesAR,
     StudySelectionObjectiveVO,
+)
+from clinical_mdr_api.domains.study_selections.study_selection_scope import (
+    StudySelectionScopeVO,
 )
 from clinical_mdr_api.domains.syntax_instances.objective import ObjectiveAR
 from clinical_mdr_api.domains.versioned_object_aggregate import LibraryItemStatus
@@ -67,6 +73,17 @@ class StudyObjectiveSelectionService(StudySelectionMixin):
     #     assert study_endpoints is not None
     #     selection = study_endpoints.study_endpoints_selection
     #     return sum(map((lambda _: 1 if _.study_objective_uid == study_objective_uid else 0), selection))
+
+    @staticmethod
+    def _scope(study_uid: str, source) -> StudySelectionScopeVO:
+        """Authored scope of one input, resolved against the current draft."""
+        scope = StudySelectionScopeVO.from_values(
+            applies_to_arm_uids=source.applies_to_arm_uids,
+            applies_to_cohort_uids=source.applies_to_cohort_uids,
+            applies_to_epoch_uids=source.applies_to_epoch_uids,
+        )
+        StudySelectionScopeRepository.validate_targets(study_uid, scope)
+        return scope
 
     def _check_for_study_endpoints_and_update(
         self, study_uid: str, study_objective_uid: str
@@ -252,6 +269,7 @@ class StudyObjectiveSelectionService(StudySelectionMixin):
                 objective_level_order=objective_level_order,
                 generate_uid_callback=repos.study_objective_repository.generate_uid,
                 author_id=self.author,
+                scope=self._scope(study_uid, selection_create_input),
             )
 
             # Check the state of the objective, if latest version is in draft then we approve it, if retired then we throw a error
@@ -374,6 +392,7 @@ class StudyObjectiveSelectionService(StudySelectionMixin):
                 objective_level_uid=selection_create_input.objective_level_uid,
                 objective_level_order=objective_level_order,
                 generate_uid_callback=repos.study_objective_repository.generate_uid,
+                scope=self._scope(study_uid, selection_create_input),
             )
 
             # add VO to aggregate
@@ -384,6 +403,8 @@ class StudyObjectiveSelectionService(StudySelectionMixin):
                 objective_repo.check_exists_final_version,
                 self._repos.ct_term_name_repository.term_specific_exists_by_uid,
             )
+            # The same duplicate rule as a direct selection, including scope.
+            selection_aggregate.validate()
 
             # sync with DB and save the update
             repos.study_objective_repository.save(selection_aggregate, self.author)
@@ -470,6 +491,7 @@ class StudyObjectiveSelectionService(StudySelectionMixin):
                         objective_level_uid="",
                         objective_level_order=None,
                         generate_uid_callback=repos.study_objective_repository.generate_uid,
+                        scope=self._scope(study_uid, template_input),
                     )
 
                     # Add template to selection
@@ -519,7 +541,10 @@ class StudyObjectiveSelectionService(StudySelectionMixin):
                                 objective_template_uid=template_input.objective_template_uid,
                                 parameter_terms=parameter_terms,
                                 library_name=template_input.library_name,
-                            )
+                            ),
+                            applies_to_arm_uids=template_input.applies_to_arm_uids,
+                            applies_to_cohort_uids=template_input.applies_to_cohort_uids,
+                            applies_to_epoch_uids=template_input.applies_to_epoch_uids,
                         ),
                     )
                     selections.append(new_selection)
@@ -556,6 +581,7 @@ class StudyObjectiveSelectionService(StudySelectionMixin):
                     objective_level_uid=selection_create_input.objective_level_uid,
                     objective_level_order=None,
                     generate_uid_callback=lambda: "preview",
+                    scope=self._scope(study_uid, selection_create_input),
                 )
 
                 selection_aggregate.add_objective_selection(
@@ -975,11 +1001,16 @@ class StudyObjectiveSelectionService(StudySelectionMixin):
         self,
         request_study_objective: StudySelectionObjectiveInput,
         current_study_objective: StudySelectionObjectiveVO,
+        study_uid: str | None = None,
     ) -> StudySelectionObjectiveVO:
         # transform current to input model
+        scope = current_study_objective.scope
         transformed_current = StudySelectionObjectiveInput(
             objective_uid=current_study_objective.objective_uid,
             objective_level_uid=current_study_objective.objective_level_uid,
+            applies_to_arm_uids=list(scope.applies_to_arm_uids),
+            applies_to_cohort_uids=list(scope.applies_to_cohort_uids),
+            applies_to_epoch_uids=list(scope.applies_to_epoch_uids),
         )
 
         # fill the missing from the inputs
@@ -1013,6 +1044,12 @@ class StudyObjectiveSelectionService(StudySelectionMixin):
             objective_level_uid=request_study_objective.objective_level_uid,
             study_selection_uid=current_study_objective.study_selection_uid,
             author_id=self.author,
+            # Omitted scope fields were filled from the current selection
+            # above; an explicit [] clears only that dimension.
+            scope=self._scope(
+                study_uid or current_study_objective.study_uid or "",
+                request_study_objective,
+            ),
         )
 
     @db.transaction
@@ -1057,6 +1094,7 @@ class StudyObjectiveSelectionService(StudySelectionMixin):
             updated_selection = self._patch_prepare_new_study_objective(
                 request_study_objective=selection_update_input,
                 current_study_objective=current_vo,
+                study_uid=study_uid,
             )
 
             # if there is a new objective we have to check the state
@@ -1075,6 +1113,7 @@ class StudyObjectiveSelectionService(StudySelectionMixin):
                     updated_selection = self._patch_prepare_new_study_objective(
                         request_study_objective=selection_update_input,
                         current_study_objective=current_vo,
+                        study_uid=study_uid,
                     )
                 # if in retired then we return a error
                 elif objective_ar.item_metadata.status == LibraryItemStatus.RETIRED:

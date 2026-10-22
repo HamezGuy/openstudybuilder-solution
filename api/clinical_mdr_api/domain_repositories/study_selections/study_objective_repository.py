@@ -1,5 +1,5 @@
 import datetime
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from neomodel import db
@@ -36,6 +36,9 @@ from clinical_mdr_api.domains.study_selections.study_selection_objective import 
     StudySelectionObjectivesAR,
     StudySelectionObjectiveVO,
 )
+from clinical_mdr_api.domains.study_selections.study_selection_scope import (
+    StudySelectionScopeVO,
+)
 from common.config import settings
 from common.exceptions import BusinessLogicException
 from common.utils import convert_to_datetime
@@ -57,6 +60,7 @@ class SelectionHistory:
     end_date: datetime.datetime | None
     order: int
     objective_version: str | None
+    scope: StudySelectionScopeVO = field(default_factory=StudySelectionScopeVO)
 
 
 class StudySelectionObjectiveRepository:
@@ -132,6 +136,9 @@ class StudySelectionObjectiveRepository:
                 sr.uid AS study_uid,
                 so.uid AS study_selection_uid,
                 so.accepted_version AS accepted_version,
+                so.applies_to_arm_uids AS applies_to_arm_uids,
+                so.applies_to_cohort_uids AS applies_to_cohort_uids,
+                so.applies_to_epoch_uids AS applies_to_epoch_uids,
                 obj.uid AS objective_uid,
                 olr.uid AS objective_level_uid,
                 has_term.order as objective_level_order,
@@ -158,6 +165,7 @@ class StudySelectionObjectiveRepository:
                 start_date=convert_to_datetime(value=selection["start_date"]),
                 author_id=selection["author_id"],
                 accepted_version=acv,
+                scope=StudySelectionScopeVO.from_record(selection),
             )
             all_selections.append(selection_vo)
         return tuple(all_selections)
@@ -340,6 +348,9 @@ class StudySelectionObjectiveRepository:
             order=order,
             uid=selection.study_selection_uid,
             accepted_version=selection.accepted_version,
+            applies_to_arm_uids=list(selection.scope.applies_to_arm_uids),
+            applies_to_cohort_uids=list(selection.scope.applies_to_cohort_uids),
+            applies_to_epoch_uids=list(selection.scope.applies_to_epoch_uids),
         ).save()
 
         if not for_deletion:
@@ -470,6 +481,9 @@ class StudySelectionObjectiveRepository:
                 bsa.date AS end_date,
                 all_so.order AS order,
                 ver.version AS objective_version,
+                all_so.applies_to_arm_uids AS applies_to_arm_uids,
+                all_so.applies_to_cohort_uids AS applies_to_cohort_uids,
+                all_so.applies_to_epoch_uids AS applies_to_epoch_uids,
                 author_username
                 """,
             {"study_uid": study_uid, "study_selection_uid": study_selection_uid},
@@ -496,6 +510,7 @@ class StudySelectionObjectiveRepository:
                     end_date=end_date,
                     order=res["order"],
                     objective_version=res["objective_version"],
+                    scope=StudySelectionScopeVO.from_record(res),
                 )
             )
         return result

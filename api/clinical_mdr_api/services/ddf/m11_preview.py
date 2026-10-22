@@ -276,6 +276,20 @@ class _PreviewSources:
         return result
 
 
+def _authored_scope_text(source: dict[str, Any]) -> str:
+    """Native scope of one criterion; dimensions are listed, never combined."""
+    parts = [
+        f"{label} {', '.join(uids)}"
+        for label, key in (
+            ("arms", "applies_to_arm_uids"),
+            ("cohorts", "applies_to_cohort_uids"),
+            ("epochs", "applies_to_epoch_uids"),
+        )
+        if (uids := [str(uid) for uid in source.get(key) or []])
+    ]
+    return "; ".join(parts) if parts else "none authored"
+
+
 def _eligibility_for_preview(
     sources: _PreviewSources, version: dict[str, Any], design: dict[str, Any]
 ) -> dict[str, Any]:
@@ -326,6 +340,7 @@ def _eligibility_for_preview(
                 "key": _value(source.get("key_criteria")),
                 "category": _code(criterion.get("category")),
                 "template_only": bool(source.get("template")) and not definition,
+                "scope": _authored_scope_text(source),
             }
         )
         rendered_criteria.add(source_uid)
@@ -345,6 +360,7 @@ def _eligibility_for_preview(
                     ),
                     "key": _value(source.get("key_criteria")),
                     "category": _code(source.get("criteria_type")),
+                    "scope": _authored_scope_text(source),
                 }
             )
 

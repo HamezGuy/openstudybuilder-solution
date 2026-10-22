@@ -50,7 +50,12 @@ from clinical_mdr_api.domain_repositories.models.syntax import (
     ObjectiveValue,
     TimeframeValue,
 )
-from common.neomodel import BooleanProperty, IntegerProperty, StringProperty
+from common.neomodel import (
+    ArrayProperty,
+    BooleanProperty,
+    IntegerProperty,
+    StringProperty,
+)
 
 STUDY_VALUE_CLASS_NAME = ".study.StudyValue"
 STUDY_SOA_FOOTNOTE_CLASS_NAME = ".study.StudySoAFootnote"
@@ -129,6 +134,10 @@ class StudyDataSupplier(StudySelection):
 
 
 class StudyObjective(StudySelection):
+    # Authored applicability. Each revision keeps its own native UID sets.
+    applies_to_arm_uids = ArrayProperty(StringProperty())
+    applies_to_cohort_uids = ArrayProperty(StringProperty())
+    applies_to_epoch_uids = ArrayProperty(StringProperty())
     has_selected_objective = RelationshipTo(
         ObjectiveValue,
         "HAS_SELECTED_OBJECTIVE",
@@ -166,6 +175,10 @@ class StudyEndpointUnitRel(ClinicalMdrRel):
 class StudyEndpoint(StudySelection):
     __optional_labels__ = ["TemplateParameterTermRoot"]
     text = StringProperty()
+    # Authored applicability. Each revision keeps its own native UID sets.
+    applies_to_arm_uids = ArrayProperty(StringProperty())
+    applies_to_cohort_uids = ArrayProperty(StringProperty())
+    applies_to_epoch_uids = ArrayProperty(StringProperty())
     study_endpoint_has_study_objective = RelationshipTo(
         StudyObjective,
         "STUDY_ENDPOINT_HAS_STUDY_OBJECTIVE",
@@ -275,6 +288,10 @@ class StudyCompound(StudySelection):
 
 
 class StudyCriteria(StudySelection):
+    # Authored applicability. Each revision keeps its own native UID sets.
+    applies_to_arm_uids = ArrayProperty(StringProperty())
+    applies_to_cohort_uids = ArrayProperty(StringProperty())
+    applies_to_epoch_uids = ArrayProperty(StringProperty())
     has_selected_criteria = RelationshipTo(
         CriteriaValue,
         "HAS_SELECTED_CRITERIA",

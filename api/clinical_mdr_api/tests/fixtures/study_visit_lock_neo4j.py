@@ -76,6 +76,11 @@ class NativeVisitGraph:
             # Approved library compounds selected by native regimen tests.
             "Compound",
             "MedicinalProduct",
+            # Plain endpoint templates and instances for native scope tests.
+            "Endpoint",
+            "TemplateParameter",
+            "Objective",
+            "Criteria",
         )
         for labels, mark in rows:
             assert mark in (None, self.nonce), "Another fixture wrote into this graph"

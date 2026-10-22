@@ -1979,6 +1979,11 @@ ALL_ROUTES_METHODS_ROLES = (  # type: ignore[var-annotated]
         {"Study.Write"},
     ),
     (
+        "/studies/{study_uid}/study-criteria/{study_criteria_uid}/applicability",
+        "PATCH",
+        {"Study.Write"},
+    ),
+    (
         "/studies/{study_uid}/study-criteria/{study_criteria_uid}/sync-latest-version",
         "POST",
         {"Study.Write"},
