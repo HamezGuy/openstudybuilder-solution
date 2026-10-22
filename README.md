@@ -219,6 +219,34 @@ scripts used inside Linux containers, and pins the normative platform schema
 bytes the Command Center registry hashes. A fresh checkout needs no global Git
 configuration.
 
+### Upstream behaviour the fork changes
+
+These are changes inside upstream OpenStudyBuilder code, not fork-only
+additions. An upstream merge must keep them.
+
+- **SDTM CT selection detection.** Upstream decides whether a study standard
+  version selects an SDTM CT package by the package UID containing the catalogue
+  name (`settings.sdtm_ct_catalogue_name in ct_package_uid`). A package of the
+  SDTM CT catalogue named otherwise was missed: lock added a second, automatic
+  SDTM CT selection, and that locked version's USDM export was refused with
+  `USDM_CT_PACKAGE_SELECTION_AMBIGUOUS`. The fork decides by the package's own
+  catalogue through one helper, `is_sdtm_ct_package` (with
+  `CTPackageRepository.find_catalogue_name`) in
+  `api/clinical_mdr_api/domain_repositories/controlled_terminologies/ct_package_repository.py`,
+  and keeps the name convention only when the catalogue is unknown. Packages
+  named by the convention behave exactly as upstream. The five call sites, all
+  on the helper:
+  1. `StudyService._extract_terms_at_date`
+     (`api/clinical_mdr_api/services/studies/study.py`);
+  2. `StudyService.lock`, the check before the automatic SDTM CT selection;
+  3. `StudyService.lock`, the "has to be selected before Study is locked" check;
+  4. `StudyService.unlock`, removal of the automatic selection;
+  5. `StudySelectionMixin._extract_study_standards_effective_date`
+     (`api/clinical_mdr_api/services/studies/study_selection_base.py`).
+
+  Tests: `api/clinical_mdr_api/tests/unit/domain_repositories/test_sdtm_ct_package.py`
+  and the native `api/clinical_mdr_api/tests/integration/services/test_sdtm_ct_selection_neo4j.py`.
+
 ## Prerequisites
 
 Install these once, before setting up any component.

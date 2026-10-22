@@ -8,6 +8,9 @@ from opencensus.trace import execution_context
 from clinical_mdr_api.domain_repositories._utils.helpers import (
     acquire_write_lock_study_value,
 )
+from clinical_mdr_api.domain_repositories.controlled_terminologies.ct_package_repository import (
+    is_sdtm_ct_package,
+)
 from clinical_mdr_api.domain_repositories.models.controlled_terminology import CTPackage
 from clinical_mdr_api.domains.versioned_object_aggregate import LibraryItemStatus
 from clinical_mdr_api.models.concepts.activities.activity import (
@@ -817,7 +820,10 @@ class StudySelectionMixin:
         study_standard_versions_sdtm = [
             study_standard_version
             for study_standard_version in study_standard_versions
-            if settings.sdtm_ct_catalogue_name in study_standard_version.ct_package_uid
+            if is_sdtm_ct_package(
+                study_standard_version.ct_package_uid,
+                repos.ct_package_repository,
+            )
         ]
         study_standard_version_sdtm = (
             study_standard_versions_sdtm[0] if study_standard_versions_sdtm else None

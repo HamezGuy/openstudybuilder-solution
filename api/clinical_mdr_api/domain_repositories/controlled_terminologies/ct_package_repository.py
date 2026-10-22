@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Collection
+from typing import Any, Collection
 
 from neomodel import db
 from neomodel.exceptions import UniqueProperty
@@ -18,7 +18,35 @@ from common.exceptions import AlreadyExistsException, NotFoundException
 from common.telemetry import trace_calls
 
 
+def is_sdtm_ct_package(package_uid: str | None, repository: Any) -> bool:
+    """Whether a study standard version's package belongs to the SDTM CT catalogue.
+
+    Fork difference from upstream OpenStudyBuilder (README, AccuraTrial fork,
+    "Upstream behaviour the fork changes"). Upstream decides by the package UID
+    containing the catalogue name. A package of the SDTM CT catalogue named
+    otherwise was then missed: lock added a second, automatic SDTM CT
+    selection, and that locked version's USDM export was refused as
+    ambiguous. The package's own catalogue decides; the name convention
+    applies only when the catalogue is unknown (no single catalogue found).
+    """
+    if not isinstance(package_uid, str) or not package_uid:
+        return False
+    catalogue_name = repository.find_catalogue_name(package_uid)
+    if isinstance(catalogue_name, str) and catalogue_name:
+        return catalogue_name == settings.sdtm_ct_catalogue_name
+    return settings.sdtm_ct_catalogue_name in package_uid
+
+
 class CTPackageRepository:
+    def find_catalogue_name(self, package_uid: str) -> str | None:
+        """The one catalogue containing the package, or None when unknown."""
+        rows, _ = db.cypher_query(
+            "MATCH (catalogue:CTCatalogue)-[:CONTAINS_PACKAGE]->"
+            "(:CTPackage {uid: $uid}) RETURN DISTINCT catalogue.name",
+            {"uid": package_uid},
+        )
+        return rows[0][0] if len(rows) == 1 else None
+
     def package_exists(self, package_name: str) -> bool:
         package_node = CTPackage.nodes.get_or_none(name=package_name)
         return bool(package_node)

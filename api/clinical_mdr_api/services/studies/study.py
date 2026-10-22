@@ -10,6 +10,9 @@ from fastapi import status as http_status
 from neomodel import db
 from opencensus.trace import execution_context
 
+from clinical_mdr_api.domain_repositories.controlled_terminologies.ct_package_repository import (
+    is_sdtm_ct_package,
+)
 from clinical_mdr_api.domain_repositories.models.study_field import (
     StudyArrayField,
     StudyBooleanField,
@@ -805,7 +808,10 @@ class StudyService:
         study_standard_versions_sdtm = [
             study_standard_version
             for study_standard_version in study_standard_versions
-            if settings.sdtm_ct_catalogue_name in study_standard_version.ct_package_uid
+            if is_sdtm_ct_package(
+                study_standard_version.ct_package_uid,
+                self._repos.ct_package_repository,
+            )
         ]
         study_standard_version_sdtm = (
             study_standard_versions_sdtm[0] if study_standard_versions_sdtm else None
@@ -886,8 +892,10 @@ class StudyService:
             study_standard_versions_sdtm = [
                 study_standard_version
                 for study_standard_version in study_standard_versions
-                if settings.sdtm_ct_catalogue_name
-                in study_standard_version.ct_package_uid
+                if is_sdtm_ct_package(
+                    study_standard_version.ct_package_uid,
+                    self._repos.ct_package_repository,
+                )
             ]
             study_standard_version_sdtm = (
                 study_standard_versions_sdtm[0]
@@ -981,8 +989,10 @@ class StudyService:
             study_standard_versions_sdtm = [
                 study_standard_version
                 for study_standard_version in study_standard_versions
-                if settings.sdtm_ct_catalogue_name
-                in study_standard_version.ct_package_uid
+                if is_sdtm_ct_package(
+                    study_standard_version.ct_package_uid,
+                    self._repos.ct_package_repository,
+                )
             ]
             study_standard_version_sdtm = (
                 study_standard_versions_sdtm[0]
@@ -1246,8 +1256,10 @@ class StudyService:
             study_standard_versions_sdtm = [
                 study_standard_version
                 for study_standard_version in study_standard_versions
-                if settings.sdtm_ct_catalogue_name
-                in study_standard_version.ct_package_uid
+                if is_sdtm_ct_package(
+                    study_standard_version.ct_package_uid,
+                    self._repos.ct_package_repository,
+                )
             ]
             study_standard_version_sdtm = (
                 study_standard_versions_sdtm[0]
