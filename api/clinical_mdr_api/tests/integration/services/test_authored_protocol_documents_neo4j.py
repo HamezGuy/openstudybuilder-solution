@@ -517,17 +517,21 @@ def test_protocol_document_integrity_detects_rolled_back_corruption(
                         "study_version_exists_if_has_protocol_soa_cell_and_study_definition_document_exists",
                     )
                 elif corruption == "draft-header-only-without-version":
+                    # Every release gives its new draft exactly one reason
+                    # record. Removing it builds the unversioned draft state.
                     rows, _ = db.cypher_query(
                         "MATCH (root:StudyRoot {uid:$study_uid})-[:LATEST]->(draft:StudyValue), "
                         "(root)-[:HAS_VERSION {status:'RELEASED',version:'0.1'}]"
                         "->(:StudyValue)-[:HAS_STUDY_DEFINITION_DOCUMENT]->(document:StudyDefinitionDocument) "
                         "WHERE document.authored_documents_json IS NULL "
-                        "AND NOT (draft)-[:HAS_STUDY_VERSION]->(:StudyVersion) "
+                        "OPTIONAL MATCH (draft)-[membership:HAS_STUDY_VERSION]->(:StudyVersion) "
+                        "WITH draft, document, collect(membership) AS memberships "
+                        "FOREACH (membership IN memberships | DELETE membership) "
                         "CREATE (draft)-[:HAS_STUDY_DEFINITION_DOCUMENT]->(document) "
-                        "RETURN count(document)",
+                        "RETURN count(document), size(memberships)",
                         {"study_uid": study_uid},
                     )
-                    assert rows == [[1]]
+                    assert rows == [[1, 1]]
                     expected_failures = (
                         "study_version_exists_if_study_definition_document_exists",
                     )

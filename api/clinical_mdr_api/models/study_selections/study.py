@@ -36,6 +36,7 @@ from clinical_mdr_api.domains.study_definition_aggregates.study_metadata import 
     StudyStatus,
     StudyVersionMetadataVO,
 )
+from clinical_mdr_api.domains.study_selections.study_amendment import StudyAmendmentVO
 from clinical_mdr_api.models.controlled_terminologies.ct_term import (
     SimpleCTTermNameWithConflictFlag,
     SimpleTermModel,
@@ -1970,7 +1971,30 @@ class CompactStudy(BaseModel):
         return study
 
 
+class StudyAmendment(BaseModel):
+    """Authored facts only. An empty arm list does not mean all arms."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    amendment_type: Annotated[str, Field(min_length=1, strict=True)]
+    affected_arm_uids: list[Annotated[str, Field(min_length=1, strict=True)]]
+    authorizing_decision_ref: Annotated[str, Field(min_length=1, strict=True)]
+
+    @model_validator(mode="after")
+    def validate_authored_facts(self) -> Self:
+        self.to_vo()
+        return self
+
+    def to_vo(self) -> StudyAmendmentVO:
+        return StudyAmendmentVO(
+            amendment_type=self.amendment_type,
+            affected_arm_uids=tuple(self.affected_arm_uids),
+            authorizing_decision_ref=self.authorizing_decision_ref,
+        )
+
+
 class StudyVersionHistory(BaseModel):
+    amendment: StudyAmendment | None = None
     study_status: Annotated[
         list[StudyStatus],
         Field(description="List of StudyStatuses for specific study version"),
@@ -2056,6 +2080,7 @@ class StudyVersionHistory(BaseModel):
         val: dict[str, Any],
     ) -> Self:
         return cls(
+            amendment=val.get("amendment"),
             study_status=[StudyStatus(status) for status in val["statuses"]],
             reason_for_lock_name=val.get("reason_for_lock"),
             reason_for_unlock_name=val.get("reason_for_unlock"),
@@ -2404,6 +2429,10 @@ class LockReleaseInput(BaseModel):
     protocol_header_minor_version: Annotated[
         int | None, Field(description="The minor version of protocol header.")
     ] = None
+
+
+class StudyLockInput(LockReleaseInput):
+    amendment: StudyAmendment | None = None
 
 
 class UnlockInput(BaseModel):

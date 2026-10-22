@@ -3,7 +3,7 @@
   "info": {
     "title": "OpenStudyBuilder API",
     "description": "\n## NOTICE\n\nThis license information is applicable to the swagger documentation of the clinical-mdr-api, that is the openapi.json.\n\n## License Terms (MIT)\n\nCopyright (C) 2025 Novo Nordisk A/S, Danish company registration no. 24256790\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\n\n## Licenses and Acknowledgements for Incorporated Software\n\nThis component contains software licensed under different licenses when compiled, please refer to the third-party-licenses.md file for further information and full license texts.\n\n## Authentication\n\nSupports OAuth2 [Authorization Code Flow](https://datatracker.ietf.org/doc/html/rfc6749#section-4.1),\nat paths described in the OpenID Connect Discovery metadata document (whose URL is defined by the `OAUTH_METADATA_URL` environment variable).\n\nMicrosoft Identity Platform documentation can be read \n([here](https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-auth-code-flow)).\n\nAuthentication can be turned off with `OAUTH_ENABLED=false` environment variable. \n\nWhen authentication is turned on, all requests to protected API endpoints must provide a valid bearer (JWT) token inside the `Authorization` http header. \n",
-    "version": "3.0.704"
+    "version": "3.0.705"
   },
   "paths": {
     "/": {
@@ -71069,7 +71069,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/LockReleaseInput",
+                "$ref": "#/components/schemas/StudyLockInput",
                 "description": "The data (reason_for_lock and description) needed for locked version."
               }
             }
@@ -72060,6 +72060,100 @@
           },
           "412": {
             "description": "An expected value or null companion changed, or the slot is not empty.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/studies/{study_uid}/versions/{from_version}/diff/{to_version}": {
+      "get": {
+        "tags": [
+          "Studies"
+        ],
+        "summary": "Compare two exact native study versions",
+        "description": "Compare locked or released version-owned native structure and pinned content. Mutable draft versions cannot be compared by this endpoint. External values without an immutable pin are reported as coverage issues. Structural equality does not establish complete semantic equality or approval.",
+        "operationId": "get_study_version_diff_studies__study_uid__versions__from_version__diff__to_version__get",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "study_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The unique id of the study.",
+              "title": "Study Uid"
+            },
+            "description": "The unique id of the study."
+          },
+          {
+            "name": "from_version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.?[0-9]*$",
+              "description": "The exact native study metadata version.",
+              "title": "From Version"
+            },
+            "description": "The exact native study metadata version."
+          },
+          {
+            "name": "to_version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.?[0-9]*$",
+              "description": "The exact native study metadata version.",
+              "title": "To Version"
+            },
+            "description": "The exact native study metadata version."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudyVersionDiff"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The requested versions or their native structure are inconsistent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found",
             "content": {
               "application/json": {
                 "schema": {
@@ -165006,6 +165100,37 @@
         "type": "object",
         "title": "StudyActivitySyncLatestVersionInput"
       },
+      "StudyAmendment": {
+        "properties": {
+          "amendment_type": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Amendment Type"
+          },
+          "affected_arm_uids": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Affected Arm Uids"
+          },
+          "authorizing_decision_ref": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Authorizing Decision Ref"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "amendment_type",
+          "affected_arm_uids",
+          "authorizing_decision_ref"
+        ],
+        "title": "StudyAmendment",
+        "description": "Authored facts only. An empty arm list does not mean all arms."
+      },
       "StudyArmLifecycleEvent": {
         "properties": {
           "uid": {
@@ -170921,6 +171046,77 @@
         },
         "type": "object",
         "title": "StudyInterventionJsonModel"
+      },
+      "StudyLockInput": {
+        "properties": {
+          "reason_for_change_uid": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Reason For Change Uid"
+          },
+          "change_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Description",
+            "description": "The description of the Study status change."
+          },
+          "other_reason_for_locking_releasing": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Reason For Locking Releasing"
+          },
+          "protocol_header_major_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol Header Major Version",
+            "description": "The major version of protocol header."
+          },
+          "protocol_header_minor_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol Header Minor Version",
+            "description": "The minor version of protocol header."
+          },
+          "amendment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StudyAmendment"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "reason_for_change_uid"
+        ],
+        "title": "StudyLockInput"
       },
       "StudyMetadataJsonModel": {
         "properties": {
@@ -181440,6 +181636,30 @@
         ],
         "title": "StudySite"
       },
+      "StudySnapshotCoverageIssue": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "path",
+          "detail"
+        ],
+        "title": "StudySnapshotCoverageIssue"
+      },
       "StudySoAEditBatchInput": {
         "properties": {
           "method": {
@@ -183159,8 +183379,108 @@
         ],
         "title": "Study type model for listing supplying SDTM generation framework"
       },
+      "StudyVersionChange": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "added",
+              "removed",
+              "changed"
+            ],
+            "title": "Kind"
+          },
+          "before_present": {
+            "type": "boolean",
+            "title": "Before Present"
+          },
+          "after_present": {
+            "type": "boolean",
+            "title": "After Present"
+          },
+          "before": {
+            "title": "Before"
+          },
+          "after": {
+            "title": "After"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "kind",
+          "before_present",
+          "after_present"
+        ],
+        "title": "StudyVersionChange"
+      },
+      "StudyVersionDiff": {
+        "properties": {
+          "study_uid": {
+            "type": "string",
+            "title": "Study Uid"
+          },
+          "from_version": {
+            "type": "string",
+            "title": "From Version"
+          },
+          "to_version": {
+            "type": "string",
+            "title": "To Version"
+          },
+          "before": {
+            "$ref": "#/components/schemas/StudyVersionSnapshot"
+          },
+          "after": {
+            "$ref": "#/components/schemas/StudyVersionSnapshot"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/StudyVersionChange"
+            },
+            "type": "array",
+            "title": "Changes"
+          },
+          "structurally_equal": {
+            "type": "boolean",
+            "title": "Structurally Equal"
+          },
+          "semantic_comparison_complete": {
+            "type": "boolean",
+            "title": "Semantic Comparison Complete"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "study_uid",
+          "from_version",
+          "to_version",
+          "before",
+          "after",
+          "changes",
+          "structurally_equal",
+          "semantic_comparison_complete"
+        ],
+        "title": "StudyVersionDiff"
+      },
       "StudyVersionHistory": {
         "properties": {
+          "amendment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StudyAmendment"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "study_status": {
             "items": {
               "$ref": "#/components/schemas/StudyStatus"
@@ -183380,6 +183700,59 @@
         },
         "type": "object",
         "title": "StudyVersionMetadataJsonModel"
+      },
+      "StudyVersionSnapshot": {
+        "properties": {
+          "study_uid": {
+            "type": "string",
+            "title": "Study Uid"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "content": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Content"
+          },
+          "structural_hash": {
+            "type": "string",
+            "title": "Structural Hash"
+          },
+          "provenance": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Provenance"
+          },
+          "observations": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Observations"
+          },
+          "coverage_issues": {
+            "items": {
+              "$ref": "#/components/schemas/StudySnapshotCoverageIssue"
+            },
+            "type": "array",
+            "title": "Coverage Issues"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "study_uid",
+          "version",
+          "content",
+          "structural_hash",
+          "provenance",
+          "observations",
+          "coverage_issues"
+        ],
+        "title": "StudyVersionSnapshot"
       },
       "StudyVisit": {
         "properties": {

@@ -27,6 +27,7 @@ from clinical_mdr_api.models.study_selections.study import (
     StudyCreateInput,
     StudyFieldAuditTrailEntry,
     StudyIntegrityCheckResponse,
+    StudyLockInput,
     StudyMinimal,
     StudyOtherAttribute,
     StudyOtherAttributeBatchInput,
@@ -59,6 +60,9 @@ from clinical_mdr_api.models.study_selections.study_definition_document import (
     AuthoredProtocolDocumentsInput,
 )
 from clinical_mdr_api.models.study_selections.study_pharma_cm import StudyPharmaCM
+from clinical_mdr_api.models.study_selections.study_version_snapshot import (
+    StudyVersionDiff,
+)
 from clinical_mdr_api.models.utils import CustomPage, EditInputModel
 from clinical_mdr_api.repositories._utils import FilterOperator
 from clinical_mdr_api.routers import _generic_descriptions, decorators
@@ -82,6 +86,9 @@ from clinical_mdr_api.services.studies.study_definition_document import (
     StudyDefinitionDocumentService,
 )
 from clinical_mdr_api.services.studies.study_pharma_cm import StudyPharmaCMService
+from clinical_mdr_api.services.studies.study_version_snapshot import (
+    StudyVersionSnapshotService,
+)
 from common.auth import rbac
 from common.auth.dependencies import security
 from common.config import settings
@@ -94,6 +101,9 @@ StudyUID = Path(description="The unique id of the study.")
 TargetStudyUID = Path(
     description="The unique id of the target study (e.g. a clone). "
     "Only selection labels that appear on this study are included in the comparison."
+)
+StudySnapshotVersion = Path(
+    description="The exact native study metadata version.", pattern=r"^[0-9]+\.?[0-9]*$"
 )
 
 
@@ -605,7 +615,7 @@ def get_distinct_values_for_header(
 def lock(
     study_uid: Annotated[str, StudyUID],
     lock_description: Annotated[
-        LockReleaseInput,
+        StudyLockInput,
         Body(
             description="The data (reason_for_lock and description) needed for locked version."
         ),
@@ -619,6 +629,7 @@ def lock(
         reason_for_lock_term_uid=lock_description.reason_for_change_uid,
         protocol_header_major_version=lock_description.protocol_header_major_version,
         protocol_header_minor_version=lock_description.protocol_header_minor_version,
+        amendment=lock_description.amendment,
     )
 
 
@@ -1028,6 +1039,34 @@ def patch(
 
     response = study_service.patch(study_uid, dry, study_patch_request)
     return response
+
+
+@router.get(
+    "/{study_uid}/versions/{from_version}/diff/{to_version}",
+    dependencies=[security, rbac.STUDY_READ],
+    summary="Compare two exact native study versions",
+    description="Compare locked or released version-owned native structure and pinned content. "
+    "Mutable draft versions cannot be compared by this endpoint. "
+    "External values without an immutable pin are reported as coverage issues. "
+    "Structural equality does not establish complete semantic equality or approval.",
+    status_code=200,
+    responses={
+        400: {
+            "model": ErrorResponse,
+            "description": "The requested versions or their native structure are inconsistent.",
+        },
+        403: _generic_descriptions.ERROR_403,
+        404: _generic_descriptions.ERROR_404,
+    },
+)
+def get_study_version_diff(
+    study_uid: Annotated[str, StudyUID],
+    from_version: Annotated[str, StudySnapshotVersion],
+    to_version: Annotated[str, StudySnapshotVersion],
+) -> StudyVersionDiff:
+    return StudyVersionSnapshotService().get_diff(
+        study_uid=study_uid, from_version=from_version, to_version=to_version
+    )
 
 
 @router.get(

@@ -838,6 +838,8 @@ class StudySourceVariable(StudySelection):
 class StudyVersion(StudySelection):
     other_reason_for_locking = StringProperty()
     other_reason_for_unlocking = StringProperty()
+    amendment_json = StringProperty()
+    previous_locked_version = StringProperty()
 
     has_reason_for_lock = RelationshipTo(
         CTTermContext,

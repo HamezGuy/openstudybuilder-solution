@@ -14,15 +14,15 @@ from clinical_mdr_api.domain_repositories.generic_repository import (
 from clinical_mdr_api.domain_repositories.models.controlled_terminology import (
     CTTermRoot,
 )
+from clinical_mdr_api.domain_repositories.models.study import StudyRoot, StudyValue
 from clinical_mdr_api.domain_repositories.models.study_audit_trail import Create, Edit
 from clinical_mdr_api.domain_repositories.models.study_selections import StudyVersion
-from clinical_mdr_api.domains.study_definition_aggregates.study_metadata import (
-    StudyStatus,
-)
+from clinical_mdr_api.domains.study_selections.study_amendment import StudyAmendmentVO
 from clinical_mdr_api.repositories._utils import calculate_total_count_from_query_result
 from clinical_mdr_api.services._utils import ensure_transaction
 from common.auth.user import user
 from common.config import settings
+from common.exceptions import NotFoundException, ValidationException
 from common.utils import (
     db_pagination_clause,
     get_db_result_as_dict,
@@ -35,24 +35,157 @@ class StudyVersionRepository:
     Repository for managing StudyVersion nodes.
     """
 
-    def __init__(self):
-        self.author_id = user().id()
+    def __init__(self, author_id: str | None = None):
+        self.author_id = author_id if author_id is not None else user().id()
 
     @staticmethod
     def _study_value_query(
         study_uid: str, version: str | None = None
     ) -> tuple[str, dict[str, str | None]]:
-        params = {
-            "study_uid": study_uid,
-        }
-        if version:
-            params["version"] = version
-            params["study_status"] = StudyStatus.RELEASED.value
-            query = "MATCH (study_root:StudyRoot {uid: $study_uid})-[:HAS_VERSION{status:'RELEASED',version:$version}]->(study_value:StudyValue)"
-        else:
-            query = "MATCH (study_root:StudyRoot {uid: $study_uid})-[:LATEST]->(study_value:StudyValue)"
+        params = {"study_uid": study_uid, "version": version}
+        selector = (
+            "[:LATEST]" if version is None else "[:HAS_VERSION {version:$version}]"
+        )
+        return (
+            "MATCH (study_root:StudyRoot {uid:$study_uid})-"
+            + selector
+            + "->(study_value:StudyValue) WITH DISTINCT study_root, study_value",
+            params,
+        )
 
-        return query, params
+    @ensure_transaction(db)
+    def get_selected_version(
+        self, study_uid: str, version: str | None = None
+    ) -> tuple[StudyRoot, StudyValue, StudyVersion | None]:
+        """Resolve ownership by exact membership, including historical records."""
+        query, params = self._study_value_query(study_uid, version)
+        return self._resolve_selected_version(study_uid, query, params)
+
+    def _resolve_selected_version(
+        self, study_uid: str, query: str, params: dict[str, str | None]
+    ) -> tuple[StudyRoot, StudyValue, StudyVersion | None]:
+        rows, _ = db.cypher_query(
+            query + """
+            OPTIONAL MATCH (study_value)-[:HAS_STUDY_VERSION]->(record:StudyVersion)
+            RETURN study_root, study_value, record,
+                [(owner:StudyRoot)-[:LATEST|HAS_VERSION]->(study_value) | owner.uid],
+                [(owner_value:StudyValue)-[:HAS_STUDY_VERSION]->(record) | elementId(owner_value)]
+            """,
+            params,
+            resolve_objects=True,
+        )
+        if not rows:
+            raise NotFoundException("Study version", study_uid)
+        if len(rows) != 1:
+            raise ValidationException(
+                msg="The selected study version has ambiguous version records"
+            )
+        root, value, record, owners, record_values = rows[0]
+        if set(owners) != {study_uid}:
+            raise ValidationException(
+                msg="The selected study value has foreign ownership"
+            )
+        if record is not None and record_values != [value.element_id]:
+            raise ValidationException(
+                msg="The selected version record belongs to another study value"
+            )
+        if record is not None:
+            self.amendment_from_record(record)
+        return root, value, record
+
+    @ensure_transaction(db)
+    def carry_forward_draft_reasons(
+        self, study_uid: str, previous_value_id: str, current_value_id: str
+    ) -> StudyVersion | None:
+        """Copy reason facts from the exact predecessor of an ordinary draft edit."""
+        acquire_write_lock_study_value(study_uid)
+        root, current_value, current_record = self.get_selected_version(study_uid)
+        if current_value.element_id != current_value_id or current_record is not None:
+            raise ValidationException(msg="The successor draft version changed")
+        _, _, source = self._resolve_selected_version(
+            study_uid,
+            "MATCH (study_root:StudyRoot {uid:$study_uid})-[:HAS_VERSION]->(study_value:StudyValue) "
+            "WHERE elementId(study_value)=$previous_value_id "
+            "WITH DISTINCT study_root, study_value",
+            {"study_uid": study_uid, "previous_value_id": previous_value_id},
+        )
+        if source is None:
+            return None
+        after = StudyVersion(
+            uid=source.uid,
+            other_reason_for_locking=source.other_reason_for_locking,
+            other_reason_for_unlocking=source.other_reason_for_unlocking,
+        ).save()
+        current_value.has_study_version.connect(after)
+        _manage_versioning_with_relations(
+            study_root=root,
+            action_type=Edit,
+            before=source,
+            after=after,
+            author_id=self.author_id,
+        )
+        return after
+
+    @staticmethod
+    def amendment_from_record(record: StudyVersion) -> dict[str, Any] | None:
+        return StudyVersionRepository.amendment_from_json(record.amendment_json)
+
+    @staticmethod
+    def amendment_from_json(value: str | None) -> dict[str, Any] | None:
+        if value is None:
+            return None
+        try:
+            return StudyAmendmentVO.from_json(value).to_dict()
+        except (ValueError, TypeError) as exc:
+            raise ValidationException(
+                msg="The selected amendment record is invalid"
+            ) from exc
+
+    @ensure_transaction(db)
+    def validate_amendment_arms(
+        self,
+        study_uid: str,
+        amendment: StudyAmendmentVO,
+        previous_locked_version: str | None,
+    ) -> None:
+        """Allow exact current arms and arms removed since the preceding lock."""
+        acquire_write_lock_study_value(study_uid)
+        _, current_value, _ = self.get_selected_version(study_uid)
+        values = [current_value.element_id]
+        if previous_locked_version is not None:
+            _, previous_value, _ = self.get_selected_version(
+                study_uid, previous_locked_version
+            )
+            values.append(previous_value.element_id)
+        rows, _ = db.cypher_query(
+            """
+            MATCH (value:StudyValue)-[:HAS_STUDY_ARM]->(arm:StudyArm)
+            WHERE elementId(value) IN $values
+            WITH value, arm.uid AS arm_uid, collect(arm) AS selected_arms
+            RETURN elementId(value), arm_uid, size(selected_arms),
+                [selected IN selected_arms |
+                    [(owner:StudyRoot)-[:LATEST|HAS_VERSION]->(:StudyValue)
+                        -[:HAS_STUDY_ARM]->(selected) | owner.uid]]
+            """,
+            {"values": values},
+        )
+        if any(not uid or count != 1 for _, uid, count, _ in rows):
+            raise ValidationException(
+                msg="The selected study has ambiguous arm membership"
+            )
+        if any(
+            set(owners) != {study_uid}
+            for _, _, _, selected_owners in rows
+            for owners in selected_owners
+        ):
+            raise ValidationException(msg="A selected arm has foreign study ownership")
+        available = {uid for _, uid, _, _ in rows}
+        missing = set(amendment.affected_arm_uids) - available
+        if missing:
+            raise ValidationException(
+                msg="Affected arms do not belong to the current or preceding locked study version: "
+                + ", ".join(sorted(missing))
+            )
 
     @ensure_transaction(db)
     def create_or_update_study_version(
@@ -64,161 +197,75 @@ class StudyVersionRepository:
         reason_for_lock_term_uid: str | None = None,
         reason_for_unlock_term_uid: str | None = None,
         release: bool = False,
+        previous_version: StudyVersion | None = None,
+        amendment: StudyAmendmentVO | None = None,
+        previous_locked_version: str | None = None,
     ) -> StudyVersion:
-        """
-        This method follows the following pattern to create StudyVersion nodes:
-        - First release/lock: Creates a new StudyVersion node with Create audit action
-        - Subsequent releases/locks: Updates the existing StudyVersion node with Edit audit action
-
-        Args:
-            study_uid: UID of the Study
-            version: Version string for the StudyVersion (required when locking/releasing, optional when unlocking)
-            other_reason_for_unlocking: Other reason for unlocking the StudyVersion
-            other_reason_for_locking: Other reason for locking the StudyVersion
-            reason_for_lock_term_uid: UID of CTTerm from "Reason For Lock" codelist
-            reason_for_unlock_term_uid: UID of CTTerm from "Reason For Unlock" codelist
-        Returns:
-            The created or updated StudyVersion node
-        """
-
+        """Write one exact version and carry only explicitly selected reason facts."""
         acquire_write_lock_study_value(study_uid)
-
-        query, params = self._study_value_query(study_uid, version)
-
-        query += """
-        OPTIONAL MATCH (study_root)--(:StudyValue)-[:HAS_STUDY_VERSION]->(existing_sv:StudyVersion)
-        WHERE NOT (existing_sv)-[:BEFORE]-(:StudyAction)
-        RETURN study_root, existing_sv
-        """
-
-        result, _ = db.cypher_query(query, params, resolve_objects=True)
-
-        if not result or not result[0]:
-            raise ValueError(f"Study with UID {study_uid} not found")
-
-        study_root = result[0][0]
-        existing_version = result[0][1] if len(result[0]) > 1 else None
-        if existing_version:
-            before_node = existing_version
-            update_query, params = self._study_value_query(study_uid, version)
-            # When Unlock we want to take other_reason_for_unlocking as it was get from unlock request
-            # for other actions we want to keep other_reason_for_unlocking as it was before, so we take it from before_node
-            if not reason_for_unlock_term_uid:
-                other_reason_for_unlocking = before_node.other_reason_for_unlocking
-            params.update(
-                {
-                    "study_version_uid": before_node.uid,
-                    "other_reason_for_locking": other_reason_for_locking,
-                    "other_reason_for_unlocking": other_reason_for_unlocking,
-                }
+        root, value, selected_before = self.get_selected_version(study_uid, version)
+        source = previous_version if previous_version is not None else selected_before
+        if not reason_for_unlock_term_uid and source is not None:
+            other_reason_for_unlocking = source.other_reason_for_unlocking
+        if amendment is not None and version is None:
+            raise ValidationException(
+                msg="An amendment belongs to a locked study version"
             )
-            update_query += """
-            CREATE (new_sv:StudyVersion:StudySelection {uid: $study_version_uid, other_reason_for_locking: $other_reason_for_locking, other_reason_for_unlocking: $other_reason_for_unlocking})
-            WITH new_sv, study_value
-            OPTIONAL MATCH (old_sv:StudyVersion {uid: $study_version_uid})<-[old_rel:HAS_STUDY_VERSION]-(study_value)
-            WHERE NOT (old_sv)-[:BEFORE]-(:StudyAction)
-            DELETE old_rel
-            CREATE (study_value)-[:HAS_STUDY_VERSION]->(new_sv)
-            RETURN new_sv
-            """
-            result, _ = db.cypher_query(
-                update_query,
-                params,
-                resolve_objects=True,
-            )
-            after_node = result[0][0] if result and result[0] else None
-            if not after_node:
-                raise ValueError(
-                    f"Failed to create new StudyVersion with uid: {before_node.uid}"
-                )
-
-            self._connect_reason_relationships(
-                after_node,
-                reason_for_lock_term_uid=reason_for_lock_term_uid,
-                reason_for_unlock_term_uid=reason_for_unlock_term_uid,
-            )
-            exclude_relationships = (
+        after = StudyVersion(
+            uid=source.uid if source is not None else None,
+            other_reason_for_locking=other_reason_for_locking,
+            other_reason_for_unlocking=other_reason_for_unlocking,
+            amendment_json=amendment.to_json() if amendment is not None else None,
+            previous_locked_version=previous_locked_version,
+        ).save()
+        if selected_before is not None:
+            value.has_study_version.disconnect(selected_before)
+        value.has_study_version.connect(after)
+        self._connect_reason_relationships(
+            after,
+            reason_for_lock_term_uid=reason_for_lock_term_uid,
+            reason_for_unlock_term_uid=reason_for_unlock_term_uid,
+        )
+        _manage_versioning_with_relations(
+            study_root=root,
+            action_type=Edit if source is not None else Create,
+            before=source,
+            after=after,
+            author_id=self.author_id,
+            exclude_relationships=(
                 [StudyVersion.has_reason_for_lock]
                 if reason_for_lock_term_uid
                 else [
                     StudyVersion.has_reason_for_lock,
                     StudyVersion.has_reason_for_unlock,
                 ]
-            )
+            ),
+        )
+        if release:
+            # Release has already created a separate current draft. This applies
+            # equally to the first release and later releases.
+            _, draft_value, draft_before = self.get_selected_version(study_uid)
+            if draft_value.element_id == value.element_id:
+                raise ValidationException(
+                    msg="A release must have a separate draft value"
+                )
+            draft = StudyVersion(
+                uid=after.uid,
+                other_reason_for_unlocking=after.other_reason_for_unlocking,
+            ).save()
+            if draft_before is not None:
+                draft_value.has_study_version.disconnect(draft_before)
+            draft_value.has_study_version.connect(draft)
             _manage_versioning_with_relations(
-                study_root=study_root,
+                study_root=root,
                 action_type=Edit,
-                before=before_node,
-                after=after_node,
+                before=after,
+                after=draft,
                 author_id=self.author_id,
-                exclude_relationships=exclude_relationships,
+                exclude_relationships=[StudyVersion.has_reason_for_lock],
             )
-
-            if release:
-                before_node = after_node
-                update_query = """
-                MATCH (study_root:StudyRoot {uid: $study_uid})-[:LATEST]->(study_value:StudyValue)
-                CREATE (new_sv:StudyVersion:StudySelection {uid: $study_version_uid, other_reason_for_unlocking: $other_reason_for_unlocking})
-                WITH new_sv, study_value
-                OPTIONAL MATCH (old_sv:StudyVersion {uid: $study_version_uid})<-[old_rel:HAS_STUDY_VERSION]-(study_value)
-                WHERE NOT (old_sv)-[:BEFORE]-(:StudyAction)
-                DELETE old_rel
-                CREATE (study_value)-[:HAS_STUDY_VERSION]->(new_sv)
-                RETURN new_sv
-                """
-                result, _ = db.cypher_query(
-                    update_query,
-                    {
-                        "study_version_uid": before_node.uid,
-                        "study_uid": study_uid,
-                        "other_reason_for_unlocking": before_node.other_reason_for_unlocking,
-                    },
-                    resolve_objects=True,
-                )
-                after_node = result[0][0] if result and result[0] else None
-                _manage_versioning_with_relations(
-                    study_root=study_root,
-                    action_type=Edit,
-                    before=before_node,
-                    after=after_node,
-                    author_id=self.author_id,
-                    # This is extra StudyVersion after just releasing a Study and we want to carry over HAS_REASON_FOR_UNLOCK that was passed when unlocking
-                    exclude_relationships=[StudyVersion.has_reason_for_lock],
-                )
-
-            return after_node
-
-        new_version = StudyVersion(
-            version=version,
-            other_reason_for_locking=other_reason_for_locking,
-            other_reason_for_unlocking=other_reason_for_unlocking,
-        ).save()
-
-        connect_query, params = self._study_value_query(study_uid, version)
-        params.update({"sv_uid": new_version.uid})
-        connect_query += """
-        MATCH (sv:StudyVersion {uid: $sv_uid})
-        CREATE (study_value)-[:HAS_STUDY_VERSION]->(sv)
-        """
-        db.cypher_query(
-            connect_query,
-            params,
-        )
-
-        self._connect_reason_relationships(
-            new_version,
-            reason_for_lock_term_uid=reason_for_lock_term_uid,
-            reason_for_unlock_term_uid=reason_for_unlock_term_uid,
-        )
-
-        _manage_versioning_with_relations(
-            study_root=study_root,
-            action_type=Create,
-            after=new_version,
-            author_id=self.author_id,
-        )
-
-        return new_version
+            return draft
+        return after
 
     @ensure_transaction(db)
     def _connect_reason_relationships(
@@ -317,6 +364,18 @@ class StudyVersionRepository:
             sv.other_reason_for_locking AS other_reason_for_lock_release,
             sdd.protocol_header_major_version AS protocol_header_major_version,
             sdd.protocol_header_minor_version AS protocol_header_minor_version,
+            elementId(study_value) AS _selected_value_id,
+            [(owner:StudyRoot)-[:LATEST|HAS_VERSION]->(study_value) | owner.uid] AS _value_owners,
+            size([(study_value)-[membership:HAS_STUDY_VERSION]->() | membership]) AS _record_memberships,
+            elementId(sv) AS _record_id,
+            [(owner_value:StudyValue)-[:HAS_STUDY_VERSION]->(sv) | elementId(owner_value)] AS _record_values,
+            sv.amendment_json AS _amendment_json,
+            CASE WHEN statuses=["DRAFT"] THEN
+                [(current_root:StudyRoot {uid:$study_uid})-[:LATEST]->(current_value:StudyValue) | elementId(current_value)]
+            ELSE
+                [(version_root:StudyRoot {uid:$study_uid})-[version_rel:HAS_VERSION]->(version_value:StudyValue)
+                    WHERE version_rel.version=latest_version.version | elementId(version_value)]
+            END AS _version_values,
             date, statuses, modified_by
         // If there is Draft version, return it first, then order by metadata_version descending
         ORDER BY 
@@ -343,6 +402,31 @@ class StudyVersionRepository:
             return [], 0
 
         history = [get_db_result_as_dict(row, columns) for row in rows]
+        for entry in history:
+            value_id = entry.pop("_selected_value_id")
+            owners = entry.pop("_value_owners")
+            memberships = entry.pop("_record_memberships")
+            record_id = entry.pop("_record_id")
+            record_values = entry.pop("_record_values")
+            amendment_json = entry.pop("_amendment_json")
+            version_values = entry.pop("_version_values")
+            if set(owners) != {study_uid}:
+                raise ValidationException(
+                    msg="The selected study value has foreign ownership"
+                )
+            if set(version_values) != {value_id}:
+                raise ValidationException(
+                    msg="The selected study version has ambiguous values"
+                )
+            if memberships != (1 if record_id is not None else 0):
+                raise ValidationException(
+                    msg="The selected study version has ambiguous version records"
+                )
+            if record_id is not None and record_values != [value_id]:
+                raise ValidationException(
+                    msg="The selected version record belongs to another study value"
+                )
+            entry["amendment"] = self.amendment_from_json(amendment_json)
         # If only_latest_major_protocol_version is requested, we have to leave only
         # major protocol header versions and leave only latest available version of it (with highest metadata version)
         if only_latest_major_protocol_version:

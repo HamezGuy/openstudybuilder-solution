@@ -1768,6 +1768,11 @@ ALL_ROUTES_METHODS_ROLES = (  # type: ignore[var-annotated]
     ("/studies/{study_uid}", "PATCH", {"Study.Write"}),
     ("/studies/{study_uid}", "GET", {"Study.Read"}),
     ("/studies/{study_uid}/snapshot-history", "GET", {"Study.Read"}),
+    (
+        "/studies/{study_uid}/versions/{from_version}/diff/{to_version}",
+        "GET",
+        {"Study.Read"},
+    ),
     ("/studies/{study_uid}/protocol-header-versions", "GET", {"Study.Read"}),
     ("/studies/{study_uid}/fields-audit-trail", "GET", {"Study.Read"}),
     ("/studies/{study_uid}/audit-trail", "GET", {"Study.Read"}),
@@ -2155,6 +2160,16 @@ ALL_ROUTES_METHODS_ROLES = (  # type: ignore[var-annotated]
     ),
     ("/studies/{study_uid}/study-arms/audit-trail", "GET", {"Study.Read"}),
     ("/studies/{study_uid}/study-arms/{study_arm_uid}", "GET", {"Study.Read"}),
+    (
+        "/studies/{study_uid}/study-arms/{study_arm_uid}/lifecycle-events",
+        "GET",
+        {"Study.Read"},
+    ),
+    (
+        "/studies/{study_uid}/study-arms/{study_arm_uid}/lifecycle-events",
+        "POST",
+        {"Study.Write"},
+    ),
     ("/studies/{study_uid}/study-arms/{study_arm_uid}/order", "PATCH", {"Study.Write"}),
     ("/studies/{study_uid}/study-arms/{study_arm_uid}", "DELETE", {"Study.Write"}),
     ("/studies/{study_uid}/study-arms/batch", "POST", {"Study.Write"}),
@@ -2197,6 +2212,16 @@ ALL_ROUTES_METHODS_ROLES = (  # type: ignore[var-annotated]
     ),
     ("/studies/{study_uid}/study-branch-arms", "POST", {"Study.Write"}),
     ("/studies/{study_uid}/study-branch-arms", "GET", {"Study.Read"}),
+    (
+        "/studies/{study_uid}/study-branch-arms/{study_branch_arm_uid}/lifecycle-events",
+        "GET",
+        {"Study.Read"},
+    ),
+    (
+        "/studies/{study_uid}/study-branch-arms/{study_branch_arm_uid}/lifecycle-events",
+        "POST",
+        {"Study.Write"},
+    ),
     (
         "/studies/{study_uid}/study-branch-arms/{study_branch_arm_uid}",
         "GET",

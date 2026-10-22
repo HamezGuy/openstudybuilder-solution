@@ -53,6 +53,9 @@ from clinical_mdr_api.domain_repositories.models.study_visit import StudyVisit
 from clinical_mdr_api.domain_repositories.study_definitions.study_definition_repository import (
     StudyDefinitionRepository,
 )
+from clinical_mdr_api.domain_repositories.study_selections.study_version_repository import (
+    StudyVersionRepository,
+)
 from clinical_mdr_api.domains.study_definition_aggregates.registry_identifiers import (
     RegistryIdentifiersVO,
 )
@@ -774,6 +777,13 @@ class StudyDefinitionRepositoryImpl(StudyDefinitionRepository, RepositoryImpl):
             previous_snapshot=previous_snapshot,
             previous_latest_value=previous_value,
         )
+        self._maintain_draft_version_reasons(
+            root,
+            previous_snapshot,
+            current_snapshot,
+            previous_value,
+            expected_latest_value,
+        )
 
         # Next, persist and maintain the study fields as nodes in the graph.
         self._maintain_study_project_field_relationship(
@@ -821,6 +831,35 @@ class StudyDefinitionRepositoryImpl(StudyDefinitionRepository, RepositoryImpl):
         self._maintain_study_soa_split_relationship_on_save(
             expected_latest_value=expected_latest_value, previous_value=previous_value
         )
+
+    def _maintain_draft_version_reasons(
+        self,
+        root: StudyRoot,
+        previous_snapshot: StudyDefinitionSnapshot,
+        current_snapshot: StudyDefinitionSnapshot,
+        previous_value: StudyValue,
+        current_value: StudyValue,
+    ) -> None:
+        # Status transitions and releases create their own reason records in the
+        # study service. Only ordinary draft successors inherit reason facts.
+        previous_value_id = previous_value.element_id
+        current_value_id = current_value.element_id
+        if not isinstance(previous_value_id, str) or not isinstance(
+            current_value_id, str
+        ):
+            raise exceptions.ValidationException(
+                msg="Study version reasons require persisted study values"
+            )
+        if (
+            previous_value_id != current_value_id
+            and previous_snapshot.study_status == StudyStatus.DRAFT.value
+            and current_snapshot.study_status == StudyStatus.DRAFT.value
+            and previous_snapshot.released_metadata
+            == current_snapshot.released_metadata
+        ):
+            StudyVersionRepository(
+                author_id=self.audit_info.author_id
+            ).carry_forward_draft_reasons(root.uid, previous_value_id, current_value_id)
 
     def _maintain_study_relationship_on_save(
         self,

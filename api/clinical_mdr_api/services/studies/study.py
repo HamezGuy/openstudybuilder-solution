@@ -71,6 +71,7 @@ from clinical_mdr_api.models.study_selections.study import (
     OtherAttributeResponseCodelist,
     RegistryIdentifiersJsonModel,
     Study,
+    StudyAmendment,
     StudyCloneInput,
     StudyCreateInput,
     StudyDescriptionJsonModel,
@@ -839,6 +840,7 @@ class StudyService:
         other_reason_for_locking: str | None = None,
         protocol_header_major_version: int | None = None,
         protocol_header_minor_version: int | None = None,
+        amendment: StudyAmendment | None = None,
     ) -> Study:
         # avoid circular imports
         from clinical_mdr_api.services.studies.study_flowchart import (
@@ -862,6 +864,19 @@ class StudyService:
                 study_definition.study_parent_part_uid,
                 msg=f"Study Subparts cannot be locked independently from its Study Parent Part with UID '{study_definition.study_parent_part_uid}'.",
             )
+            _, _, previous_version = (
+                self._repos.study_version_repository.get_selected_version(uid)
+            )
+            previous_locked_version = (
+                str(study_definition.latest_locked_metadata.ver_metadata.version_number)
+                if study_definition.latest_locked_metadata is not None
+                else None
+            )
+            amendment_vo = amendment.to_vo() if amendment is not None else None
+            if amendment_vo is not None:
+                self._repos.study_version_repository.validate_amendment_arms(
+                    uid, amendment_vo, previous_locked_version
+                )
             # get the study standard version
             study_standard_versions = self._repos.study_standard_version_repository.find_standard_versions_in_study(
                 uid
@@ -1016,6 +1031,9 @@ class StudyService:
                 version=version_number,
                 other_reason_for_locking=other_reason_for_locking,
                 reason_for_lock_term_uid=reason_for_lock_term_uid,
+                previous_version=previous_version,
+                amendment=amendment_vo,
+                previous_locked_version=previous_locked_version,
             )
 
             # Update StudyDefinitionDocument
@@ -1050,12 +1068,34 @@ class StudyService:
                         study_subpart_uid, for_update=True
                     )
                     if study_subpart:
+                        _, _, child_previous_version = (
+                            self._repos.study_version_repository.get_selected_version(
+                                study_subpart_uid
+                            )
+                        )
+                        child_previous_locked_version = (
+                            str(
+                                study_subpart.latest_locked_metadata.ver_metadata.version_number
+                            )
+                            if study_subpart.latest_locked_metadata is not None
+                            else None
+                        )
                         study_subpart.lock(
                             version_description=change_description,
                             author_id=self.author_id,
                             version_timestamp=operation_timestamp,
                         )
                         self._repos.study_definition_repository.save(study_subpart)
+                        self._repos.study_version_repository.create_or_update_study_version(
+                            study_uid=study_subpart_uid,
+                            version=str(
+                                study_subpart.latest_locked_metadata.ver_metadata.version_number
+                            ),
+                            other_reason_for_locking=other_reason_for_locking,
+                            reason_for_lock_term_uid=reason_for_lock_term_uid,
+                            previous_version=child_previous_version,
+                            previous_locked_version=child_previous_locked_version,
+                        )
 
             return self._models_study_from_study_definition_ar(
                 study_definition_ar=study_definition,
@@ -1090,6 +1130,9 @@ class StudyService:
                 study_definition.study_parent_part_uid,
                 msg=f"Study Subparts cannot be unlocked independently from its Study Parent Part with UID '{study_definition.study_parent_part_uid}'.",
             )
+            _, _, previous_version = (
+                self._repos.study_version_repository.get_selected_version(uid)
+            )
             study_definition.unlock(self.author_id)
             self._repos.study_definition_repository.save(study_definition)
 
@@ -1098,6 +1141,7 @@ class StudyService:
                 study_uid=uid,
                 reason_for_unlock_term_uid=reason_for_unlock_term_uid,
                 other_reason_for_unlocking=other_reason_for_unlocking,
+                previous_version=previous_version,
             )
 
             study_standard_versions: StudyStandardVersionVO
@@ -1131,8 +1175,19 @@ class StudyService:
                         study_subpart_uid, for_update=True
                     )
                     if study_subpart:
+                        _, _, child_previous_version = (
+                            self._repos.study_version_repository.get_selected_version(
+                                study_subpart_uid
+                            )
+                        )
                         study_subpart.unlock(self.author_id)
                         self._repos.study_definition_repository.save(study_subpart)
+                        self._repos.study_version_repository.create_or_update_study_version(
+                            study_uid=study_subpart_uid,
+                            reason_for_unlock_term_uid=reason_for_unlock_term_uid,
+                            other_reason_for_unlocking=other_reason_for_unlocking,
+                            previous_version=child_previous_version,
+                        )
 
             return self._models_study_from_study_definition_ar(
                 study_definition_ar=study_definition,
@@ -1177,6 +1232,9 @@ class StudyService:
                 study_definition.study_parent_part_uid,
                 msg=f"Study Subparts cannot be released independently from its Study Parent Part with UID '{study_definition.study_parent_part_uid}'.",
             )
+            _, _, previous_version = (
+                self._repos.study_version_repository.get_selected_version(uid)
+            )
 
             # save Protocol SoA snapshot
             StudyFlowchartService().update_soa_snapshot(
@@ -1202,6 +1260,7 @@ class StudyService:
                 other_reason_for_locking=other_reason_for_releasing,
                 reason_for_lock_term_uid=reason_for_release_uid,
                 release=True,
+                previous_version=previous_version,
             )
             # Update StudyDefinitionDocument
             if (
@@ -1221,12 +1280,27 @@ class StudyService:
                         study_subpart_uid, for_update=True
                     )
                     if study_subpart:
+                        _, _, child_previous_version = (
+                            self._repos.study_version_repository.get_selected_version(
+                                study_subpart_uid
+                            )
+                        )
                         study_subpart.release(
                             change_description=change_description,
                             author_id=self.author_id,
                             version_timestamp=operation_timestamp,
                         )
                         self._repos.study_definition_repository.save(study_subpart)
+                        self._repos.study_version_repository.create_or_update_study_version(
+                            study_uid=study_subpart_uid,
+                            version=str(
+                                study_subpart.latest_released_or_locked_metadata.ver_metadata.version_number
+                            ),
+                            other_reason_for_locking=other_reason_for_releasing,
+                            reason_for_lock_term_uid=reason_for_release_uid,
+                            release=True,
+                            previous_version=child_previous_version,
+                        )
 
             return self._models_study_from_study_definition_ar(
                 study_definition_ar=study_definition,
