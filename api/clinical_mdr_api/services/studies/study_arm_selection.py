@@ -879,6 +879,50 @@ class StudyArmSelectionService(StudySelectionMixin):
                 return entry.vo
         return None
 
+    @staticmethod
+    def _identity_conflicts(
+        spec: StudySelectionArmCreateInput,
+        indexes: _ArmConflictIndexes,
+    ) -> list[tuple[str, str, StudySelectionArmVO]]:
+        conflicts: list[tuple[str, str, StudySelectionArmVO]] = []
+        for field_name, index in (
+            ("name", indexes.by_name),
+            ("short_name", indexes.by_short_name),
+            ("code", indexes.by_code),
+            ("randomization_group", indexes.by_randomization_group),
+        ):
+            value = getattr(spec, field_name)
+            if value and value in index:
+                conflicts.append((field_name, value, index[value].vo))
+        return conflicts
+
+    def _refuse_identity_conflict(
+        self,
+        spec: StudySelectionArmCreateInput,
+        indexes: _ArmConflictIndexes,
+    ) -> StudySelectionArmVO | None:
+        """OSB_ARM_BATCH_CONFLICTS=refuse: an identity field that another arm
+        already holds refuses the whole request, with nothing suffixed, renamed
+        or skipped. The one exception is a resubmission: when every submitted
+        field equals that one existing arm, the existing arm is returned."""
+        conflicts = self._identity_conflicts(spec, indexes)
+        if not conflicts:
+            return None
+        existing = conflicts[0][2]
+        if all(vo is existing for _, _, vo in conflicts) and all(
+            getattr(spec, field_name) == getattr(existing, field_name)
+            for field_name in spec.model_fields_set
+        ):
+            return existing
+        field_name, value, vo = conflicts[0]
+        raise exceptions.AlreadyExistsException(
+            msg=(
+                f"STUDY_ARM_BATCH_CONFLICT: field {field_name} value '{value}' is "
+                f"already used by study arm {vo.study_selection_uid} ('{vo.name}'); "
+                "the request was refused and nothing was written."
+            )
+        )
+
     def _resolve_create_input_conflicts(
         self,
         spec: StudySelectionArmCreateInput,
@@ -967,23 +1011,29 @@ class StudyArmSelectionService(StudySelectionMixin):
 
     def _map_source_study_arms_to_create_inputs(
         self, study_source_uid: str
-    ) -> list[StudySelectionArmCreateInput]:
+    ) -> list[tuple[StudySelectionArmCreateInput, str]]:
+        """Each source arm as a create input, with the source arm's uid."""
         source_arms = self.get_all_selection(
             study_uid=study_source_uid, page_size=0
         ).items
-        specs: list[StudySelectionArmCreateInput] = []
+        specs: list[tuple[StudySelectionArmCreateInput, str]] = []
         for arm in source_arms:
             specs.append(
-                StudySelectionArmCreateInput(
-                    name=arm.name,
-                    short_name=arm.short_name,
-                    label=arm.label,
-                    code=arm.code,
-                    description=arm.description,
-                    randomization_group=arm.randomization_group,
-                    number_of_subjects=arm.number_of_subjects,
-                    arm_type_uid=arm.arm_type.term_uid if arm.arm_type else None,
-                    merge_branch_for_this_arm_for_sdtm_adam=arm.merge_branch_for_this_arm_for_sdtm_adam,
+                (
+                    StudySelectionArmCreateInput(
+                        name=arm.name,
+                        short_name=arm.short_name,
+                        label=arm.label,
+                        code=arm.code,
+                        description=arm.description,
+                        randomization_group=arm.randomization_group,
+                        number_of_subjects=arm.number_of_subjects,
+                        arm_type_uid=arm.arm_type.term_uid if arm.arm_type else None,
+                        data_origin_type_uid=arm.data_origin_type_uid,
+                        data_origin_description=arm.data_origin_description,
+                        merge_branch_for_this_arm_for_sdtm_adam=arm.merge_branch_for_this_arm_for_sdtm_adam,
+                    ),
+                    arm.arm_uid,
                 )
             )
         return specs
@@ -993,11 +1043,19 @@ class StudyArmSelectionService(StudySelectionMixin):
         self,
         study_uid: str,
         specs: list[StudySelectionArmCreateInput],
+        source_study_uid: str | None = None,
+        source_arm_uids: list[str] | None = None,
     ) -> list[StudySelectionArmBatchOutput]:
+        """Create arms for batch POST and copy-from-study.
+
+        For a copy, source_study_uid and source_arm_uids (one per spec) are
+        stored on each new arm's Create action."""
         repos = self._repos
         results: list[StudySelectionArmBatchOutput] = []
         if not specs:
             return results
+        refuse_conflicts = settings.arm_batch_conflicts == "refuse"
+        create_action_properties: dict[str, dict[str, str]] = {}
 
         try:
             selection_aggregate: StudySelectionArmAR = (
@@ -1012,14 +1070,22 @@ class StudyArmSelectionService(StudySelectionMixin):
             )
             created_vo_uids: set[str] = set()
 
-            for spec in specs:
-                skip_vo = self._find_skip_match_vo(spec, indexes)
+            for spec_index, spec in enumerate(specs):
+                if refuse_conflicts:
+                    skip_vo = self._refuse_identity_conflict(spec, indexes)
+                else:
+                    skip_vo = self._find_skip_match_vo(spec, indexes)
                 if skip_vo is not None:
                     _, order = selection_aggregate.get_specific_object_selection(
                         skip_vo.study_selection_uid
                     )
                     notification = None
-                    if spec.name and spec.name in indexes.by_name:
+                    if refuse_conflicts:
+                        notification = (
+                            f"Arm '{skip_vo.name}' with every submitted field equal "
+                            "already exists; creation skipped."
+                        )
+                    elif spec.name and spec.name in indexes.by_name:
                         notification = (
                             f"Arm '{spec.name}' with the same name and arm type already exists; "
                             "creation skipped."
@@ -1044,12 +1110,16 @@ class StudyArmSelectionService(StudySelectionMixin):
                     continue
 
                 arm_uid = repos.study_arm_repository.generate_uid()
-                resolved_spec, notifications = self._resolve_create_input_conflicts(
-                    spec=spec,
-                    arm_uid=arm_uid,
-                    indexes=indexes,
-                    terms_at_specific_datetime=terms_at_specific_datetime,
-                )
+                notifications: list[str] = []
+                if refuse_conflicts:
+                    resolved_spec = spec
+                else:
+                    resolved_spec, notifications = self._resolve_create_input_conflicts(
+                        spec=spec,
+                        arm_uid=arm_uid,
+                        indexes=indexes,
+                        terms_at_specific_datetime=terms_at_specific_datetime,
+                    )
                 new_selection = StudySelectionArmVO.from_input_values(
                     study_uid=study_uid,
                     author_id=self.author,
@@ -1062,9 +1132,16 @@ class StudyArmSelectionService(StudySelectionMixin):
                     randomization_group=resolved_spec.randomization_group,
                     number_of_subjects=resolved_spec.number_of_subjects,
                     arm_type_uid=resolved_spec.arm_type_uid,
+                    data_origin_type_uid=resolved_spec.data_origin_type_uid,
+                    data_origin_description=resolved_spec.data_origin_description,
                     merge_branch_for_this_arm_for_sdtm_adam=resolved_spec.merge_branch_for_this_arm_for_sdtm_adam,
                     generate_uid_callback=repos.study_arm_repository.generate_uid,
                 )
+                if source_study_uid is not None and source_arm_uids is not None:
+                    create_action_properties[new_selection.study_selection_uid] = {
+                        "source_study_uid": source_study_uid,
+                        "source_selection_uid": source_arm_uids[spec_index],
+                    }
                 selection_aggregate.add_arm_selection(
                     new_selection,
                     self._repos.ct_term_name_repository.term_specific_exists_by_uid,
@@ -1097,7 +1174,11 @@ class StudyArmSelectionService(StudySelectionMixin):
                         arm_exists_callback_by=repos.study_arm_repository.arm_exists_by,
                     )
 
-            repos.study_arm_repository.save(selection_aggregate, self.author)
+            repos.study_arm_repository.save(
+                selection_aggregate,
+                self.author,
+                create_action_properties=create_action_properties,
+            )
         finally:
             repos.close()
         return results
@@ -1120,8 +1201,13 @@ class StudyArmSelectionService(StudySelectionMixin):
         )
         self.check_if_study_exists(study_uid)
         self.check_if_study_exists(study_source_uid)
-        specs = self._map_source_study_arms_to_create_inputs(study_source_uid)
-        return self._create_arms_with_conflict_resolution(study_uid, specs)
+        source_specs = self._map_source_study_arms_to_create_inputs(study_source_uid)
+        return self._create_arms_with_conflict_resolution(
+            study_uid,
+            [spec for spec, _ in source_specs],
+            source_study_uid=study_source_uid,
+            source_arm_uids=[source_arm_uid for _, source_arm_uid in source_specs],
+        )
 
     @ensure_transaction(db)
     def handle_batch_operations(

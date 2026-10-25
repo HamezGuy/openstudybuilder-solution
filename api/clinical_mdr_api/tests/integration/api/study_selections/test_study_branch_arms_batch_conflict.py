@@ -26,6 +26,7 @@ from clinical_mdr_api.tests.integration.utils.factory_controlled_terminology imp
 )
 from clinical_mdr_api.tests.integration.utils.utils import TestUtils
 from clinical_mdr_api.tests.utils.checks import assert_response_status_code
+from common.config import settings
 
 log = logging.getLogger(__name__)
 
@@ -484,3 +485,193 @@ def test_copy_from_study_empty_source(api_client):
     )
     assert_response_status_code(response, 207)
     assert response.json() == []
+
+
+# FX-OSB-02: OSB_ARM_BATCH_CONFLICTS=refuse refuses a branch arm collision and
+# an unresolved parent arm with 409 instead of skipping.
+
+
+@pytest.fixture
+def refuse_conflicts(monkeypatch):
+    monkeypatch.setattr(settings, "arm_batch_conflicts", "refuse")
+
+
+def _branch_arm_names(api_client, study_uid: str) -> list[str]:
+    response = api_client.get(f"/studies/{study_uid}/study-branch-arms")
+    assert_response_status_code(response, 200)
+    return [item["name"] for item in response.json()["items"]]
+
+
+def test_batch_post_refuses_branch_arm_collision(
+    api_client, arm_types, refuse_conflicts
+):
+    target_study = TestUtils.create_study()
+    study_arm = TestUtils.create_study_arm(
+        study_uid=target_study.uid,
+        name="MCPBranchRefuseArm",
+        short_name="MCPBRA1",
+        arm_type_uid=arm_types["investigational"].term_uid,
+    )
+    existing = TestUtils.create_study_branch_arm(
+        study_uid=target_study.uid,
+        name="MCPBranchRefuseName",
+        short_name="MCPBRN1",
+        study_arm_uid=study_arm.arm_uid,
+    )
+
+    response = _post_batch(
+        api_client,
+        target_study.uid,
+        [
+            {
+                "method": "POST",
+                "content": {
+                    "name": "MCPBranchRefuseUnique",
+                    "short_name": "MCPBRU1",
+                    "arm_uid": study_arm.arm_uid,
+                },
+            },
+            {
+                "method": "POST",
+                "content": {
+                    "name": "MCPBranchRefuseName",
+                    "short_name": "MCPBRN2",
+                    "arm_uid": study_arm.arm_uid,
+                },
+            },
+        ],
+    )
+    assert_response_status_code(response, 409)
+    message = response.json()["message"]
+    assert message.startswith("STUDY_BRANCH_ARM_BATCH_CONFLICT:")
+    assert "field name value 'MCPBranchRefuseName'" in message
+    assert existing.branch_arm_uid in message
+    assert "differs in short_name" in message
+    assert _branch_arm_names(api_client, target_study.uid) == ["MCPBranchRefuseName"]
+
+
+def test_batch_post_refuse_returns_identical_branch_arm(
+    api_client, arm_types, refuse_conflicts
+):
+    target_study = TestUtils.create_study()
+    study_arm = TestUtils.create_study_arm(
+        study_uid=target_study.uid,
+        name="MCPBranchIdenticalArm",
+        short_name="MCPBIA1",
+        arm_type_uid=arm_types["investigational"].term_uid,
+    )
+    existing = TestUtils.create_study_branch_arm(
+        study_uid=target_study.uid,
+        name="MCPBranchIdentical",
+        short_name="MCPBI1",
+        study_arm_uid=study_arm.arm_uid,
+    )
+
+    response = _post_batch(
+        api_client,
+        target_study.uid,
+        [
+            {
+                "method": "POST",
+                "content": {
+                    "name": "MCPBranchIdentical",
+                    "short_name": "MCPBI1",
+                    "arm_uid": study_arm.arm_uid,
+                },
+            }
+        ],
+    )
+    assert_response_status_code(response, 207)
+    res = response.json()
+    assert res[0]["response_code"] == 200
+    assert res[0]["content"]["branch_arm_uid"] == existing.branch_arm_uid
+    assert "creation skipped" in res[0]["notification"]
+
+
+def test_copy_from_study_refuses_unresolved_parent_arm(
+    api_client, arm_types, refuse_conflicts
+):
+    source_study = TestUtils.create_study()
+    target_study = TestUtils.create_study()
+    arm_type_uid = arm_types["investigational"].term_uid
+    source_arm = TestUtils.create_study_arm(
+        study_uid=source_study.uid,
+        name="MCPRefuseResolvedParent",
+        short_name="MCPRRP1",
+        arm_type_uid=arm_type_uid,
+    )
+    missing_parent = TestUtils.create_study_arm(
+        study_uid=source_study.uid,
+        name="MCPRefuseMissingParent",
+        short_name="MCPRMP1",
+        arm_type_uid=arm_type_uid,
+    )
+    TestUtils.create_study_arm(
+        study_uid=target_study.uid,
+        name="MCPRefuseResolvedParent",
+        short_name="MCPRRPT1",
+        arm_type_uid=arm_type_uid,
+    )
+    TestUtils.create_study_branch_arm(
+        study_uid=source_study.uid,
+        name="MCPRefuseResolvedBranch",
+        short_name="MCPRRB1",
+        study_arm_uid=source_arm.arm_uid,
+    )
+    TestUtils.create_study_branch_arm(
+        study_uid=source_study.uid,
+        name="MCPRefuseOrphanBranch",
+        short_name="MCPROB1",
+        study_arm_uid=missing_parent.arm_uid,
+    )
+
+    response = api_client.post(
+        f"/studies/{target_study.uid}/study-branch-arms/copy-from-study/{source_study.uid}"
+    )
+    assert_response_status_code(response, 409)
+    message = response.json()["message"]
+    assert message.startswith("STUDY_BRANCH_ARM_COPY_PARENT_UNRESOLVED:")
+    assert "Branch arm 'MCPRefuseOrphanBranch' not copied" in message
+    assert "parent arm name 'MCPRefuseMissingParent'" in message
+    assert _branch_arm_names(api_client, target_study.uid) == []
+
+
+def test_copy_from_study_refuses_conflicting_branch_arm(
+    api_client, arm_types, refuse_conflicts
+):
+    source_study = TestUtils.create_study()
+    target_study = TestUtils.create_study()
+    arm_type_uid = arm_types["investigational"].term_uid
+    source_arm = TestUtils.create_study_arm(
+        study_uid=source_study.uid,
+        name="MCPRefuseCopyParent",
+        short_name="MCPRCP1",
+        arm_type_uid=arm_type_uid,
+    )
+    target_arm = TestUtils.create_study_arm(
+        study_uid=target_study.uid,
+        name="MCPRefuseCopyParent",
+        short_name="MCPRCPT1",
+        arm_type_uid=arm_type_uid,
+    )
+    TestUtils.create_study_branch_arm(
+        study_uid=source_study.uid,
+        name="MCPRefuseCopyBranch",
+        short_name="MCPRCB1",
+        study_arm_uid=source_arm.arm_uid,
+    )
+    existing = TestUtils.create_study_branch_arm(
+        study_uid=target_study.uid,
+        name="MCPRefuseCopyBranch",
+        short_name="MCPRCBT1",
+        study_arm_uid=target_arm.arm_uid,
+    )
+
+    response = api_client.post(
+        f"/studies/{target_study.uid}/study-branch-arms/copy-from-study/{source_study.uid}"
+    )
+    assert_response_status_code(response, 409)
+    message = response.json()["message"]
+    assert "field name value 'MCPRefuseCopyBranch'" in message
+    assert existing.branch_arm_uid in message
+    assert _branch_arm_names(api_client, target_study.uid) == ["MCPRefuseCopyBranch"]

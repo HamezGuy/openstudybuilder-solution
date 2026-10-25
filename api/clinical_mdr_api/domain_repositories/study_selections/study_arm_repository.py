@@ -630,11 +630,18 @@ class StudySelectionArmRepository:
         return Delete()
 
     @ensure_transaction(db)
-    def save(self, study_selection: StudySelectionArmAR, author_id: str) -> None:
+    def save(
+        self,
+        study_selection: StudySelectionArmAR,
+        author_id: str,
+        create_action_properties: dict[str, dict[str, str]] | None = None,
+    ) -> None:
         """
         Persist the set of selected study arms from the aggregate to the database
         :param study_selection:
         :param author_id:
+        :param create_action_properties: per new arm uid, extra properties for its
+            Create action (the copy-from-study provenance)
         """
         assert study_selection.repository_closure_data is not None
 
@@ -728,6 +735,11 @@ class StudySelectionArmRepository:
                 author_id=author_id,
                 for_deletion=False,
                 before_node=last_study_selection_node,
+                action_properties=(
+                    (create_action_properties or {}).get(selection.study_selection_uid)
+                    if isinstance(audit_node, Create)
+                    else None
+                ),
             )
 
     @staticmethod
@@ -755,6 +767,7 @@ class StudySelectionArmRepository:
         author_id: str,
         for_deletion: bool = False,
         before_node: StudyArm | None = None,
+        action_properties: dict[str, str] | None = None,
     ):
         if for_deletion:
             StudySelectionArmRepository.assert_lifecycle_target_can_be_deleted(
@@ -845,6 +858,7 @@ class StudySelectionArmRepository:
             # The action belongs to the current editor, including deletion or
             # reordering of a selection last written by somebody else.
             author_id=author_id,
+            **(action_properties or {}),
         )
 
     def generate_uid(self) -> str:

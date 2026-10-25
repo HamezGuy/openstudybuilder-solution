@@ -300,6 +300,17 @@ class Settings(BaseSettings):
     platform_commands_prototype_enabled: bool = Field(
         default=False, alias="OSB_PLATFORM_COMMANDS_PROTOTYPE_ENABLED"
     )
+    # Identity collisions on study arm and branch arm batch POST and
+    # copy-from-study:
+    # - adjust: upstream 2.10.0 behaviour, the OSB UI relies on it; a colliding
+    #   code or randomization group gets a uid suffix, a colliding name or short
+    #   name of another arm type is renamed, a same-named arm is returned as
+    #   "creation skipped", and only a response notification reports it;
+    # - refuse: the whole request answers 409 naming the field, the value and the
+    #   existing arm, unless every submitted field equals that arm.
+    arm_batch_conflicts: Literal["adjust", "refuse"] = Field(
+        default="adjust", alias="OSB_ARM_BATCH_CONFLICTS"
+    )
 
     def assert_native_identity_startup_safe(self) -> None:
         """P1 lands the endpoint while P2 still owns signed publication."""

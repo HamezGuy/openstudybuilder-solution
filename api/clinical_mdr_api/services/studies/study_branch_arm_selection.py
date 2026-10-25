@@ -43,6 +43,7 @@ from clinical_mdr_api.services.studies.study_design_cell import StudyDesignCellS
 from clinical_mdr_api.services.studies.study_selection_base import StudySelectionMixin
 from common import exceptions
 from common.auth.user import user
+from common.config import settings
 
 
 @dataclass(frozen=True)
@@ -704,6 +705,37 @@ class StudyBranchArmSelectionService(StudySelectionMixin):
             return indexes.by_short_name[spec.short_name].vo
         return None
 
+    @staticmethod
+    def _refuse_unless_equal(
+        spec: StudySelectionBranchArmCreateInput,
+        existing: StudySelectionBranchArmVO,
+    ) -> None:
+        """OSB_ARM_BATCH_CONFLICTS=refuse: a branch arm whose name or short name
+        another branch arm holds refuses the whole request, unless every
+        submitted field equals that existing branch arm."""
+        existing_cohort_uids = [
+            cohort.study_cohort_uid for cohort in existing.study_cohorts or []
+        ]
+        for field_name in sorted(spec.model_fields_set):
+            submitted = getattr(spec, field_name)
+            if field_name == "arm_uid":
+                equal = submitted == existing.arm_root_uid
+            elif field_name == "study_cohort_uid":
+                equal = ([submitted] if submitted else []) == existing_cohort_uids
+            else:
+                equal = submitted == getattr(existing, field_name)
+            if not equal:
+                held = "name" if spec.name == existing.name else "short_name"
+                raise exceptions.AlreadyExistsException(
+                    msg=(
+                        f"STUDY_BRANCH_ARM_BATCH_CONFLICT: field {held} value "
+                        f"'{getattr(spec, held)}' is already used by study branch arm "
+                        f"{existing.study_selection_uid} ('{existing.name}'), which "
+                        f"differs in {field_name}; the request was refused and "
+                        "nothing was written."
+                    )
+                )
+
     def _create_vo_from_create_input(
         self,
         study_uid: str,
@@ -785,6 +817,17 @@ class StudyBranchArmSelectionService(StudySelectionMixin):
             )
             if target_arm_vo is None:
                 branch_arm_name = branch_arm.name or "unnamed"
+                if settings.arm_batch_conflicts == "refuse":
+                    raise exceptions.AlreadyExistsException(
+                        msg=(
+                            "STUDY_BRANCH_ARM_COPY_PARENT_UNRESOLVED: "
+                            + self._format_parent_arm_skip_notification(
+                                branch_arm_name=branch_arm_name,
+                                source_arm=branch_arm.arm_root,
+                            ).replace("skipped", "not copied", 1)
+                            + " The request was refused and nothing was written."
+                        )
+                    )
                 items.append(
                     _BranchArmCreateOrSkip(
                         parent_arm_skip_notification=self._format_parent_arm_skip_notification(
@@ -867,7 +910,13 @@ class StudyBranchArmSelectionService(StudySelectionMixin):
                         skip_vo.study_selection_uid
                     )
                     notification = None
-                    if spec.name and spec.name in indexes.by_name:
+                    if settings.arm_batch_conflicts == "refuse":
+                        self._refuse_unless_equal(spec, skip_vo)
+                        notification = (
+                            f"Branch arm '{skip_vo.name}' with every submitted field "
+                            "equal already exists; creation skipped."
+                        )
+                    elif spec.name and spec.name in indexes.by_name:
                         notification = f"Branch arm '{spec.name}' already exists; creation skipped."
                     elif spec.short_name and spec.short_name in indexes.by_short_name:
                         notification = (

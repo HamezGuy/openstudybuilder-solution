@@ -16,6 +16,10 @@ import pytest
 from fastapi.testclient import TestClient
 from neomodel import db
 
+from clinical_mdr_api.domains.study_selections.study_arm_origin import (
+    STUDY_ARM_ORIGIN_CATALOGUE,
+    STUDY_ARM_ORIGIN_CODELIST_UID,
+)
 from clinical_mdr_api.main import app
 from clinical_mdr_api.models.controlled_terminologies import ct_term
 from clinical_mdr_api.models.study_selections.study import Study
@@ -29,6 +33,7 @@ from clinical_mdr_api.tests.integration.utils.factory_controlled_terminology imp
 )
 from clinical_mdr_api.tests.integration.utils.utils import TestUtils
 from clinical_mdr_api.tests.utils.checks import assert_response_status_code
+from common.config import settings
 
 log = logging.getLogger(__name__)
 
@@ -361,3 +366,277 @@ def test_copy_from_study_empty_source(api_client):
     )
     assert_response_status_code(response, 207)
     assert response.json() == []
+
+
+# FX-OSB-02: the data origin pair survives batch POST and copy in both modes,
+# and OSB_ARM_BATCH_CONFLICTS=refuse refuses identity collisions with 409.
+
+ORIGIN_DESCRIPTION = "Synthetic arm authored for the batch conflict tests."
+
+
+@pytest.fixture(scope="module")
+def arm_origin_uid(test_data):
+    TestUtils.create_ct_catalogue(catalogue_name=STUDY_ARM_ORIGIN_CATALOGUE)
+    TestUtils.create_ct_codelist(
+        catalogue_name=STUDY_ARM_ORIGIN_CATALOGUE,
+        codelist_uid=STUDY_ARM_ORIGIN_CODELIST_UID,
+        name="Synthetic study arm data origin type",
+        submission_value="ARMORIGIN",
+        extensible=True,
+        approve=True,
+    )
+    TestUtils.create_ct_term(
+        catalogue_name=STUDY_ARM_ORIGIN_CATALOGUE,
+        codelist_uid=STUDY_ARM_ORIGIN_CODELIST_UID,
+        term_uid="C176263",
+        concept_id="C176263",
+        submission_value="SYNTHETIC",
+        sponsor_preferred_name="Synthetic data",
+        sponsor_preferred_name_sentence_case="synthetic data",
+    )
+    yield "C176263"
+
+
+@pytest.fixture
+def refuse_conflicts(monkeypatch):
+    monkeypatch.setattr(settings, "arm_batch_conflicts", "refuse")
+
+
+def _arm_names(api_client, study_uid: str) -> list[str]:
+    response = api_client.get(f"/studies/{study_uid}/study-arms")
+    assert_response_status_code(response, 200)
+    return [item["name"] for item in response.json()["items"]]
+
+
+@pytest.mark.parametrize("mode", ["adjust", "refuse"])
+def test_batch_post_keeps_data_origin(api_client, arm_origin_uid, monkeypatch, mode):
+    monkeypatch.setattr(settings, "arm_batch_conflicts", mode)
+    target_study = TestUtils.create_study()
+
+    response = _post_batch(
+        api_client,
+        target_study.uid,
+        [
+            {
+                "method": "POST",
+                "content": {
+                    "name": f"MCPOriginBatchArm {mode}",
+                    "short_name": f"MCPOBA {mode}",
+                    "data_origin_type_uid": arm_origin_uid,
+                    "data_origin_description": ORIGIN_DESCRIPTION,
+                },
+            }
+        ],
+    )
+    assert_response_status_code(response, 207)
+    res = response.json()
+    assert res[0]["response_code"] == 201
+    assert res[0]["content"]["data_origin_type_uid"] == arm_origin_uid
+    assert res[0]["content"]["data_origin_description"] == ORIGIN_DESCRIPTION
+
+    arm_uid = res[0]["content"]["arm_uid"]
+    stored = api_client.get(f"/studies/{target_study.uid}/study-arms/{arm_uid}")
+    assert_response_status_code(stored, 200)
+    assert stored.json()["data_origin_type_uid"] == arm_origin_uid
+    assert stored.json()["data_origin_description"] == ORIGIN_DESCRIPTION
+
+
+@pytest.mark.parametrize("mode", ["adjust", "refuse"])
+def test_copy_from_study_keeps_data_origin_and_records_source(
+    api_client, arm_origin_uid, monkeypatch, mode
+):
+    monkeypatch.setattr(settings, "arm_batch_conflicts", mode)
+    source_study = TestUtils.create_study()
+    target_study = TestUtils.create_study()
+    source = api_client.post(
+        f"/studies/{source_study.uid}/study-arms",
+        json={
+            "name": f"MCPOriginSourceArm {mode}",
+            "short_name": f"MCPOSA {mode}",
+            "data_origin_type_uid": arm_origin_uid,
+            "data_origin_description": ORIGIN_DESCRIPTION,
+        },
+    )
+    assert_response_status_code(source, 201)
+    source_arm_uid = source.json()["arm_uid"]
+
+    response = api_client.post(
+        f"/studies/{target_study.uid}/study-arms/copy-from-study/{source_study.uid}"
+    )
+    assert_response_status_code(response, 207)
+    res = response.json()
+    assert len(res) == 1
+    assert res[0]["response_code"] == 201
+    assert res[0]["content"]["data_origin_type_uid"] == arm_origin_uid
+    assert res[0]["content"]["data_origin_description"] == ORIGIN_DESCRIPTION
+
+    rows, _ = db.cypher_query(
+        """
+        MATCH (:StudyRoot {uid: $study_uid})-[:AUDIT_TRAIL]->(action:Create)
+              -[:AFTER]->(:StudyArm {uid: $arm_uid})
+        RETURN action.source_study_uid, action.source_selection_uid
+        """,
+        params={
+            "study_uid": target_study.uid,
+            "arm_uid": res[0]["content"]["arm_uid"],
+        },
+    )
+    assert rows == [[source_study.uid, source_arm_uid]]
+
+
+@pytest.mark.parametrize(
+    "existing, submitted, field_name, value",
+    [
+        (
+            {"name": "MCPRefuseCode1", "short_name": "MCPRC1", "code": "MCPRCODE"},
+            {"name": "MCPRefuseCode2", "short_name": "MCPRC2", "code": "MCPRCODE"},
+            "code",
+            "MCPRCODE",
+        ),
+        (
+            {
+                "name": "MCPRefuseRand1",
+                "short_name": "MCPRR1",
+                "randomization_group": "MCPRGROUP",
+            },
+            {
+                "name": "MCPRefuseRand2",
+                "short_name": "MCPRR2",
+                "randomization_group": "MCPRGROUP",
+            },
+            "randomization_group",
+            "MCPRGROUP",
+        ),
+        (
+            {
+                "name": "MCPRefuseName",
+                "short_name": "MCPRN1",
+                "type": "investigational",
+            },
+            {"name": "MCPRefuseName", "short_name": "MCPRN2", "type": "placebo"},
+            "name",
+            "MCPRefuseName",
+        ),
+        (
+            {
+                "name": "MCPRefuseSame",
+                "short_name": "MCPRS1",
+                "type": "investigational",
+            },
+            {
+                "name": "MCPRefuseSame",
+                "short_name": "MCPRS2",
+                "type": "investigational",
+            },
+            "name",
+            "MCPRefuseSame",
+        ),
+    ],
+)
+def test_batch_post_refuses_identity_collision(
+    api_client, arm_types, refuse_conflicts, existing, submitted, field_name, value
+):
+    target_study = TestUtils.create_study()
+    existing = dict(existing)
+    existing_type = existing.pop("type", None)
+    existing_arm = TestUtils.create_study_arm(
+        study_uid=target_study.uid,
+        arm_type_uid=arm_types[existing_type].term_uid if existing_type else None,
+        **existing,
+    )
+    submitted = dict(submitted)
+    submitted_type = submitted.pop("type", None)
+    if submitted_type:
+        submitted["arm_type_uid"] = arm_types[submitted_type].term_uid
+
+    response = _post_batch(
+        api_client,
+        target_study.uid,
+        [
+            {
+                "method": "POST",
+                "content": {"name": "MCPRefuseUnique", "short_name": "MCPRU"},
+            },
+            {"method": "POST", "content": submitted},
+        ],
+    )
+    assert_response_status_code(response, 409)
+    message = response.json()["message"]
+    assert message.startswith("STUDY_ARM_BATCH_CONFLICT:")
+    assert f"field {field_name} value '{value}'" in message
+    assert existing_arm.arm_uid in message
+    # The whole request is refused: the unique arm before it is not written.
+    assert _arm_names(api_client, target_study.uid) == [existing_arm.name]
+
+
+def test_batch_post_refuse_returns_identical_arm(
+    api_client, arm_types, refuse_conflicts
+):
+    target_study = TestUtils.create_study()
+    arm_type_uid = arm_types["investigational"].term_uid
+    existing_arm = TestUtils.create_study_arm(
+        study_uid=target_study.uid,
+        name="MCPRefuseIdentical",
+        short_name="MCPRI1",
+        code="MCPRICODE",
+        arm_type_uid=arm_type_uid,
+    )
+
+    response = _post_batch(
+        api_client,
+        target_study.uid,
+        [
+            {
+                "method": "POST",
+                "content": {
+                    "name": "MCPRefuseIdentical",
+                    "short_name": "MCPRI1",
+                    "code": "MCPRICODE",
+                    "arm_type_uid": arm_type_uid,
+                },
+            }
+        ],
+    )
+    assert_response_status_code(response, 207)
+    res = response.json()
+    assert res[0]["response_code"] == 200
+    assert res[0]["content"]["arm_uid"] == existing_arm.arm_uid
+    assert "creation skipped" in res[0]["notification"]
+    assert _arm_names(api_client, target_study.uid) == ["MCPRefuseIdentical"]
+
+
+def test_copy_from_study_refuses_conflicting_arm(
+    api_client, arm_types, refuse_conflicts
+):
+    source_study = TestUtils.create_study()
+    target_study = TestUtils.create_study()
+    arm_type_uid = arm_types["investigational"].term_uid
+    TestUtils.create_study_arm(
+        study_uid=source_study.uid,
+        name="MCPRefuseCopyUnique",
+        short_name="MCPRCU1",
+        arm_type_uid=arm_type_uid,
+    )
+    TestUtils.create_study_arm(
+        study_uid=source_study.uid,
+        name="MCPRefuseCopyConflict",
+        short_name="MCPRCC1",
+        code="MCPRCCS",
+        arm_type_uid=arm_type_uid,
+    )
+    target_arm = TestUtils.create_study_arm(
+        study_uid=target_study.uid,
+        name="MCPRefuseCopyConflict",
+        short_name="MCPRCCT1",
+        code="MCPRCCT",
+        arm_type_uid=arm_type_uid,
+    )
+
+    response = api_client.post(
+        f"/studies/{target_study.uid}/study-arms/copy-from-study/{source_study.uid}"
+    )
+    assert_response_status_code(response, 409)
+    message = response.json()["message"]
+    assert "field name value 'MCPRefuseCopyConflict'" in message
+    assert target_arm.arm_uid in message
+    assert _arm_names(api_client, target_study.uid) == ["MCPRefuseCopyConflict"]

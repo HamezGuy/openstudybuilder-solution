@@ -61,7 +61,10 @@ class Delete(StudyAction):
 
 
 class Create(StudyAction):
-    pass
+    # Set only when a selection is copied from another study (FX-OSB-02):
+    # the source study and the source selection the new one was copied from.
+    source_study_uid = StringProperty()
+    source_selection_uid = StringProperty()
 
 
 class Edit(StudyAction):
