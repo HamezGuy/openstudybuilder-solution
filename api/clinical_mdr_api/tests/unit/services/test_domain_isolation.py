@@ -225,6 +225,107 @@ def test_nested_item_without_parent_and_cross_study_target_still_fail_closed():
         enforce_visible_study(request, _auth=None)
 
 
+COPY_FROM_STUDY_PATHS = [
+    "/studies/{study_uid}/study-arms/copy-from-study/{study_source_uid}",
+    "/studies/{study_uid}/study-elements/copy-from-study/{study_source_uid}",
+    "/studies/{study_uid}/study-branch-arms/copy-from-study/{study_source_uid}",
+]
+
+
+def _copy_request(path, query_string=b"", path_params=None, method="POST"):
+    from starlette.requests import Request
+
+    return Request(
+        {
+            "type": "http",
+            "method": method,
+            "path": path,
+            "headers": [],
+            "query_string": query_string,
+            "path_params": path_params or {},
+        }
+    )
+
+
+@pytest.mark.parametrize("route_path", COPY_FROM_STUDY_PATHS)
+def test_copy_from_study_refuses_a_source_study_the_caller_cannot_read(route_path):
+    from clinical_mdr_api.routers.studies.study_access import enforce_visible_study
+
+    params = {"study_uid": "Study_000999", "study_source_uid": "Study_000998"}
+    request = _copy_request(route_path.format(**params), path_params=params)
+    with pytest.raises(NotFoundException):
+        enforce_visible_study(request, _auth=None)
+
+
+@pytest.mark.parametrize("route_path", COPY_FROM_STUDY_PATHS)
+def test_copy_from_study_reads_the_source_and_writes_the_target(
+    monkeypatch, route_path
+):
+    from clinical_mdr_api.routers.studies import study_access
+
+    principal = SyntheticUser()
+    principal.study_ids = {"Study_000999", "Study_000998"}
+    monkeypatch.setattr(vis, "_request_user", lambda: principal)
+    monkeypatch.setattr(
+        vis, "_study_scope", lambda uid: (True, "tenant-synthetic", "active")
+    )
+    checked = []
+
+    def record(uid, *, require_write):
+        checked.append((uid, require_write))
+        vis.assert_study_uid_visible(uid, require_write=require_write)
+
+    monkeypatch.setattr(study_access, "assert_study_uid_visible", record)
+    params = {"study_uid": "Study_000999", "study_source_uid": "Study_000998"}
+    study_access.enforce_visible_study(
+        _copy_request(route_path.format(**params), path_params=params), _auth=None
+    )
+    assert checked == [("Study_000999", True), ("Study_000998", False)]
+
+
+@pytest.mark.parametrize(
+    "query_string",
+    [
+        b"reference_study_uid=Study_000998&component_to_copy=high_level_study_design",
+        b"reference_study_uid=Study_000999&reference_study_uid=Study_000998",
+    ],
+)
+def test_copy_component_refuses_an_unassigned_reference_study(query_string):
+    from clinical_mdr_api.routers.studies.study_access import enforce_visible_study
+
+    request = _copy_request(
+        "/studies/Study_000999/copy-component",
+        query_string=query_string,
+        path_params={"study_uid": "Study_000999"},
+        method="GET",
+    )
+    with pytest.raises(NotFoundException):
+        enforce_visible_study(request, _auth=None)
+    request = _copy_request(
+        "/studies/Study_000999/copy-component",
+        query_string=b"reference_study_uid=Study_000999",
+        path_params={"study_uid": "Study_000999"},
+        method="GET",
+    )
+    enforce_visible_study(request, _auth=None)
+
+
+def test_copy_routes_name_the_source_study_parameters_the_dependency_checks():
+    from clinical_mdr_api.routers.studies import studies, study, study_access
+
+    study_paths = {route.path for route in study.router.routes}
+    assert set(COPY_FROM_STUDY_PATHS) <= study_paths
+    assert "study_source_uid" in study_access.SOURCE_STUDY_PATH_PARAMETERS
+    copy_component = next(
+        route
+        for route in studies.router.routes
+        if route.path == "/{study_uid}/copy-component"
+    )
+    query_names = {param.name for param in copy_component.dependant.query_params}
+    assert "reference_study_uid" in query_names
+    assert "reference_study_uid" in study_access.SOURCE_STUDY_QUERY_PARAMETERS
+
+
 @pytest.mark.parametrize("minimal_response", [True, False])
 @pytest.mark.parametrize("deleted", [True, False])
 def test_list_repository_queries_only_exact_assigned_roots(

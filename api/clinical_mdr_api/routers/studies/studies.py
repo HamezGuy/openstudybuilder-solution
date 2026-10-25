@@ -1406,7 +1406,8 @@ def get_protocol_title(
     description="""
 State before:
  - uid must exist
- - reference_study_uid must exist
+ - reference_study_uid must exist and be readable by the caller; a reference
+   study the caller cannot read is reported as not found
 
 Business logic:
  - if overwrite is set to false, then only properties that are not set are copied over to the target Study.

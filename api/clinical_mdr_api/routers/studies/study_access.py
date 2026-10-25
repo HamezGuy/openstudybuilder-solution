@@ -17,6 +17,11 @@ from common.auth.dependencies import security
 # objects inside that study and must not be looked up as StudyRoot identities.
 # Each child service still resolves its object inside the authorized parent.
 STUDY_ROOT_PATH_PARAMETERS = frozenset({"study_uid", "target_study_uid"})
+# Copy routes name a second study that is only read: study_source_uid in the
+# path (copy-from-study) and reference_study_uid in the query (copy-component).
+# The caller must be able to read it, whatever the method of the route.
+SOURCE_STUDY_PATH_PARAMETERS = frozenset({"study_source_uid"})
+SOURCE_STUDY_QUERY_PARAMETERS = frozenset({"reference_study_uid"})
 
 
 def enforce_visible_study(request: Request, _auth=security) -> None:
@@ -48,6 +53,20 @@ def enforce_visible_study(request: Request, _auth=security) -> None:
             require_write=require_write,
             route_path=route_path,
         )
+    source_study_values = {
+        str(value).strip()
+        for key, value in request.path_params.items()
+        if key in SOURCE_STUDY_PATH_PARAMETERS and str(value).strip()
+    }
+    # Every repeated query value is checked, not only the one FastAPI binds.
+    source_study_values.update(
+        value.strip()
+        for key in SOURCE_STUDY_QUERY_PARAMETERS
+        for value in request.query_params.getlist(key)
+        if value.strip()
+    )
+    for study_uid in sorted(source_study_values - study_path_values):
+        assert_study_uid_visible(study_uid, require_write=False)
 
 
 def empty_cross_study_page(page_number: int, page_size: int):

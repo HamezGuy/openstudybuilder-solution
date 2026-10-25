@@ -5618,8 +5618,8 @@ State before:
 
 Authorization:
  - Requires write access to the target study (same in-tenant model as copy-component).
- - Source study metadata is read when the source UID is provided; no separate
-   source-study permission is enforced beyond existence checks.
+ - Requires read access to the source study; a source study the caller cannot
+   read is reported as not found.
 
 State after:
  - All source study arms are created on the target using batch conflict resolution
@@ -5705,6 +5705,11 @@ def study_elements_batch_operations(
 State before:
  - Target study (`study_uid`) must exist and not be locked.
  - Source study (`study_source_uid`) must exist and differ from the target.
+
+Authorization:
+ - Requires write access to the target study (same in-tenant model as copy-component).
+ - Requires read access to the source study; a source study the caller cannot
+   read is reported as not found.
 
 State after:
  - All source study elements are created on the target using skip deduplication
@@ -6449,8 +6454,8 @@ State before:
 
 Authorization:
  - Requires write access to the target study (same in-tenant model as copy-component).
- - Source study metadata is read when the source UID is provided; no separate
-   source-study permission is enforced beyond existence checks.
+ - Requires read access to the source study; a source study the caller cannot
+   read is reported as not found.
 
 State after:
  - All source study branch arms are created on the target using batch conflict resolution
