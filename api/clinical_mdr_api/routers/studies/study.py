@@ -23,6 +23,8 @@ from clinical_mdr_api.models.study_selections.study_regimen import (
     StudyRegimenCreateInput,
 )
 from clinical_mdr_api.models.study_selections.study_selection import (
+    STUDY_ARM_CHANGE_REASON_DESC,
+    STUDY_ARM_CHANGE_REASON_MAX_LENGTH,
     CompactStudyArm,
     StudyActivityGroup,
     StudyActivityGroupEditInput,
@@ -209,6 +211,11 @@ PROJECT_NAME = Query(
 )
 PROJECT_NUMBER = Query(
     description="Optionally, the number of the project for which to return study selections.",
+)
+STUDY_ARM_CHANGE_REASON_QUERY = Query(
+    description=STUDY_ARM_CHANGE_REASON_DESC,
+    min_length=1,
+    max_length=STUDY_ARM_CHANGE_REASON_MAX_LENGTH,
 )
 
 
@@ -5571,9 +5578,14 @@ def patch_new_arm_selection_order(
 def delete_selected_arm(
     study_uid: Annotated[str, studyUID],
     study_arm_uid: Annotated[str, study_arm_uid_path],
+    change_reason: Annotated[str | None, STUDY_ARM_CHANGE_REASON_QUERY] = None,
 ):
     service = StudyArmSelectionService()
-    service.delete_selection(study_uid=study_uid, study_selection_uid=study_arm_uid)
+    service.delete_selection(
+        study_uid=study_uid,
+        study_selection_uid=study_arm_uid,
+        change_reason=change_reason,
+    )
 
 
 @router.post(
@@ -5623,10 +5635,13 @@ State after:
 def study_arms_copy_from_study(
     study_uid: Annotated[str, studyUID],
     study_source_uid: Annotated[str, studyUID],
+    change_reason: Annotated[str | None, STUDY_ARM_CHANGE_REASON_QUERY] = None,
 ) -> list[StudySelectionArmBatchOutput]:
     service = StudyArmSelectionService()
     return service.copy_arms_from_study(
-        study_uid=study_uid, study_source_uid=study_source_uid
+        study_uid=study_uid,
+        study_source_uid=study_source_uid,
+        change_reason=change_reason,
     )
 
 

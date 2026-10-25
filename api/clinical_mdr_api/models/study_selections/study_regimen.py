@@ -14,6 +14,7 @@ from clinical_mdr_api.models.study_selections.study_definition_document import (
     AuthoredProtocolDocuments,
 )
 from clinical_mdr_api.models.study_selections.study_selection import (
+    STUDY_ARM_CHANGE_REASON_MAX_LENGTH,
     StudyCompoundDosingInput,
     StudyDesignCellCreateInput,
     StudySelectionArmCreateInput,
@@ -192,6 +193,15 @@ class StudyRegimenCreateInput(BaseModel):
         default_factory=list, max_length=MAX_ENTRIES
     )
     protocol_documents: StudyRegimenProtocolDocumentsInput | None = None
+    change_reason: Annotated[
+        str | None,
+        Field(
+            min_length=1,
+            max_length=STUDY_ARM_CHANGE_REASON_MAX_LENGTH,
+            description="Why the regimen is added. Stored on the Create action "
+            "of every new arm that gives no change_reason of its own.",
+        ),
+    ] = None
 
     def keys(self, kind: str) -> list[str]:
         return [entry.local_key for entry in getattr(self, kind)]

@@ -94,12 +94,15 @@ def native_request(
     Same mapping as Command Center's nativeRegimenRequest: studyVersion becomes
     expected_study_version, and the document hash becomes
     protocol_documents.expected_content_hash when the regimen saves documents.
+    The command's required reason also becomes the regimen's change_reason, so
+    each new arm's Create action records it (FX-OSB-09; contract unchanged).
     """
     regimen = deepcopy(input_payload["regimen"])
     documents = regimen.pop("protocol_documents", None)
     values: dict[str, Any] = {
         "expected_study_version": expected_state["studyVersion"],
         **regimen,
+        "change_reason": input_payload["reason"],
     }
     if documents is not None:
         values["protocol_documents"] = {

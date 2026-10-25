@@ -188,7 +188,13 @@ class StudyRegimenService:
             arms[arm.local_key] = _created(
                 StudyArmSelectionService()
                 .make_selection(
-                    study_uid, _canonical(arm, StudySelectionArmCreateInput)
+                    study_uid,
+                    _canonical(
+                        arm,
+                        StudySelectionArmCreateInput,
+                        # The arm's own reason, else the regimen's (FX-OSB-09).
+                        change_reason=arm.change_reason or regimen.change_reason,
+                    ),
                 )
                 .arm_uid,
                 "arm",

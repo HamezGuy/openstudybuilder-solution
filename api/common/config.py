@@ -311,6 +311,12 @@ class Settings(BaseSettings):
     arm_batch_conflicts: Literal["adjust", "refuse"] = Field(
         default="adjust", alias="OSB_ARM_BATCH_CONFLICTS"
     )
+    # Study arm create, patch, delete, batch, copy-from-study and regimen add
+    # take an optional change_reason, stored on the arm's StudyAction. When
+    # true, such a write without a reason is refused with 400.
+    arm_write_reason_required: bool = Field(
+        default=False, alias="OSB_ARM_WRITE_REASON_REQUIRED"
+    )
 
     def assert_native_identity_startup_safe(self) -> None:
         """P1 lands the endpoint while P2 still owns signed publication."""

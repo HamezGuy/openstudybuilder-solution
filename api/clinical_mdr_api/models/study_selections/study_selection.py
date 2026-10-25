@@ -201,6 +201,12 @@ STUDY_ARM_NAME_DESC = "the name of the related study arm"
 STUDY_ARM_NAME_MAX_LENGTH = 200
 STUDY_ARM_SHORT_NAME_MAX_LENGTH = 20
 STUDY_ARM_CODE_MAX_LENGTH = 20
+STUDY_ARM_CHANGE_REASON_MAX_LENGTH = 4000
+STUDY_ARM_CHANGE_REASON_DESC = (
+    "Why the study arm is written. Optional; stored on the arm's audit trail "
+    "action and returned by its audit trail. Required when "
+    "OSB_ARM_WRITE_REASON_REQUIRED is set."
+)
 STUDY_EPOCH_UID_DESC = "the uid of the related study epoch"
 STUDY_EPOCH_NAME_DESC = "the name of the related study epoch"
 STUDY_ELEMENT_UID_DESC = "the uid of the related study element"
@@ -4325,6 +4331,14 @@ class StudySelectionArmCreateInput(PostInputModel):
             description="Indicates whether to merge branches for this arm for SDTM/ADM"
         ),
     ] = False
+    change_reason: Annotated[
+        str | None,
+        Field(
+            description=STUDY_ARM_CHANGE_REASON_DESC,
+            min_length=1,
+            max_length=STUDY_ARM_CHANGE_REASON_MAX_LENGTH,
+        ),
+    ] = None
 
     @field_validator("*", mode="before")
     @classmethod
@@ -4384,6 +4398,14 @@ class StudySelectionArmInput(PatchInputModel):
             description="Indicates whether to merge branches for this arm for SDTM/ADM"
         ),
     ] = False
+    change_reason: Annotated[
+        str | None,
+        Field(
+            description=STUDY_ARM_CHANGE_REASON_DESC,
+            min_length=1,
+            max_length=STUDY_ARM_CHANGE_REASON_MAX_LENGTH,
+        ),
+    ] = None
 
     @field_validator("*", mode="before")
     @classmethod
@@ -4407,6 +4429,14 @@ class StudySelectionArmNewOrder(PatchInputModel):
 
 class StudySelectionArmVersion(StudySelectionArm):
     changes: Annotated[list[str], Field()]
+    # Set only when the version's action carries a reason (FX-OSB-09).
+    change_reason: Annotated[
+        str | None,
+        Field(
+            description="Why this version was written, when a reason was given",
+            json_schema_extra={"nullable": True},
+        ),
+    ] = None
 
 
 class StudySelectionArmBatchUpdateInput(StudySelectionArmInput):

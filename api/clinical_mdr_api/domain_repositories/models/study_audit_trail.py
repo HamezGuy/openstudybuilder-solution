@@ -18,6 +18,9 @@ class StudyAction(ClinicalMdrNode):
     date: datetime.datetime = ZonedDateTimeProperty()
     status = StringProperty()
     author_id = StringProperty()
+    # Why the write was made, when the caller gave a reason (FX-OSB-09: study
+    # arm Create, Edit and Delete actions).
+    change_reason = StringProperty()
     has_before = RelationshipTo(
         ".study_selections.StudySelection",
         "BEFORE",

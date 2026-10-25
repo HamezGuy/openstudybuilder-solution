@@ -54,6 +54,29 @@ from common.config import settings
 from common.telemetry import trace_calls
 
 
+def _require_change_reason(change_reason: str | None) -> None:
+    """OSB_ARM_WRITE_REASON_REQUIRED (FX-OSB-09): a study arm write without a
+    reason is refused before anything is written."""
+    exceptions.ValidationException.raise_if(
+        settings.arm_write_reason_required and not change_reason,
+        msg=(
+            "STUDY_ARM_CHANGE_REASON_REQUIRED: this study arm write needs a "
+            "change_reason; the request was refused and nothing was written."
+        ),
+    )
+
+
+def _with_change_reasons(
+    versions: list[StudySelectionArmVersion],
+    selection_history: list[SelectionHistoryArm],
+) -> list[StudySelectionArmVersion]:
+    """Return each version's action reason, only where one was given."""
+    for version, history in zip(versions, selection_history, strict=True):
+        if history.change_reason:
+            version.change_reason = history.change_reason
+    return versions
+
+
 @dataclass
 class _ArmConflictIndexEntry:
     vo: StudySelectionArmVO
@@ -326,7 +349,13 @@ class StudyArmSelectionService(StudySelectionMixin):
             repos.close()
 
     @ensure_transaction(db)
-    def delete_selection(self, study_uid: str, study_selection_uid: str):
+    def delete_selection(
+        self,
+        study_uid: str,
+        study_selection_uid: str,
+        change_reason: str | None = None,
+    ):
+        _require_change_reason(change_reason)
         repos = self._repos
         try:
             self._lock_mutable_study(study_uid)
@@ -448,9 +477,19 @@ class StudyArmSelectionService(StudySelectionMixin):
             selection_aggregate.remove_arm_selection(study_selection_uid)
 
             # sync with DB and save the update
-            repos.study_arm_repository.save(selection_aggregate, self.author)
+            repos.study_arm_repository.save(
+                selection_aggregate,
+                self.author,
+                change_reasons=self._change_reasons(study_selection_uid, change_reason),
+            )
         finally:
             repos.close()
+
+    @staticmethod
+    def _change_reasons(
+        study_selection_uid: str, change_reason: str | None
+    ) -> dict[str, str] | None:
+        return {study_selection_uid: change_reason} if change_reason else None
 
     @ensure_transaction(db)
     def set_new_order(
@@ -544,10 +583,14 @@ class StudyArmSelectionService(StudySelectionMixin):
                         ith_selection_history, effective_dates
                     )
                 ]
+                arm_versions = _with_change_reasons(
+                    calculate_diffs(versions, StudySelectionArmVersion),
+                    ith_selection_history,
+                )
                 if not data:
-                    data = calculate_diffs(versions, StudySelectionArmVersion)
+                    data = arm_versions
                 else:
-                    data.extend(calculate_diffs(versions, StudySelectionArmVersion))
+                    data.extend(arm_versions)
             return data
         finally:
             repos.close()
@@ -579,8 +622,10 @@ class StudyArmSelectionService(StudySelectionMixin):
                 ).model_dump()
                 for history, effective_date in zip(selection_history, effective_dates)
             ]
-            data = calculate_diffs(versions, StudySelectionArmVersion)
-            return data
+            return _with_change_reasons(
+                calculate_diffs(versions, StudySelectionArmVersion),
+                selection_history,
+            )
         finally:
             repos.close()
 
@@ -597,6 +642,7 @@ class StudyArmSelectionService(StudySelectionMixin):
         selection_create_input: StudySelectionArmCreateInput,
         validate: bool = True,
     ) -> StudySelectionArm:
+        _require_change_reason(selection_create_input.change_reason)
         repos = self._repos
 
         try:
@@ -633,7 +679,14 @@ class StudyArmSelectionService(StudySelectionMixin):
             )
 
             # sync with DB and save the update
-            repos.study_arm_repository.save(selection_aggregate, self.author)
+            repos.study_arm_repository.save(
+                selection_aggregate,
+                self.author,
+                change_reasons=self._change_reasons(
+                    new_selection.study_selection_uid,
+                    selection_create_input.change_reason,
+                ),
+            )
 
             # Fetch the new selection which was just added
             new_selection, order = selection_aggregate.get_specific_arm_selection(
@@ -706,6 +759,7 @@ class StudyArmSelectionService(StudySelectionMixin):
         selection_update_input: StudySelectionArmInput,
         validate: bool = True,
     ) -> StudySelectionArmWithConnectedBranchArms:
+        _require_change_reason(selection_update_input.change_reason)
         repos = self._repos
         try:
             # Load aggregate
@@ -738,7 +792,13 @@ class StudyArmSelectionService(StudySelectionMixin):
                 )
 
                 # sync with DB and save the update
-                repos.study_arm_repository.save(selection_aggregate, self.author)
+                repos.study_arm_repository.save(
+                    selection_aggregate,
+                    self.author,
+                    change_reasons=self._change_reasons(
+                        study_selection_uid, selection_update_input.change_reason
+                    ),
+                )
 
                 # Fetch the new selection which was just updated
                 new_selection, order = (
@@ -911,7 +971,8 @@ class StudyArmSelectionService(StudySelectionMixin):
         existing = conflicts[0][2]
         if all(vo is existing for _, _, vo in conflicts) and all(
             getattr(spec, field_name) == getattr(existing, field_name)
-            for field_name in spec.model_fields_set
+            # The reason describes the request, not the arm.
+            for field_name in spec.model_fields_set - {"change_reason"}
         ):
             return existing
         field_name, value, vo = conflicts[0]
@@ -1045,17 +1106,22 @@ class StudyArmSelectionService(StudySelectionMixin):
         specs: list[StudySelectionArmCreateInput],
         source_study_uid: str | None = None,
         source_arm_uids: list[str] | None = None,
+        change_reason: str | None = None,
     ) -> list[StudySelectionArmBatchOutput]:
         """Create arms for batch POST and copy-from-study.
 
         For a copy, source_study_uid and source_arm_uids (one per spec) are
-        stored on each new arm's Create action."""
+        stored on each new arm's Create action. Each new arm's Create action
+        also takes its spec's change_reason, else change_reason (the copy's)."""
         repos = self._repos
         results: list[StudySelectionArmBatchOutput] = []
         if not specs:
             return results
+        for spec in specs:
+            _require_change_reason(spec.change_reason or change_reason)
         refuse_conflicts = settings.arm_batch_conflicts == "refuse"
         create_action_properties: dict[str, dict[str, str]] = {}
+        change_reasons: dict[str, str] = {}
 
         try:
             selection_aggregate: StudySelectionArmAR = (
@@ -1142,6 +1208,11 @@ class StudyArmSelectionService(StudySelectionMixin):
                         "source_study_uid": source_study_uid,
                         "source_selection_uid": source_arm_uids[spec_index],
                     }
+                arm_change_reason = spec.change_reason or change_reason
+                if arm_change_reason:
+                    change_reasons[new_selection.study_selection_uid] = (
+                        arm_change_reason
+                    )
                 selection_aggregate.add_arm_selection(
                     new_selection,
                     self._repos.ct_term_name_repository.term_specific_exists_by_uid,
@@ -1178,6 +1249,7 @@ class StudyArmSelectionService(StudySelectionMixin):
                 selection_aggregate,
                 self.author,
                 create_action_properties=create_action_properties,
+                change_reasons=change_reasons,
             )
         finally:
             repos.close()
@@ -1185,7 +1257,10 @@ class StudyArmSelectionService(StudySelectionMixin):
 
     @ensure_transaction(db)
     def copy_arms_from_study(
-        self, study_uid: str, study_source_uid: str
+        self,
+        study_uid: str,
+        study_source_uid: str,
+        change_reason: str | None = None,
     ) -> list[StudySelectionArmBatchOutput]:
         """
         Copy all study arms from a source study into the target study.
@@ -1195,6 +1270,7 @@ class StudyArmSelectionService(StudySelectionMixin):
         study must exist; cross-study reads are allowed within the tenant when the
         source UID is known, consistent with other copy-from-study operations.
         """
+        _require_change_reason(change_reason)
         exceptions.ValidationException.raise_if(
             study_source_uid == study_uid,
             msg="study_source_uid must differ from the target study.",
@@ -1207,6 +1283,7 @@ class StudyArmSelectionService(StudySelectionMixin):
             [spec for spec, _ in source_specs],
             source_study_uid=study_source_uid,
             source_arm_uids=[source_arm_uid for _, source_arm_uid in source_specs],
+            change_reason=change_reason,
         )
 
     @ensure_transaction(db)

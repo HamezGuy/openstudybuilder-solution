@@ -176,6 +176,8 @@ def test_native_request_carries_both_reviewed_preconditions():
     assert plain.expected_study_version == "None"
     assert plain.protocol_documents is None
     assert plain.keys("arms") == ["a", "b"]
+    # The command's reason is recorded on each new arm's Create action.
+    assert plain.change_reason == "Synthetic regimen onboarding"
     value = command(documents=True)
     with_documents = regimen_onboard.native_request(
         value["inputPayload"], value["expectedTargetState"]

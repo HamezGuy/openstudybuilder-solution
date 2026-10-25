@@ -84,6 +84,8 @@ class SelectionHistoryArm:
     merge_branch_for_this_arm_for_sdtm_adam: bool
     data_origin_type_uid: str | None = None
     data_origin_description: str | None = None
+    # The reason on this version's action, when one was given (FX-OSB-09).
+    change_reason: str | None = None
 
 
 class StudySelectionArmRepository:
@@ -635,6 +637,7 @@ class StudySelectionArmRepository:
         study_selection: StudySelectionArmAR,
         author_id: str,
         create_action_properties: dict[str, dict[str, str]] | None = None,
+        change_reasons: dict[str, str] | None = None,
     ) -> None:
         """
         Persist the set of selected study arms from the aggregate to the database
@@ -642,6 +645,9 @@ class StudySelectionArmRepository:
         :param author_id:
         :param create_action_properties: per new arm uid, extra properties for its
             Create action (the copy-from-study provenance)
+        :param change_reasons: per arm uid, the caller's reason, stored on that
+            arm's Create, Edit or Delete action only; other arms whose order
+            shifts in the same save get no reason
         """
         assert study_selection.repository_closure_data is not None
 
@@ -710,6 +716,9 @@ class StudySelectionArmRepository:
                     author_id=author_id,
                     for_deletion=True,
                     before_node=last_study_selection_node,
+                    action_properties=self._change_reason_property(
+                        change_reasons, selection.study_selection_uid
+                    ),
                 )
 
         # loop through and add selections
@@ -735,12 +744,26 @@ class StudySelectionArmRepository:
                 author_id=author_id,
                 for_deletion=False,
                 before_node=last_study_selection_node,
-                action_properties=(
-                    (create_action_properties or {}).get(selection.study_selection_uid)
-                    if isinstance(audit_node, Create)
-                    else None
-                ),
+                action_properties={
+                    **(
+                        (create_action_properties or {}).get(
+                            selection.study_selection_uid, {}
+                        )
+                        if isinstance(audit_node, Create)
+                        else {}
+                    ),
+                    **self._change_reason_property(
+                        change_reasons, selection.study_selection_uid
+                    ),
+                },
             )
+
+    @staticmethod
+    def _change_reason_property(
+        change_reasons: dict[str, str] | None, study_selection_uid: str
+    ) -> dict[str, str]:
+        reason = (change_reasons or {}).get(study_selection_uid)
+        return {"change_reason": reason} if reason else {}
 
     @staticmethod
     def arm_exists_by(
@@ -943,6 +966,7 @@ class StudySelectionArmRepository:
                 all_sa.text AS text,
                 asa.date AS start_date,
                 asa.author_id AS author_id,
+                asa.change_reason AS change_reason,
                 labels(asa) AS change_type,
                 bsa.date AS end_date
             """,
@@ -983,6 +1007,7 @@ class StudySelectionArmRepository:
                     accepted_version=res["accepted_version"],
                     status=None,
                     order=res["order"],
+                    change_reason=res["change_reason"],
                 )
             )
         return result

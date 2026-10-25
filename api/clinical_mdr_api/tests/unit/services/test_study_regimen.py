@@ -263,6 +263,17 @@ def test_canonical_inputs_keep_only_client_supplied_fields(monkeypatch):
     assert "local_key" not in type(arm).model_fields
 
 
+def test_regimen_change_reason_reaches_each_arm_unless_it_has_its_own(monkeypatch):
+    recorder = Recorder(monkeypatch)
+    payload = regimen_payload()
+    payload["change_reason"] = "Synthetic regimen H added"
+    payload["arms"][1]["change_reason"] = "Synthetic placebo arm reason"
+    create(payload)
+    active, placebo = recorder.payloads("arm")
+    assert active.change_reason == "Synthetic regimen H added"
+    assert placebo.change_reason == "Synthetic placebo arm reason"
+
+
 @pytest.mark.parametrize(
     "change",
     [
