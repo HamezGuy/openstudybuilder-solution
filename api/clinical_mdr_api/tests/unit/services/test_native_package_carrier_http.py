@@ -34,6 +34,7 @@ from clinical_mdr_api.tests.unit.services.test_native_package_carrier_flow impor
     record_review,
 )
 from common.auth.dependencies import validate_token
+from common.config import settings
 
 PATH = "/native-packages-v2/carrier-review-context"
 
@@ -62,6 +63,9 @@ def client(monkeypatch, fixture=None):
             platform_commands_prototype_enabled=True, deployment_environment="prototype"
         ),
     )
+    # The platform-control reads in native_identity share the commands' gate (OP-23).
+    monkeypatch.setattr(settings, "platform_commands_prototype_enabled", True)
+    monkeypatch.setattr(settings, "deployment_environment", "prototype")
     app = FastAPI()
     app.include_router(route.router)
     app.include_router(native_identity.router)

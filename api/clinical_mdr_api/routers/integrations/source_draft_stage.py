@@ -189,6 +189,7 @@ def execute_source_draft_stage(body: dict[str, Any], request: Request):
     summary="Read an immutable native source-draft staging receipt",
 )
 def get_source_draft_stage_receipt(receipt_version_id: str, request: Request):
+    _enabled()
     principal_for, _, _ = _dependencies()
     study_id = str(request.headers.get("x-platform-study-id") or "").strip()
     principal = principal_for("draft:read", study_id)

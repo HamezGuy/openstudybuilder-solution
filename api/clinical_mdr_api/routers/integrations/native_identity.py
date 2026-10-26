@@ -47,6 +47,9 @@ from clinical_mdr_api.routers.integrations.selected_activity_item_observation im
     router as selected_activity_item_observation_router,
 )
 from clinical_mdr_api.routers.integrations.source_draft_stage import (
+    _enabled as _platform_commands_enabled,
+)
+from clinical_mdr_api.routers.integrations.source_draft_stage import (
     router as source_draft_stage_router,
 )
 from clinical_mdr_api.services.integrations.atomic_signed_command import (
@@ -342,6 +345,9 @@ def _verify_candidate_request_signature(
     summary="Read the immutable original platform-command result",
 )
 def get_platform_command_receipt(command_id: str, request: Request) -> dict[str, Any]:
+    # OP-23: the reads answer 503 wherever the commands that write them do, and a
+    # receipt is read only with the capability its command was executed under.
+    _platform_commands_enabled()
     platform_study_id = str(request.headers.get("x-platform-study-id") or "").strip()
     principal = user()
     if (
@@ -350,9 +356,14 @@ def get_platform_command_receipt(command_id: str, request: Request) -> dict[str,
         or not principal.tenant_id
     ):
         raise HTTPException(status_code=403, detail="OSB_PLATFORM_COMMAND_RECEIPT_SCOPE_DENIED")
-    result = platform_command_store.lookup(principal.tenant_id, platform_study_id, command_id)
-    if result is None:
+    found = platform_command_store.lookup_with_capability(
+        principal.tenant_id, platform_study_id, command_id
+    )
+    if found is None:
         raise HTTPException(status_code=404, detail="PLATFORM_COMMAND_RECEIPT_NOT_FOUND")
+    target_capability, result = found
+    if not target_capability or target_capability not in principal.capabilities:
+        raise HTTPException(status_code=403, detail="OSB_PLATFORM_COMMAND_RECEIPT_SCOPE_DENIED")
     return {"ok": True, "data": result}
 
 
@@ -766,6 +777,7 @@ def execute_candidate_set_command(body: dict[str, Any], request: Request) -> dic
     summary="Read exact canonical OSB candidate-set bytes",
 )
 def get_candidate_set(candidate_set_version_id: str, request: Request) -> Response:
+    _platform_commands_enabled()
     platform_study_id = str(request.headers.get("x-platform-study-id") or "").strip()
     principal = _platform_principal("candidate:read", platform_study_id)
     rows, _ = db.cypher_query(
@@ -952,6 +964,7 @@ def execute_regimen_onboard_command(body: dict[str, Any]) -> dict[str, Any]:
     summary="Read exact canonical OSB native-evidence bytes",
 )
 def get_native_evidence_set(evidence_set_version_id: str, request: Request) -> Response:
+    _platform_commands_enabled()
     platform_study_id = str(request.headers.get("x-platform-study-id") or "").strip()
     principal = _platform_principal("candidate:read", platform_study_id)
     rows, _ = db.cypher_query(
@@ -1095,6 +1108,7 @@ def execute_specialist_review_command(body: dict[str, Any]) -> dict[str, Any]:
     summary="Read exact canonical specialist-review bytes",
 )
 def get_specialist_review(review_version_id: str, request: Request) -> Response:
+    _platform_commands_enabled()
     platform_study_id = str(request.headers.get("x-platform-study-id") or "").strip()
     principal = _platform_principal("package:release", platform_study_id)
     rows, _ = db.cypher_query(
@@ -1195,6 +1209,7 @@ def execute_native_package_v2_command(body: dict[str, Any]) -> dict[str, Any]:
     summary="Read exact canonical raw Package V2 bytes",
 )
 def get_native_package_v2(package_version_id: str, request: Request) -> Response:
+    _platform_commands_enabled()
     platform_study_id = str(request.headers.get("x-platform-study-id") or "").strip()
     principal = _platform_principal("package:release", platform_study_id)
     rows, _ = db.cypher_query(

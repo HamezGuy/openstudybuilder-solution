@@ -3,7 +3,7 @@
 import json
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable, TypeVar, cast
 from uuid import uuid4
 
 from neomodel import db
@@ -857,6 +857,17 @@ class Neo4jOsbPlatformCommandStore:
 
     @staticmethod
     def lookup(tenant_id: str, platform_study_id: str, command_id: str) -> dict[str, Any] | None:
+        found = Neo4jOsbPlatformCommandStore.lookup_with_capability(
+            tenant_id, platform_study_id, command_id
+        )
+        return None if found is None else found[1]
+
+    @staticmethod
+    def lookup_with_capability(
+        tenant_id: str, platform_study_id: str, command_id: str
+    ) -> tuple[str, dict[str, Any]] | None:
+        """The published result and the command's target capability, which the
+        receipt itself does not carry (the receipt read requires it, OP-23)."""
         rows, _ = db.cypher_query(
             """MATCH (effect:PlatformCommandEffect {
                  tenant_id: $tenant_id, platform_study_id: $platform_study_id,
@@ -864,12 +875,14 @@ class Neo4jOsbPlatformCommandStore:
                RETURN effect.target_effect_id, effect.command_intent_hash,
                       effect.receipt_json, effect.effect_payload_json,
                       effect.signed_envelope_json,effect.signature_verification_json,
-                      effect.publication_mode
+                      effect.publication_mode, effect.target_capability
                ORDER BY effect.created_at LIMIT 1""",
             {"tenant_id": tenant_id, "platform_study_id": platform_study_id,
              "command_id": command_id},
         )
-        return _published(rows[0] if rows else None)
+        if not rows:
+            return None
+        return str(rows[0][7] or ""), cast(dict[str, Any], _published(rows[0]))
 
     @staticmethod
     def reconcile(tenant_id: str, platform_study_id: str) -> dict[str, int]:
