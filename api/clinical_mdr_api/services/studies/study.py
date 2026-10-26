@@ -132,6 +132,7 @@ from clinical_mdr_api.services.studies.null_adjudication import (
     prepare_guarded_null_patch,
 )
 from clinical_mdr_api.services.studies.study_visibility import (
+    assert_study_uid_visible,
     assigned_study_uids,
     bind_study_to_current_tenant,
     catalog_item_author,
@@ -178,6 +179,23 @@ def _caller_may_see(item) -> bool:
     return study_visible_to_user(
         _request_user(), catalog_item_author(item), study_uid=_item_uid(item)
     )
+
+
+def _assert_related_studies_writable(*study_uids: str | None) -> None:
+    """Under the delegated profile, require write on every other study a
+    parent and subpart change reads or writes (AR-OSB-01).
+
+    A PATCH body or a stored relationship can name a parent or subpart the
+    path dependency never checked. The check runs before that study is read,
+    so a study the caller cannot write answers the same 404 whether it is in
+    another tenant or does not exist, and none of its data is copied. Outside
+    the delegated profile nothing changes.
+    """
+    if not delegated_study_scope_required():
+        return
+    for study_uid in study_uids:
+        if study_uid:
+            assert_study_uid_visible(study_uid, require_write=True)
 
 
 def validate_if_study_is_not_locked(
@@ -2765,6 +2783,18 @@ class StudyService:
                 msg="A Study cannot be a Study Parent Part for itself.",
             )
 
+            if (
+                null_adjudication is None
+                and study_patch_request.study_parent_part_uid
+                != study_definition_ar.study_parent_part_uid
+            ):
+                # The new parent is read, copied from and written, and a
+                # detached parent is written and its subparts renumbered.
+                _assert_related_studies_writable(
+                    study_patch_request.study_parent_part_uid,
+                    study_definition_ar.study_parent_part_uid,
+                )
+
             if null_adjudication is None and study_patch_request.study_parent_part_uid:
                 parent_part_ar = self._repos.study_definition_repository.find_by_uid(
                     study_patch_request.study_parent_part_uid
@@ -3036,6 +3066,9 @@ class StudyService:
     def _cascade_update_subparts(self, study_definition_ar: StudyDefinitionAR):
         if not study_definition_ar.study_subpart_uids:
             return
+
+        # Every subpart is rewritten from its parent: check them all first.
+        _assert_related_studies_writable(*study_definition_ar.study_subpart_uids)
 
         for study_subpart_uid in study_definition_ar.study_subpart_uids:
             subpart_ar = self._repos.study_definition_repository.find_by_uid(
@@ -3497,12 +3530,16 @@ class StudyService:
         study_parent_part_uid: str,
         study_subpart_reordering_input: StudySubpartReorderingInput | None = None,
     ):
+        # Reached from a subpart's detach or delete as well as from the parent's
+        # own route, so the parent is checked here too.
+        _assert_related_studies_writable(study_parent_part_uid)
         study_parent_part: StudyDefinitionAR | None = (
             self._repos.study_definition_repository.find_by_uid(study_parent_part_uid)
         )
 
         if study_parent_part is None:
             raise NotFoundException("Study", study_parent_part_uid)
+        _assert_related_studies_writable(*study_parent_part.study_subpart_uids)
 
         BusinessLogicException.raise_if(
             study_parent_part.current_metadata.ver_metadata.study_status

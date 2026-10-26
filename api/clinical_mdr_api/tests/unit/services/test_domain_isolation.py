@@ -1,12 +1,37 @@
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
+from neomodel import db
 
+from clinical_mdr_api.domain_repositories.controlled_terminologies import (
+    ct_term_generic_repository,
+)
+from clinical_mdr_api.models.study_selections.study import (
+    StudyPatchRequestJsonModel,
+)
 from clinical_mdr_api.services.integrations.proposal_review import (
     ProposalReviewPrincipal,
 )
 from clinical_mdr_api.services.studies import study as study_service
 from clinical_mdr_api.services.studies import study_visibility as vis
+from clinical_mdr_api.services.user_info import UserInfoService
+from clinical_mdr_api.tests.unit.domain.clinical_programme_aggregate.test_clinical_programme import (
+    create_random_clinical_programme,
+)
+from clinical_mdr_api.tests.unit.domain.controlled_terminology_aggregates.test_ct_term_names import (
+    create_random_ct_term_name_ar,
+    create_random_ct_term_name_ars,
+)
+from clinical_mdr_api.tests.unit.domain.project_aggregate.test_project import (
+    create_random_project,
+)
+from clinical_mdr_api.tests.unit.domain.study_definition_aggregate.test_root import (
+    create_random_study,
+)
+from clinical_mdr_api.tests.unit.services.test_study import (
+    UnitDefinitionRepositoryForTestImpl,
+)
 from common.exceptions import ForbiddenException, NotFoundException
 
 
@@ -608,3 +633,264 @@ def test_delegated_root_listing_never_calls_unscoped_repository(monkeypatch):
 
     assert requested == ["Study_000999"]
     assert result.items == [{"uid": "Study_000999"}]
+
+
+# AR-OSB-01: PATCH /studies/{uid} names a parent in its body, which the path
+# dependency never sees. The service checks it, and the subparts a parent
+# change or cascade rewrites, before reading them.
+_OWN, _FOREIGN, _OWN_TENANT_PARENT, _MISSING = (
+    "Study_000999",
+    "Study_000998",
+    "Study_000997",
+    "Study_000996",
+)
+
+
+@pytest.fixture(name="parent_scope")
+def fixture_parent_scope(monkeypatch):
+    """Study_000997 is a second study of the caller's tenant, assigned to them."""
+    principal = SyntheticUser()
+    principal.study_ids = {_OWN, _OWN_TENANT_PARENT}
+    monkeypatch.setattr(vis, "_request_user", lambda: principal)
+    scopes = {
+        _OWN: (True, "tenant-synthetic", "active"),
+        _OWN_TENANT_PARENT: (True, "tenant-synthetic", "active"),
+        _FOREIGN: (True, "another-tenant", "active"),
+    }
+    monkeypatch.setattr(
+        vis, "_study_scope", lambda uid: scopes.get(uid, (False, None, None))
+    )
+    return principal
+
+
+def _synthetic_study(uid, study_number, acronym):
+    return create_random_study(
+        lambda: uid,
+        new_id_metadata_fixed_values={
+            "project_number": "SYN",
+            "study_number": study_number,
+            "study_acronym": acronym,
+        },
+    )
+
+
+@pytest.fixture(name="patch_service")
+def fixture_patch_service(monkeypatch, parent_scope):
+    monkeypatch.setattr(
+        UserInfoService, "get_author_username_from_id", classmethod(lambda cls, i: i)
+    )
+    # ensure_transaction joins this stand-in instead of opening a session.
+    monkeypatch.setattr(db, "_active_transaction", object(), raising=False)
+
+    studies = {
+        _OWN: _synthetic_study(_OWN, "1111", "OWNACR"),
+        _FOREIGN: _synthetic_study(_FOREIGN, "2222", "SECRETACR"),
+        _OWN_TENANT_PARENT: _synthetic_study(_OWN_TENANT_PARENT, "3333", "PARENTACR"),
+    }
+    repos = MagicMock()
+    repos.study_definition_repository.find_by_uid.side_effect = (
+        lambda uid, **_kwargs: studies.get(uid)
+    )
+    repos.ct_term_name_repository.find_by_uid.return_value = (
+        create_random_ct_term_name_ar()
+    )
+    repos.ct_term_name_repository.find_by_uids.side_effect = (
+        lambda term_uids, *_args, **_kwargs: create_random_ct_term_name_ars(
+            term_uids=list(term_uids)
+        )
+    )
+    repos.ct_term_name_repository.find_by_uids.__module__ = (
+        ct_term_generic_repository.__name__
+    )
+    repos.project_repository.find_by_project_number.return_value = (
+        create_random_project(
+            clinical_programme_uid="CP", generate_uid_callback=lambda: "Project_1"
+        )
+    )
+    repos.clinical_programme_repository.find_by_uid.return_value = (
+        create_random_clinical_programme(generate_uid_callback=lambda: "CP")
+    )
+    units = UnitDefinitionRepositoryForTestImpl()
+    repos.unit_definition_repository.find_all.side_effect = (
+        lambda *_args, **_kwargs: units.find_all()
+    )
+    repos.unit_definition_repository.find_by_uid_2.side_effect = units.find_by_uid_2
+
+    service = study_service.StudyService.__new__(study_service.StudyService)
+    service.author_id = "synthetic-writer"
+    service._repos = repos
+    monkeypatch.setattr(
+        service, "_get_next_available_study_subpart_id", lambda *_a, **_k: "a"
+    )
+    return SimpleNamespace(
+        service=service, repos=repos, studies=studies, principal=parent_scope
+    )
+
+
+def _subpart_patch(parent_uid):
+    return StudyPatchRequestJsonModel(
+        study_parent_part_uid=parent_uid,
+        current_metadata={
+            "identification_metadata": {"study_subpart_acronym": "SUBA"},
+            "study_description": {},
+        },
+    )
+
+
+def _read_uids(repos):
+    return [
+        call.args[0] if call.args else call.kwargs.get("uid")
+        for call in repos.study_definition_repository.find_by_uid.call_args_list
+    ]
+
+
+@pytest.mark.parametrize("dry", [True, False])
+@pytest.mark.parametrize("parent_uid", [_FOREIGN, _MISSING])
+def test_patch_refuses_an_unwritable_parent_before_reading_it(
+    patch_service, dry, parent_uid
+):
+    request = _subpart_patch(parent_uid)
+
+    with pytest.raises(NotFoundException) as refused:
+        patch_service.service.patch(_OWN, dry, request)
+
+    # The parent is never read, so no foreign identity is copied or returned,
+    # and a foreign study answers exactly like one that does not exist.
+    assert _read_uids(patch_service.repos) == [_OWN]
+    ident = request.current_metadata.identification_metadata
+    assert ident.study_number is None
+    assert ident.study_acronym is None
+    assert request.current_metadata.study_description.study_title is None
+    assert "SECRETACR" not in str(refused.value.msg)
+    assert str(refused.value.msg).replace(parent_uid, "<uid>") == str(
+        NotFoundException("Study Definition", "<uid>").msg
+    )
+    repository = patch_service.repos.study_definition_repository
+    repository.save.assert_not_called()
+    repository.update_subpart_relationship.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("capabilities", {"study:read"}), ("roles", {"Study.Read"})],
+)
+def test_patch_refuses_an_assigned_parent_the_caller_may_only_read(
+    patch_service, field, value
+):
+    # OSB write authority is token-wide, so a read-only parent is a token
+    # that reads, not writes, its assigned studies.
+    setattr(patch_service.principal, field, value)
+
+    with pytest.raises(ForbiddenException):
+        patch_service.service.patch(_OWN, True, _subpart_patch(_OWN_TENANT_PARENT))
+
+    assert _OWN_TENANT_PARENT not in _read_uids(patch_service.repos)
+
+
+@pytest.mark.parametrize("dry", [True, False])
+def test_patch_accepts_an_assigned_writable_parent_of_the_same_tenant(
+    patch_service, dry
+):
+    result = patch_service.service.patch(_OWN, dry, _subpart_patch(_OWN_TENANT_PARENT))
+
+    assert _OWN_TENANT_PARENT in _read_uids(patch_service.repos)
+    assert result.study_parent_part.uid == _OWN_TENANT_PARENT
+    assert result.current_metadata.identification_metadata.study_id == "SYN-3333-SUBA"
+    relationship = (
+        patch_service.repos.study_definition_repository.update_subpart_relationship
+    )
+    if dry:
+        relationship.assert_not_called()
+    else:
+        assert relationship.call_args.args[1] == _OWN_TENANT_PARENT
+
+
+def test_patch_refuses_to_detach_from_a_parent_the_caller_cannot_write(
+    patch_service,
+):
+    # A link to a foreign root, as the hole could leave behind. Detaching
+    # writes that root and renumbers its subparts.
+    patch_service.studies[_OWN].study_parent_part_uid = _FOREIGN
+
+    with pytest.raises(NotFoundException):
+        patch_service.service.patch(
+            _OWN,
+            False,
+            StudyPatchRequestJsonModel(
+                study_parent_part_uid=None,
+                current_metadata={"identification_metadata": {"study_number": None}},
+            ),
+        )
+
+    assert _read_uids(patch_service.repos) == [_OWN]
+    patch_service.repos.study_definition_repository.save.assert_not_called()
+
+
+def test_patch_outside_delegated_mode_reads_the_parent_as_before(
+    monkeypatch, patch_service
+):
+    monkeypatch.setattr(vis.settings, "delegated_claims_required", False)
+    checked = []
+    # raising=False keeps this test meaningful on code without the check.
+    monkeypatch.setattr(
+        study_service,
+        "assert_study_uid_visible",
+        lambda uid, **kwargs: checked.append(uid),
+        raising=False,
+    )
+
+    result = patch_service.service.patch(_OWN, True, _subpart_patch(_FOREIGN))
+
+    assert not checked
+    assert _FOREIGN in _read_uids(patch_service.repos)
+    assert result.study_parent_part.uid == _FOREIGN
+
+
+def test_parent_cascade_refuses_a_subpart_the_caller_cannot_write(patch_service):
+    parent = SimpleNamespace(study_subpart_uids=[_OWN_TENANT_PARENT, _FOREIGN])
+
+    with pytest.raises(NotFoundException):
+        patch_service.service._cascade_update_subparts(parent)
+
+    # Every subpart is checked first, so not even the writable one is rewritten.
+    assert not _read_uids(patch_service.repos)
+    patch_service.repos.study_definition_repository.save.assert_not_called()
+
+
+def test_parent_cascade_outside_delegated_mode_rewrites_every_subpart(
+    monkeypatch, patch_service
+):
+    monkeypatch.setattr(vis.settings, "delegated_claims_required", False)
+    monkeypatch.setattr(
+        study_service.StudyService,
+        "_patch_prepare_new_id_metadata",
+        lambda self, **_kwargs: None,
+    )
+    foreign = patch_service.studies[_FOREIGN]
+    monkeypatch.setattr(foreign, "edit_metadata", lambda **_kwargs: None)
+    parent = SimpleNamespace(
+        study_subpart_uids=[_FOREIGN],
+        current_metadata=patch_service.studies[_OWN].current_metadata,
+    )
+
+    patch_service.service._cascade_update_subparts(parent)
+
+    assert _read_uids(patch_service.repos) == [_FOREIGN]
+    patch_service.repos.study_definition_repository.save.assert_called_once_with(
+        foreign
+    )
+
+
+def test_subpart_reorder_refuses_an_unwritable_parent_or_subpart(patch_service):
+    service = patch_service.service
+
+    # A subpart's detach or delete reorders its parent's subparts.
+    with pytest.raises(NotFoundException):
+        service.reorder_study_subparts(_FOREIGN)
+    assert not _read_uids(patch_service.repos)
+
+    patch_service.studies[_OWN].study_subpart_uids = [_FOREIGN]
+    with pytest.raises(NotFoundException):
+        service.reorder_study_subparts(_OWN)
+    assert _read_uids(patch_service.repos) == [_OWN]
+    patch_service.repos.study_definition_repository.save.assert_not_called()
