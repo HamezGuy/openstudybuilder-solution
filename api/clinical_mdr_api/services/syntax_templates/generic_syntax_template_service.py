@@ -23,6 +23,9 @@ from clinical_mdr_api.services._utils import (
     process_parameters,
 )
 from clinical_mdr_api.services.generic_syntax_service import GenericSyntaxService
+from clinical_mdr_api.services.studies.study_visibility import (
+    assert_study_uid_visible,
+)
 from common.exceptions import AlreadyExistsException, NotFoundException
 
 _AggregateRootType = TypeVar("_AggregateRootType")
@@ -273,6 +276,12 @@ class GenericSyntaxTemplateService(GenericSyntaxService[_AggregateRootType], abc
         study_uid: str | None = None,
         include_study_endpoints: bool = False,
     ):
+        if study_uid:
+            # The parameter subset carries that study's visits, study days,
+            # timepoints and endpoints, so it needs read on the study, as every
+            # study route does (OP-OSB1, OP-08). Without a study the call stays
+            # library-only.
+            assert_study_uid_visible(study_uid, require_write=False)
         try:
             parameters = self.repository.get_parameters_including_terms(
                 template_uid=uid,
