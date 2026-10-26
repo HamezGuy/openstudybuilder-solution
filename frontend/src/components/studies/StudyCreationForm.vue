@@ -21,10 +21,7 @@
           value="copy"
           :label="$t('StudyCreationForm.create_from_study')"
         />
-        <v-radio
-          v-if="studyTemplate && studyTemplate?.study_uid !== ''"
-          value="default"
-        >
+        <v-radio v-if="templateUid" value="default">
           <template #label>
             {{ $t('StudyCreationForm.create_from_template') }}
             <v-tooltip location="top">
@@ -152,6 +149,7 @@ import StudyStructureCopyForm from '@/components/studies/StudyStructureCopyForm.
 import studyApi from '@/api/study'
 import studyTemplateApi from '@/api/studyTemplate'
 import jobsApi from '@/api/jobs'
+import { studyTemplateUid } from '@/utils/studyTemplate'
 
 const notificationHub = inject('notificationHub')
 const formRules = inject('formRules')
@@ -184,6 +182,7 @@ const createFromStudySteps = [
 
 const steps = ref(createFromScratchSteps)
 const studyTemplate = ref({})
+const templateUid = computed(() => studyTemplateUid(studyTemplate.value))
 
 onMounted(() => {
   studyTemplateApi.getStudyTemplate().then((resp) => {
@@ -223,7 +222,7 @@ function close() {
   notificationHub.clearErrors()
   studyForm.value = {}
   cloneStudyForm.value = {}
-  createMode.value = 'default'
+  createMode.value = templateUid.value ? 'default' : 'scratch'
   emit('close')
 }
 
@@ -309,7 +308,7 @@ async function submit() {
       validation_mode: 'warning',
     }
     data.project_number = data.project_number.project_number
-    const studyUid = studyTemplate.value.study_uid
+    const studyUid = templateUid.value
     try {
       const dest_study_id =
         data.project_number +
