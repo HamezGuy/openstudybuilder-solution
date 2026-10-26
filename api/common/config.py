@@ -317,6 +317,14 @@ class Settings(BaseSettings):
     arm_write_reason_required: bool = Field(
         default=False, alias="OSB_ARM_WRITE_REASON_REQUIRED"
     )
+    # Owner switch (N-OSBROLE): the native POST /studies/{uid}/regimens and the
+    # study arm and branch arm lifecycle-event POSTs. true keeps them open, as
+    # today; false refuses them with 403 OSB_NATIVE_REGIMEN_WRITES_GOVERNED, so
+    # a regimen reaches OSB only through the governed osb.regimen.onboard
+    # command, which calls StudyRegimenService directly and is unaffected.
+    native_regimen_writes_enabled: bool = Field(
+        default=True, alias="OSB_NATIVE_REGIMEN_WRITES_ENABLED"
+    )
 
     def assert_native_identity_startup_safe(self) -> None:
         """P1 lands the endpoint while P2 still owns signed publication."""

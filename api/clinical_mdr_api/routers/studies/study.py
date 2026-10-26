@@ -3,7 +3,7 @@
 import os
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, Depends, Path, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import Field
 
@@ -177,6 +177,27 @@ from common.exceptions import ValidationException
 from common.models.error import ErrorResponse
 
 router = APIRouter(dependencies=[Depends(enforce_visible_study)])
+
+
+def require_native_regimen_writes() -> None:
+    """OSB_NATIVE_REGIMEN_WRITES_ENABLED (FX-OSB-04, N-OSBROLE): when an owner
+    turns it off, the native regimen and arm lifecycle POSTs answer 403 before
+    any lock check or write, naming the governed osb.regimen.onboard command,
+    which calls StudyRegimenService directly and is unaffected. On (the
+    default) they behave as before."""
+    if not settings.native_regimen_writes_enabled:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "OSB_NATIVE_REGIMEN_WRITES_GOVERNED",
+                "message": "Native regimen and arm lifecycle writes are governed "
+                "in this deployment; submit the regimen as the osb.regimen.onboard "
+                "platform command.",
+            },
+        )
+
+
+NATIVE_REGIMEN_WRITES = Depends(require_native_regimen_writes)
 CONTROL_POOL_REFERENCE_NOTE = (
     "References pin a published CSL statistical fact and are never resolved, "
     "copied or verified by OSB. Nothing here allocates participants, sets a "
@@ -5354,7 +5375,7 @@ def delete_study_adaptation_reference(
 
 @router.post(
     "/studies/{study_uid}/regimens",
-    dependencies=[security, rbac.STUDY_WRITE],
+    dependencies=[security, rbac.STUDY_WRITE, NATIVE_REGIMEN_WRITES],
     summary="Add one authored regimen to a draft study in one transaction",
     description="""
 Create the arms, branch arms, cohorts, elements, compounds, compound dosings,
@@ -5395,7 +5416,7 @@ def post_study_regimen(
 
 @router.post(
     "/studies/{study_uid}/study-arms/{study_arm_uid}/lifecycle-events",
-    dependencies=[security, rbac.STUDY_WRITE],
+    dependencies=[security, rbac.STUDY_WRITE, NATIVE_REGIMEN_WRITES],
     summary="Record an authored lifecycle event for a study arm",
     description="Append immutable descriptive history to the current draft. "
     "This does not approve or execute an operational or statistical decision.",
@@ -6182,7 +6203,7 @@ def get_selected_branch_arm(
 
 @router.post(
     "/studies/{study_uid}/study-branch-arms/{study_branch_arm_uid}/lifecycle-events",
-    dependencies=[security, rbac.STUDY_WRITE],
+    dependencies=[security, rbac.STUDY_WRITE, NATIVE_REGIMEN_WRITES],
     summary="Record an authored lifecycle event for a study branch arm",
     description="Append immutable descriptive history to the current draft. "
     "This does not approve or execute an operational or statistical decision.",
