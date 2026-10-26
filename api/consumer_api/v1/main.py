@@ -21,7 +21,10 @@ from consumer_api.shared.responses import (
 )
 from consumer_api.shared.visibility import (
     enforce_consumer_collection_scope,
+    enforce_consumer_collection_write_scope,
     enforce_visible_consumer_study,
+    enforce_visible_consumer_study_by_number,
+    enforce_writable_consumer_study,
     visible_consumer_studies,
 )
 from consumer_api.v1 import api_specs
@@ -105,7 +108,11 @@ def get_studies(
 @router.post(
     "/studies",
     tags=["[V1] Studies"],
-    dependencies=[security, rbac.STUDY_WRITE],
+    dependencies=[
+        security,
+        rbac.STUDY_WRITE,
+        Depends(enforce_consumer_collection_write_scope),
+    ],
     status_code=201,
     responses={
         201: {"description": "Study created successfully"},
@@ -154,7 +161,11 @@ def create_study(
 @router.get(
     "/papillons/study-metadata",
     tags=["[V1] Papillons"],
-    dependencies=[security, rbac.STUDY_READ],
+    dependencies=[
+        security,
+        rbac.STUDY_READ,
+        Depends(enforce_visible_consumer_study_by_number),
+    ],
     status_code=200,
     responses={
         400: {"model": ErrorResponse, "description": "Bad Request"},
@@ -1033,7 +1044,11 @@ def get_studies_audit_trail(
 @router.post(
     "/studies/{uid}/soa",
     tags=["[V1] Studies"],
-    dependencies=[security, rbac.STUDY_WRITE],
+    dependencies=[
+        security,
+        rbac.STUDY_WRITE,
+        Depends(enforce_writable_consumer_study),
+    ],
     status_code=201,
     responses={
         201: {"description": "Schedule of Activities created successfully"},
