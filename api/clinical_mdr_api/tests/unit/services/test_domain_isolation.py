@@ -215,7 +215,15 @@ def test_nested_item_is_checked_against_its_parent_study(
         checked.append((uid, require_write))
         vis.assert_study_uid_visible(uid, require_write=require_write)
 
+    owners = {"Child_1": frozenset({"Study_000999"})}
+    owner_queries = []
+
+    def child_owners(uids):
+        owner_queries.append(list(uids))
+        return {uid: owners.get(uid, frozenset()) for uid in uids}
+
     monkeypatch.setattr(study_access, "assert_study_uid_visible", assert_parent)
+    monkeypatch.setattr(vis, "_study_child_owners", child_owners)
     request = Request(
         {
             "type": "http",
@@ -228,6 +236,15 @@ def test_nested_item_is_checked_against_its_parent_study(
     )
     study_access.enforce_visible_study(request, _auth=None)
     assert checked == [("Study_000999", method == "PATCH")]
+    assert owner_queries == [["Child_1"]]
+
+    # A child of another study under the caller's own path study (D-45, OSBI-3).
+    owners["Child_1"] = frozenset({"Study_000998"})
+    with pytest.raises(NotFoundException) as foreign_child:
+        study_access.enforce_visible_study(request, _auth=None)
+    assert "Child_1" in foreign_child.value.msg
+    assert "Study_000998" not in foreign_child.value.msg
+
     request.scope["path_params"]["study_uid"] = "Study_000998"
     with pytest.raises(NotFoundException):
         study_access.enforce_visible_study(request, _auth=None)
