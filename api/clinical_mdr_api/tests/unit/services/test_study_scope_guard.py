@@ -7,6 +7,8 @@ is the public form of the operation-scope rule. Results are memoized per request
 and per caller in the request context. Unit-level, monkeypatched strict mode, the
 same fixture shape as test_domain_isolation.py, with synthetic studies only."""
 
+from types import SimpleNamespace
+
 import pytest
 from neomodel import db
 from starlette_context import request_cycle_context
@@ -412,3 +414,382 @@ def test_binding_a_new_study_drops_its_memo_entry(strict, db_spy):
         ["uids"],
     ]
     assert db_spy[3]["uids"] == [_OWN]
+
+
+# OSBI-2: the two checks and the collection-scope tightening (sections 3.1 to
+# 3.4, 4.2 "beyond: hardening" and 8).
+
+_WORKER_PLATFORM_STUDY = "4d6a0c3e-0000-4000-8000-000000000999"
+
+# Child uid: (owners through the audit anchor, owners through the holder anchor).
+# The holder anchor repeats a root once per version that holds the child.
+_CHILDREN = {
+    "StudyDataSupplier_000001": ([_OWN], [_OWN, _OWN, _OWN]),
+    "StudyArm_000001": ([_OWN], [_OWN]),
+    "StudyArm_000002": ([_OWN], [_OWN]),
+    "StudyDataSupplier_000002": ([_FOREIGN], [_FOREIGN]),
+    "StudyDataSupplier_000003": ([_OWN], [_OWN, _FOREIGN]),
+    "StudyDataSupplier_000004": ([_FOREIGN], [_OWN]),
+}
+_OWN_CHILD = "StudyDataSupplier_000001"
+_FOREIGN_CHILD = "StudyDataSupplier_000002"
+_DOUBLY_OWNED_CHILD = "StudyDataSupplier_000003"
+_SPLIT_CHILD = "StudyDataSupplier_000004"
+_MISSING_CHILD = "StudyDataSupplier_000099"
+
+
+@pytest.fixture(name="owner_spy")
+def fixture_owner_spy(monkeypatch):
+    """The real owner seam runs against this stand-in for ``db.cypher_query``.
+
+    It answers the owner query as Cypher would, with apoc.coll.toSet over both
+    anchors, and the scope queries from the same per-uid map as ``db_spy``.
+    """
+    calls = []
+
+    def cypher_query(query, params=None, **_kwargs):
+        params = params or {}
+        calls.append((query, params))
+        if "StudySelection" in query:
+            assert "apoc.coll.toSet" in query
+            rows = []
+            for uid in params["uids"]:
+                authors, holders = _CHILDREN.get(uid, ([], []))
+                rows.append([uid, list(dict.fromkeys(authors + holders))])
+            return rows, None
+        if "uids" in params:
+            return [[uid, *_scope(uid)] for uid in params["uids"]], None
+        return [list(_scope(params["study_uid"]))], None
+
+    monkeypatch.setattr(db, "cypher_query", cypher_query)
+    return calls
+
+
+def _owner_queries(calls):
+    return [params for query, params in calls if "StudySelection" in query]
+
+
+def _no_lookup_may_run(monkeypatch):
+    for seam in ("_study_scope", "_study_scopes", "_study_child_owners"):
+        monkeypatch.setattr(vis, seam, _never)
+    monkeypatch.setattr(db, "cypher_query", _never)
+
+
+def test_outside_the_profile_both_checks_do_nothing(monkeypatch):
+    monkeypatch.setattr(vis.settings, "delegated_claims_required", False)
+    principal = SyntheticUser({_FOREIGN})
+    principal.capabilities = set()
+    principal.roles = set()
+    monkeypatch.setattr(vis, "_request_user", lambda: principal)
+    _no_lookup_may_run(monkeypatch)
+
+    vis.assert_tied_to_study(
+        _OWN,
+        children={"Study Data Supplier": [_FOREIGN_CHILD, _MISSING_CHILD]},
+        body_study_uids=(_FOREIGN, "", " "),
+    )
+    vis.assert_related_studies(
+        require_write=True,
+        read_study_uids=(_FOREIGN,),
+        write_study_uids=(_MISSING,),
+        subpart_uids=(_FOREIGN,),
+    )
+
+
+# assert_tied_to_study: body study uids
+
+
+@pytest.mark.usefixtures("strict")
+def test_a_body_study_equal_to_the_acted_on_study_passes(monkeypatch):
+    _no_lookup_may_run(monkeypatch)
+
+    vis.assert_tied_to_study(_OWN, body_study_uids=(_OWN, None, _OWN))
+    vis.assert_tied_to_study(_OWN, body_study_uids=[])
+    vis.assert_tied_to_study(_OWN)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        _FOREIGN,  # another tenant's study
+        _MISSING,  # no such study
+        "",
+        "   ",
+        f" {_OWN}",  # no strip
+        _OWN.lower(),  # no case folding
+        "Study_000123",  # assigned, but not the acted-on study
+    ],
+)
+def test_a_foreign_missing_blank_or_other_body_study_answers_404_with_no_lookup(
+    monkeypatch, strict, value
+):
+    strict.study_ids = {_OWN, "Study_000123"}
+    _no_lookup_may_run(monkeypatch)
+
+    with pytest.raises(NotFoundException) as refused:
+        vis.assert_tied_to_study(
+            _OWN,
+            children={"Study Data Supplier": _OWN_CHILD},
+            body_study_uids=(_OWN, value),
+        )
+    assert refused.value.msg == f"Study Definition with UID '{value}' doesn't exist."
+
+
+# assert_tied_to_study: children
+
+
+@pytest.mark.usefixtures("strict")
+def test_an_own_child_with_both_anchors_passes(owner_spy):
+    vis.assert_tied_to_study(
+        _OWN,
+        children={"Study Data Supplier": _OWN_CHILD},
+        body_study_uids=(_OWN,),
+    )
+    assert _owner_queries(owner_spy) == [{"uids": [_OWN_CHILD]}]
+
+
+@pytest.mark.parametrize(
+    "child", [_FOREIGN_CHILD, _MISSING_CHILD, _DOUBLY_OWNED_CHILD, _SPLIT_CHILD]
+)
+@pytest.mark.usefixtures("strict")
+def test_a_foreign_missing_doubly_owned_or_split_child_answers_the_same_404(
+    owner_spy, child
+):
+    with pytest.raises(NotFoundException) as refused:
+        vis.assert_tied_to_study(
+            _OWN,
+            children={
+                "Study Arm": ["StudyArm_000001"],
+                "Study Data Supplier": child,
+            },
+        )
+    assert refused.value.msg == f"Study Data Supplier with UID '{child}' doesn't exist."
+    assert len(_owner_queries(owner_spy)) == 1
+
+
+@pytest.mark.usefixtures("strict")
+def test_a_padded_child_uid_is_not_stripped(owner_spy):
+    with pytest.raises(NotFoundException) as refused:
+        vis.assert_tied_to_study(_OWN, children={"Study Arm": " StudyArm_000001"})
+    assert refused.value.msg == "Study Arm with UID ' StudyArm_000001' doesn't exist."
+    assert _owner_queries(owner_spy) == [{"uids": [" StudyArm_000001"]}]
+
+
+@pytest.mark.usefixtures("strict")
+def test_none_values_none_lists_and_blanks_are_skipped(monkeypatch):
+    _no_lookup_may_run(monkeypatch)
+
+    vis.assert_tied_to_study(
+        _OWN,
+        children={
+            "Study Data Supplier": None,
+            "Study Arm": [None, "", "  "],
+            "Study Branch Arm": (),
+            "Study Cohort": "",
+        },
+        body_study_uids=(None,),
+    )
+    vis.assert_tied_to_study(_OWN, children=None)
+    vis.assert_tied_to_study(_OWN, children={})
+
+
+@pytest.mark.usefixtures("strict")
+def test_many_child_uids_cost_one_query_and_a_second_call_none(owner_spy):
+    children = {
+        "Study Data Supplier": _OWN_CHILD,
+        "Study Arm": ["StudyArm_000001", None, "StudyArm_000002"],
+        "Study Branch Arm": iter(["StudyArm_000001"]),
+    }
+    with request_cycle_context({}):
+        vis.assert_tied_to_study(_OWN, children=children)
+        vis.assert_tied_to_study(
+            _OWN, children={"Study Arm": ["StudyArm_000002", "StudyArm_000001"]}
+        )
+        vis.assert_tied_to_study(_OWN, children={"Study Data Supplier": _OWN_CHILD})
+    queries = _owner_queries(owner_spy)
+    assert len(queries) == 1
+    assert sorted(queries[0]["uids"]) == [
+        "StudyArm_000001",
+        "StudyArm_000002",
+        _OWN_CHILD,
+    ]
+
+    # A refused child is refused again from the memo, with no further query.
+    owner_spy.clear()
+    with request_cycle_context({}):
+        for _ in range(2):
+            with pytest.raises(NotFoundException):
+                vis.assert_tied_to_study(_OWN, children={"Study Arm": _FOREIGN_CHILD})
+    assert len(_owner_queries(owner_spy)) == 1
+
+
+def test_a_worker_principal_passes_for_an_own_child(monkeypatch, owner_spy):
+    """The governed regimen command's token holds no study:write and no Study
+    role: the ownership check must not depend on the caller (section 3.5)."""
+    monkeypatch.setattr(vis.settings, "delegated_claims_required", True)
+    worker = SyntheticUser({_WORKER_PLATFORM_STUDY, _OWN})
+    worker.purpose = "workflow-orchestration"
+    worker.capabilities = {"regimen:onboard"}
+    worker.roles = {"service"}
+    monkeypatch.setattr(vis, "_request_user", lambda: worker)
+
+    with request_cycle_context({}):
+        vis.assert_tied_to_study(
+            _OWN,
+            children={"Study Arm": ["StudyArm_000001"], "Study Branch Arm": None},
+            body_study_uids=(_OWN,),
+        )
+    assert len(_owner_queries(owner_spy)) == 1
+    # The same caller holds no study authority of its own.
+    with pytest.raises(ForbiddenException):
+        vis.assert_study_authority(require_write=True)
+
+
+# assert_related_studies
+
+
+@pytest.mark.parametrize("require_write", [True, False])
+def test_related_studies_answer_403_before_any_lookup(
+    monkeypatch, strict, require_write
+):
+    strict.capabilities = set()
+    _no_lookup_may_run(monkeypatch)
+
+    with pytest.raises(ForbiddenException, match="capability is required"):
+        vis.assert_related_studies(
+            require_write=require_write,
+            read_study_uids=(_FOREIGN,),
+            write_study_uids=(_FOREIGN,),
+            subpart_uids=(_FOREIGN,),
+        )
+
+
+@pytest.mark.usefixtures("strict")
+def test_related_studies_pass_for_visible_studies(owner_spy):
+    vis.assert_related_studies(
+        require_write=True,
+        read_study_uids=(_OWN,),
+        write_study_uids=(_OWN,),
+        subpart_uids=(_OWN,),
+    )
+    vis.assert_related_studies(require_write=False)
+    assert owner_spy
+
+
+@pytest.mark.parametrize("field", ["read_study_uids", "write_study_uids"])
+@pytest.mark.parametrize("uid", [_FOREIGN, _MISSING, _QUARANTINED, "Study_000123"])
+def test_a_foreign_read_or_write_study_answers_404_naming_it(
+    strict, owner_spy, field, uid
+):
+    strict.study_ids = {_OWN, _FOREIGN, _QUARANTINED}
+    with pytest.raises(NotFoundException) as refused:
+        vis.assert_related_studies(require_write=False, **{field: (_OWN, uid)})
+    assert refused.value.msg == f"Study Definition with UID '{uid}' doesn't exist."
+    assert not _owner_queries(owner_spy)
+
+
+def test_a_read_only_caller_asked_for_write_answers_403(monkeypatch, strict):
+    strict.capabilities = {"study:read"}
+    strict.roles = {"Study.Read"}
+    _no_lookup_may_run(monkeypatch)
+
+    with pytest.raises(ForbiddenException, match="study:write capability"):
+        vis.assert_related_studies(require_write=True, read_study_uids=(_OWN,))
+    with pytest.raises(ForbiddenException, match="study:write capability"):
+        vis.assert_related_studies(require_write=False, write_study_uids=(_OWN,))
+    with pytest.raises(ForbiddenException, match="study:write capability"):
+        vis.assert_related_studies(require_write=True, subpart_uids=(_OWN,))
+
+
+def test_a_write_only_caller_asked_to_read_a_study_answers_403(monkeypatch, strict):
+    strict.capabilities = {"study:write"}
+    strict.roles = {"Study.Write"}
+    _no_lookup_may_run(monkeypatch)
+
+    with pytest.raises(ForbiddenException, match="study:read capability"):
+        vis.assert_related_studies(require_write=True, read_study_uids=(_OWN,))
+    with pytest.raises(ForbiddenException, match="study:read capability"):
+        vis.assert_related_studies(require_write=False, subpart_uids=(_OWN,))
+
+
+@pytest.mark.parametrize("require_write", [True, False])
+@pytest.mark.parametrize("uid", [_FOREIGN, _MISSING, "Study_000123"])
+def test_a_hidden_subpart_answers_the_subpart_message_with_no_uid(
+    strict, owner_spy, require_write, uid
+):
+    strict.study_ids = {_OWN, _FOREIGN}
+    with pytest.raises(NotFoundException) as refused:
+        vis.assert_related_studies(
+            require_write=require_write, subpart_uids=[_OWN, uid]
+        )
+    assert refused.value.msg == "A subpart of this study is outside your study scope."
+    assert "Study_" not in refused.value.msg
+    assert owner_spy
+
+
+@pytest.mark.usefixtures("strict")
+def test_related_studies_skip_none_and_blank_and_read_only_what_is_passed(
+    monkeypatch,
+):
+    looked_up = []
+
+    def scope(uid):
+        looked_up.append(uid)
+        return _scope(uid)
+
+    monkeypatch.setattr(vis, "_study_scope", scope)
+    monkeypatch.setattr(vis, "_study_scopes", _never)
+    monkeypatch.setattr(vis, "_study_child_owners", _never)
+    # An AR-OSB1 style double that carries only study_subpart_uids.
+    parent = SimpleNamespace(study_subpart_uids=[_OWN, None, ""])
+    vis.assert_related_studies(
+        require_write=True,
+        read_study_uids=[None, " "],
+        write_study_uids=(None,),
+        subpart_uids=parent.study_subpart_uids,
+    )
+    assert looked_up == [_OWN]
+
+
+# assert_collection_scope: path parameters (4.2, "beyond: hardening")
+
+
+@pytest.mark.usefixtures("strict")
+def test_strict_collection_scope_refuses_a_route_with_path_parameters(monkeypatch):
+    monkeypatch.setattr(db, "cypher_query", _never)
+
+    with pytest.raises(ForbiddenException, match="no exact delegated study boundary"):
+        vis.assert_collection_scope(
+            require_write=False,
+            route_path="/api/objectives/O1/studies",
+            path_parameters={"objective_uid": "O1"},
+        )
+    with pytest.raises(ForbiddenException, match="no exact delegated study boundary"):
+        vis.assert_collection_scope(
+            require_write=False,
+            route_path="/api/epochs/allowed-configs",
+            path_parameters={"uid": "x"},
+        )
+    vis.assert_collection_scope(
+        require_write=False, route_path="/api/studies", path_parameters={}
+    )
+    vis.assert_collection_scope(
+        require_write=False, route_path="/api/studies/list", path_parameters=None
+    )
+    # Callers that pass no path parameters (OSBI-3 adds them) are unchanged.
+    vis.assert_collection_scope(
+        require_write=False, route_path="/api/objectives/O1/studies"
+    )
+
+
+def test_collection_scope_ignores_path_parameters_outside_the_profile(monkeypatch):
+    monkeypatch.setattr(vis.settings, "delegated_claims_required", False)
+    monkeypatch.setattr(vis, "_request_user", SyntheticUser)
+    monkeypatch.setattr(db, "cypher_query", _never)
+
+    for require_write in (False, True):
+        vis.assert_collection_scope(
+            require_write=require_write,
+            route_path="/api/objectives/O1/studies",
+            path_parameters={"objective_uid": "O1"},
+        )

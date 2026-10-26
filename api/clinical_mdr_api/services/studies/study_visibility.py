@@ -9,7 +9,16 @@ answers are memoized for the rest of the request (D-45, OSB_ISOLATION_DESIGN.md
 sections 3.1 and 9). ``assigned_study_uids`` refuses an invalid assignment,
 ``visible_study_scope`` leaves it out, and ``study_readable`` answers one study
 without raising. Outside the profile none of them looks anything up.
+
+Two checks complete the D-45 study boundary (sections 3.1 to 3.4).
+``assert_tied_to_study`` proves that body study uids and child uids belong to
+the acted-on study; it never looks at the caller, so a worker principal that
+its own entry point admitted passes for its own study. ``assert_related_studies``
+checks the caller's authority and reach to every other study an operation reads
+or writes on purpose. Outside the profile both return before doing anything.
 """
+
+from collections.abc import Iterable, Mapping
 
 from neomodel import db
 from starlette_context import context
@@ -75,24 +84,68 @@ def _study_scopes(
     return scopes
 
 
+def _study_child_owners(uids: list[str]) -> dict[str, frozenset[str]]:
+    """The owning study roots of each child uid, in one query, by uid.
+
+    Both anchors count: the root whose audit trail created the child, and every
+    root whose study value holds it. A normal child has one owner; a missing uid
+    has none, and legacy data can have two (section 3.2 rule 4). Only owner uids
+    are read, never a property of the child.
+    """
+    rows, _ = db.cypher_query(
+        """
+        UNWIND $uids AS uid
+        OPTIONAL MATCH (child:StudySelection {uid: uid})
+        OPTIONAL MATCH (child)<-[:AFTER]-(:StudyAction)<-[:AUDIT_TRAIL]-(author:StudyRoot)
+        OPTIONAL MATCH (child)<--(:StudyValue)<-[:LATEST|HAS_VERSION]-(holder:StudyRoot)
+        RETURN uid, apoc.coll.toSet(collect(author.uid) + collect(holder.uid)) AS owners
+        """,
+        {"uids": list(uids)},
+    )
+    owners: dict[str, frozenset[str]] = {}
+    for row in rows:
+        owners[row[0]] = owners.get(row[0], frozenset()) | frozenset(row[1] or [])
+    return owners
+
+
 _SCOPE_MEMO_KEY = "osb_d45_study_scope_memo"
+_CHILD_OWNER_MEMO_KEY = "osb_d45_study_child_owner_memo"
 
 
-def _scope_memo(caller) -> dict[str, tuple[bool, str | None, str | None]] | None:
-    """The request's memo of study scope answers, or None outside a request.
+def _request_memo(caller, key: str) -> dict | None:
+    """The request's memo under ``key``, or None outside a request.
 
     The memo belongs to one caller: a context that outlives a caller, such as a
     reused test context, starts a new memo for the next caller and never serves
     the previous caller's answers. Nothing is cached across requests, because
-    assignments and bindings can change between them.
+    assignments, bindings and children can change between them.
     """
     if caller is None or not context.exists():
         return None
-    entry = context.get(_SCOPE_MEMO_KEY)
+    entry = context.get(key)
     if entry is None or entry[0] is not caller:
         entry = (caller, {})
-        context[_SCOPE_MEMO_KEY] = entry
+        context[key] = entry
     return entry[1]
+
+
+def _scope_memo(caller) -> dict[str, tuple[bool, str | None, str | None]] | None:
+    """The request's memo of study scope answers, or None outside a request."""
+    return _request_memo(caller, _SCOPE_MEMO_KEY)
+
+
+def _memoized_child_owners(uids: tuple[str, ...]) -> dict[str, frozenset[str]]:
+    # The caller only keys the memo; the answer does not depend on it.
+    memo = _request_memo(_request_user(), _CHILD_OWNER_MEMO_KEY)
+    known = {uid: memo[uid] for uid in uids if memo is not None and uid in memo}
+    missing = [uid for uid in uids if uid not in known]
+    if missing:
+        fetched = _study_child_owners(missing)
+        for uid in missing:
+            known[uid] = fetched.get(uid, frozenset())
+            if memo is not None:
+                memo[uid] = known[uid]
+    return known
 
 
 def _memoized_scope(caller, study_uid: str) -> tuple[bool, str | None, str | None]:
@@ -303,7 +356,10 @@ def assert_study_authority(*, require_write: bool) -> None:
 
 
 def assert_collection_scope(
-    *, require_write: bool = False, route_path: str | None = None
+    *,
+    require_write: bool = False,
+    route_path: str | None = None,
+    path_parameters: Mapping[str, object] | None = None,
 ) -> None:
     """Authorize only collection routes with a proven non-wildcard implementation.
 
@@ -312,11 +368,19 @@ def assert_collection_scope(
     endpoint do not have a tenant/study-native query contract. They therefore
     remain unavailable when delegated claims are required instead of querying
     all studies and filtering after the fact.
+
+    A collection route has no path parameters, so in delegated mode a route
+    that has any, such as "/objectives/{uid}/studies", never counts as the root
+    list whatever its path ends with.
     """
     _assert_operation_scope(_request_user(), require_write)
     if not _strict():
         return
 
+    if path_parameters:
+        raise ForbiddenException(
+            msg="This OSB collection route has no exact delegated study boundary."
+        )
     normalized = f"/{str(route_path or '').strip('/')}"
     read_only_root = not require_write and (
         normalized.endswith("/studies") or normalized.endswith("/studies/list")
@@ -431,3 +495,95 @@ def assert_study_uid_visible(study_uid: str, *, require_write: bool = False) -> 
             raise NotFoundException("Study Definition", study_uid)
     finally:
         repos.close()
+
+
+ChildValue = str | Iterable[str | None] | None
+
+_SUBPART_OUT_OF_SCOPE = "A subpart of this study is outside your study scope."
+
+
+def _given_values(values: str | Iterable[str | None] | None) -> list[str]:
+    """The values that are not None and not blank, as sent, in order."""
+    if values is None:
+        return []
+    if isinstance(values, str):
+        values = (values,)
+    return [str(value) for value in values if value is not None and str(value).strip()]
+
+
+def assert_tied_to_study(
+    study_uid: str,
+    *,
+    children: Mapping[str, ChildValue] | None = None,
+    body_study_uids: Iterable[str | None] = (),
+) -> None:
+    """Under the delegated profile, refuse a body study or child of another study.
+
+    ``body_study_uids`` are body values that only echo the acted-on study: each
+    one that is not None must equal ``study_uid`` exactly, with no strip and no
+    case folding, and a blank one is refused. That is a comparison, so a refusal
+    looks nothing up. ``children`` maps a resource name, used in the refusal, to
+    one raw uid or several; None and blank uids are skipped, and every other uid
+    must have exactly one owning study, ``study_uid``, in one owner query for
+    the whole call. A missing, a foreign and a doubly owned uid answer the same
+    404. The caller is never consulted: its entry point already checked the
+    acted-on study (section 3.5). Outside the profile nothing is looked up.
+    """
+    if not _strict():
+        return
+    if isinstance(body_study_uids, str):
+        body_study_uids = (body_study_uids,)
+    for value in body_study_uids:
+        if value is None:
+            continue
+        if not isinstance(value, str) or not value.strip() or value != study_uid:
+            raise NotFoundException("Study Definition", value)
+
+    named: list[tuple[str, str]] = []
+    for resource_name, raw in (children or {}).items():
+        named.extend((resource_name, uid) for uid in _given_values(raw))
+    if not named:
+        return
+    owners = _memoized_child_owners(tuple(dict.fromkeys(uid for _, uid in named)))
+    expected = frozenset({study_uid})
+    for resource_name, uid in named:
+        if owners.get(uid, frozenset()) != expected:
+            raise NotFoundException(resource_name, uid)
+
+
+def assert_related_studies(
+    *,
+    require_write: bool,
+    read_study_uids: Iterable[str | None] = (),
+    write_study_uids: Iterable[str | None] = (),
+    subpart_uids: Iterable[str | None] = (),
+) -> None:
+    """Under the delegated profile, the caller's reach to the other studies an
+    operation reads or writes on purpose (section 3.2 rules 1 and 5).
+
+    Every authority check runs before any lookup, so a caller without it gets
+    403 first. A read study needs read authority and visibility, a write study
+    write authority and visibility; a refusal names the uid, which the caller
+    sent or the acted-on study stores as its parent. A subpart needs visibility
+    with the authority of the operation, and its refusal names no study, since
+    responses do not list a hidden subpart. None and blank values are skipped,
+    and only the values passed are read. Outside the profile nothing happens.
+    """
+    if not _strict():
+        return
+    assert_study_authority(require_write=require_write)
+    caller = _request_user()
+    reads = _given_values(read_study_uids)
+    writes = _given_values(write_study_uids)
+    subparts = _given_values(subpart_uids)
+    if reads or (subparts and not require_write):
+        _assert_operation_scope(caller, require_write=False)
+    if writes or (subparts and require_write):
+        _assert_operation_scope(caller, require_write=True)
+
+    for uid in [*reads, *writes]:
+        if not study_visible_to_user(caller, None, study_uid=uid):
+            raise NotFoundException("Study Definition", uid)
+    for uid in subparts:
+        if not study_visible_to_user(caller, None, study_uid=uid):
+            raise NotFoundException(msg=_SUBPART_OUT_OF_SCOPE)
