@@ -89,10 +89,17 @@ from clinical_mdr_api.services.studies.study_pharma_cm import StudyPharmaCMServi
 from clinical_mdr_api.services.studies.study_version_snapshot import (
     StudyVersionSnapshotService,
 )
+from clinical_mdr_api.services.studies.study_visibility import (
+    delegated_study_scope_required,
+)
 from common.auth import rbac
 from common.auth.dependencies import security
 from common.config import settings
-from common.exceptions import NotFoundException, ValidationException
+from common.exceptions import (
+    ForbiddenException,
+    NotFoundException,
+    ValidationException,
+)
 from common.models.error import ErrorResponse
 
 router = APIRouter(dependencies=[Depends(enforce_visible_study)])
@@ -1269,6 +1276,18 @@ def create(
     return study_service.create(study_create_input)
 
 
+def _refuse_study_copy_in_delegated_mode() -> None:
+    """A copy is a new study root that no delegated token names yet, so neither
+    its creator nor an administrator could open it under the strict profile.
+    Refuse it there with the same 403 a plain study create gets, before any
+    study, job or tenant binding is written. Non-strict deployments copy as
+    before."""
+    if delegated_study_scope_required():
+        raise ForbiddenException(
+            msg="A study copy has no exact delegated study boundary."
+        )
+
+
 @router.post(
     "/{study_uid}/clone",
     dependencies=[security, rbac.STUDY_WRITE],
@@ -1292,6 +1311,7 @@ def clone_study(
     study_uid: str,
     clone_input: StudyCloneInput,
 ) -> Study:
+    _refuse_study_copy_in_delegated_mode()
     study_service = StudyService()
     new_study = study_service.clone_study(
         study_src_uid=study_uid,
@@ -1333,6 +1353,7 @@ def clone_study_async(
     clone_input: StudyCloneInput,
     background_tasks: BackgroundTasks,
 ) -> JobResponse:
+    _refuse_study_copy_in_delegated_mode()
     # pylint: disable=unexpected-keyword-arg
     # `background_tasks` is consumed by the @background_job decorator on the
     # service method; pylint can't see through functools.wraps.

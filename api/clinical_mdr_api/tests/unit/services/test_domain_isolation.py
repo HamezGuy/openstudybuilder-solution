@@ -326,6 +326,107 @@ def test_copy_routes_name_the_source_study_parameters_the_dependency_checks():
     assert "reference_study_uid" in study_access.SOURCE_STUDY_QUERY_PARAMETERS
 
 
+CLONE_INPUT = SimpleNamespace(
+    project_number="SYN", study_number="901", study_acronym="SYNCOPY"
+)
+
+
+class _CloneServiceRecorder:
+    """Stands in for StudyService: records every call the clone routes make."""
+
+    calls: list = []
+
+    def __init__(self):
+        self.calls.append("init")
+
+    def get_studies_list(self):
+        self.calls.append("get_studies_list")
+        return [SimpleNamespace(uid="Study_000999", id="SYN-900", acronym=None)]
+
+    def clone_study(self, **kwargs):
+        self.calls.append(("clone_study", kwargs["study_src_uid"]))
+        return {"uid": "Study_001000"}
+
+    def clone_study_async(self, **kwargs):
+        self.calls.append(("clone_study_async", kwargs["study_src_uid"]))
+        return {"uid": "Job_000001"}
+
+
+@pytest.fixture(name="clone_service")
+def fixture_clone_service(monkeypatch):
+    from clinical_mdr_api.routers.studies import studies
+
+    _CloneServiceRecorder.calls = []
+    monkeypatch.setattr(studies, "StudyService", _CloneServiceRecorder)
+    return _CloneServiceRecorder
+
+
+@pytest.mark.parametrize(
+    "route_path", ["/{study_uid}/clone", "/{study_uid}/clone/async"]
+)
+def test_clone_routes_refuse_a_copy_in_delegated_mode_and_create_nothing(
+    clone_service, route_path
+):
+    from fastapi import BackgroundTasks
+
+    from clinical_mdr_api.routers.studies import studies, study_access
+
+    # The caller holds write on the source, so the router dependency admits it.
+    params = {"study_uid": "Study_000999"}
+    study_access.enforce_visible_study(
+        _copy_request("/studies" + route_path.format(**params), path_params=params),
+        _auth=None,
+    )
+    background_tasks = BackgroundTasks()
+    with pytest.raises(ForbiddenException) as refused:
+        if route_path.endswith("/async"):
+            studies.clone_study_async(
+                "Study_000999", CLONE_INPUT, background_tasks=background_tasks
+            )
+        else:
+            studies.clone_study("Study_000999", CLONE_INPUT)
+    assert "no exact delegated study boundary" in str(refused.value.msg)
+    # No service was built, so no study root, tenant binding or job was written.
+    assert not clone_service.calls
+    assert not background_tasks.tasks
+    route = next(r for r in studies.router.routes if r.path == route_path)
+    assert route.methods == {"POST"}
+
+
+def test_clone_refuses_an_unassigned_source_with_not_found(clone_service):
+    from clinical_mdr_api.routers.studies import study_access
+
+    with pytest.raises(NotFoundException):
+        study_access.enforce_visible_study(
+            _copy_request(
+                "/studies/Study_000998/clone",
+                path_params={"study_uid": "Study_000998"},
+            ),
+            _auth=None,
+        )
+    assert not clone_service.calls
+
+
+def test_clone_routes_still_copy_outside_delegated_mode(monkeypatch, clone_service):
+    from fastapi import BackgroundTasks
+
+    from clinical_mdr_api.routers.studies import studies
+
+    monkeypatch.setattr(vis.settings, "delegated_claims_required", False)
+
+    assert studies.clone_study("Study_000999", CLONE_INPUT) == {"uid": "Study_001000"}
+    assert studies.clone_study_async(
+        "Study_000999", CLONE_INPUT, background_tasks=BackgroundTasks()
+    ) == {"uid": "Job_000001"}
+    assert clone_service.calls == [
+        "init",
+        ("clone_study", "Study_000999"),
+        "init",
+        "get_studies_list",
+        ("clone_study_async", "Study_000999"),
+    ]
+
+
 @pytest.mark.parametrize("minimal_response", [True, False])
 @pytest.mark.parametrize("deleted", [True, False])
 def test_list_repository_queries_only_exact_assigned_roots(
