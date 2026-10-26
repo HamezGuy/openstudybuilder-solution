@@ -43,19 +43,27 @@ class SyntheticUser:
     roles = {"Study.Read", "Study.Write"}
 
 
+def _synthetic_scope(uid):
+    return (
+        (True, "tenant-synthetic", "active")
+        if uid == "Study_000999"
+        else (True, "another-tenant", "active")
+    )
+
+
+def _patch_scopes(monkeypatch, scope):
+    """Patch the per-uid seam and the batched seam from the same per-uid map."""
+    monkeypatch.setattr(vis, "_study_scope", scope)
+    monkeypatch.setattr(
+        vis, "_study_scopes", lambda uids: {uid: scope(uid) for uid in uids}
+    )
+
+
 @pytest.fixture(autouse=True)
 def strict_domain_scope(monkeypatch):
     monkeypatch.setattr(vis.settings, "delegated_claims_required", True)
     monkeypatch.setattr(vis, "_request_user", SyntheticUser)
-    monkeypatch.setattr(
-        vis,
-        "_study_scope",
-        lambda uid: (
-            (True, "tenant-synthetic", "active")
-            if uid == "Study_000999"
-            else (True, "another-tenant", "active")
-        ),
-    )
+    _patch_scopes(monkeypatch, _synthetic_scope)
 
 
 def test_exact_assignment_and_native_tenant_binding_are_required():
@@ -291,9 +299,7 @@ def test_copy_from_study_reads_the_source_and_writes_the_target(
     principal = SyntheticUser()
     principal.study_ids = {"Study_000999", "Study_000998"}
     monkeypatch.setattr(vis, "_request_user", lambda: principal)
-    monkeypatch.setattr(
-        vis, "_study_scope", lambda uid: (True, "tenant-synthetic", "active")
-    )
+    _patch_scopes(monkeypatch, lambda uid: (True, "tenant-synthetic", "active"))
     checked = []
 
     def record(uid, *, require_write):
@@ -657,9 +663,7 @@ def fixture_parent_scope(monkeypatch):
         _OWN_TENANT_PARENT: (True, "tenant-synthetic", "active"),
         _FOREIGN: (True, "another-tenant", "active"),
     }
-    monkeypatch.setattr(
-        vis, "_study_scope", lambda uid: scopes.get(uid, (False, None, None))
-    )
+    _patch_scopes(monkeypatch, lambda uid: scopes.get(uid, (False, None, None)))
     return principal
 
 

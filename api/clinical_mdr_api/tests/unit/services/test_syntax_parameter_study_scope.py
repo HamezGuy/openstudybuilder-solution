@@ -36,14 +36,18 @@ class SyntheticLibraryReader(SyntheticUser):
 def strict_domain_scope(monkeypatch):
     monkeypatch.setattr(vis.settings, "delegated_claims_required", True)
     monkeypatch.setattr(vis, "_request_user", SyntheticUser)
-    monkeypatch.setattr(
-        vis,
-        "_study_scope",
-        lambda uid: (
+
+    def scope(uid):
+        return (
             (True, "tenant-synthetic", "active")
             if uid == "Study_000999"
             else (True, "another-tenant", "active")
-        ),
+        )
+
+    # The per-uid seam and the batched seam, from the same per-uid map.
+    monkeypatch.setattr(vis, "_study_scope", scope)
+    monkeypatch.setattr(
+        vis, "_study_scopes", lambda uids: {uid: scope(uid) for uid in uids}
     )
 
 
