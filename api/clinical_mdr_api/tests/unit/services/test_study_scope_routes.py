@@ -7,14 +7,20 @@ path study does not own, before the handler runs. In strict mode a blank or padd
 study path uid answers 404, the 9dd1f75d rule of the consumer API. Outside the
 profile nothing changes and no owner query is made. Unit-level, monkeypatched
 strict mode, the fixture shape of test_domain_isolation.py, synthetic studies only.
+
+OSBI-4 (D-45): the route table. Every path parameter of every route of the
+application that depends on enforce_visible_study is a study root, a source study,
+a child or a classified non-child, and every route with a child names its study.
 """
 
 import pytest
 from fastapi import FastAPI
+from fastapi.routing import APIRoute, iter_route_contexts
 from fastapi.testclient import TestClient
 from neomodel import db
 from starlette.requests import Request
 
+from clinical_mdr_api import main
 from clinical_mdr_api.routers.studies import study_access, study_disease_milestones
 from clinical_mdr_api.routers.studies.study import router as study_router
 from clinical_mdr_api.services.studies import study as study_service
@@ -413,3 +419,111 @@ def test_strict_collection_route_with_path_parameters_is_refused():
 
     with pytest.raises(ForbiddenException):
         study_access.enforce_visible_study(request, _auth=None)
+
+
+# The route table (OSBI-4): every path parameter of every route of the application
+# that depends on enforce_visible_study is classified, and every route with a child
+# parameter names its study.
+
+# The seven routers that mount the dependency, the twelve modules that add their
+# routes to the study router (OSB_ISOLATION_DESIGN.md section 4.1) and the three
+# that add theirs to the studies router.
+_GUARDED_ROUTE_MODULES = {
+    "clinical_mdr_api.routers.ddf.study_definitions",
+    "clinical_mdr_api.routers.integrations.edc_export",
+    "clinical_mdr_api.routers.integrations.study_authority",
+    "clinical_mdr_api.routers.listings.listings_adam",
+    "clinical_mdr_api.routers.listings.listings_sdtm",
+    "clinical_mdr_api.routers.studies.studies",
+    "clinical_mdr_api.routers.studies.study",
+    "clinical_mdr_api.routers.ctr_xml.ctr_xml",
+    "clinical_mdr_api.routers.studies.study_activity_instructions",
+    "clinical_mdr_api.routers.studies.study_activity_schedule",
+    "clinical_mdr_api.routers.studies.study_compound_dosing",
+    "clinical_mdr_api.routers.studies.study_design_cell",
+    "clinical_mdr_api.routers.studies.study_design_classes",
+    "clinical_mdr_api.routers.studies.study_disease_milestones",
+    "clinical_mdr_api.routers.studies.study_epochs",
+    "clinical_mdr_api.routers.studies.study_soa_footnotes",
+    "clinical_mdr_api.routers.studies.study_source_variables",
+    "clinical_mdr_api.routers.studies.study_standard_version",
+    "clinical_mdr_api.routers.studies.study_visits",
+    "clinical_mdr_api.routers.studies.study_design_figure",
+    "clinical_mdr_api.routers.studies.study_flowchart",
+    "clinical_mdr_api.routers.studies.study_interventions",
+}
+
+
+def _depends_on(dependant, call):
+    """Whether the dependency tree of a route reaches ``call``, whether it was
+    mounted on the router or declared on the route."""
+    return any(
+        sub.call is call or _depends_on(sub, call) for sub in dependant.dependencies
+    )
+
+
+@pytest.fixture(name="guarded_routes", scope="module")
+def fixture_guarded_routes():
+    """(methods and path, path parameter names, endpoint module) of every route of
+    the application that depends on enforce_visible_study."""
+    # The application holds included routers, not their routes: the route
+    # contexts carry each route's full path and its router-level dependencies.
+    return [
+        (
+            f"{','.join(sorted(route.methods))} {route.path}",
+            set(route.param_convertors),
+            route.endpoint.__module__,
+        )
+        for route in iter_route_contexts(main.app.routes)
+        if isinstance(route.original_route, APIRoute)
+        and _depends_on(route.dependant, study_access.enforce_visible_study)
+    ]
+
+
+def test_the_guarded_routes_are_those_of_the_design_modules(guarded_routes):
+    assert {module for _route, _names, module in guarded_routes} == (
+        _GUARDED_ROUTE_MODULES
+    )
+
+
+def test_every_path_parameter_of_a_guarded_route_is_classified(guarded_routes):
+    classified = (
+        study_access.STUDY_ROOT_PATH_PARAMETERS
+        | study_access.SOURCE_STUDY_PATH_PARAMETERS
+        | set(study_access.CHILD_PATH_PARAMETERS)
+        | study_access.NON_CHILD_PATH_PARAMETERS
+    )
+    unclassified = sorted(
+        (name, route)
+        for route, names, _module in guarded_routes
+        for name in names - classified
+    )
+    for name, route in unclassified:
+        print(f"unclassified path parameter {name} on {route}")
+
+    assert not unclassified, unclassified
+
+
+def test_the_guarded_path_parameters_are_the_design_names(guarded_routes):
+    """Section 4.1: study_uid, target_study_uid, study_source_uid, the 28 children
+    and the 7 non-children, and no other name."""
+    found = set().union(*(names for _route, names, _module in guarded_routes))
+
+    assert found == (
+        study_access.STUDY_ROOT_PATH_PARAMETERS
+        | study_access.SOURCE_STUDY_PATH_PARAMETERS
+        | set(study_access.CHILD_PATH_PARAMETERS)
+        | study_access.NON_CHILD_PATH_PARAMETERS
+    )
+
+
+def test_every_guarded_route_with_a_child_parameter_has_study_uid(guarded_routes):
+    without_study = sorted(
+        route
+        for route, names, _module in guarded_routes
+        if names & set(study_access.CHILD_PATH_PARAMETERS) and "study_uid" not in names
+    )
+    for route in without_study:
+        print(f"child path parameter without study_uid on {route}")
+
+    assert not without_study, without_study
