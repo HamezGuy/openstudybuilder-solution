@@ -137,6 +137,17 @@ services:
       OSB_NATIVE_IDENTITY_INVENTORY_ENABLED: "${OSB_NATIVE_IDENTITY_INVENTORY_ENABLED:-False}"
       OSB_NATIVE_IDENTITY_SIGNING_URL: "${OSB_NATIVE_IDENTITY_SIGNING_URL:-}"
       OSB_PLATFORM_COMMAND_SIGNING_URL: "${OSB_PLATFORM_COMMAND_SIGNING_URL:-}"
+      # Domain audit chain of the platform command store
+      # (services/integrations/platform_command.py). .dockerignore keeps every
+      # .env out of the image, so these reach the container only from here. The
+      # host names carry the OSB_ prefix and default to the code defaults, so a
+      # host still holding the unprefixed names keeps the chain disabled until
+      # an owner sets OSB_PLATFORM_DOMAIN_AUDIT_MODE and OSB_PLATFORM_REGION.
+      PLATFORM_DOMAIN_AUDIT_MODE: "${OSB_PLATFORM_DOMAIN_AUDIT_MODE:-disabled}"
+      PLATFORM_REGION: "${OSB_PLATFORM_REGION:-local}"
+      # false refuses the native regimen and arm lifecycle POST routes with 403
+      # OSB_NATIVE_REGIMEN_WRITES_GOVERNED; osb.regimen.onboard is unaffected.
+      OSB_NATIVE_REGIMEN_WRITES_ENABLED: "${OSB_NATIVE_REGIMEN_WRITES_ENABLED:-true}"
 
       UVICORN_PORT: 5003
       UVICORN_ROOT_PATH: "/api"
