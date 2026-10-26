@@ -53,9 +53,12 @@ application behind Command Center:
   NeoDash as an optional private administrative tool until a server-side,
   Command Center-authorized database bridge is implemented.
 - Production configuration starts from `.env.production.example`.
-- Production starts from immutable images only:
+- Production starts from immutable images only, with the three compose files of
+  *Estate host* below, the signing overlay last:
   `docker compose --env-file .env.production -f compose.yaml -f
-  compose.production.yaml up -d --no-build`.
+  compose.production.yaml -f compose.production-signing.yml up -d --no-build`.
+  Without `compose.production-signing.yml` the APIs are recreated without the
+  production posture, delegated claims and review signing it sets.
 - `MAPPING_AUTHORITY_MODE=shadow` or `enforced` deliberately blocks the legacy
   StudyBundleV1 EDC sender. Command Center's EDC-send action must remain disabled
   until the governed native release package is implemented and validated.
