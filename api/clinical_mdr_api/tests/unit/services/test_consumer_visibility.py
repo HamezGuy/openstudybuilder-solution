@@ -5,11 +5,16 @@ the same fixture shape as test_domain_isolation.py."""
 from types import SimpleNamespace
 
 import pytest
+from fastapi import FastAPI
 from fastapi.routing import APIRoute
+from fastapi.testclient import TestClient
 
 from clinical_mdr_api.services.studies import study_visibility as vis
+from common.auth import dependencies as auth_dependencies
+from common.exception_handlers import register_exception_handlers
 from common.exceptions import ForbiddenException, NotFoundException
 from consumer_api.shared import visibility as consumer_visibility
+from consumer_api.v1 import main as consumer_v1_main
 from consumer_api.v1.main import router as consumer_v1_router
 
 
@@ -201,6 +206,116 @@ def test_study_metadata_without_selectors_is_left_to_route_validation(monkeypatc
     consumer_visibility.enforce_visible_consumer_study_by_number(
         _metadata_request(project_id="P1"), _auth=None
     )
+
+
+# AR-EO-08 (2026-10-26): the {uid} the scope check reads is the {uid} the handler
+# receives. A blank or padded uid used to skip the check (blank) or pass it as the
+# trimmed uid while the handler received the padded one.
+
+
+class SyntheticWriterWithReaderToken(SyntheticWriter):
+    """Holds the Study.Write role but only the study:read capability."""
+
+    capabilities = {"study:read"}
+
+
+@pytest.fixture(name="soa_client")
+def fixture_soa_client(monkeypatch):
+    calls = []
+
+    class RecordingSoAService:
+        def create_soa(self, study_uid, soa_input):  # pylint: disable=unused-argument
+            calls.append(study_uid)
+            return {"epochs": {}, "visits": {}, "activities": {}}
+
+    class RoleHolder:
+        def authorize(self, *_roles):
+            return None
+
+    monkeypatch.setattr(consumer_v1_main, "SoAService", RecordingSoAService)
+    monkeypatch.setattr(auth_dependencies, "user", RoleHolder)
+    app = FastAPI()
+    register_exception_handlers(app, value_error=False)
+    app.include_router(consumer_v1_router, prefix="/v1")
+    app.dependency_overrides[auth_dependencies.validate_token] = lambda: None
+    app.dependency_overrides[auth_dependencies.dummy_user_auth] = lambda: None
+    client = TestClient(app, raise_server_exceptions=False)
+
+    def post(uid_segment):
+        return client.post(
+            f"/v1/studies/{uid_segment}/soa",
+            json={"epochs": [], "visits": [], "activities": []},
+        )
+
+    return post, calls
+
+
+def test_soa_replacement_reaches_the_handler_for_an_assigned_study(
+    monkeypatch, soa_client
+):
+    post, calls = soa_client
+    monkeypatch.setattr(vis, "_request_user", SyntheticWriter)
+    response = post("Study_000999")
+    assert response.status_code == 201, response.text
+    assert calls == ["Study_000999"]
+
+
+def test_soa_replacement_on_a_blank_uid_still_needs_write_authority(
+    monkeypatch, soa_client
+):
+    post, calls = soa_client
+    monkeypatch.setattr(vis, "_request_user", SyntheticWriterWithReaderToken)
+    response = post("%20")
+    assert response.status_code == 403, response.text
+    assert "study:write" in response.text
+    assert not calls
+
+
+def test_soa_replacement_on_a_blank_uid_answers_not_found(monkeypatch, soa_client):
+    post, calls = soa_client
+    monkeypatch.setattr(vis, "_request_user", SyntheticWriter)
+    response = post("%20")
+    assert response.status_code == 404, response.text
+    assert not calls
+
+
+def test_soa_replacement_on_a_padded_assigned_uid_answers_not_found(
+    monkeypatch, soa_client
+):
+    post, calls = soa_client
+    monkeypatch.setattr(vis, "_request_user", SyntheticWriter)
+    for segment in ("Study_000999%20", "%20Study_000999", "Study_000999%09"):
+        response = post(segment)
+        assert response.status_code == 404, (segment, response.text)
+    assert not calls
+
+
+@pytest.mark.parametrize("uid", [" ", "Study_000999 ", " Study_000999"])
+def test_a_blank_or_padded_read_uid_answers_not_found(uid):
+    with pytest.raises(NotFoundException):
+        consumer_visibility.enforce_visible_consumer_study(
+            _request("/v1/studies/x/study-visits", uid=uid), _auth=None
+        )
+
+
+def test_a_blank_read_uid_still_needs_read_authority(monkeypatch):
+    monkeypatch.setattr(vis, "_request_user", SyntheticNoCapability)
+    with pytest.raises(ForbiddenException, match="study:read"):
+        consumer_visibility.enforce_visible_consumer_study(
+            _request("/v1/studies/x/study-visits", uid=" "), _auth=None
+        )
+
+
+def test_a_blank_uid_is_refused_outside_delegated_mode(monkeypatch):
+    monkeypatch.setattr(vis.settings, "delegated_claims_required", False)
+    monkeypatch.setattr(vis, "_request_user", lambda: None)
+    for enforce in (
+        consumer_visibility.enforce_visible_consumer_study,
+        consumer_visibility.enforce_writable_consumer_study,
+    ):
+        for uid in (" ", "Study_000999 "):
+            with pytest.raises(NotFoundException):
+                enforce(_request("/v1/studies/x/soa", uid=uid), _auth=None)
 
 
 _STUDY_SELECTOR_QUERY_PARAMS = {

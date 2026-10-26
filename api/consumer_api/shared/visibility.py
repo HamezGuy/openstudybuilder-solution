@@ -14,6 +14,9 @@ schedule replacement (POST ``/studies/{uid}/soa``) needs write on that study, st
 creation (POST ``/studies``) has no delegated study contract and fails closed as the
 main API's POST ``/studies`` does, and the study-metadata read resolves its studies
 by project and number and then needs read on each of them.
+
+AR-EO-08 (2026-10-26): a blank or padded ``{uid}`` no longer skips the per-study
+check, or passes it as a uid other than the one the handler receives.
 """
 
 from fastapi import Request
@@ -24,18 +27,31 @@ from common.auth.dependencies import security
 from common.exceptions import NotFoundException
 
 
+def _assert_path_study_visible(request: Request, require_write: bool) -> None:
+    """The ``{uid}`` is stripped once, and that one value is both the value checked
+    and the value the handler receives: a uid that is blank, or that stripping
+    would change, is refused with the 404 of a study that does not exist (AR-EO-08,
+    2026-10-26). The caller's own authority is checked first, so a caller without
+    it is refused for that reason whatever the uid."""
+    received = str(request.path_params.get("uid", "") or "")
+    uid = received.strip()
+    if not uid or uid != received:
+        visibility._assert_operation_scope(  # pylint: disable=protected-access
+            visibility._request_user(),  # pylint: disable=protected-access
+            require_write,
+        )
+        raise NotFoundException("Study Definition", received)
+    visibility.assert_study_uid_visible(uid, require_write=require_write)
+
+
 def enforce_visible_consumer_study(request: Request, _auth=security) -> None:
     """A ``/studies/{uid}/...`` route must name a study the caller may read."""
-    uid = str(request.path_params.get("uid", "") or "").strip()
-    if uid:
-        visibility.assert_study_uid_visible(uid, require_write=False)
+    _assert_path_study_visible(request, require_write=False)
 
 
 def enforce_writable_consumer_study(request: Request, _auth=security) -> None:
     """A writing ``/studies/{uid}/...`` route must name a study the caller may write."""
-    uid = str(request.path_params.get("uid", "") or "").strip()
-    if uid:
-        visibility.assert_study_uid_visible(uid, require_write=True)
+    _assert_path_study_visible(request, require_write=True)
 
 
 def _study_roots_by_number(
