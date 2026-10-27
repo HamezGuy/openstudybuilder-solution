@@ -217,7 +217,6 @@ Possible errors:
         },
     },
 )
-# pylint: disable=unused-argument
 def get_study_disease_milestone(
     study_uid: Annotated[str, studyUID],
     study_disease_milestone_uid: Annotated[
@@ -225,7 +224,7 @@ def get_study_disease_milestone(
     ],
 ) -> study_disease_milestone.StudyDiseaseMilestone:
     service = StudyDiseaseMilestoneService()
-    return service.find_by_uid(study_disease_milestone_uid)
+    return service.find_by_uid(study_disease_milestone_uid, study_uid=study_uid)
 
 
 @router.get(

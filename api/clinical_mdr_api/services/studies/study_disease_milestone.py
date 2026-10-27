@@ -38,6 +38,7 @@ from clinical_mdr_api.services._utils import (
 from clinical_mdr_api.services.studies.study_disease_milestone_snapshot import (
     read_disease_milestone_snapshot,
 )
+from clinical_mdr_api.services.studies.study_visibility import assert_tied_to_study
 from clinical_mdr_api.services.user_info import UserInfoService
 from common.auth.user import user
 from common.config import settings
@@ -167,7 +168,13 @@ class StudyDiseaseMilestoneService:
         return study_disease_milestones
 
     @db.transaction
-    def find_by_uid(self, uid: str) -> StudyDiseaseMilestone:
+    def find_by_uid(
+        self, uid: str, study_uid: str | None = None
+    ) -> StudyDiseaseMilestone:
+        # The repository finds a milestone by uid alone, so under the delegated
+        # profile it must belong to the path study (D-45, C03). A call that names
+        # no study is refused there like another study's milestone.
+        assert_tied_to_study(study_uid or "", children={"Study Disease Milestone": uid})
         repos = self._repos
         try:
             study_disease_milestone = self.repo.find_by_uid(uid=uid)
@@ -283,6 +290,9 @@ class StudyDiseaseMilestoneService:
         study_uid: str,
         study_disease_milestone_input: StudyDiseaseMilestoneCreateInput,
     ):
+        assert_tied_to_study(
+            study_uid, body_study_uids=(study_disease_milestone_input.study_uid,)
+        )
         acquire_write_lock_study_value(uid=study_uid)
         all_disease_milestones = self.repo.find_all_disease_milestones_by_study(
             study_uid
@@ -321,6 +331,9 @@ class StudyDiseaseMilestoneService:
         study_disease_milestone_uid: str,
         study_disease_milestone_input: StudyDiseaseMilestoneEditInput,
     ):
+        assert_tied_to_study(
+            study_uid, children={"Study Disease Milestone": study_disease_milestone_uid}
+        )
         acquire_write_lock_study_value(uid=study_uid)
         study_disease_milestone = self.repo.find_by_uid(study_disease_milestone_uid)
         self._validate_update(study_disease_milestone_input, study_disease_milestone)
@@ -341,6 +354,9 @@ class StudyDiseaseMilestoneService:
 
     @db.transaction
     def reorder(self, study_uid: str, study_disease_milestone_uid: str, new_order: int):
+        assert_tied_to_study(
+            study_uid, children={"Study Disease Milestone": study_disease_milestone_uid}
+        )
         acquire_write_lock_study_value(uid=study_uid)
         new_order -= 1
         disease_milestone = self.repo.find_by_uid(study_disease_milestone_uid)
@@ -379,6 +395,9 @@ class StudyDiseaseMilestoneService:
 
     @db.transaction
     def delete(self, study_uid: str, study_disease_milestone_uid: str):
+        assert_tied_to_study(
+            study_uid, children={"Study Disease Milestone": study_disease_milestone_uid}
+        )
         acquire_write_lock_study_value(uid=study_uid)
         study_disease_milestone = self.repo.find_by_uid(study_disease_milestone_uid)
 
