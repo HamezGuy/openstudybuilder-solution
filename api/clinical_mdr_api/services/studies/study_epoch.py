@@ -69,6 +69,7 @@ from clinical_mdr_api.services._utils import (
 )
 from clinical_mdr_api.services.studies.study import StudyService
 from clinical_mdr_api.services.studies.study_selection_base import StudySelectionMixin
+from clinical_mdr_api.services.studies.study_visibility import assert_tied_to_study
 from clinical_mdr_api.services.user_info import UserInfoService
 from common import exceptions
 from common.auth.user import user
@@ -810,6 +811,7 @@ class StudyEpochService(StudySelectionMixin):
 
     @ensure_transaction(db)
     def create(self, study_uid: str, study_epoch_input: StudyEpochCreateInput):
+        assert_tied_to_study(study_uid, body_study_uids=(study_epoch_input.study_uid,))
         acquire_write_lock_study_value(uid=study_uid)
         self._validate_creation(study_epoch_input)
         all_epochs = self.repo.find_all_epochs_by_study(study_uid)
@@ -841,6 +843,7 @@ class StudyEpochService(StudySelectionMixin):
         study_epoch_input: StudyEpochCreateInput,
         extra_pending_in_subtype: int = 0,
     ):
+        assert_tied_to_study(study_uid, body_study_uids=(study_epoch_input.study_uid,))
         self._validate_creation(study_epoch_input)
         all_epochs = self.repo.find_all_epochs_by_study(study_uid)
         created_study_epoch = self._from_input_values(
@@ -879,6 +882,9 @@ class StudyEpochService(StudySelectionMixin):
         study_epoch_uid: str,
         study_epoch_input: StudyEpochEditInput,
     ):
+        # D-45: under the delegated profile the body study must be the path study,
+        # so the lookup below cannot load, lock or rewrite another study's epoch.
+        assert_tied_to_study(study_uid, body_study_uids=(study_epoch_input.study_uid,))
         self._validate_update(study_epoch_input)
 
         study_epoch = self.repo.find_by_uid(
@@ -1167,6 +1173,9 @@ class StudyEpochService(StudySelectionMixin):
         study_uid: str,
         specs: list[StudyEpochCreateInput],
     ) -> StudyEpochBatchPreviewResponse:
+        assert_tied_to_study(
+            study_uid, body_study_uids=[spec.study_uid for spec in specs]
+        )
         pending_per_subtype: dict[str, int] = {}
         items: list[StudyEpochBatchPreviewItemOutput] = []
 
@@ -1206,6 +1215,12 @@ class StudyEpochService(StudySelectionMixin):
         study_uid: str,
         operations: list[StudyEpochBatchInput],
     ) -> StudyEpochBatchResponse:
+        # D-45: the whole batch is refused before its lock when any item names
+        # another study.
+        assert_tied_to_study(
+            study_uid,
+            body_study_uids=[operation.content.study_uid for operation in operations],
+        )
         acquire_write_lock_study_value(uid=study_uid)
         before_snapshot = self._snapshot_existing_epoch_state(study_uid)
         results: list[StudyEpochBatchItemOutput | None] = [None] * len(operations)
