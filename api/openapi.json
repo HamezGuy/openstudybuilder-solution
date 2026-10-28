@@ -3,7 +3,7 @@
   "info": {
     "title": "OpenStudyBuilder API",
     "description": "\n## NOTICE\n\nThis license information is applicable to the swagger documentation of the clinical-mdr-api, that is the openapi.json.\n\n## License Terms (MIT)\n\nCopyright (C) 2025 Novo Nordisk A/S, Danish company registration no. 24256790\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\n\n## Licenses and Acknowledgements for Incorporated Software\n\nThis component contains software licensed under different licenses when compiled, please refer to the third-party-licenses.md file for further information and full license texts.\n\n## Authentication\n\nSupports OAuth2 [Authorization Code Flow](https://datatracker.ietf.org/doc/html/rfc6749#section-4.1),\nat paths described in the OpenID Connect Discovery metadata document (whose URL is defined by the `OAUTH_METADATA_URL` environment variable).\n\nMicrosoft Identity Platform documentation can be read \n([here](https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-auth-code-flow)).\n\nAuthentication can be turned off with `OAUTH_ENABLED=false` environment variable. \n\nWhen authentication is turned on, all requests to protected API endpoints must provide a valid bearer (JWT) token inside the `Authorization` http header. \n",
-    "version": "3.0.715"
+    "version": "3.0.716"
   },
   "paths": {
     "/": {
@@ -89749,7 +89749,7 @@
           "Study Selections"
         ],
         "summary": "Edit a study arm",
-        "description": "State before:\n - Study must exist and be in status draft\n\nBusiness logic:\n\nState after:\n - Added new entry in the audit trail for the update of the study-arm.",
+        "description": "State before:\n - Study must exist and be in status draft\n\nBusiness logic:\n - Optional stale-edit check: when `expected_start_date` is sent and the arm's\n   current `start_date` differs, the edit is refused with 409\n   `STUDY_ARM_VERSION_CONFLICT` and nothing is written. The answer's `code` is\n   that value and its `details[0].ctx.current_start_date` is the arm's current\n   `start_date`. When it is sent and accepted, the answer's `start_date` is the\n   stored one, ready for the next edit. When it is omitted nothing is checked.\n\nState after:\n - Added new entry in the audit trail for the update of the study-arm.",
         "operationId": "patch_update_arm_selection_studies__study_uid__study_arms__study_arm_uid__patch",
         "security": [
           {
@@ -89814,6 +89814,16 @@
           },
           "404": {
             "description": "Not Found - There exist no selection between the study and arm.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict - expected_start_date was sent and the arm has been written since (STUDY_ARM_VERSION_CONFLICT).",
             "content": {
               "application/json": {
                 "schema": {
@@ -166391,7 +166401,8 @@
           "amendment_type": {
             "type": "string",
             "minLength": 1,
-            "title": "Amendment Type"
+            "title": "Amendment Type",
+            "description": "Authored text. The value arm-metadata-change states that this version changes the name, short name, label, description or data origin description of the arms in affected_arm_uids; it needs at least one arm, each selected in the version being locked."
           },
           "affected_arm_uids": {
             "items": {
@@ -177673,6 +177684,19 @@
             ],
             "title": "Change Reason",
             "description": "Why the study arm is written. Optional; stored on the arm's audit trail action and returned by its audit trail. Required when OSB_ARM_WRITE_REASON_REQUIRED is set."
+          },
+          "expected_start_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Start Date",
+            "description": "Optional stale-edit check: the start_date of the study arm as the editor read it, with its time zone. When it is sent and the arm has been written since (its start_date differs), the edit is refused with 409 STUDY_ARM_VERSION_CONFLICT, which states the current start_date, and nothing is written. When it is omitted the edit is applied as before."
           }
         },
         "type": "object",
@@ -177982,6 +178006,19 @@
             ],
             "title": "Change Reason",
             "description": "Why the study arm is written. Optional; stored on the arm's audit trail action and returned by its audit trail. Required when OSB_ARM_WRITE_REASON_REQUIRED is set."
+          },
+          "expected_start_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Start Date",
+            "description": "Optional stale-edit check: the start_date of the study arm as the editor read it, with its time zone. When it is sent and the arm has been written since (its start_date differs), the edit is refused with 409 STUDY_ARM_VERSION_CONFLICT, which states the current start_date, and nothing is written. When it is omitted the edit is applied as before."
           }
         },
         "type": "object",
