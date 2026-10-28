@@ -1338,12 +1338,20 @@ class StudyArmSelectionService(StudySelectionMixin):
                 operation = operations[index]
                 if operation.method == "PATCH":
                     if isinstance(operation.content, StudySelectionArmBatchUpdateInput):
-                        item = self.patch_selection(
-                            study_uid=study_uid,
-                            study_selection_uid=operation.content.arm_uid,
-                            selection_update_input=operation.content,
-                            validate=False,
-                        )
+                        try:
+                            item = self.patch_selection(
+                                study_uid=study_uid,
+                                study_selection_uid=operation.content.arm_uid,
+                                selection_update_input=operation.content,
+                                validate=False,
+                            )
+                        except exceptions.VersionConflictException as conflict:
+                            # Name the batch item whose token was stale.
+                            conflict.current = {
+                                **conflict.current,
+                                "operation_index": index,
+                            }
+                            raise
                         patched_arm_uids.add(operation.content.arm_uid)
                         results[index] = StudySelectionArmBatchOutput(
                             response_code=status.HTTP_200_OK,

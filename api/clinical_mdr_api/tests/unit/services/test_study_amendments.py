@@ -2,10 +2,12 @@
 
 import json
 from copy import deepcopy
+from datetime import timezone
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+from neo4j.time import DateTime
 from pydantic import ValidationError
 
 from clinical_mdr_api.domain_repositories.study_definitions import (
@@ -27,7 +29,9 @@ from clinical_mdr_api.domains.study_selections.study_amendment import (
 from clinical_mdr_api.models.study_selections.study import (
     StudyAmendment,
     StudyLockInput,
+    StudyVersionHistory,
 )
+from clinical_mdr_api.services.studies.study import StudyService
 from common.exceptions import NotFoundException, ValidationException
 
 
@@ -577,20 +581,53 @@ def test_arm_metadata_change_is_accepted_with_the_arms_it_names():
     assert StudyAmendmentVO.from_json(vo.to_json()).to_dict() == payload
 
 
-def test_arm_metadata_change_without_arms_is_refused_where_other_types_are_not():
-    with pytest.raises(ValidationError, match="STUDY_AMENDMENT_ARMS_REQUIRED"):
-        StudyLockInput(reason_for_change_uid="CT_1", amendment=arm_metadata_change([]))
-    with pytest.raises(ValidationError, match="STUDY_AMENDMENT_ARMS_REQUIRED"):
-        StudyAmendment(**arm_metadata_change([]))
+def lock_service():
+    service = StudyService.__new__(StudyService)
+    service._repos = Mock()
+    return service
+
+
+def lock_with(service, amendment):
+    return StudyService.lock.__wrapped__(  # type: ignore[attr-defined]
+        service, "Study_1", "CT_1", amendment=amendment
+    )
+
+
+def test_arm_metadata_change_without_arms_is_refused_by_the_lock():
+    # The request and record models accept it, as they did before this value
+    # had a meaning, so stored history keeps reading; the lock refuses it with
+    # 400 before any lookup or write.
+    lock = StudyLockInput(
+        reason_for_change_uid="CT_1", amendment=arm_metadata_change([])
+    )
+    service = lock_service()
+    with pytest.raises(
+        ValidationException, match="STUDY_AMENDMENT_ARMS_REQUIRED"
+    ) as error:
+        lock_with(service, lock.amendment)
+    assert error.value.status_code == 400
+    assert not service._repos.mock_calls
+
+
+def test_other_amendment_types_with_no_arms_pass_the_lock_scope_check():
     # Every other value keeps its validation: free text, an explicit empty list
-    # allowed, padded or recased variants of the value included.
+    # allowed, padded or recased variants of the value included. The lock gets
+    # past the scope check to its first lookup.
     for amendment_type in (
         "Authored synthetic regimen revision",
         " arm-metadata-change",
         "ARM-METADATA-CHANGE",
     ):
         payload = {**arm_metadata_change([]), "amendment_type": amendment_type}
-        assert not StudyAmendment(**payload).to_vo().is_arm_metadata_change
+        amendment = StudyAmendment(**payload)
+        assert not amendment.to_vo().is_arm_metadata_change
+        service = lock_service()
+        service._repos.study_definition_repository.find_by_uid.return_value = None
+        with pytest.raises(NotFoundException):
+            lock_with(service, amendment)
+        service._repos.study_definition_repository.find_by_uid.assert_called_once_with(
+            "Study_1", for_update=True
+        )
 
 
 @pytest.mark.parametrize("value", [None, [""], [" \t"], [5], ["StudyArm_1"] * 2])
@@ -599,12 +636,40 @@ def test_arm_metadata_change_arms_follow_the_existing_identifier_rules(value):
         StudyAmendment(**arm_metadata_change(value))
 
 
-def test_a_stored_arm_metadata_change_without_arms_still_reads():
-    stored = json.dumps(arm_metadata_change([]))
-    record = StudyVersionRepository.amendment_from_record(
-        SimpleNamespace(amendment_json=stored)
+def stored_history_without_arms(monkeypatch):
+    """A history row as a lock stored it before arm-metadata-change had a
+    meaning: that type with an explicit empty arm list."""
+    stored = arm_metadata_change([])
+    row = {
+        **captured_history_row(),
+        "_amendment_json": json.dumps(stored),
+        "date": DateTime(2026, 10, 27, 12, 0, 0, tzinfo=timezone.utc),
+        "modified_by": "synthetic-author",
+    }
+    repo, _ = history_read(monkeypatch, [row])
+    history, total = repo.retrieve_study_snapshot_history("Study_1", page_size=0)
+    return stored, history, total
+
+
+def test_a_stored_arm_metadata_change_without_arms_still_reads(monkeypatch):
+    stored, history, _ = stored_history_without_arms(monkeypatch)
+    assert history[0]["amendment"] == stored
+    version = StudyVersionHistory.from_repository_output(history[0])
+    assert version.amendment is not None
+    assert version.amendment.model_dump() == stored
+
+
+def test_snapshot_history_reads_a_stored_arm_metadata_change_without_arms(
+    monkeypatch,
+):
+    stored, history, total = stored_history_without_arms(monkeypatch)
+    service = lock_service()
+    service._repos.study_version_repository.retrieve_study_snapshot_history.return_value = (
+        history,
+        total,
     )
-    assert record is not None
+    result = service.get_study_snapshot_history("Study_1")
+    assert [item.amendment.model_dump() for item in result.items] == [stored]
 
 
 def test_arm_metadata_change_names_an_arm_of_the_version_being_locked(monkeypatch):

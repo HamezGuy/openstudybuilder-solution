@@ -1994,7 +1994,10 @@ class StudyAmendment(BaseModel):
 
     @model_validator(mode="after")
     def validate_authored_facts(self) -> Self:
-        self.to_vo().validate_authored_scope()
+        # This model is also the snapshot history response, so it checks only
+        # the facts every stored record already met. The lock checks the
+        # authored scope (StudyService.lock), so history reads as written.
+        self.to_vo()
         return self
 
     def to_vo(self) -> StudyAmendmentVO:

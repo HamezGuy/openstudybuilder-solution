@@ -1,4 +1,4 @@
-"""The optional stale-edit check of a study arm PATCH (SO-OSB-1, SE-6, SE-7),
+"""The optional stale-edit check of a study arm PATCH (SO-OSB-1, SE-6 leg 1),
 without a database."""
 
 from datetime import datetime, timedelta, timezone
@@ -194,3 +194,61 @@ def test_conflict_answer_names_the_code_and_the_current_token():
             },
         }
     ]
+
+
+def stale_conflict():
+    return VersionConflictException(
+        code="STUDY_ARM_VERSION_CONFLICT",
+        msg="synthetic stale edit",
+        field="expected_start_date",
+        current={
+            "study_arm_uid": "StudyArm_2",
+            "current_start_date": WRITTEN_AT.isoformat(),
+        },
+    )
+
+
+def test_raise_if_helpers_take_the_conflict_arguments():
+    arguments = {
+        "code": "STUDY_ARM_VERSION_CONFLICT",
+        "msg": "synthetic stale edit",
+        "field": "expected_start_date",
+        "current": {"study_arm_uid": "StudyArm_1"},
+    }
+    VersionConflictException.raise_if(False, **arguments)
+    VersionConflictException.raise_if_not(True, **arguments)
+    for helper, value in (
+        (VersionConflictException.raise_if, True),
+        (VersionConflictException.raise_if_not, False),
+    ):
+        with pytest.raises(VersionConflictException) as error:
+            helper(value, **arguments)
+        assert error.value.status_code == 409
+        assert error.value.code == "STUDY_ARM_VERSION_CONFLICT"
+        assert error.value.current == {"study_arm_uid": "StudyArm_1"}
+
+
+def test_batch_conflict_names_the_stale_item_and_stops(monkeypatch):
+    service = StudyArmSelectionService.__new__(StudyArmSelectionService)
+    service._repos = MagicMock()
+    patch_selection = Mock(side_effect=["answer", stale_conflict(), "never"])
+    monkeypatch.setattr(service, "patch_selection", patch_selection)
+    monkeypatch.setattr(service_module, "StudySelectionArmBatchOutput", Mock())
+    operations = [
+        StudySelectionArmBatchInput(
+            method="PATCH",
+            content={"arm_uid": arm_uid, "expected_start_date": READ_AT.isoformat()},
+        )
+        for arm_uid in ("StudyArm_1", "StudyArm_2", "StudyArm_3")
+    ]
+    with pytest.raises(VersionConflictException) as error:
+        StudyArmSelectionService.handle_batch_operations.__wrapped__(  # type: ignore[attr-defined]
+            service, "Study_1", operations
+        )
+    assert error.value.current == {
+        "study_arm_uid": "StudyArm_2",
+        "current_start_date": WRITTEN_AT.isoformat(),
+        "operation_index": 1,
+    }
+    assert patch_selection.call_count == 2
+    service._repos.study_arm_repository.find_by_study.assert_not_called()

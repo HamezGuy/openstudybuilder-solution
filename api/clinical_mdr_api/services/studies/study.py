@@ -876,6 +876,14 @@ class StudyService:
             StudyFlowchartService,
         )
 
+        # Authored scope is checked where the lock authors the record, before
+        # any lookup or write, and never when a stored record is read.
+        if amendment is not None:
+            try:
+                amendment.to_vo().validate_authored_scope()
+            except ValueError as exc:
+                raise ValidationException(msg=str(exc)) from exc
+
         # lock the study
         try:
             study_definition: StudyDefinitionAR | None = (

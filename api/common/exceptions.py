@@ -463,3 +463,41 @@ class VersionConflictException(AlreadyExistsException):
         self.conflict_field = field
         self.conflict_msg = msg
         self.current = current
+
+    # The inherited helpers build the exception from resource_name, field_value
+    # and field_name, which this one does not take, so they take its own
+    # arguments instead.
+    @classmethod
+    def raise_if(  # type: ignore[override]  # pylint: disable=arguments-differ
+        cls,
+        val: Any,
+        *,
+        code: str,
+        msg: str,
+        field: str,
+        current: dict[str, Any],
+    ):
+        """Raises VersionConflictException with status code `409` if `val` evaluates to `True`."""
+
+        # pylint: disable=unused-variable
+        __tracebackhide__ = True
+
+        if val:
+            raise cls(code=code, msg=msg, field=field, current=current)
+
+    @classmethod
+    def raise_if_not(  # type: ignore[override]  # pylint: disable=arguments-differ
+        cls,
+        val: Any,
+        *,
+        code: str,
+        msg: str,
+        field: str,
+        current: dict[str, Any],
+    ):
+        """Raises VersionConflictException with status code `409` if `val` evaluates to `False`."""
+
+        # pylint: disable=unused-variable
+        __tracebackhide__ = True
+
+        cls.raise_if(not val, code=code, msg=msg, field=field, current=current)

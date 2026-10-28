@@ -5627,6 +5627,15 @@ def delete_selected_arm(
     responses={
         403: _generic_descriptions.ERROR_403,
         404: _generic_descriptions.ERROR_404,
+        409: {
+            "model": ErrorResponse,
+            "description": (
+                "Conflict - a PATCH item sent expected_start_date and its arm "
+                "has been written since (STUDY_ARM_VERSION_CONFLICT). The whole "
+                "batch is refused and nothing is written; details[0].ctx names "
+                "the arm (study_arm_uid) and the item (operation_index)."
+            ),
+        },
     },
 )
 @decorators.validate_if_study_is_not_locked("study_uid")
