@@ -291,6 +291,21 @@ class StudyVersionRepository:
                 msg="Affected arms do not belong to the current or preceding locked study version: "
                 + ", ".join(sorted(missing))
             )
+        if amendment.is_arm_metadata_change:
+            # An arm whose metadata changed is still selected in this version;
+            # an arm removed since the preceding lock is not a metadata change.
+            current = {
+                uid
+                for value_id, uid, _, _ in rows
+                if value_id == current_value.element_id
+            }
+            not_current = set(amendment.affected_arm_uids) - current
+            if not_current:
+                raise ValidationException(
+                    msg="STUDY_AMENDMENT_ARM_NOT_CURRENT: an arm-metadata-change "
+                    "amendment names only arms selected in the version being "
+                    "locked: " + ", ".join(sorted(not_current))
+                )
 
     @ensure_transaction(db)
     def create_or_update_study_version(

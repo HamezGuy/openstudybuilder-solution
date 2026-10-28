@@ -5108,6 +5108,12 @@ State before:
  - Study must exist and be in status draft
 
 Business logic:
+ - Optional stale-edit check: when `expected_start_date` is sent and the arm's
+   current `start_date` differs, the edit is refused with 409
+   `STUDY_ARM_VERSION_CONFLICT` and nothing is written. The answer's `code` is
+   that value and its `details[0].ctx.current_start_date` is the arm's current
+   `start_date`. When it is sent and accepted, the answer's `start_date` is the
+   stored one, ready for the next edit. When it is omitted nothing is checked.
 
 State after:
  - Added new entry in the audit trail for the update of the study-arm.""",
@@ -5118,6 +5124,10 @@ State after:
         404: {
             "model": ErrorResponse,
             "description": "Not Found - There exist no selection between the study and arm.",
+        },
+        409: {
+            "model": ErrorResponse,
+            "description": "Conflict - expected_start_date was sent and the arm has been written since (STUDY_ARM_VERSION_CONFLICT).",
         },
     },
 )

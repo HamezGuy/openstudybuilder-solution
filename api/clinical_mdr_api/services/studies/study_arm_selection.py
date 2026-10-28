@@ -66,6 +66,32 @@ def _require_change_reason(change_reason: str | None) -> None:
     )
 
 
+def _refuse_stale_arm_edit(
+    expected_start_date: datetime | None, current_study_arm: StudySelectionArmVO
+) -> None:
+    """SO-OSB-1 stale-edit check. An edit that states the start_date of the arm
+    as its editor read it is refused with 409 when the arm has been written
+    since, naming the current start_date. Omitted, nothing is checked."""
+    if expected_start_date is None:
+        return
+    current = current_study_arm.start_date
+    if current is not None and expected_start_date == current:
+        return
+    raise exceptions.VersionConflictException(
+        code="STUDY_ARM_VERSION_CONFLICT",
+        msg=(
+            f"study arm {current_study_arm.study_selection_uid} was written after "
+            "the version this edit was made against; reload it and edit again. "
+            "Nothing was written."
+        ),
+        field="expected_start_date",
+        current={
+            "study_arm_uid": current_study_arm.study_selection_uid,
+            "current_start_date": current.isoformat() if current else None,
+        },
+    )
+
+
 def _with_change_reasons(
     versions: list[StudySelectionArmVersion],
     selection_history: list[SelectionHistoryArm],
@@ -775,6 +801,10 @@ class StudyArmSelectionService(StudySelectionMixin):
             current_vo, order = selection_aggregate.get_specific_object_selection(
                 study_selection_uid=study_selection_uid
             )
+            # Checked under the study write lock, before anything is merged.
+            _refuse_stale_arm_edit(
+                selection_update_input.expected_start_date, current_vo
+            )
 
             # merge current with updates
             updated_selection = self._patch_prepare_new_study_arm(
@@ -799,6 +829,14 @@ class StudyArmSelectionService(StudySelectionMixin):
                         study_selection_uid, selection_update_input.change_reason
                     ),
                 )
+
+                if selection_update_input.expected_start_date is not None:
+                    # A caller that sent a stale-edit token gets back the
+                    # stored start_date, the one its next edit must state.
+                    # Without a token the answer is built as before.
+                    selection_aggregate = repos.study_arm_repository.find_by_study(
+                        study_uid=study_uid
+                    )
 
                 # Fetch the new selection which was just updated
                 new_selection, order = (

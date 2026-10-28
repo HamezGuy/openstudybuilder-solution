@@ -4,6 +4,12 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+# The one amendment type value OSB gives a meaning to (SO-OSB-1, SE-6, SO-D10):
+# the locked version changes the metadata (name, short name, label, description
+# text or data origin description) of the arms it names. Every other value stays
+# free authored text, validated as before.
+ARM_METADATA_CHANGE = "arm-metadata-change"
+
 
 @dataclass(frozen=True)
 class StudyAmendmentVO:
@@ -26,6 +32,20 @@ class StudyAmendmentVO:
             )
         if len(set(self.affected_arm_uids)) != len(self.affected_arm_uids):
             raise ValueError("Affected arm identifiers must be unique")
+
+    @property
+    def is_arm_metadata_change(self) -> bool:
+        return self.amendment_type == ARM_METADATA_CHANGE
+
+    def validate_authored_scope(self) -> None:
+        """Checked when a lock authors the record, never when a stored record is
+        read. An arm metadata change names the arms it changes: an empty list
+        would read as no arm, not as every arm."""
+        if self.is_arm_metadata_change and not self.affected_arm_uids:
+            raise ValueError(
+                "STUDY_AMENDMENT_ARMS_REQUIRED: an arm-metadata-change amendment "
+                "names the arms whose metadata changed in affected_arm_uids"
+            )
 
     def to_dict(self) -> dict[str, Any]:
         return {

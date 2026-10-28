@@ -442,3 +442,24 @@ class ValidationException(BusinessLogicException):
     """
     An exception raised when a submitted form or document did not pass validation.
     """
+
+
+class VersionConflictException(AlreadyExistsException):
+    """
+    A 409 for a write that names the version of the record it was made against,
+    when that version is no longer the current one. Nothing was written.
+
+    The answer carries the machine `code` at the top of the error body and one
+    `details` entry whose `ctx` states the current version, so the client can
+    reload and decide again.
+
+    Attributes:
+        status_code (int): The HTTP status code for the exception (409).
+    """
+
+    def __init__(self, *, code: str, msg: str, field: str, current: dict[str, Any]):
+        super().__init__(msg=f"{code}: {msg}")
+        self.code = code
+        self.conflict_field = field
+        self.conflict_msg = msg
+        self.current = current

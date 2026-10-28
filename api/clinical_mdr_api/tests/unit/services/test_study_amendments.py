@@ -20,7 +20,10 @@ from clinical_mdr_api.domain_repositories.study_selections import (
 from clinical_mdr_api.domain_repositories.study_selections.study_version_repository import (
     StudyVersionRepository,
 )
-from clinical_mdr_api.domains.study_selections.study_amendment import StudyAmendmentVO
+from clinical_mdr_api.domains.study_selections.study_amendment import (
+    ARM_METADATA_CHANGE,
+    StudyAmendmentVO,
+)
 from clinical_mdr_api.models.study_selections.study import (
     StudyAmendment,
     StudyLockInput,
@@ -554,3 +557,93 @@ def test_history_reads_the_recorded_parent_pin_of_the_same_row(monkeypatch):
     repo, _ = history_read(monkeypatch, [row])
     history, _ = repo.retrieve_study_snapshot_history("Study_1", page_size=0)
     assert history[0]["parent_pin"] == pin
+
+
+def arm_metadata_change(arm_uids):
+    return {
+        **authored_amendment(),
+        "amendment_type": ARM_METADATA_CHANGE,
+        "affected_arm_uids": arm_uids,
+    }
+
+
+def test_arm_metadata_change_is_accepted_with_the_arms_it_names():
+    payload = arm_metadata_change(["StudyArm_1", "StudyArm_2"])
+    lock = StudyLockInput(reason_for_change_uid="CT_1", amendment=payload)
+    assert lock.amendment is not None
+    vo = lock.amendment.to_vo()
+    assert vo.is_arm_metadata_change
+    assert vo.to_dict() == payload
+    assert StudyAmendmentVO.from_json(vo.to_json()).to_dict() == payload
+
+
+def test_arm_metadata_change_without_arms_is_refused_where_other_types_are_not():
+    with pytest.raises(ValidationError, match="STUDY_AMENDMENT_ARMS_REQUIRED"):
+        StudyLockInput(reason_for_change_uid="CT_1", amendment=arm_metadata_change([]))
+    with pytest.raises(ValidationError, match="STUDY_AMENDMENT_ARMS_REQUIRED"):
+        StudyAmendment(**arm_metadata_change([]))
+    # Every other value keeps its validation: free text, an explicit empty list
+    # allowed, padded or recased variants of the value included.
+    for amendment_type in (
+        "Authored synthetic regimen revision",
+        " arm-metadata-change",
+        "ARM-METADATA-CHANGE",
+    ):
+        payload = {**arm_metadata_change([]), "amendment_type": amendment_type}
+        assert not StudyAmendment(**payload).to_vo().is_arm_metadata_change
+
+
+@pytest.mark.parametrize("value", [None, [""], [" \t"], [5], ["StudyArm_1"] * 2])
+def test_arm_metadata_change_arms_follow_the_existing_identifier_rules(value):
+    with pytest.raises(ValidationError):
+        StudyAmendment(**arm_metadata_change(value))
+
+
+def test_a_stored_arm_metadata_change_without_arms_still_reads():
+    stored = json.dumps(arm_metadata_change([]))
+    record = StudyVersionRepository.amendment_from_record(
+        SimpleNamespace(amendment_json=stored)
+    )
+    assert record is not None
+
+
+def test_arm_metadata_change_names_an_arm_of_the_version_being_locked(monkeypatch):
+    repo = arm_validation(
+        monkeypatch,
+        [
+            ["current", "StudyArm_1", 1, [["Study_1"]]],
+            ["previous", "StudyArm_1", 1, [["Study_1"]]],
+        ],
+    )
+    StudyVersionRepository.validate_amendment_arms.__wrapped__(
+        repo,
+        "Study_1",
+        StudyAmendment(**arm_metadata_change(["StudyArm_1"])).to_vo(),
+        "1",
+    )
+
+
+def test_arm_metadata_change_of_a_removed_arm_is_refused(monkeypatch):
+    rows = [
+        ["current", "StudyArm_1", 1, [["Study_1"]]],
+        ["previous", "StudyArm_1", 1, [["Study_1"]]],
+        ["previous", "StudyArm_2", 1, [["Study_1"]]],
+    ]
+    repo = arm_validation(monkeypatch, rows)
+    with pytest.raises(ValidationException, match="STUDY_AMENDMENT_ARM_NOT_CURRENT"):
+        StudyVersionRepository.validate_amendment_arms.__wrapped__(
+            repo,
+            "Study_1",
+            StudyAmendment(**arm_metadata_change(["StudyArm_1", "StudyArm_2"])).to_vo(),
+            "1",
+        )
+    # Another amendment type may still name the arm removed since the last lock.
+    repo = arm_validation(monkeypatch, rows)
+    StudyVersionRepository.validate_amendment_arms.__wrapped__(
+        repo,
+        "Study_1",
+        StudyAmendment(
+            **{**authored_amendment(), "affected_arm_uids": ["StudyArm_2"]}
+        ).to_vo(),
+        "1",
+    )

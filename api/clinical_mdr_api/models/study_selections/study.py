@@ -1976,13 +1976,25 @@ class StudyAmendment(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    amendment_type: Annotated[str, Field(min_length=1, strict=True)]
+    amendment_type: Annotated[
+        str,
+        Field(
+            min_length=1,
+            strict=True,
+            description=(
+                "Authored text. The value arm-metadata-change states that this "
+                "version changes the name, short name, label, description or data "
+                "origin description of the arms in affected_arm_uids; it needs at "
+                "least one arm, each selected in the version being locked."
+            ),
+        ),
+    ]
     affected_arm_uids: list[Annotated[str, Field(min_length=1, strict=True)]]
     authorizing_decision_ref: Annotated[str, Field(min_length=1, strict=True)]
 
     @model_validator(mode="after")
     def validate_authored_facts(self) -> Self:
-        self.to_vo()
+        self.to_vo().validate_authored_scope()
         return self
 
     def to_vo(self) -> StudyAmendmentVO:

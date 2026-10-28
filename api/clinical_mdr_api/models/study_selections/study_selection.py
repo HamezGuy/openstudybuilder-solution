@@ -13,6 +13,7 @@ from typing import (
 )
 
 from pydantic import (
+    AwareDatetime,
     ConfigDict,
     Field,
     StringConstraints,
@@ -206,6 +207,13 @@ STUDY_ARM_CHANGE_REASON_DESC = (
     "Why the study arm is written. Optional; stored on the arm's audit trail "
     "action and returned by its audit trail. Required when "
     "OSB_ARM_WRITE_REASON_REQUIRED is set."
+)
+STUDY_ARM_EXPECTED_START_DATE_DESC = (
+    "Optional stale-edit check: the start_date of the study arm as the editor "
+    "read it, with its time zone. When it is sent and the arm has been written "
+    "since (its start_date differs), the edit is refused with 409 "
+    "STUDY_ARM_VERSION_CONFLICT, which states the current start_date, and "
+    "nothing is written. When it is omitted the edit is applied as before."
 )
 STUDY_EPOCH_UID_DESC = "the uid of the related study epoch"
 STUDY_EPOCH_NAME_DESC = "the name of the related study epoch"
@@ -4405,6 +4413,10 @@ class StudySelectionArmInput(PatchInputModel):
             min_length=1,
             max_length=STUDY_ARM_CHANGE_REASON_MAX_LENGTH,
         ),
+    ] = None
+    expected_start_date: Annotated[
+        AwareDatetime | None,
+        Field(description=STUDY_ARM_EXPECTED_START_DATE_DESC),
     ] = None
 
     @field_validator("*", mode="before")

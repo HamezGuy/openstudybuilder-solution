@@ -8,6 +8,8 @@ from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field, ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from common.exceptions import VersionConflictException
+
 
 class ValidationDetail(BaseModel):
     error_code: Annotated[str, Field()]
@@ -22,7 +24,10 @@ MACHINE_CODE = re.compile(r"^[A-Z][A-Z0-9_]{2,127}$")
 
 
 def machine_code(exception: Exception) -> str | None:
-    """The machine code an HTTPException carries, as a string or detail["code"]."""
+    """The machine code an HTTPException carries, as a string or detail["code"],
+    or the code a VersionConflictException carries."""
+    if isinstance(exception, VersionConflictException):
+        return exception.code if MACHINE_CODE.fullmatch(exception.code) else None
     if not isinstance(exception, StarletteHTTPException):
         return None
     detail = exception.detail
@@ -79,6 +84,15 @@ class ErrorResponse(BaseModel):
                     ctx=jsonable_encoder(error["ctx"]) if "ctx" in error else {},
                 )
                 for error in exception.errors()
+            ]
+        elif isinstance(exception, VersionConflictException):
+            data["details"] = [
+                ValidationDetail(
+                    error_code=exception.code,
+                    field=("body", exception.conflict_field),
+                    msg=exception.conflict_msg,
+                    ctx=jsonable_encoder(exception.current),
+                )
             ]
 
         super().__init__(
