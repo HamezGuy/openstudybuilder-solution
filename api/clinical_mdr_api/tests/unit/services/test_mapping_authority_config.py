@@ -1,8 +1,83 @@
 """Startup posture for the OSB mapping-authority boundary."""
 
+from pathlib import Path
+
 import pytest
 
 from common.config import Settings, assert_mapping_authority_configuration
+
+
+def _governed_creation_settings(monkeypatch, **overrides):
+    monkeypatch.setenv(
+        "OSB_NATIVE_IDENTITY_SIGNING_URL", "https://signer.example/receipt"
+    )
+    monkeypatch.setenv(
+        "OSB_PLATFORM_SIGNING_TOKEN_FILE", str(Path("test-signing-token").resolve())
+    )
+    return Settings.model_construct(
+        deployment_environment="production",
+        governed_study_creation_enabled=True,
+        oauth_enabled=True,
+        delegated_claims_required=True,
+        **overrides,
+    )
+
+
+def test_governed_creation_is_default_off():
+    assert Settings.model_construct().governed_study_creation_enabled is False
+
+
+def test_governed_creation_startup_keeps_prototypes_disabled(monkeypatch):
+    configured = _governed_creation_settings(monkeypatch)
+    configured.assert_native_identity_startup_safe()
+    for field in (
+        "native_identity_endpoint_enabled",
+        "native_identity_inventory_enabled",
+        "platform_commands_prototype_enabled",
+    ):
+        configured = _governed_creation_settings(monkeypatch, **{field: True})
+        with pytest.raises(
+            ValueError, match="OSB_NATIVE_IDENTITY_PRODUCTION_PROHIBITED"
+        ):
+            configured.assert_native_identity_startup_safe()
+
+
+@pytest.mark.parametrize("field", ["oauth_enabled", "delegated_claims_required"])
+def test_governed_creation_requires_strict_delegation(monkeypatch, field):
+    configured = _governed_creation_settings(monkeypatch)
+    setattr(configured, field, False)
+    with pytest.raises(
+        ValueError, match="OSB_GOVERNED_STUDY_CREATION_CONFIGURATION_REQUIRED"
+    ):
+        configured.assert_native_identity_startup_safe()
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "",
+        "http://signer.example/receipt",
+        "https://user:secret@signer.example/receipt",
+        "https://signer.example/receipt?token=x",
+        "https://signer.example/receipt#x",
+    ],
+)
+def test_governed_creation_requires_authenticated_https_signing(monkeypatch, url):
+    configured = _governed_creation_settings(monkeypatch)
+    monkeypatch.setenv("OSB_NATIVE_IDENTITY_SIGNING_URL", url)
+    with pytest.raises(
+        ValueError, match="OSB_GOVERNED_STUDY_CREATION_CONFIGURATION_REQUIRED"
+    ):
+        configured.assert_native_identity_startup_safe()
+
+
+def test_governed_creation_requires_an_absolute_token_file(monkeypatch):
+    configured = _governed_creation_settings(monkeypatch)
+    monkeypatch.setenv("OSB_PLATFORM_SIGNING_TOKEN_FILE", "relative-token")
+    with pytest.raises(
+        ValueError, match="OSB_GOVERNED_STUDY_CREATION_CONFIGURATION_REQUIRED"
+    ):
+        configured.assert_native_identity_startup_safe()
 
 
 def test_production_requires_explicit_authority_mode():

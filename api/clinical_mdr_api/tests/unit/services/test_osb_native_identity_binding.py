@@ -4,11 +4,14 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from importlib import import_module
 from threading import Lock
+from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
 
 import pytest
+from fastapi import HTTPException
 
 from clinical_mdr_api.generated.platform_contracts.native_identity_command_processor_v1 import (
     NativeIdentityCommandError,
@@ -270,3 +273,137 @@ def test_claim_existing_binds_the_supplied_root_once():
     assert first["receipt"]["nativeIdentity"] == "Study_990001"
     assert replay["replay"] is True
     assert len(store.bindings) == 1
+
+
+@pytest.fixture(name="governed_creation_route")
+def fixture_governed_creation_route(monkeypatch):
+    route = import_module("clinical_mdr_api.routers.integrations.native_identity")
+    for name, value in {
+        "deployment_environment": "production",
+        "native_identity_endpoint_enabled": False,
+        "review_workspace_identity_enabled": False,
+        "governed_study_creation_enabled": True,
+    }.items():
+        monkeypatch.setattr(route.settings, name, value)
+    principal = _principal()
+    caller = SimpleNamespace(
+        tenant_id=principal.tenant_id,
+        study_ids=principal.study_ids,
+        sub=principal.subject,
+        human_subject=principal.human_subject,
+        actor_chain=principal.actor_chain,
+        roles=principal.roles,
+        purpose=principal.purpose,
+        capabilities=principal.capabilities,
+    )
+    store = MemoryOsbNativeIdentityStore()
+    monkeypatch.setattr(route, "user", lambda: caller)
+    monkeypatch.setattr(route, "processor", _processor(store))
+    return route, store, caller
+
+
+def test_governed_production_create_and_exact_replay(governed_creation_route):
+    route, store, _ = governed_creation_route
+    created = route.create_or_bind_native_study_root(_intent())
+    replay = route.create_or_bind_native_study_root(_intent())
+    assert created["ok"] is True
+    assert created["data"]["replay"] is False
+    assert replay["data"]["replay"] is True
+    assert replay["data"]["receipt"] == created["data"]["receipt"]
+    assert created["data"]["receipt"]["tenantId"] == TENANT
+    assert created["data"]["receipt"]["platformStudyId"] == STUDY
+    assert store.created == 1
+
+
+def test_production_creation_remains_default_off(governed_creation_route, monkeypatch):
+    route, store, _ = governed_creation_route
+    monkeypatch.setattr(route.settings, "governed_study_creation_enabled", False)
+    with pytest.raises(HTTPException) as error:
+        route.create_or_bind_native_study_root(_intent())
+    assert error.value.status_code == 503
+    assert store.created == 0
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"expectedAbsence": False},
+        {"expectedAbsence": 1},
+        {"expectedAbsence": "true"},
+        {"requestedInitialState": {}},
+        {"requestedInitialState": {"operation": "claim_existing"}},
+        {"requestedInitialState": {"operation": "version_rollover"}},
+        {"requestedInitialState": {"operation": "create", "reviewOnly": False}},
+        {
+            "requestedInitialState": {
+                "operation": "create",
+                "reviewWorkspaceMigrationId": "x",
+            }
+        },
+    ],
+)
+def test_governed_mode_does_not_admit_other_operations(
+    governed_creation_route, changes
+):
+    route, store, _ = governed_creation_route
+    with pytest.raises(HTTPException) as error:
+        route.create_or_bind_native_study_root(_intent(**changes))
+    assert error.value.status_code == 503
+    assert store.created == 0
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("tenant_id", "another-tenant"),
+        ("study_ids", ("another-study",)),
+        ("capabilities", ("study:write",)),
+        ("purpose", "protocol-read"),
+        ("roles", ("Study.Read",)),
+        ("actor_chain", ({"subject": "another-actor", "type": "service"},)),
+    ],
+)
+def test_governed_creation_preserves_exact_caller_scope(
+    governed_creation_route, field, value
+):
+    route, store, caller = governed_creation_route
+    setattr(caller, field, value)
+    with pytest.raises(HTTPException) as error:
+        route.create_or_bind_native_study_root(_intent())
+    assert error.value.status_code == 403
+    assert error.value.detail["code"] == "IDENTITY_INTENT_AUTHORIZATION_DENIED"
+    assert store.created == 0
+    assert store.effects_by_intent == {}
+
+
+def test_governed_creation_rejects_changed_intent_bytes(governed_creation_route):
+    route, store, _ = governed_creation_route
+    intent = _intent()
+    intent["requestedInitialState"]["projectNumber"] = "tampered"
+    with pytest.raises(HTTPException) as error:
+        route.create_or_bind_native_study_root(intent)
+    assert error.value.status_code == 422
+    assert error.value.detail["code"] == "IDENTITY_INTENT_HASH_MISMATCH"
+    assert store.created == 0
+
+
+def test_governed_creation_requires_signed_publication(
+    governed_creation_route, monkeypatch
+):
+    route, store, _ = governed_creation_route
+    monkeypatch.setattr(route.processor.publisher, "publish", lambda _receipt: {})
+    with pytest.raises(HTTPException) as error:
+        route.create_or_bind_native_study_root(_intent())
+    assert error.value.status_code == 503
+    assert error.value.detail["code"] == "IDENTITY_SIGNED_PUBLICATION_INVALID"
+    assert store.effects_by_intent == {}
+
+
+def test_governed_creation_route_keeps_platform_security(governed_creation_route):
+    route, _, _ = governed_creation_route
+    mounted = next(
+        item
+        for item in route.router.routes
+        if getattr(item, "path", None) == "/native-study-roots/create-or-bind"
+    )
+    assert route.platform_security in mounted.dependencies

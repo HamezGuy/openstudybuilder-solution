@@ -472,11 +472,22 @@ def inventory_native_study_roots() -> dict[str, Any]:
 @router.post(
     "/native-study-roots/create-or-bind",
     dependencies=[platform_security],
-    summary="Create or bind one exact OSB draft root (disabled until P2)",
+    summary="Create or bind one exact OSB draft root under its configured posture",
 )
 def create_or_bind_native_study_root(body: dict[str, Any]) -> dict[str, Any]:
     review_migration = settings.review_workspace_identity_enabled and is_review_workspace_claim(body)
-    if not review_migration and (
+    initial_state = body.get("requestedInitialState")
+    governed_creation = (
+        settings.governed_study_creation_enabled
+        and body.get("expectedAbsence") is True
+        and isinstance(initial_state, dict)
+        and initial_state.get("operation") == "create"
+        and "reviewOnly" not in initial_state
+        and "reviewWorkspaceMigrationId" not in initial_state
+    )
+    # The processor still verifies the complete canonical intent, caller,
+    # scope, absence, idempotency and signed publication before committing.
+    if not review_migration and not governed_creation and (
         not settings.native_identity_endpoint_enabled
         or settings.deployment_environment.strip().lower() in {"prod", "production"}
     ):
