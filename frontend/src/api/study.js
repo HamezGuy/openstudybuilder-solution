@@ -1072,9 +1072,6 @@ export default {
       suppliers,
     })
   },
-  getStudyCrfForms(studyUid) {
-    return repository.get(`studies/${studyUid}/odm-forms`)
-  },
   enableTag(studyUid, data) {
     return repository.post(
       `${resource}/${studyUid}/data-completeness-tags`,

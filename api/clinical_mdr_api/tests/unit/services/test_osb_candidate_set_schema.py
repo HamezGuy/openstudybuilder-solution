@@ -45,8 +45,6 @@ def _produce(monkeypatch, identity_version="legacy", family="odm_items"):
         from clinical_mdr_api.tests.unit.services.test_study_metadata_mapping import (
             COUNT,
             NativePort,
-        )
-        from clinical_mdr_api.tests.unit.services.test_study_metadata_mapping import (
             intent as metadata_intent,
         )
 

@@ -31,13 +31,13 @@ success replaces it. The ordinary export remains independently available.
 ## Runtime qualification
 
 `services/ddf/usdm_observation_runtime.py` implements the closed
-`OsbMapperObservationRuntimeV1@1.0.0` manifest described by
+`OsbMapperObservationRuntimeV1@2.0.0` manifest described by
 `schemas/platform/osb-mapper-observation-runtime-v1.schema.json`.
 
 `ObservationRuntimePaths` identifies separate immutable API, Python and Node
 roots, the retained API archive and the published shared-types archive. The
 manifest records every regular file's exact bytes and hash in those roots,
-the API archive, `Pipfile.lock`, runtime executables, image digest, and the complete
+the API archive, `uv.lock` (`Pipfile.lock` before contract 2.0.0 and OpenStudyBuilder 2.11), runtime executables, image digest, and the complete
 installed inventory kernel. Paths are sorted by UTF-16 code units. Missing or
 extra files, unreadable directories, unsafe archive paths and links are refused.
 No Git line-ending normalization is applied to this runtime seal.

@@ -1,8 +1,9 @@
 import logging
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor  # pylint: disable=no-name-in-module
+from collections.abc import Iterable, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from typing import Any, Iterable, Mapping, Sequence, TypeVar
+from typing import Any
 
 from docx.enum.style import WD_STYLE_TYPE
 from neomodel import db
@@ -119,7 +120,7 @@ _T = {
 
 log = logging.getLogger(__name__)
 
-# pylint: disable=no-member
+
 DOCX_STYLES = {
     "table": ("SB Table Condensed", WD_STYLE_TYPE.TABLE),
     "header1": ("Table Header lvl1", WD_STYLE_TYPE.PARAGRAPH),
@@ -422,7 +423,8 @@ class StudyFlowchartService:
                 current_group = {}
                 result.append((epoch_uid, current_group))
             current_group.setdefault(
-                collapse_visit_groups and visit.consecutive_visit_group or visit.uid, []
+                (collapse_visit_groups and visit.consecutive_visit_group) or visit.uid,
+                [],
             ).append(visit)
 
         return result
@@ -785,7 +787,7 @@ class StudyFlowchartService:
                 row.cells = row.cells[:2]
 
         footnotes: list[StudySoAFootnote] = footnotes_future.result()
-        self.add_footnotes(table, footnotes)
+        self.add_footnotes(table, footnotes, layout=SoALayout.PROTOCOL_LAB_TABLE)
 
         return table
 
@@ -834,6 +836,7 @@ class StudyFlowchartService:
             for col_idx, cell in enumerate(
                 row.cells[table.num_header_cols :], start=table.num_header_cols
             ):
+                current_cell = cell
                 # split at indexes referencing split_uids
                 if col_idx in split_indices:
                     # select next slice and create new row based on prototype
@@ -847,23 +850,23 @@ class StudyFlowchartService:
                     # continue with a spanning cell from the previous slice
                     if (
                         row_idx < table.num_header_rows
-                        and cell.span == 0
+                        and current_cell.span == 0
                         and remaining_span > 0
                     ):
-                        spanning_cell = cell = spanning_cell.model_copy(
-                            update={"span": 0}
-                        )
+                        current_cell = spanning_cell.model_copy(update={"span": 0})
+                        spanning_cell = current_cell
 
                 # handle cell spanning across slices (header rows only)
                 if row_idx < table.num_header_rows:
-                    if cell.span > 1:
-                        spanning_cell = cell = (
-                            cell.model_copy()
+                    if current_cell.span > 1:
+                        current_cell = (
+                            current_cell.model_copy()
                         )  # shallow copy to avoid modifying original table when updating `spanning_cell`
-                        remaining_span = cell.span - 1
+                        spanning_cell = current_cell
+                        remaining_span = current_cell.span - 1
                         spanning_cell.span = 1
 
-                    elif cell.span == 0 and remaining_span > 0:
+                    elif current_cell.span == 0 and remaining_span > 0:
                         spanning_cell.span += 1
                         remaining_span -= 1
 
@@ -871,7 +874,7 @@ class StudyFlowchartService:
                         spanning_cell, remaining_span = None, 0
 
                 # append cell to current slice row
-                slice_row.cells.append(cell)
+                slice_row.cells.append(current_cell)
 
         # add a comment footnote to each slice that footnotes are in the last slice
         comment = str(_T("footnotes_in_last_table_slice"))
@@ -1121,12 +1124,12 @@ class StudyFlowchartService:
 
     def split_soa(self, study_uid: str, study_value_version: str | None, table) -> Any:
         # Get StudyVisit.uids for slicing the SoA table
-        split_uids = set(
+        split_uids = {
             sp.uid
             for sp in self._study_service.get_study_soa_splits(
                 study_uid=study_uid, study_value_version=study_value_version
             )
-        )
+        }
 
         # Split SoA table into multiple tables at specified StudyVisit.uids
         tables = self.split_flowchart_table(table, split_uids)
@@ -1911,7 +1914,7 @@ class StudyFlowchartService:
         # Replace ASCII hyphen-minus with non-breaking hyphen (U+2011) in the
         # negative-day subvisit suffix (e.g. "V2D-1") to prevent word-wrap at
         # the sign character in table header cells.
-        visit_name = visit_name.replace("D-", "D‑")
+        visit_name = visit_name.replace("D-", "D\u2011")
 
         return visit_name
 
@@ -1938,10 +1941,8 @@ class StudyFlowchartService:
             or getattr(visits[-1], visit_timing_property) is None
         ):
             visit_name = (
-                num_visits_in_group > 1
-                and visit.consecutive_visit_group
-                or visit.visit_short_name
-            )
+                num_visits_in_group > 1 and visit.consecutive_visit_group
+            ) or visit.visit_short_name
 
             # If there is a comma it means that group was made in the LIST grouping way
             if visit_name and "," in visit_name:
@@ -2653,6 +2654,12 @@ class StudyFlowchartService:
         silently dropped before symbols are assigned, so they do not appear in the
         rendered footnote listing.
         """
+
+        # A footnote without a layout applies to every layout.
+        if layout is not None:
+            footnotes = [
+                fn for fn in footnotes if fn.layout is None or fn.layout == layout
+            ]
 
         if layout == SoALayout.PROTOCOL:
             # Only process visible rows
@@ -3494,7 +3501,7 @@ class StudyFlowchartService:
                     for ref in refs[1:]
                 ]
                 if cell.refs:
-                    cell.refs = [cell.refs[0]] + add_refs + cell.refs[1:]
+                    cell.refs = [cell.refs[0], *add_refs, *cell.refs[1:]]
                 elif add_refs:
                     cell.refs = add_refs
 
@@ -3531,10 +3538,8 @@ class StudyFlowchartService:
 
         return table
 
-    BaseModelType = TypeVar("BaseModelType", bound=BaseModel)
-
     @staticmethod
-    def _map_by_uid(
+    def _map_by_uid[BaseModelType: BaseModel](
         items: Iterable[BaseModelType], uid_property_name: str = "uid"
     ) -> dict[str, BaseModelType]:
         return {getattr(item, uid_property_name): item for item in items}

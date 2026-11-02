@@ -13,8 +13,10 @@ from clinical_mdr_api.models.study_selections.study import (
 from clinical_mdr_api.services.integrations.proposal_review import (
     ProposalReviewPrincipal,
 )
-from clinical_mdr_api.services.studies import study as study_service
-from clinical_mdr_api.services.studies import study_visibility as vis
+from clinical_mdr_api.services.studies import (
+    study as study_service,
+    study_visibility as vis,
+)
 from clinical_mdr_api.services.user_info import UserInfoService
 from clinical_mdr_api.tests.unit.domain.clinical_programme_aggregate.test_clinical_programme import (
     create_random_clinical_programme,

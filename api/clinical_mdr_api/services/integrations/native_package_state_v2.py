@@ -48,11 +48,7 @@ from clinical_mdr_api.services.integrations.osb_candidate_request_versions impor
 from clinical_mdr_api.services.integrations.osb_family_map import canonicalize_family
 from clinical_mdr_api.services.integrations.study_metadata_mapping import (
     METADATA_PATHS,
-)
-from clinical_mdr_api.services.integrations.study_metadata_mapping import (
     _normalized as normalize_metadata_value,
-)
-from clinical_mdr_api.services.integrations.study_metadata_mapping import (
     read_metadata_target,
     verify_metadata_reference_bindings,
 )

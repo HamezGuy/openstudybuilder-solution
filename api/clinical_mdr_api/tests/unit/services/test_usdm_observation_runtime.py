@@ -417,7 +417,7 @@ def fixture_file_seal(tmp_path_factory):
     for root in (api, python, node):
         root.mkdir()
     for name in (
-        "Pipfile.lock",
+        "uv.lock",
         "clinical_mdr_api/services/ddf/usdm_mapper.py",
         "clinical_mdr_api/services/ddf/usdm_observation_runtime.py",
         "clinical_mdr_api/services/ddf/usdm_observation_census.py",
@@ -444,9 +444,7 @@ def fixture_file_seal(tmp_path_factory):
         "apiArchiveByteSize": api_archive.stat().st_size,
         "files": rows,
         "filesSha256": file_manifest_sha256(rows),
-        "pipfileLockSha256": next(
-            row["sha256"] for row in rows if row["path"] == "Pipfile.lock"
-        ),
+        "uvLockSha256": next(row["sha256"] for row in rows if row["path"] == "uv.lock"),
         "runtimeImageDigest": "sha256:" + "3" * 64,
         "runtimeFiles": {
             name: {
@@ -555,7 +553,7 @@ def test_extra_missing_changed_files_and_archive_mismatch_fail_closed(file_seal)
             verify_runtime_files(manifest, paths)
     finally:
         target.unlink()
-    target = paths.api_root / "Pipfile.lock"
+    target = paths.api_root / "uv.lock"
     original = target.read_bytes()
     try:
         target.write_bytes(b"changed")

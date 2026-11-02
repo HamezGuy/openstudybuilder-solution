@@ -41,19 +41,19 @@ from clinical_mdr_api.models.controlled_terminologies.ct_term import (
 )
 from clinical_mdr_api.models.study_selections import (
     study_disease_milestone as milestone_models,
+    study_epoch as epoch_models,
 )
-from clinical_mdr_api.models.study_selections import study_epoch as epoch_models
 from clinical_mdr_api.routers.studies import (  # pylint: disable=unused-import
     study_access,
     study_disease_milestones,
     study_epochs,
 )
-from clinical_mdr_api.services.studies import study as study_service
 from clinical_mdr_api.services.studies import (
+    study as study_service,
     study_disease_milestone as milestone_service,
+    study_epoch as epoch_service,
+    study_visibility as vis,
 )
-from clinical_mdr_api.services.studies import study_epoch as epoch_service
-from clinical_mdr_api.services.studies import study_visibility as vis
 from clinical_mdr_api.services.user_info import UserInfoService
 from common.auth import rbac
 from common.auth.dependencies import security

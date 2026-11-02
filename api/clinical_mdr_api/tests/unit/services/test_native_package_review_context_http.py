@@ -12,11 +12,9 @@ from fastapi.testclient import TestClient
 
 from clinical_mdr_api.routers.integrations import (
     native_identity,
-)
-from clinical_mdr_api.routers.integrations import (
     native_item_observation as bounded_reader,
+    native_package_review_context as route,
 )
-from clinical_mdr_api.routers.integrations import native_package_review_context as route
 from clinical_mdr_api.tests.unit.services import test_native_package_v2 as fixture
 from common.auth.dependencies import validate_token
 

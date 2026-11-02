@@ -68,7 +68,7 @@ class ExceptionTracebackMiddleware:
         try:
             await self.app(scope, receive, send)
             return
-        except Exception as exc:  # pylint: disable=broad-except
+        except Exception as exc:
             safe = safe_error(exc)
             self.add_traceback_attributes(exc, safe["rejectionId"])
             log.error(

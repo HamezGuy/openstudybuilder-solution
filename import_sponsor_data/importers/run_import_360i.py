@@ -348,8 +348,8 @@ class Import360i(BaseImporter):
             spellings = {unit["name"]}
             # These spellings come from the approved native definition, never
             # from a carrier's claimed key, dimension or catalogueTerm.
-            if isinstance(unit.get("legacy_code"), str):
-                spellings.add(unit["legacy_code"])
+            # OpenStudyBuilder 2.11 removed the legacy code property; its CDISC CT
+            # submission values (ct_units) carry the alternative spellings.
             ucum = unit.get("ucum")
             if isinstance(ucum, dict) and isinstance(ucum.get("name"), str):
                 spellings.add(ucum["name"])

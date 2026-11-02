@@ -99,7 +99,6 @@ OdmItemGroupUID = Path(description="The unique id of the ODM Item Group.")
         ],
     }
 )
-# pylint: disable=unused-argument
 def get_all_odm_item_groups(
     request: Request,  # request is actually required by the allow_exports decorator
     library_name: Annotated[str | None, Query()] = None,
@@ -201,7 +200,6 @@ def get_distinct_values_for_header(
         ],
     }
 )
-# pylint: disable=unused-argument
 def get_odm_item_group_that_belongs_to_form(
     request: Request,  # request is actually required by the allow_exports decorator
 ) -> list[OdmElementWithParentUid]:

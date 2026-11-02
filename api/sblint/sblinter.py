@@ -5,10 +5,10 @@ import sys
 import tomllib
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from typing import Callable, final
+from collections.abc import Callable
+from typing import final
 
-from rich import console
-from rich import print as rptint
+from rich import console, print as rptint
 
 
 def _excluded_paths() -> list[re.Pattern[str]]:
@@ -29,7 +29,7 @@ class SBLinter(ABC):
 
     @classmethod
     @final
-    def get_sblinters(cls) -> list[type["SBLinter"]]:
+    def get_sblinters(cls) -> list[type[SBLinter]]:
         """
         Returns a list of SBLinter classes to be used for static code analysis.
 
@@ -130,7 +130,7 @@ class SBLinter(ABC):
         directories: list[str],
         validators: list[Callable[[ast.Module, str], list[int]]],
         extension: str = ".py",
-    ) -> dict[str, list]:
+    ) -> dict[str, list[str]]:
         """
         Crawls through the specified directories to validate Python files using the provided validators.
 
@@ -143,7 +143,7 @@ class SBLinter(ABC):
         Returns:
             dict[str, list]: A dictionary where the keys are the validator functions (as strings) and the values are sets of file paths that failed the corresponding validation.
         """
-        invalid_files: dict[str, list] = defaultdict(list)
+        invalid_files: dict[str, list[str]] = defaultdict(list)
         excluded = _excluded_paths()
 
         for directory in directories:
@@ -154,7 +154,7 @@ class SBLinter(ABC):
                         posix_path = file_path.replace(os.sep, "/")
                         if any(pattern.search(posix_path) for pattern in excluded):
                             continue
-                        with open(file_path, "r", encoding="utf-8") as f:
+                        with open(file_path, encoding="utf-8") as f:
                             if content := f.read():
                                 tree = ast.parse(content)
                                 for validate in validators:
@@ -169,7 +169,7 @@ class SBLinter(ABC):
     @classmethod
     @final
     def validate_and_report(
-        cls, directories_to_crawl: list[str], validators: list[type["SBLinter"]]
+        cls, directories_to_crawl: list[str], validators: list[type[SBLinter]]
     ):
         """
         Validates the specified directories using the provided validators and reports any issues.

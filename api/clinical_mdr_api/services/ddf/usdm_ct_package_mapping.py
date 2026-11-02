@@ -4,8 +4,7 @@ import json
 import re
 from datetime import date, datetime
 
-from neo4j.time import Date as Neo4jDate
-from neo4j.time import DateTime as Neo4jDateTime
+from neo4j.time import Date as Neo4jDate, DateTime as Neo4jDateTime
 from usdm_model.code import Code
 
 from clinical_mdr_api.services.ddf.usdm_mapping_context import (

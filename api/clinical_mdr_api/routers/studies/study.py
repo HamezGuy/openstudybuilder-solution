@@ -1,5 +1,3 @@
-# pylint: disable=too-many-lines
-
 import os
 from typing import Annotated, Any
 
@@ -238,28 +236,6 @@ STUDY_ARM_CHANGE_REASON_QUERY = Query(
     min_length=1,
     max_length=STUDY_ARM_CHANGE_REASON_MAX_LENGTH,
 )
-
-
-# API endpoints to study crfs
-
-
-@router.get(
-    "/studies/{study_uid}/odm-forms",
-    dependencies=[security, rbac.STUDY_READ],
-    summary="Get a paginated list of study data suppliers of a study",
-    status_code=200,
-    responses={
-        403: _generic_descriptions.ERROR_403,
-    },
-)
-def get_a_paginated_list_of_study_crfs_of_a_study(
-    study_uid: Annotated[str, studyUID],
-) -> list[dict[Any, Any]]:
-    service = StudyActivityInstanceSelectionService()
-
-    all_items = service.get_crfs(study_uid=study_uid)
-
-    return all_items
 
 
 # API endpoints to study data suppliers
@@ -700,7 +676,6 @@ def get_distinct_objective_values_for_header(
         ],
     }
 )
-# pylint: disable=unused-argument
 def get_all_selected_objectives(
     request: Request,  # request is actually required by the allow_exports decorator
     study_uid: Annotated[str, studyUID],
@@ -1227,7 +1202,8 @@ State before:
 - Study must exist.
 
 Business logic:
- - By default (no study status is provided) list all study endpoints for the study uid in status draft. If the study not exist in status draft then return the study endpoints for the study in status released. If the study uid only exist as deleted then this is returned.
+ - By default (no study status is provided) list all study endpoints for the study uid in status draft. If the study not exist in status draft then return the study endpoints for the study in
+   status released. If the study uid only exist as deleted then this is returned.
 - If a specific study status parameter is provided then return study endpoints for this study status.
 - If the locked study status parameter is requested then a study version should also be provided, and then the study endpoints for the specific locked study version is returned.
 - Indicate by an boolean variable if the study endpoint can be updated (if the selected study is in status draft).
@@ -1271,7 +1247,6 @@ State after:
         ],
     }
 )
-# pylint: disable=unused-argument
 def get_all_selected_endpoints(
     request: Request,  # request is actually required by the allow_exports decorator
     study_uid: Annotated[str, studyUID],
@@ -1397,7 +1372,8 @@ State before:
  - Study and study endpoint must exist
 
 Business logic:
- - By default (no study status is provided) list all details for specified study endpoint for the study uid in status draft. If the study not exist in status draft then return the study endpoints for the study in status released. If the study uid only exist as deleted then this is returned.
+ - By default (no study status is provided) list all details for specified study endpoint for the study uid in status draft. If the study not exist in status draft then return the study endpoints
+   for the study in status released. If the study uid only exist as deleted then this is returned.
  - If a specific study status parameter is provided then return study endpoints for this study status.
  - If the locked study status parameter is requested then a study version should also be provided, and then the specified study endpoint for the specific locked study version is returned.
  - Indicate by an boolean variable if the study endpoint can be updated (if the selected study is in status draft).
@@ -1908,7 +1884,8 @@ State before:
  - Study-uid must exist.
 
 Business logic:
- - By default (no study status is provided) list all study compounds for the study uid in status draft. If the study not exist in status draft then return the study compounds for the study in status released. If the study uid only exist as deleted then this is returned.
+ - By default (no study status is provided) list all study compounds for the study uid in status draft. If the study not exist in status draft then return the study compounds for the study in
+   status released. If the study uid only exist as deleted then this is returned.
  - If a specific study status parameter is provided then return study compounds for this study status.
  - If the locked study status parameter is requested then a study version should also be provided, and then the study compounds for the specific locked study version is returned.
  - Indicate by an boolean variable if the study compound can be updated (if the selected study is in status draft).
@@ -1953,13 +1930,13 @@ State after:
         ],
     }
 )
-# pylint: disable=unused-argument
 def get_all_selected_compounds(
     request: Request,  # request is actually required by the allow_exports decorator
     study_uid: Annotated[str, studyUID],
     study_value_version: Annotated[
         str | None, _generic_descriptions.STUDY_VALUE_VERSION_QUERY
     ] = None,
+    sort_by: _generic_descriptions.SORT_BY_QUERY = None,
     filters: _generic_descriptions.FILTERS_QUERY = None,
     page_number: _generic_descriptions.PAGE_NUMBER_QUERY = settings.default_page_number,
     page_size: _generic_descriptions.PAGE_SIZE_QUERY = settings.default_page_size,
@@ -1972,6 +1949,7 @@ def get_all_selected_compounds(
         study_value_version=study_value_version,
         filter_by=filters,
         filter_operator=FilterOperator.from_str(operator),
+        sort_by=sort_by,
         page_number=page_number,
         page_size=page_size,
         total_count=total_count,
@@ -2116,9 +2094,11 @@ State before:
  - Study-uid and study-compound-uid must exist
 
 Business logic:
- - By default (no study status is provided) list all details for specified study compound for the study uid in status draft. If the study not exist in status draft then return the study compounds for the study in status released. If the study uid only exist as deleted then this is returned.
+ - By default (no study status is provided) list all details for specified study compound for the study uid in status draft. If the study not exist in status draft then return the study compounds
+   for the study in status released. If the study uid only exist as deleted then this is returned.
  - If a specific study status parameter is provided then return study compounds for this study status.
- - If the locked study status parameter is requested then a study version should also be provided, and then the specified study compound for the specific locked study version is returned.  - Indicate by an boolean variable if the study compound can be updated (if the selected study is in status draft).
+ - If the locked study status parameter is requested then a study version should also be provided, and then the specified study compound for the specific locked study version is returned.  -
+   Indicate by an boolean variable if the study compound can be updated (if the selected study is in status draft).
  - Indicate by an boolean variable if all expected selections have been made for each study compound, or some are missing.
    - e.g. Compound and TypeOfTreatment are expected.
  - Indicate by an boolean variable if the selected compound is available in a newer version.
@@ -2598,7 +2578,8 @@ State before:
 - Study must exist.
 
 Business logic:
-- By default (no study status is provided) list all study criteria for the study uid in status draft. If the study not exist in status draft then return the study criteria for the study in status released. If the study uid only exist as deleted then this is returned.
+- By default (no study status is provided) list all study criteria for the study uid in status draft. If the study not exist in status draft then return the study criteria for the study in status
+  released. If the study uid only exist as deleted then this is returned.
 - If a specific study status parameter is provided then return study criteria for this study status.
 - If the locked study status parameter is requested then a study version should also be provided, and then the study criteria for the specific locked study version is returned.
 - Indicate by a boolean variable if the study criteria can be updated (if the selected study is in status draft).  
@@ -2657,7 +2638,6 @@ List selected study with the following information:
         ],
     }
 )
-# pylint: disable=unused-argument
 def get_all_selected_criteria(
     request: Request,  # request is actually required by the allow_exports decorator
     study_uid: Annotated[str, studyUID],
@@ -2801,7 +2781,8 @@ def get_all_criteria_audit_trail(
     - Study and study criteria must exist
     
     Business logic:
-    - By default (no study status is provided) list all details for specified study criteria for the study uid in status draft. If the study not exist in status draft then return the study criteria for the study in status released. If the study uid only exist as deleted then this is returned.
+    - By default (no study status is provided) list all details for specified study criteria for the study uid in status draft. If the study not exist in status draft then return the study
+      criteria for the study in status released. If the study uid only exist as deleted then this is returned.
     - If a specific study status parameter is provided then return study criteria for this study status.
     - If the locked study status parameter is requested then a study version should also be provided, and then the specified study criteria for the specific locked study version is returned.
     - Indicate by an boolean variable if the study criteria can be updated (if the selected study is in status draft).
@@ -3472,7 +3453,6 @@ def get_all_selected_activity_instances_for_all_studies(
         ],
     }
 )
-# pylint: disable=unused-argument
 def get_all_selected_activity_instances(
     request: Request,  # request is actually required by the allow_exports decorator
     study_uid: Annotated[str, studyUID],
@@ -3842,6 +3822,7 @@ def patch_study_activity_instance_sync_to_latest_activity_instance(
             "model": ErrorResponse,
             "description": "Not Found - Study, footnote or SoA item is not found with the passed 'study_uid'.",
         },
+        405: _generic_descriptions.ERROR_405,
     },
 )
 @decorators.validate_if_study_is_not_locked("study_uid")
@@ -3988,7 +3969,6 @@ def get_all_selected_activities_for_all_studies(
         ],
     }
 )
-# pylint: disable=unused-argument
 def get_all_selected_activities(
     request: Request,  # request is actually required by the allow_exports decorator
     study_uid: Annotated[str, studyUID],
@@ -4848,6 +4828,7 @@ def study_activity_change_review_batch(
     responses={
         403: _generic_descriptions.ERROR_403,
         404: _generic_descriptions.ERROR_404,
+        405: _generic_descriptions.ERROR_405,
     },
 )
 @decorators.validate_if_study_is_not_locked("study_uid")
@@ -4943,7 +4924,8 @@ State before:
 - Study must exist.
     
 Business logic:
-    - By default (no study status is provided) list all study arms for the study uid in status draft. If the study not exist in status draft then return the study arms for the study in status released. If the study uid only exist as deleted then this is returned.
+    - By default (no study status is provided) list all study arms for the study uid in status draft. If the study not exist in status draft then return the study arms for the study in status
+      released. If the study uid only exist as deleted then this is returned.
     - If a specific study status parameter is provided then return study arm for this study status.
 - If the locked study status parameter is requested then a study version should also be provided, and then the study arms for the specific locked study version is returned.
 - Indicate by a boolean variable if the study arm can be updated (if the selected study is in status draft).  
@@ -4988,7 +4970,6 @@ Possible errors:
         ],
     }
 )
-# pylint: disable=unused-argument
 def get_all_selected_arms(
     request: Request,  # request is actually required by the allow_exports decorator
     study_uid: Annotated[str, studyUID],
@@ -5627,6 +5608,7 @@ def delete_selected_arm(
     responses={
         403: _generic_descriptions.ERROR_403,
         404: _generic_descriptions.ERROR_404,
+        405: _generic_descriptions.ERROR_405,
         409: {
             "model": ErrorResponse,
             "description": (
@@ -5726,6 +5708,7 @@ def post_new_element_selection_create(
     responses={
         403: _generic_descriptions.ERROR_403,
         404: _generic_descriptions.ERROR_404,
+        405: _generic_descriptions.ERROR_405,
     },
 )
 @decorators.validate_if_study_is_not_locked("study_uid")
@@ -5819,7 +5802,6 @@ Possible errors:
         ],
     }
 )
-# pylint: disable=unused-argument
 def get_all_selected_elements(
     request: Request,  # request is actually required by the allow_exports decorator
     study_uid: Annotated[str, studyUID],
@@ -6111,7 +6093,8 @@ State before:
 - Study must exist.
     
 Business logic:
-    - By default (no study status is provided) list all study branch arms for the study uid in status draft. If the study not exist in status draft then return the study branch arms for the study in status released. If the study uid only exist as deleted then this is returned.
+    - By default (no study status is provided) list all study branch arms for the study uid in status draft. If the study not exist in status draft then return the study branch arms for the study
+      in status released. If the study uid only exist as deleted then this is returned.
     - If a specific study status parameter is provided then return study branch arm for this study status.
 - If the locked study status parameter is requested then a study version should also be provided, and then the study branch arms for the specific locked study version is returned.
 - Indicate by a boolean variable if the study branch arm can be updated (if the selected study is in status draft).  
@@ -6156,7 +6139,6 @@ Possible errors:
         ],
     }
 )
-# pylint: disable=unused-argument
 def get_all_selected_branch_arms(
     request: Request,  # request is actually required by the allow_exports decorator
     study_uid: Annotated[str, studyUID],
@@ -6430,7 +6412,8 @@ def patch_new_branch_arm_selection_order(
     - Study must exist.
      
     Business logic:
-     - By default (no study status is provided) list all study branch arms for the study uid in status draft. If the study not exist in status draft then return the study branch arms for the study in status released. If the study uid only exist as deleted then this is returned.
+     - By default (no study status is provided) list all study branch arms for the study uid in status draft. If the study not exist in status draft then return the study branch arms for the
+       study in status released. If the study uid only exist as deleted then this is returned.
      - If a specific study status parameter is provided then return study branch arm for this study status.
     - If the locked study status parameter is requested then a study version should also be provided, and then the study branch arms for the specific locked study version is returned.
     - Indicate by a boolean variable if the study branch arm can be updated (if the selected study is in status draft).  
@@ -6560,7 +6543,8 @@ State before:
 - Study must exist.
     
 Business logic:
-    - By default (no study status is provided) list all study cohorts for the study uid in status draft. If the study not exist in status draft then return the study cohorts for the study in status released. If the study uid only exist as deleted then this is returned.
+    - By default (no study status is provided) list all study cohorts for the study uid in status draft. If the study not exist in status draft then return the study cohorts for the study in
+      status released. If the study uid only exist as deleted then this is returned.
     - If a specific study status parameter is provided then return study cohort for this study status.
 - If the locked study status parameter is requested then a study version should also be provided, and then the study cohorts for the specific locked study version is returned.
 - Indicate by a boolean variable if the study cohort can be updated (if the selected study is in status draft).  
@@ -6606,7 +6590,6 @@ Possible errors:
         ],
     }
 )
-# pylint: disable=unused-argument
 def get_all_selected_cohorts(
     request: Request,  # request is actually required by the allow_exports decorator
     study_uid: Annotated[str, studyUID],
@@ -6834,6 +6817,7 @@ def patch_new_cohort_selection_order(
     responses={
         403: _generic_descriptions.ERROR_403,
         404: _generic_descriptions.ERROR_404,
+        405: _generic_descriptions.ERROR_405,
     },
 )
 @decorators.validate_if_study_is_not_locked("study_uid")

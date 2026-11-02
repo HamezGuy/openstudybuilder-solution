@@ -19,8 +19,8 @@ from clinical_mdr_api.models.integrations.mapping_context import (
     MappingContextCandidateGroup,
     MappingContextV2Response,
 )
-from clinical_mdr_api.services.integrations import candidate_set as candidate_set_module
 from clinical_mdr_api.services.integrations import (
+    candidate_set as candidate_set_module,
     study_metadata_mapping as metadata_module,
 )
 from clinical_mdr_api.services.integrations.candidate_set import (
@@ -41,11 +41,7 @@ from clinical_mdr_api.tests.unit.services.test_osb_candidate_request_projection 
 )
 from clinical_mdr_api.tests.unit.services.test_study_metadata_mapping import (
     COUNT,
-)
-from clinical_mdr_api.tests.unit.services.test_study_metadata_mapping import (
     NativePort as MetadataPort,
-)
-from clinical_mdr_api.tests.unit.services.test_study_metadata_mapping import (
     intent as metadata_intent,
 )
 

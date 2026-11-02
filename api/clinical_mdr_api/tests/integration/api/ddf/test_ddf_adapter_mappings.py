@@ -2,26 +2,26 @@
 Tests for DDF adapter mappings
 """
 
-# pylint: disable=unused-argument
-# pylint: disable=redefined-outer-name
-# pylint: disable=too-many-arguments
-
-# pytest fixture functions have other fixture functions as arguments,
-# which pylint interprets as unused arguments
+from types import SimpleNamespace
 
 import pytest
 from starlette.testclient import TestClient
 from usdm_model import StudyArm, StudyElement, StudyEpoch
 
 from clinical_mdr_api.main import app
+from clinical_mdr_api.models.concepts.concept import SimpleNumericValueWithUnit
 from clinical_mdr_api.models.study_selections.study import (
     RegistryIdentifiersJsonModel,
     StudyIdentificationMetadataJsonModel,
     StudyMetadataJsonModel,
     StudyPatchRequestJsonModel,
 )
+from clinical_mdr_api.models.study_selections.study_selection import (
+    StudyCompoundDosing,
+)
 from clinical_mdr_api.services.ddf.usdm_mapper import USDMMapper
 from clinical_mdr_api.services.ddf.usdm_mapping_context import (
+    MappingContext,
     USDMMappingAuthorityRequired,
 )
 from clinical_mdr_api.services.studies.study import StudyService
@@ -166,3 +166,105 @@ def test_study_identifier(ddf_mapper, tst_study):
     )
     assert ddf_study_identifiers is not None
     assert ddf_organizations is not None
+
+
+def test_administration_label_preserves_free_text_dose_value_and_frequency():
+    """Free-text dosing must survive export instead of being silently dropped.
+
+    Upstream 2.11 test, on the fork mapper: the dosings are read through the
+    compound dosing reader of the selected study version and matched to their
+    compound selection. It needs no database.
+    """
+    compound = SimpleNamespace(
+        study_compound_uid="StudyCompound_FreeText",
+        order=1,
+        compound=SimpleNamespace(name="Compound_FreeText"),
+        compound_alias=None,
+        medicinal_product=None,
+        type_of_treatment=None,
+    )
+    dosing = SimpleNamespace(
+        study_compound_dosing_uid="Dosing_FreeText",
+        order=1,
+        study_compound=compound,
+        study_element=SimpleNamespace(element_uid="StudyElement_FreeText"),
+        dose_value=None,
+        free_text_dose_value="5 mL",
+        dose_frequency=None,
+        free_text_dose_frequency="Every other Tuesday",
+    )
+
+    def empty(*_args, **_kwargs):
+        return []
+
+    mapper = USDMMapper(
+        get_osb_study_design_cells=empty,
+        get_osb_study_arms=empty,
+        get_osb_study_epochs=empty,
+        get_osb_study_elements=empty,
+        get_osb_study_endpoints=empty,
+        get_osb_study_visits=empty,
+        get_osb_study_activities=empty,
+        get_osb_activity_schedules=empty,
+        get_osb_study_compounds=lambda *_args, **_kwargs: [compound],
+        get_osb_study_compound_dosings=lambda *_args, **_kwargs: [dosing],
+    )
+    # OSB states no administration duration; the preview leaves it missing.
+    mapper._context = MappingContext(allow_incomplete=True)
+    study = SimpleNamespace(
+        uid="Study_FreeText",
+        current_metadata=SimpleNamespace(study_intervention=None),
+    )
+    mapper._load_study_intervention_selections(study.uid)
+
+    interventions = mapper._get_study_interventions(study)
+    admins = interventions[0].administrations
+
+    assert len(admins) == 1
+    assert admins[0].label == "5 mL Every other Tuesday"
+    assert admins[0].dose is None
+    assert admins[0].frequency is None
+
+
+def test_administration_label_reuses_the_dosing_rendered_labels():
+    """The label states the dose as the dosing's own 2.11 labels state it.
+
+    StudyCompoundDosing.derive_dose_labels is the one rendering of a dosing as
+    text; it drops the trailing ".0" of an integral dose. The Administration
+    label reuses it, so the definition document and the retained native dosing
+    record agree. Only a reader without those labels is rendered by the mapper.
+    """
+
+    def empty(*_args, **_kwargs):
+        return []
+
+    mapper = USDMMapper(
+        get_osb_study_design_cells=empty,
+        get_osb_study_arms=empty,
+        get_osb_study_epochs=empty,
+        get_osb_study_elements=empty,
+        get_osb_study_endpoints=empty,
+        get_osb_study_visits=empty,
+        get_osb_study_activities=empty,
+        get_osb_activity_schedules=empty,
+    )
+    dosing = StudyCompoundDosing.model_construct(
+        dose_value=SimpleNumericValueWithUnit(
+            uid="NumericValueWithUnit_5mg",
+            value=5.0,
+            unit_definition_uid="UnitDefinition_mg",
+            unit_label="mg",
+        ),
+        free_text_dose_value=None,
+        dose_frequency=None,
+        free_text_dose_frequency="Every other Tuesday",
+    ).derive_dose_labels()
+
+    assert dosing.dose_value_label == "5 mg"
+    assert mapper._dosing_label(dosing, None) == "5 mg Every other Tuesday"
+
+    reader_without_labels = SimpleNamespace(
+        dose_value=SimpleNamespace(value=5.5, unit_label="mg"),
+        dose_frequency=SimpleNamespace(term_uid="CTTerm_QD", term_name="Once daily"),
+    )
+    assert mapper._dosing_label(reader_without_labels, None) == "5.5 mg Once daily"

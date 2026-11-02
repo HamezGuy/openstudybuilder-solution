@@ -75,7 +75,14 @@ def _definition_identity(unit: UnitDefinitionAR) -> dict[str, Any]:
             "authorUsername": metadata.author_username,
             "changeDescription": metadata.change_description,
             "library": asdict(unit.library),
-            "definition": asdict(unit.concept_vo),
+            # OpenStudyBuilder 2.11 dropped si_unit and legacy_code from the value.
+            # Migration 024 had already removed both properties, so 2.10 hashed
+            # them as null; keep doing so, or every recorded valueHash would change.
+            "definition": {
+                "si_unit": None,
+                "legacy_code": None,
+                **asdict(unit.concept_vo),
+            },
         },
         exclude_none=False,
     )
@@ -227,8 +234,13 @@ def resolve_study_metadata_unit(
             return native_units, total
 
         try:
+            # The native writer also checks the unit against the Study Time
+            # subset; give it the same single subset read the reader uses.
             persisted = create_duration_object_from_api_input(
-                amount, source.uid, lambda uid: source if uid == source.uid else None
+                amount,
+                source.uid,
+                lambda uid: source if uid == source.uid else None,
+                read_units,
             )
             if persisted is None:
                 raise TypeError("the native writer produced no duration")
@@ -250,6 +262,7 @@ def resolve_study_metadata_unit(
                 amount,
                 canonical.uid,
                 lambda uid: canonical if uid == canonical.uid else None,
+                read_units,
             )
             if canonical_persisted is None:
                 raise TypeError("the native writer produced no duration")

@@ -13,11 +13,7 @@ from referencing import Registry, Resource
 
 from clinical_mdr_api.generated.platform_contracts.hash_signing_v1 import (
     canonical_json,
-)
-from clinical_mdr_api.generated.platform_contracts.hash_signing_v1 import (
     canonical_json_hash_ref as hash_ref,
-)
-from clinical_mdr_api.generated.platform_contracts.hash_signing_v1 import (
     descriptor_hash,
 )
 from clinical_mdr_api.tests.unit.services.test_candidate_set_v1 import _fixture

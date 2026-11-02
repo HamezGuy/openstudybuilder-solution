@@ -21,17 +21,11 @@ from clinical_mdr_api.services.integrations.candidate_set import (
 from clinical_mdr_api.tests.unit.services.test_candidate_set_v1 import (
     STUDY_ID,
     TENANT_ID,
-)
-from clinical_mdr_api.tests.unit.services.test_candidate_set_v1 import (
     _fixture as candidate_fixture,
-)
-from clinical_mdr_api.tests.unit.services.test_candidate_set_v1 import (
     _refresh,
 )
 from clinical_mdr_api.tests.unit.services.test_native_capture_mapping import (
     NativePort,
-)
-from clinical_mdr_api.tests.unit.services.test_native_capture_mapping import (
     fixture as capture_fixture,
 )
 

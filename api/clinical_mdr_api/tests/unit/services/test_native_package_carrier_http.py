@@ -18,9 +18,11 @@ from clinical_mdr_api.generated.platform_contracts.hash_signing_v1 import (
 from clinical_mdr_api.generated.platform_contracts.platform_command_v1 import (
     command_intent,
 )
-from clinical_mdr_api.routers.integrations import native_identity
-from clinical_mdr_api.routers.integrations import native_item_observation as bounded
-from clinical_mdr_api.routers.integrations import native_package_carrier as route
+from clinical_mdr_api.routers.integrations import (
+    native_identity,
+    native_item_observation as bounded,
+    native_package_carrier as route,
+)
 from clinical_mdr_api.tests.unit.services import signed_command_test_fixtures
 from clinical_mdr_api.tests.unit.services.test_atomic_signed_command import (
     NativeMemoryStore,

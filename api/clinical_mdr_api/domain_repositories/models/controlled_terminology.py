@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import ClassVar
 
 from neomodel import One, RelationshipFrom, RelationshipTo, ZeroOrMore, ZeroOrOne
 
@@ -95,7 +96,7 @@ class CTCodelistAttributesRoot(ControlledTerminologyVersionRoot):
 
 
 class CTCodelistNameValue(ControlledTerminology):
-    __optional_labels__ = ["TemplateParameter"]
+    __optional_labels__: ClassVar[list[str]] = ["TemplateParameter"]
     name = StringProperty()
     is_ordinal = BooleanProperty(default=False)
     codelist_type = StringProperty(default=DEFAULT_CODELIST_TYPE)  # type: ignore[call-arg]
@@ -149,7 +150,7 @@ class CTTermAttributesRoot(ControlledTerminologyVersionRoot):
 
 
 class CTTermNameValue(ControlledTerminology):
-    __optional_labels__ = ["TemplateParameterTermValue"]
+    __optional_labels__: ClassVar[list[str]] = ["TemplateParameterTermValue"]
     name = StringProperty()
     name_sentence_case = StringProperty()
 
@@ -162,6 +163,7 @@ class CTTermNameValue(ControlledTerminology):
     )  # Derived enumeration (based on library and semantic data type)
     cardinality = StringProperty()  # One | Many
     notes = StringProperty()
+    short_code = StringProperty()
 
     # Which MetaStudyField this TS parameter corresponds to
     related_study_field_selection = RelationshipTo(
@@ -194,7 +196,7 @@ class CTTermNameValue(ControlledTerminology):
 
 
 class CTTermNameRoot(ControlledTerminologyVersionRoot):
-    __optional_labels__ = ["TemplateParameterTermRoot"]
+    __optional_labels__: ClassVar[list[str]] = ["TemplateParameterTermRoot"]
     has_version = RelationshipTo(
         CTTermNameValue, "HAS_VERSION", model=VersionRelationship
     )
@@ -207,7 +209,6 @@ class CTTermNameRoot(ControlledTerminologyVersionRoot):
     has_root = RelationshipFrom("CTTermRoot", "HAS_NAME_ROOT", model=ClinicalMdrRel)
 
 
-# pylint: disable=abstract-method
 class CodelistTermRelationship(ClinicalMdrRel):
     """
     A `CodelistTermRelationship` represents a relationship between a `CTCodelistRoot` and a `CTCodelistTerm` node.

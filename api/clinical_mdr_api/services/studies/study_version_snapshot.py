@@ -6,10 +6,12 @@ from datetime import date, datetime, time
 from typing import Any
 from urllib.parse import quote
 
-from neo4j.time import Date as Neo4jDate
-from neo4j.time import DateTime as Neo4jDateTime
-from neo4j.time import Duration as Neo4jDuration
-from neo4j.time import Time as Neo4jTime
+from neo4j.time import (
+    Date as Neo4jDate,
+    DateTime as Neo4jDateTime,
+    Duration as Neo4jDuration,
+    Time as Neo4jTime,
+)
 from neomodel import db
 
 from clinical_mdr_api.domain_repositories.models.study import StudyValue

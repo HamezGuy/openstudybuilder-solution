@@ -32,7 +32,6 @@ def unit(uid, name, *, status=LibraryItemStatus.FINAL, version=1, **changes):
         convertible_unit=True,
         display_unit=True,
         master_unit=False,
-        si_unit=False,
         us_conventional_unit=False,
         use_complex_unit_conversion=False,
         ct_units=[],
@@ -41,7 +40,6 @@ def unit(uid, name, *, status=LibraryItemStatus.FINAL, version=1, **changes):
         ucum_name="a",
         unit_dimension_uid="Dimension_Time",
         unit_dimension_name="Time",
-        legacy_code=None,
         use_molecular_weight=False,
         conversion_factor_to_master=31557600.0,
         order=None,
@@ -160,6 +158,22 @@ def test_actual_native_roundtrip_uses_proven_canonical_unit(
         },
         strict=True,
     )
+
+
+def test_definition_hash_keeps_the_2_10_null_unit_fields(monkeypatch):
+    hashed = []
+    real = binding.canonical_json_hash_ref
+
+    def capture(value, **kwargs):
+        hashed.append(value)
+        return real(value, **kwargs)
+
+    monkeypatch.setattr(binding, "canonical_json_hash_ref", capture)
+    binding._definition_identity(unit("Unit_Year", "year"))
+    definition = hashed[-1]["definition"]
+    # 2.11 removed both fields; 2.10 hashed them as null after migration 024.
+    assert definition["si_unit"] is None
+    assert definition["legacy_code"] is None
 
 
 def test_native_readback_is_grammatical_even_when_plural_is_first(repository):

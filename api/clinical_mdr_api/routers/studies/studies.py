@@ -154,7 +154,6 @@ Allowed parameters include : filter on fields, sort by field name with sort dire
         ],
     }
 )
-# pylint: disable=unused-argument
 def get_all(
     request: Request,  # request is actually required by the allow_exports decorator
     include_sections: Annotated[
@@ -308,7 +307,6 @@ def get_all(
         ],
     }
 )
-# pylint: disable=unused-argument
 def get_studies_list(
     request: Request,  # request is actually required by the allow_exports decorator
     minimal_response: Annotated[
@@ -509,7 +507,6 @@ Allowed parameters include : filter on fields, sort by field name with sort dire
         ],
     }
 )
-# pylint: disable=unused-argument
 def get_study_structure_overview(
     request: Request,  # request is actually required by the allow_exports decorator
     sort_by: Annotated[Json, _generic_descriptions.SORT_BY_QUERY] = None,
@@ -1354,9 +1351,8 @@ def clone_study_async(
     background_tasks: BackgroundTasks,
 ) -> JobResponse:
     _refuse_study_copy_in_delegated_mode()
-    # pylint: disable=unexpected-keyword-arg
     # `background_tasks` is consumed by the @background_job decorator on the
-    # service method; pylint can't see through functools.wraps.
+    # service method
     #
     # Building a human-readable job name up front requires knowing the source
     # study's id/acronym. Look it up here so a bad `study_uid` fails fast with

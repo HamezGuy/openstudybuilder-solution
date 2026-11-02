@@ -966,11 +966,10 @@ def units_plan(payload):
                 or "identity" in group
             ):
                 raise ValueError("OSB_UNIT_UNRESOLVED_ALIAS_FORBIDDEN")
-        else:
-            if "catalogueTerm" in group:
-                term = group["catalogueTerm"]
-                if not isinstance(term, str) or not term.strip():
-                    raise ValueError("OSB_UNIT_CATALOGUE_TERM_INVALID")
+        elif "catalogueTerm" in group:
+            term = group["catalogueTerm"]
+            if not isinstance(term, str) or not term.strip():
+                raise ValueError("OSB_UNIT_CATALOGUE_TERM_INVALID")
         keys.add(key)
         covered.update(spellings)
         plans.append(

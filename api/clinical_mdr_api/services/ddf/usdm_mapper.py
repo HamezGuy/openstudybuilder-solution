@@ -7,45 +7,48 @@ or EDC carrier.
 
 import inspect
 import re
-from datetime import date, datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, date, datetime
 from itertools import chain
-from typing import Any, Callable
+from typing import Any, ClassVar
 
 from neomodel import db
 from usdm_info import __model_version__ as usdm_package_version
-from usdm_model import Activity as USDMActivity
-from usdm_model import Administration as USDMAdministration
-from usdm_model import AliasCode as USDMAliasCode
-from usdm_model import Code as USDMCode
-from usdm_model import Duration as USDMDuration
-from usdm_model import EligibilityCriterion as USDMEligibilityCriterion
-from usdm_model import EligibilityCriterionItem as USDMEligibilityCriterionItem
-from usdm_model import Encounter as USDMEncounter
-from usdm_model import Endpoint as USDMEndpoint
-from usdm_model import Indication as USDMIndication
-from usdm_model import InterventionalStudyDesign as USDMStudyDesign
-from usdm_model import Objective as USDMObjective
-from usdm_model import ObservationalStudyDesign as USDMObservationalStudyDesign
-from usdm_model import Organization as USDMOrganization
-from usdm_model import Quantity as USDMQuantity
-from usdm_model import Range as USDMRange
-from usdm_model import Study as USDMStudy
 from usdm_model import (
+    Activity as USDMActivity,
+    Administration as USDMAdministration,
+    AliasCode as USDMAliasCode,
+    Code as USDMCode,
+    Duration as USDMDuration,
+    EligibilityCriterion as USDMEligibilityCriterion,
+    EligibilityCriterionItem as USDMEligibilityCriterionItem,
+    Encounter as USDMEncounter,
+    Endpoint as USDMEndpoint,
+    Indication as USDMIndication,
+    InterventionalStudyDesign as USDMStudyDesign,
+    Objective as USDMObjective,
+    ObservationalStudyDesign as USDMObservationalStudyDesign,
+    Organization as USDMOrganization,
+    Quantity as USDMQuantity,
+    Range as USDMRange,
+    Study as USDMStudy,
     StudyArm,
+    StudyDefinitionDocument as USDMStudyDefinitionDocument,
+    StudyDesignPopulation as USDMStudyDesignPopulation,
+    StudyElement as USDMStudyElement,
+    StudyEpoch as USDMStudyEpoch,
+    StudyIdentifier as USDMStudyIdentifier,
+    StudyIntervention as USDMStudyIntervention,
+    StudyTitle as USDMStudyTitle,
+    StudyVersion as USDMStudyVersion,
+    TransitionRule as USDMTransitionRule,
 )
-from usdm_model import StudyDefinitionDocument as USDMStudyDefinitionDocument
-from usdm_model import StudyDesignPopulation as USDMStudyDesignPopulation
-from usdm_model import StudyElement as USDMStudyElement
-from usdm_model import StudyEpoch as USDMStudyEpoch
-from usdm_model import StudyIdentifier as USDMStudyIdentifier
-from usdm_model import StudyIntervention as USDMStudyIntervention
-from usdm_model import StudyTitle as USDMStudyTitle
-from usdm_model import StudyVersion as USDMStudyVersion
-from usdm_model import TransitionRule as USDMTransitionRule
-from usdm_model.extension import BaseAliasCode as USDMExtensionAliasCode
-from usdm_model.extension import BaseCode as USDMExtensionCode
-from usdm_model.extension import BaseQuantity as USDMExtensionQuantity
-from usdm_model.extension import ExtensionAttribute as USDMExtensionAttribute
+from usdm_model.extension import (
+    BaseAliasCode as USDMExtensionAliasCode,
+    BaseCode as USDMExtensionCode,
+    BaseQuantity as USDMExtensionQuantity,
+    ExtensionAttribute as USDMExtensionAttribute,
+)
 
 from clinical_mdr_api.domain_repositories.study_selections.study_arm_origin_repository import (
     StudyArmOriginRepository,
@@ -110,6 +113,17 @@ def extract_c_code_from_simple_term(term_uid: str | None) -> str | None:
         return None
     match = re.search(r"(^C\d+)_?", term_uid)
     return match.group(1) if match else None
+
+
+def _as_label_fragment(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    term_name = getattr(value, "term_name", None)
+    if isinstance(term_name, str):
+        return term_name.strip()
+    return str(value).strip()
 
 
 def _stable_selection_order(items: list[Any], uid_attribute: str) -> list[Any]:
@@ -301,11 +315,15 @@ class USDMMapper:
         result = callback(*args, **kwargs)
         if self._mapping_active:
             self._call_cache[cache_key] = result
-            for kind, (reader, identity) in self._source_readers.items():
+            for reader_kind, (reader, identity) in self._source_readers.items():
                 if callback is not reader:
                     continue
-                if kind == "studyActivitySchedule" and kwargs.get("operational"):
-                    kind = "studyOperationalActivitySchedule"
+                kind = (
+                    "studyOperationalActivitySchedule"
+                    if reader_kind == "studyActivitySchedule"
+                    and kwargs.get("operational")
+                    else reader_kind
+                )
                 records = [native_json(row) for row in _items(result)]
                 if kind == "studyArmLifecycleEvent":
                     records.sort(
@@ -334,8 +352,7 @@ class USDMMapper:
                     # The sort runs here, inside the iteration that binds identity.
                     records.sort(
                         key=lambda record: (
-                            record.get(identity)  # pylint: disable=cell-var-from-loop
-                            or "",
+                            record.get(identity) or "",
                             record.get("study_activity_instance_uid") or "",
                         )
                     )
@@ -601,7 +618,7 @@ class USDMMapper:
             59,
             59,
             999999,
-            tzinfo=timezone.utc,
+            tzinfo=UTC,
         )
 
     def _load_selected_ct_packages(self, study_uid: str) -> None:
@@ -1917,10 +1934,11 @@ class USDMMapper:
         """Project native OSB compound dosing without inventing missing semantics.
 
         OSB stores a compound/element/dose relationship and, since
-        OpenStudyBuilder 2.10, the frequency of each dosing. It does not
-        currently store a normalized route or an administration duration. Those
-        fields remain absent (and the existing governed extensions remain
-        intact) rather than being guessed.
+        OpenStudyBuilder 2.10, the frequency of each dosing; since 2.11 the dose
+        value and frequency may be study-level free text, which the label
+        carries. It does not currently store a normalized route or an
+        administration duration. Those fields remain absent (and the existing
+        governed extensions remain intact) rather than being guessed.
         """
         selection_uid = str(getattr(selection, "study_compound_uid", None) or "")
         administrations = []
@@ -1974,6 +1992,7 @@ class USDMMapper:
                 USDMAdministration(
                     id=self._id_manager.get_id(USDMAdministration.__name__, dosing_uid),
                     name=f"{self._study_compound_name(selection)} administration",
+                    label=self._dosing_label(dosing, selection),
                     description=f"Native OSB compound dosing for {element_name}.",
                     duration=duration,
                     dose=self._native_dose_quantity(
@@ -1988,13 +2007,58 @@ class USDMMapper:
             )
         return administrations
 
+    @staticmethod
+    def _dosing_frequency_term(dosing: Any, selection: Any) -> Any:
+        """The dosing's frequency term; a pre-2.10 reading carries it on the compound."""
+        return getattr(dosing, "dose_frequency", None) or getattr(
+            selection, "dose_frequency", None
+        )
+
+    def _dosing_label(self, dosing: Any, selection: Any) -> str | None:
+        """Render the dosing as text so that free-text dosing survives export.
+
+        Since OpenStudyBuilder 2.11 a dosing may state its dose value and its
+        frequency as study-level free text instead of a library value or term.
+        The Administration label is the only USDM field that carries non-code
+        text. The coded dose and frequency remain the structured form and are
+        never derived from this label.
+
+        A 2.11 dosing already carries the rendered text in ``dose_value_label``
+        and ``dose_frequency_label`` (``StudyCompoundDosing.derive_dose_labels``),
+        and the label reuses it, so that the definition document and the
+        retained native dosing record state the dose the same way. Only a reader
+        without those fields, such as a pre-2.11 record, is rendered here: a
+        library value or term from its native value and free text as stated.
+        """
+        dose_text = _as_label_fragment(getattr(dosing, "dose_value_label", None))
+        if not dose_text:
+            dose_value = getattr(dosing, "dose_value", None)
+            magnitude = getattr(dose_value, "value", None)
+            if dose_value is not None and magnitude is not None:
+                unit_label = getattr(dose_value, "unit_label", None) or ""
+                dose_text = _as_label_fragment(f"{magnitude} {unit_label}")
+            else:
+                dose_text = _as_label_fragment(
+                    getattr(dosing, "free_text_dose_value", None)
+                )
+        frequency_text = _as_label_fragment(
+            getattr(dosing, "dose_frequency_label", None)
+        )
+        if not frequency_text:
+            term = self._dosing_frequency_term(dosing, selection)
+            if term is not None:
+                frequency_text = _as_label_fragment(getattr(term, "term_name", None))
+            else:
+                frequency_text = _as_label_fragment(
+                    getattr(dosing, "free_text_dose_frequency", None)
+                )
+        return " ".join(part for part in (dose_text, frequency_text) if part) or None
+
     def _dosing_frequency(
         self, dosing: Any, selection: Any, dosing_uid: str
     ) -> USDMAliasCode | None:
-        """The dosing's frequency term; a pre-2.10 reading carries it on the compound."""
-        term = getattr(dosing, "dose_frequency", None) or getattr(
-            selection, "dose_frequency", None
-        )
+        """The dosing's coded frequency, when the selected CT package resolves it."""
+        term = self._dosing_frequency_term(dosing, selection)
         code = (
             self.get_ct_package_term_as_usdm_code(getattr(term, "term_uid", None))
             if term is not None
@@ -2531,7 +2595,9 @@ class USDMMapper:
             for term in (getattr(population, "therapeutic_area_codes", None) or [])
         ]
 
-    REGISTRY_ORGANIZATIONS: dict[str, tuple[str, str | None, str, str, str]] = {
+    REGISTRY_ORGANIZATIONS: ClassVar[
+        dict[str, tuple[str, str | None, str, str, str]]
+    ] = {
         "ct_gov_id": (
             "CT-GOV",
             "CTTerm_000212",

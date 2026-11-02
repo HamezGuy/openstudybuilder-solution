@@ -9,7 +9,7 @@ FROM $PYTHON_IMAGE AS common-stage
 RUN apt-get update \
     && apt-get -y upgrade \
     && apt-get -y install curl git libpango-1.0-0 libpangoft2-1.0-0 libffi-dev zlib1g-dev libxml2-dev libxslt-dev build-essential \
-    && pip install --upgrade pip pipenv wheel \
+    && pip install --upgrade pip uv wheel \
     && apt-get clean && rm -rf /var/lib/apt/lists && rm -rf ~/.cache
 
 # Define a non-root user ID and name
@@ -19,11 +19,17 @@ ENV USER=$USER
 # Create the non-root user with the specified UID and home directory
 RUN useradd --home-dir /home/"$USER" --user-group --create-home --uid "$UID" "$USER"
 
+USER $USER
+
 # Set the working directory to /app for the project files
 WORKDIR /app
 
-# Copy all files from the build context (current directory) into the container's /app directory
-COPY ./ ./
+# Copy all files from the build context (current directory) into the container's /app directory,
+# owned by the non-root user: uv creates its virtualenv at ./.venv (inside /app), unlike Pipenv
+# which stored venvs outside the project directory, so /app must be writable by $USER.
+# COPY ignores USER (files would be root-owned), hence --chown: the prod stage
+# removes the test directories and byte-compiles in place as $USER.
+COPY --chown=$USER:$USER ./ ./
 
 # Begin the production stage
 FROM common-stage AS prod-stage
@@ -33,17 +39,23 @@ RUN echo "Compile prod-stage" 1>&2 \
     && rm -r clinical_mdr_api/tests consumer_api/tests \
     && python -m compileall -f -j 0 .
 
-USER $USER
-# Install only production dependencies with Pipenv
+# AccuraTrial fork: keep the prod image runtime-only. `uv run` syncs the dev
+# group into .venv by default, so any `uv run` in this container (for example
+# an operator's `docker exec ... uv run ...`) would otherwise download and
+# install it, and fail on a host without PyPI egress. Same as
+# import_sponsor_data/Dockerfile.
+ENV UV_NO_DEV=1
+
+# Install only production dependencies with uv
 RUN echo "Building prod-stage" 1>&2 \
-    && pipenv sync \
+    && uv sync --locked --no-dev \
     && rm -rf ~/.cache
 
 # Begin the development stage
 FROM common-stage AS dev-stage
 USER $USER
-# Install all dependencies with Pipenv
-RUN echo "Building dev-stage" 1>&2 && pipenv sync --dev && rm -rf ~/.cache
+# Install all dependencies with uv
+RUN echo "Building dev-stage" 1>&2 && uv sync --locked --group dev && rm -rf ~/.cache
 
 # Select either the production or development stage to build the final image based on TARGET
 FROM ${TARGET}-stage AS final-stage
@@ -72,4 +84,14 @@ HEALTHCHECK --start-period=90s --timeout=10s --interval=15s --retries=4 CMD \
     "http://localhost:$UVICORN_PORT/$HEALTHCHECK_PATH" > /dev/null || exit 1
 
 # Run the application using Uvicorn
-CMD ["pipenv", "run", "uvicorn"]
+# AccuraTrial fork: run the virtualenv's python directly instead of upstream's
+# `uv run uvicorn`. uv does not exec, so PID 1 would be uv with python as its
+# child. Command Center's release leg and host preflight read PID 1's argv[0]
+# (osbInterpreter in CommandCenter scripts/operations/osb-delegated-capabilities.mjs)
+# and refuse unless it is a .../bin/python, as it was under `pipenv run uvicorn`,
+# which exec'd the virtualenv python. Running the venv directly also means the
+# container never syncs dependencies at start, in either target, and uvicorn
+# handles SIGTERM itself as PID 1. uvicorn still reads UVICORN_APP and the other
+# UVICORN_* variables above. PATH puts the venv first for `docker exec` sessions.
+ENV PATH="/app/.venv/bin:$PATH"
+CMD ["/app/.venv/bin/python", "-m", "uvicorn"]

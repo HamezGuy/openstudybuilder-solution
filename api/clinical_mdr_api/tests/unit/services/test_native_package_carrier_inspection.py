@@ -14,8 +14,6 @@ import pytest
 
 from clinical_mdr_api.tests.unit.services.test_native_package_artifact_custody import (
     OTHER,
-)
-from clinical_mdr_api.tests.unit.services.test_native_package_artifact_custody import (
     custody as network_custody,
 )
 from clinical_mdr_api.tests.unit.services.test_native_package_carrier_state import (

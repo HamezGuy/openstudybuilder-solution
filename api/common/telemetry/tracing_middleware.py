@@ -1,6 +1,6 @@
 import logging
+from collections.abc import Iterable
 from fnmatch import fnmatch
-from typing import Iterable
 
 from opencensus.log import get_log_attrs
 from opencensus.trace import Span, execution_context

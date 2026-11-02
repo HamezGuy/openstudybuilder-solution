@@ -537,7 +537,6 @@ def native_study_graph():
                 convertible_unit=False,
                 display_unit=True,
                 master_unit=False,
-                si_unit=False,
                 us_conventional_unit=False,
                 use_complex_unit_conversion=False,
                 ct_units=[],

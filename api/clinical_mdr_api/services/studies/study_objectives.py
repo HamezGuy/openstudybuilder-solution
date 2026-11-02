@@ -35,7 +35,6 @@ def authored_scope_text(selection) -> str | None:
     )
 
 
-# pylint: disable=no-member
 STYLES = {
     "table": ("SB Table Condensed", WD_STYLE_TYPE.TABLE),
     "header1": ("Table Header lvl1", WD_STYLE_TYPE.PARAGRAPH),

@@ -12,7 +12,7 @@
     "apiArchiveByteSize",
     "files",
     "filesSha256",
-    "pipfileLockSha256",
+    "uvLockSha256",
     "runtimeImageDigest",
     "runtimeFiles",
     "inventoryKernel",
@@ -20,7 +20,7 @@
   ],
   "properties": {
     "contractVersion": {
-      "const": "OsbMapperObservationRuntimeV1@1.0.0"
+      "const": "OsbMapperObservationRuntimeV1@2.0.0"
     },
     "sourceCommit": {
       "type": "string",
@@ -51,7 +51,7 @@
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
     },
-    "pipfileLockSha256": {
+    "uvLockSha256": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
     },
@@ -213,5 +213,5 @@
       }
     }
   },
-  "$comment": "All paths are relative to their independently qualified immutable root. Arrays are complete and sorted by UTF-16 code units, with no duplicate/case-fold aliases or links. filesSha256 is SHA256 of platform canonical_json(File[]) UTF-8, not a Git tree hash. API archive regular members exactly equal files. Python root includes interpreter, standard library and installed packages; Node root includes interpreter, installed kernel and all dependencies. Manifest hash uses canonical-json/1.0, application/json, schemaVersion OsbMapperObservationRuntimeV1@1.0.0, no excludes. Image identity, mounted root completeness and process identity require an independent deployment binding; schema-valid producer metadata provides no qualification. No execution family is qualified."
+  "$comment": "All paths are relative to their independently qualified immutable root. Arrays are complete and sorted by UTF-16 code units, with no duplicate/case-fold aliases or links. filesSha256 is SHA256 of platform canonical_json(File[]) UTF-8, not a Git tree hash. API archive regular members exactly equal files. Python root includes interpreter, standard library and installed packages; Node root includes interpreter, installed kernel and all dependencies. Manifest hash uses canonical-json/1.0, application/json, schemaVersion OsbMapperObservationRuntimeV1@2.0.0, no excludes. Image identity, mounted root completeness and process identity require an independent deployment binding; schema-valid producer metadata provides no qualification. No execution family is qualified."
 }

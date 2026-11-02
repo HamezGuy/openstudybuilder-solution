@@ -22,8 +22,6 @@ from clinical_mdr_api.models.integrations.proposal_review import (
 )
 from clinical_mdr_api.services.integrations.canonical_json import (
     canonical_hash as _canonical_hash,
-)
-from clinical_mdr_api.services.integrations.canonical_json import (
     canonical_json as _canonical_json,
 )
 from clinical_mdr_api.services.integrations.proposal_target_capabilities import (

@@ -19,8 +19,6 @@ import pytest
 from clinical_mdr_api.tests.unit.services import test_native_package_v2 as legacy
 from clinical_mdr_api.tests.unit.services.test_native_package_artifact_custody import (
     RetainedArtifacts,
-)
-from clinical_mdr_api.tests.unit.services.test_native_package_artifact_custody import (
     custody as network_custody,
 )
 from clinical_mdr_api.tests.unit.services.test_native_package_carrier_inspection import (

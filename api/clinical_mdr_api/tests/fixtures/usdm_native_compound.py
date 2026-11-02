@@ -266,14 +266,12 @@ class NativeCompoundSource:
         unit_properties = {
             "name": "mg",
             "definition": "Explicit synthetic milligram unit",
-            "si_unit": False,
             "display_unit": True,
             "master_unit": False,
             "convertible_unit": False,
             "us_conventional_unit": False,
             "use_complex_unit_conversion": False,
             "use_molecular_weight": False,
-            "legacy_code": None,
             "conversion_factor_to_master": None,
             "order": 0,
             "comment": "",
@@ -327,6 +325,8 @@ class NativeCompoundSource:
                 "reference": None,
                 "cardinality": None,
                 "notes": None,
+                # OpenStudyBuilder 2.11 term short code (absent here).
+                "short_code": None,
             },
             later_properties={"name": "UNSELECTED domain"},
         )
@@ -592,5 +592,8 @@ class NativeCompoundSource:
                 1,
                 self.as_of,
                 study_value_version=self.version,
+                # No dose collection instance is selected; an explicit empty
+                # index keeps the 2.11 per-study instance query offline.
+                study_activity_instances_by_uid={},
             )
         return compounds, [dosing]

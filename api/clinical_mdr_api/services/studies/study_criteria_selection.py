@@ -1,6 +1,6 @@
 from dataclasses import replace
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, ClassVar
 
 from neomodel import db
 
@@ -54,7 +54,7 @@ from common.auth.user import user
 class StudyCriteriaSelectionService(StudySelectionMixin):
     _repos: MetaRepository
 
-    _vo_to_ar_filter_map = {
+    _vo_to_ar_filter_map: ClassVar[dict[str, str]] = {
         "order": "criteria_type_order",
         "start_date": "start_date",
         "author_id": "author_id",
@@ -1037,7 +1037,7 @@ class StudyCriteriaSelectionService(StudySelectionMixin):
                 current_vo,
                 scope=scope,
                 author_id=self.author,
-                start_date=datetime.now(timezone.utc),
+                start_date=datetime.now(UTC),
             )
             selection_aggregate.update_study_criteria_on_aggregated(
                 updated_study_criteria_selection=updated_selection,

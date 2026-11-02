@@ -37,7 +37,7 @@ from clinical_mdr_api.services.ddf.usdm_observation_census import (
     safe_json,
 )
 
-PROFILE = "OsbMapperObservationRuntimeV1@1.0.0"
+PROFILE = "OsbMapperObservationRuntimeV1@2.0.0"
 SCHEMA = (
     Path(__file__).resolve().parents[2]
     / "schemas/platform/osb-mapper-observation-runtime-v1.schema.json"
@@ -194,7 +194,7 @@ def verify_runtime_files(
     _verify_rows(paths.api_root, manifest["files"], manifest["filesSha256"])
     api_rows = {row["path"]: row for row in manifest["files"]}
     required = (
-        "Pipfile.lock",
+        "uv.lock",
         "clinical_mdr_api/services/ddf/usdm_mapper.py",
         "clinical_mdr_api/services/ddf/usdm_observation_runtime.py",
         "clinical_mdr_api/services/ddf/usdm_observation_census.py",
@@ -202,8 +202,8 @@ def verify_runtime_files(
     )
     if any(path not in api_rows for path in required):
         refuse("incomplete API runtime")
-    if api_rows["Pipfile.lock"]["sha256"] != manifest["pipfileLockSha256"]:
-        refuse("Pipfile.lock mismatch")
+    if api_rows["uv.lock"]["sha256"] != manifest["uvLockSha256"]:
+        refuse("uv.lock mismatch")
     archive_row = _file_row(paths.api_archive, "api.tar")
     if (archive_row["byteSize"], archive_row["sha256"]) != (
         manifest["apiArchiveByteSize"],
@@ -291,9 +291,7 @@ def build_runtime_manifest(
         "apiArchiveByteSize": api_archive["byteSize"],
         "files": rows,
         "filesSha256": file_manifest_sha256(rows),
-        "pipfileLockSha256": _file_row(paths.api_root / "Pipfile.lock", "Pipfile.lock")[
-            "sha256"
-        ],
+        "uvLockSha256": _file_row(paths.api_root / "uv.lock", "uv.lock")["sha256"],
         "runtimeImageDigest": runtime_image_digest,
         "runtimeFiles": runtimes,
         "inventoryKernel": kernel,

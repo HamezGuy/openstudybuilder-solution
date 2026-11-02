@@ -6,8 +6,7 @@ from datetime import date, timezone
 from pathlib import Path
 
 import pytest
-from neo4j.time import Date as Neo4jDate
-from neo4j.time import DateTime as Neo4jDateTime
+from neo4j.time import Date as Neo4jDate, DateTime as Neo4jDateTime
 
 from clinical_mdr_api.services.ddf.usdm_mapping_context import (
     MappingContext,

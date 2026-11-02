@@ -22,8 +22,7 @@ import pytest
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-from neomodel import config as neomodel_config
-from neomodel import db
+from neomodel import config as neomodel_config, db
 from opencensus.trace import execution_context
 from opencensus.trace.tracer import Tracer
 from starlette_context import request_cycle_context

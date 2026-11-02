@@ -82,7 +82,7 @@ def test_units_require_unique_final_native_identity_without_case_folding_or_crea
                 "uid": "heart",
                 "name": "beats/min",
                 "status": "Final",
-                "legacy_code": "bpm",
+                "ct_units": [{"term_name": "Beats per Minute", "submission_value": "bpm"}],
             },
             {"uid": "resp", "name": "breaths/min", "status": "Final"},
         ]

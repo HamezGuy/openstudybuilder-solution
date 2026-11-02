@@ -27,9 +27,9 @@ from clinical_mdr_api.generated.platform_contracts.platform_command_v1 import (
 )
 from clinical_mdr_api.services.integrations import (
     native_package_artifact_custody as custody,
+    native_package_carrier_v2 as service,
+    native_package_state_v2 as native,
 )
-from clinical_mdr_api.services.integrations import native_package_carrier_v2 as service
-from clinical_mdr_api.services.integrations import native_package_state_v2 as native
 from clinical_mdr_api.services.integrations.atomic_signed_command import (
     execute_osb_atomic_signed_command,
 )
@@ -44,8 +44,6 @@ from clinical_mdr_api.services.integrations.platform_command import (
 from clinical_mdr_api.tests.fixtures.null_adjudication_neo4j import verified_fixture
 from clinical_mdr_api.tests.unit.services import (
     signed_command_test_fixtures,
-)
-from clinical_mdr_api.tests.unit.services import (
     test_native_package_carrier_flow as pure,
 )
 

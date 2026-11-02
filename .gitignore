@@ -10,3 +10,11 @@
 *.log
 __pycache__/
 .pytest_cache/
+# uv project environments (api/.venv and the other Python components since 2.11)
+.venv/
+
+# Claude Code per-developer state. The shared skills, agents and rules under
+# .claude/ ARE tracked; only these machine-local bits are not.
+.claude/settings.local.json
+.claude/.cc-writes/
+**/.claude/.cc-writes/

@@ -1,16 +1,13 @@
 import datetime
 import json
 import re
+from collections.abc import Callable, Sequence
 from copy import copy, deepcopy
 from types import NoneType, UnionType
 from typing import (
     Annotated,
     Any,
-    Callable,
-    Generic,
     Self,
-    Sequence,
-    TypeVar,
     cast,
     get_args,
     get_origin,
@@ -18,8 +15,14 @@ from typing import (
 
 import nh3
 from annotated_types import MinLen
-from pydantic import BaseModel as PydanticBaseModel
-from pydantic import ConfigDict, Field, ValidationInfo, create_model, field_validator
+from pydantic import (
+    BaseModel as PydanticBaseModel,
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    create_model,
+    field_validator,
+)
 from pydantic.fields import FieldInfo, PydanticUndefined
 from starlette.responses import Response
 
@@ -60,6 +63,17 @@ EXCLUDE_PROPERTY_ATTRIBUTES_FROM_SCHEMA = {
 }
 
 
+def duration_unit_subsets() -> tuple[str, ...]:
+    """Unit subsets a stored duration is read back from, in search order.
+
+    Months and years can be valid native duration units while belonging to
+    Time Unit/Age Unit instead of the narrower visit-oriented Study Time set.
+    """
+    return tuple(
+        dict.fromkeys((settings.study_time_unit_subset, "Time Unit", "Age Unit"))
+    )
+
+
 def from_duration_object_to_value_and_unit(
     duration: str,
     find_all_study_time_units: Callable[..., tuple[list[UnitDefinitionAR], int]],
@@ -80,7 +94,7 @@ def from_duration_object_to_value_and_unit(
         "h": (("hour", "hours"),),
         "s": (("second", "seconds"),),
     }.get(duration_code, ())
-    subsets = dict.fromkeys((settings.study_time_unit_subset, "Time Unit", "Age Unit"))
+    subsets = duration_unit_subsets()
     for names in candidates:
         preferred = names[1] if duration_value > 1 else names[0]
         for subset in subsets:
@@ -175,12 +189,11 @@ class BaseModel(PydanticBaseModel):
                             setattr(obj, name, value)
                         else:
                             setattr(obj, name, [])
+                    elif any(value.dict().values()):
+                        setattr(obj, name, value)
+                    # if all values of nested model are None set the whole object to None
                     else:
-                        if any(value.dict().values()):
-                            setattr(obj, name, value)
-                        # if all values of nested model are None set the whole object to None
-                        else:
-                            setattr(obj, name, None)
+                        setattr(obj, name, None)
                 # Quick fix to provide default None value to fields that allow it
                 # Not the best place to do this...
                 elif field.default == PydanticUndefined and not hasattr(obj, name):
@@ -348,10 +361,7 @@ class EditInputModel(BaseModel):
     change_description: Annotated[str, Field(min_length=1)]
 
 
-T = TypeVar("T")
-
-
-class CustomPage(BaseModel, Generic[T]):
+class CustomPage[T](BaseModel):
     """
     A generic class used as a return type for paginated queries.
 
@@ -372,7 +382,7 @@ class CustomPage(BaseModel, Generic[T]):
         return cls(total=total, items=items, page=page, size=size)
 
 
-class GenericFilteringReturn(BaseModel, Generic[T]):
+class GenericFilteringReturn[T](BaseModel):
     """
     A generic class used as a return type for filtered queries.
 

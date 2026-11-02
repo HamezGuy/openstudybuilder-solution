@@ -23,8 +23,10 @@ from starlette.requests import Request
 from clinical_mdr_api import main
 from clinical_mdr_api.routers.studies import study_access, study_disease_milestones
 from clinical_mdr_api.routers.studies.study import router as study_router
-from clinical_mdr_api.services.studies import study as study_service
-from clinical_mdr_api.services.studies import study_visibility as vis
+from clinical_mdr_api.services.studies import (
+    study as study_service,
+    study_visibility as vis,
+)
 from common.auth import rbac
 from common.auth.dependencies import security
 from common.exception_handlers import register_exception_handlers

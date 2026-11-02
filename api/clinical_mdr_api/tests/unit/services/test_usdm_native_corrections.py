@@ -356,7 +356,12 @@ def test_actual_dosing_dto_conversion_preserves_selected_study_version():
         unit_definition_repository=SimpleNamespace(find_by_uid_2=forbidden),
     )
     result = service._transform_to_response_model(
-        STUDY_UID, vo, 1, AS_OF, study_value_version=VERSION
+        STUDY_UID,
+        vo,
+        1,
+        AS_OF,
+        study_value_version=VERSION,
+        study_activity_instances_by_uid={},
     )
     assert result.study_version == VERSION
     graph["dosings"] = [result]

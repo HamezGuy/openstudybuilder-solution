@@ -52,7 +52,7 @@ ARG NEO4J_DOWNLOAD_FILEEXTENSION=unix.tar.gz
 # the placeholder again.
 #
 # The placeholder must be a file that rarely changes, and specifically NOT this Dockerfile:
-# this COPY sits ahead of the Neo4j download, the pipenv syncs and the import, so whatever it
+# this COPY sits ahead of the Neo4j download, the uv syncs and the import, so whatever it
 # copies is a cache key for all of them. Pointing it at this file would mean every edit here
 # invalidates the entire build.
 ARG EXTRA_CA_CERT
@@ -86,7 +86,7 @@ RUN apt-get update \
     jq \
     gcc \
     net-tools \
-    && pip install --upgrade pip pipenv wheel \
+    && pip install --upgrade pip uv wheel \
     && wget -qO - https://packages.adoptium.net/artifactory/api/gpg/key/public | gpg --dearmor | tee /etc/apt/trusted.gpg.d/adoptium.gpg > /dev/null \
     && echo "deb https://packages.adoptium.net/artifactory/deb $(awk -F= '/^VERSION_CODENAME/{print$2}' /etc/os-release) main" | tee /etc/apt/sources.list.d/adoptium.list \
     && apt-get update \
@@ -147,13 +147,18 @@ RUN export NEO4J_VERSION="$NEO4J_VERSION_PINNED" \
 
 WORKDIR /build
 
-# Copy Pipfiles
-COPY ./db/Pipfile* db/
-COPY ./import_standards/Pipfile* import_standards/
+# Copy uv project files
+COPY ./db/pyproject.toml ./db/uv.lock db/
+COPY ./import_standards/pyproject.toml ./import_standards/uv.lock import_standards/
 
 # Install dependencies for db and import_standards
-RUN cd db && pipenv sync \
-    && cd ../import_standards && pipenv sync \
+# `poe` (poethepoet) lives in each project's dev dependency group, and these
+# scripts are invoked here via `uv run poe <task>` further down, so a plain
+# `--locked` sync (which installs the dev group too) is used instead of
+# `--no-dev` — unlike the api install below, which really is the long-lived
+# production service and only needs its runtime dependencies.
+RUN cd db && uv sync --locked \
+    && cd ../import_standards && uv sync --locked \
     && rm -rf ~/.cache
     
 # Copy program files for db and import_standards
@@ -186,10 +191,10 @@ RUN if [ -n "$(find /cdisc_incoming -mindepth 1 -print -quit 2>/dev/null)" ]; th
 COPY ./import_sponsor_data/.env.import import_standards/.env
 
 # Install dependencies for import_sponsor_data and api
-COPY ./import_sponsor_data/Pipfile* import_sponsor_data/
-COPY ./api/Pipfile* api/
-RUN cd import_sponsor_data && pipenv sync \
-    && cd ../api && pipenv sync \
+COPY ./import_sponsor_data/pyproject.toml ./import_sponsor_data/uv.lock import_sponsor_data/
+COPY ./api/pyproject.toml ./api/uv.lock api/
+RUN cd import_sponsor_data && uv sync --locked \
+    && cd ../api && uv sync --locked --no-dev \
     && rm -rf ~/.cache
 
 # Copy program files for import_sponsor_data and api
@@ -264,7 +269,7 @@ RUN --mount=type=secret,id=neo4j_mdr_auth_password \
     # start neo4j server — background only `neo4j console` itself. In POSIX sh,
     # `A && B & C` puts the whole preceding `A && B` chain into a subshell that
     # runs in the background, which would drop the exported NEO4J_* vars from
-    # the parent shell before `pipenv run init_neo4j` runs. Using
+    # the parent shell before `uv run poe init_neo4j` runs. Using
     # `{ /neo4j/bin/neo4j console & neo4j_pid=$!; }` keeps the `&&` chain in
     # the parent shell and only backgrounds the neo4j process itself.
     && { /neo4j/bin/neo4j console & neo4j_pid=$!; } \
@@ -273,32 +278,33 @@ RUN --mount=type=secret,id=neo4j_mdr_auth_password \
     && while ! netstat -tna | grep 'LISTEN\>' | grep -q '7474\>'; do sleep 2; done \
     && set -x \
     # init database
-    && cd db && pipenv run init_neo4j \
+    && cd db && uv run poe init_neo4j \
     # import neodash reports
     && mkdir -p neodash_reports/import && FILES="neodash/neodash_reports/*.json" \
     && for f in $FILES; do echo "Processing $f file..."; filename=`basename $f` ; \
     title=`jq -r .title $f`; uuid=`jq -r .uuid $f`; version=`jq -r .version $f`; echo "$title" "$uuid" "$version"; \
     jq -n --slurpfile content $f --arg title "$title" --arg uuid "$uuid" --arg version "$version" --arg date "$reportDate" '. += {"content": $content, "title": $title, "uuid": $uuid, "version": $version, "date": $date, "user": "OpenStudyBuilder@gmail.com"}' > neodash_reports/import/$filename; \
     done \
-    && { python -m pipenv run import_reports neodash_reports/import > /tmp/import-reports.log 2>&1 \
+    && { uv run poe import_reports neodash_reports/import > /tmp/import-reports.log 2>&1 \
       || { echo "Neodash report import failed:" >&2; tail -n 200 /tmp/import-reports.log >&2; exit 1; }; } \
     && echo "Neodash reports imported" \
     && cd ../import_standards \
-    && pipenv run import_cdisc_ct_into_cdisc_db \
-    && pipenv run import_ct_from_cdisc_db_into_mdr \
-    && pipenv run bulk_import_data_models TESTUSER "" \
+    && uv run poe import_cdisc_ct_into_cdisc_db \
+    && uv run poe import_ct_from_cdisc_db_into_mdr \
+    && uv run poe bulk_import_data_models TESTUSER "" \
     # update CT package stats
-    && cd ../db && pipenv run update_ct_stats \
-    # start API
-    && { cd ../api && pipenv run uvicorn --host 127.0.0.1 --port 8000 --log-level info clinical_mdr_api.main:app & api_pid=$! ;} \
+    && cd ../db && uv run poe update_ct_stats \
+    # start API (--no-dev: `uv run` would otherwise sync the dev group that the
+    # `uv sync --no-dev` above deliberately left out)
+    && { cd ../api && uv run --no-dev uvicorn --host 127.0.0.1 --port 8000 --log-level info clinical_mdr_api.main:app & api_pid=$! ;} \
     # wait until 8000/tcp is open
     && while ! netstat -tna | grep 'LISTEN\>' | grep -q '8000\>'; do sleep 2; done \
     && set -x \
     # imports
     && sleep 10 && cd ../import_sponsor_data \
-    && INCLUDE_DUMMY_STUDIES="$INCLUDE_DUMMY_STUDIES" pipenv run import_all \
-    && if [ "$INCLUDE_DUMMY_STUDIES" = "true" ]; then pipenv run import_dummydata; fi \
-    && pipenv run import_feature_flags \
+    && INCLUDE_DUMMY_STUDIES="$INCLUDE_DUMMY_STUDIES" uv run poe import_all \
+    && if [ "$INCLUDE_DUMMY_STUDIES" = "true" ]; then uv run poe import_dummydata; fi \
+    && uv run poe import_feature_flags \
     # stop the api
     && sleep 10 && kill -INT $api_pid && wait $api_pid \
     # get database name

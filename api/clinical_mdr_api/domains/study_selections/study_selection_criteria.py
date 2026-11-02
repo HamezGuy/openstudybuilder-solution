@@ -1,6 +1,7 @@
 import datetime
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field, replace
-from typing import Any, Callable, Iterable, Self
+from typing import Any, Self
 
 from clinical_mdr_api.domains.study_selections.study_selection_scope import (
     StudySelectionScopeVO,
@@ -53,7 +54,7 @@ class StudySelectionCriteriaVO:
             study_selection_uid = generate_uid_callback()
 
         if start_date is None:
-            start_date = datetime.datetime.now(datetime.timezone.utc)
+            start_date = datetime.datetime.now(datetime.UTC)
 
         return cls(
             study_uid=study_uid,
@@ -168,14 +169,13 @@ class StudySelectionCriteriaAR:
 
         # add new value object in the list based on the criteria type order
         if study_criteria_selection.criteria_type_order:
-            new_selections = self._study_criteria_selection + (
-                study_criteria_selection,
-            )
+            new_selections = (*self._study_criteria_selection, study_criteria_selection)
             self._study_criteria_selection = tuple(
                 sorted(new_selections, key=lambda sel: sel.criteria_type_order or 0)
             )
         else:
-            self._study_criteria_selection = self._study_criteria_selection + (
+            self._study_criteria_selection = (
+                *self._study_criteria_selection,
                 study_criteria_selection,
             )
 
