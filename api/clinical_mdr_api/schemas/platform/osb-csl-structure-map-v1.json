@@ -8,7 +8,7 @@
     "osbPlatformNodes": "Cypher-only labels written by clinical_mdr_api/services/integrations",
     "vocabularyRegistry": "packages/mappings/osb-vocabulary-registry-v1.json (osbResourceTypes per catalog type)",
     "ruleset": "packages/mappings/il-to-usdm-v4.rules.json (ilAssertionTypes per catalog type)",
-    "countingRule": "OSB relationship types are the distinct Neo4j type strings across every model class, with a type or target written as a NAME resolved the way a Python class body resolves it (an assignment in the same class body, else a module-level one); a type declared on several classes counts once (250); a declaration commented out in the source is not counted. Classes are every class statement in the model files except _utils.py (273).",
+    "countingRule": "OSB relationship types are the distinct Neo4j type strings across every model class, with a type or target written as a NAME resolved the way a Python class body resolves it (an assignment in the same class body, else a module-level one); a type declared on several classes counts once (272 at OpenStudyBuilder 2.11.0); a declaration commented out in the source is not counted. Classes are every class statement in the model files except _utils.py (273).",
     "builder": "scripts/build-osb-csl-structure-map.mjs --check refuses the map when it and the inventories disagree; --stamp writes mapHash; --out copies it to OpenStudyBuilder"
   },
   "correspondenceVocabulary": {
@@ -93,7 +93,7 @@
       "ilAssertionTypes": [],
       "correspondence": "broader",
       "standardsBasis": [
-        "USDM 4.0 StudyProtocolDocumentVersion",
+        "USDM 4.0 StudyDefinitionDocumentVersion",
         "OSB:StudyValue locked version with protocol header major/minor"
       ],
       "note": "A locked StudyValue with its StudyDefinitionDocument header (major/minor) is the protocol version; OSB has no document object beyond the header."
@@ -149,7 +149,8 @@
       ],
       "correspondence": "broader",
       "standardsBasis": [
-        "USDM 4.0 StudyDesign",
+        "USDM 4.0 InterventionalStudyDesign",
+        "USDM 4.0 ObservationalStudyDesign",
         "OSB:StudyValue structure (design class, arms, epochs, elements, cells)"
       ],
       "note": "OSB has no design object: the design structure hangs off StudyValue and the design class is a typed selection."
@@ -1010,7 +1011,6 @@
       "ilAssertionTypes": [],
       "correspondence": "exact",
       "standardsBasis": [
-        "USDM 4.0 MedicinalProduct",
         "IDMP medicinal product",
         "OSB:MedicinalProductRoot/Value"
       ],
@@ -2545,6 +2545,24 @@
       "cslLinkType": null,
       "correspondence": "versioning",
       "note": "Identity (uid) of the exact counterpart SourceSystem; A data supplier (name, type, base URLs) is a source system."
+    },
+    {
+      "osbClass": "DataSupplierRuleRoot",
+      "file": "data_supplier_rules.py",
+      "base": "VersionRoot",
+      "cslObjectType": null,
+      "cslLinkType": null,
+      "correspondence": "none",
+      "note": "Identity (uid) of a data supplier rule (OpenStudyBuilder 2.11.0): which activity groupings a supplier type supplies. CSL registers the supplier itself as SourceSystem (DataSupplierRoot/Value) and no supplier assignment object: which source system supplies which activity is stated by the capture plane's field custody, so the rule has no counterpart."
+    },
+    {
+      "osbClass": "DataSupplierRuleValue",
+      "file": "data_supplier_rules.py",
+      "base": "VersionValue",
+      "cslObjectType": null,
+      "cslLinkType": null,
+      "correspondence": "none",
+      "note": "Versioned content of a data supplier rule (name, description, the activity groupings it covers, its supplier type term); no CSL counterpart, as for its root."
     },
     {
       "osbClass": "DataSupplierValue",
@@ -4604,6 +4622,15 @@
       "note": "Template indexing (activities, groups, indications, categories) used for library search; no CSL counterpart."
     },
     {
+      "type": "HAS_ACTIVITY_GROUPING",
+      "declaredOn": [
+        "DataSupplierRuleValue:to:ActivityGrouping"
+      ],
+      "correspondence": "none",
+      "target": null,
+      "note": "The activity groupings a data supplier rule covers (2.11.0); CSL registers no grouping object (as HAS_GROUPING) and no supplier rule."
+    },
+    {
       "type": "HAS_ACTIVITY_INSTRUCTION",
       "declaredOn": [
         "ActivityInstructionRoot:from:ActivityInstructionTemplateRoot",
@@ -4833,6 +4860,7 @@
     {
       "type": "HAS_DATA_SUPPLIER_TYPE",
       "declaredOn": [
+        "DataSupplierRuleValue:to:CTTermContext",
         "DataSupplierValue:to:CTTermContext"
       ],
       "correspondence": "terminology",
@@ -4944,6 +4972,15 @@
       "correspondence": "terminology",
       "target": "AdministrableProduct.form",
       "note": ""
+    },
+    {
+      "type": "HAS_DOSE_COLLECTION_STUDY_ACTIVITY_INSTANCE",
+      "declaredOn": [
+        "StudyCompoundDosing:to:StudyActivityInstance"
+      ],
+      "correspondence": "none",
+      "target": null,
+      "note": "The study activity instance that collects a study compound dosing's dose (2.11.0). CSL has no link from DosingRegimen to a BiomedicalConcept; what collects a dose is stated by the capture plane (EDC field lineage), so no counterpart."
     },
     {
       "type": "HAS_DOSE_FREQUENCY",
@@ -6329,6 +6366,7 @@
         "DataModelIGValue:from:DataModelIGRoot",
         "DataModelRoot:to:DataModelValue",
         "DataSupplierRoot:to:DataSupplierValue",
+        "DataSupplierRuleRoot:to:DataSupplierRuleValue",
         "DatasetVariableInstance:from:DatasetVariable",
         "DictionaryCodelistRoot:to:DictionaryCodelistValue",
         "DictionaryTermRoot:to:DictionaryTermValue",
@@ -6561,6 +6599,7 @@
         "DataModelIGRoot:to:SponsorModelValue",
         "DataModelRoot:to:DataModelValue",
         "DataSupplierRoot:to:DataSupplierValue",
+        "DataSupplierRuleRoot:to:DataSupplierRuleValue",
         "DictionaryCodelistRoot:to:DictionaryCodelistValue",
         "DictionaryTermRoot:to:DictionaryTermValue",
         "FeatureFlagRoot:to:FeatureFlagValue",
@@ -6630,6 +6669,7 @@
         "DataModelIGRoot:to:SponsorModelValue",
         "DataModelRoot:to:DataModelValue",
         "DataSupplierRoot:to:DataSupplierValue",
+        "DataSupplierRuleRoot:to:DataSupplierRuleValue",
         "DictionaryCodelistRoot:to:DictionaryCodelistValue",
         "DictionaryTermRoot:to:DictionaryTermValue",
         "LagTimeRoot:to:LagTimeValue",
@@ -6696,6 +6736,7 @@
         "DataModelIGRoot:to:SponsorModelValue",
         "DataModelRoot:to:DataModelValue",
         "DataSupplierRoot:to:DataSupplierValue",
+        "DataSupplierRuleRoot:to:DataSupplierRuleValue",
         "DictionaryCodelistRoot:to:DictionaryCodelistValue",
         "DictionaryTermRoot:to:DictionaryTermValue",
         "FeatureFlagRoot:to:FeatureFlagValue",
@@ -6780,6 +6821,7 @@
         "DataModelIGRoot:to:SponsorModelValue",
         "DataModelRoot:to:DataModelValue",
         "DataSupplierRoot:to:DataSupplierValue",
+        "DataSupplierRuleRoot:to:DataSupplierRuleValue",
         "DictionaryCodelistRoot:to:DictionaryCodelistValue",
         "DictionaryTermRoot:to:DictionaryTermValue",
         "FeatureFlagRoot:to:FeatureFlagValue",
@@ -7445,5 +7487,5 @@
       "note": "Domain audit export bundle; no CSL table."
     }
   ],
-  "mapHash": "sha256:ca287568753abd5a60503ff17bc02eff4bffd53a3b8c8102314a30449f59ee6d"
+  "mapHash": "sha256:586b8b21e8c9fedc776f0b9bfa2487bc0f1ef73f5c2d37045e0231c6c1b9c84c"
 }
