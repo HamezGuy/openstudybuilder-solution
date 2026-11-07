@@ -534,6 +534,67 @@
       "note": "Protocol narrative sections have no OSB object; text fields on StudyValue hold administrative text only."
     },
     {
+      "cslObjectType": "Masking",
+      "profile": "usdm-study-design",
+      "dataPlane": "global-definition",
+      "osbClasses": [
+        "StudyDataSupplier"
+      ],
+      "osbResourceTypes": [],
+      "ilAssertionTypes": [],
+      "correspondence": "narrower",
+      "standardsBasis": [
+        "USDM 4.0 Masking",
+        "OSB:StudyDataSupplier blinded"
+      ],
+      "note": "OSB states masking only as the blinded flag of a study data supplier (study_selections.py); the design-level blinding schema is a study field and OSB has no per-role masking object."
+    },
+    {
+      "cslObjectType": "Condition",
+      "profile": "usdm-study-design",
+      "dataPlane": "global-definition",
+      "osbClasses": [
+        "StudyTextField"
+      ],
+      "osbResourceTypes": [],
+      "ilAssertionTypes": [],
+      "correspondence": "property",
+      "standardsBasis": [
+        "USDM 4.0 Condition",
+        "OSB:StudyTextField study_stop_rules"
+      ],
+      "note": "OSB holds a stopping rule only as the study_stop_rules text field (study_metadata.py); no condition node. The IL rules that will land on Condition are a ruleset version of their own (ilAssertionTypes follows the ruleset)."
+    },
+    {
+      "cslObjectType": "StudyAmendment",
+      "profile": "usdm-study-design",
+      "dataPlane": "global-definition",
+      "osbClasses": [
+        "StudyVersion"
+      ],
+      "osbResourceTypes": [],
+      "ilAssertionTypes": [],
+      "correspondence": "narrower",
+      "standardsBasis": [
+        "USDM 4.0 StudyAmendment",
+        "OSB:StudyVersion amendment_json"
+      ],
+      "note": "OSB keeps the amendment as amendment_json and previous_locked_version on the locked StudyVersion (study_selections.py); no reason, impact or change objects."
+    },
+    {
+      "cslObjectType": "Abbreviation",
+      "profile": "usdm-study-design",
+      "dataPlane": "global-definition",
+      "osbClasses": [],
+      "osbResourceTypes": [],
+      "ilAssertionTypes": [],
+      "correspondence": "none",
+      "standardsBasis": [
+        "USDM 4.0 Abbreviation"
+      ],
+      "note": "OSB has no glossary object: protocol abbreviations have no node, and its RetainedNarrative resource routes ABBREVIATION_DEFINITION to NarrativeContent until the ruleset re-targets it."
+    },
+    {
       "cslObjectType": "Form",
       "profile": "capture-odm",
       "dataPlane": "global-definition",
@@ -979,7 +1040,22 @@
       "dataPlane": "global-definition",
       "osbClasses": [
         "Ingredient",
-        "IngredientFormulation",
+        "IngredientFormulation"
+      ],
+      "osbResourceTypes": [],
+      "ilAssertionTypes": [],
+      "correspondence": "exact",
+      "standardsBasis": [
+        "USDM 4.0 Ingredient",
+        "OSB:Ingredient and IngredientFormulation"
+      ],
+      "note": "The ingredient and its formulation grouping; the substance and strength it points at are the CSL Substance and Strength."
+    },
+    {
+      "cslObjectType": "Substance",
+      "profile": "product-dosing",
+      "dataPlane": "global-definition",
+      "osbClasses": [
         "ActiveSubstanceRoot",
         "ActiveSubstanceValue"
       ],
@@ -987,11 +1063,29 @@
       "ilAssertionTypes": [],
       "correspondence": "exact",
       "standardsBasis": [
-        "USDM 4.0 Ingredient",
+        "USDM 4.0 Substance",
         "IDMP substance",
-        "OSB:ActiveSubstanceRoot (UNII)"
+        "OSB:ActiveSubstanceRoot/Value (UNII)"
       ],
-      "note": "The active substance carries the UNII term."
+      "note": "The active substance carries the UNII term; OSB Ingredient.HAS_SUBSTANCE points at it (pharmaceutical_product.py)."
+    },
+    {
+      "cslObjectType": "Strength",
+      "profile": "product-dosing",
+      "dataPlane": "global-definition",
+      "osbClasses": [
+        "NumericValueWithUnitRoot",
+        "NumericValueWithUnitValue"
+      ],
+      "osbResourceTypes": [],
+      "ilAssertionTypes": [],
+      "correspondence": "property",
+      "standardsBasis": [
+        "USDM 4.0 Strength",
+        "UCUM",
+        "OSB:NumericValueWithUnit strength value"
+      ],
+      "note": "OSB Ingredient.HAS_STRENGTH_VALUE points at a numeric-with-unit node (pharmaceutical_product.py); a governed object in CSL."
     },
     {
       "cslObjectType": "MedicinalProduct",
@@ -1323,6 +1417,32 @@
       "note": "OpenStudyBuilder is a study-definition MDR with no conduct plane; nothing on its side records this."
     },
     {
+      "cslObjectType": "LabReconciliationFinding",
+      "profile": "laboratory",
+      "dataPlane": "regional-pseudonymous",
+      "osbClasses": [],
+      "osbResourceTypes": [],
+      "ilAssertionTypes": [],
+      "correspondence": "none",
+      "standardsBasis": [
+        "CSL conduct_record under csl-lab-reconciliation (csl-lab-reconciliation-finding/1)"
+      ],
+      "note": "OpenStudyBuilder is a study-definition MDR with no conduct plane; nothing on its side records this."
+    },
+    {
+      "cslObjectType": "AeReconciliationFinding",
+      "profile": "conduct",
+      "dataPlane": "regional-pseudonymous",
+      "osbClasses": [],
+      "osbResourceTypes": [],
+      "ilAssertionTypes": [],
+      "correspondence": "none",
+      "standardsBasis": [
+        "CSL conduct_record under csl-ae-reconciliation (csl-ae-reconciliation-finding/2)"
+      ],
+      "note": "OpenStudyBuilder is a study-definition MDR with no conduct plane; nothing on its side records this."
+    },
+    {
       "cslObjectType": "Deviation",
       "profile": "conduct",
       "dataPlane": "external-system",
@@ -1607,6 +1727,60 @@
       "note": "A CSL governance object; OpenStudyBuilder holds the platform-control side of the chain as Cypher-only nodes (see osbPlatformNodes), not as a model class."
     },
     {
+      "cslObjectType": "DriftFinding",
+      "profile": "provenance-governance",
+      "dataPlane": "global-definition",
+      "osbClasses": [],
+      "osbResourceTypes": [],
+      "ilAssertionTypes": [],
+      "correspondence": "none",
+      "standardsBasis": [
+        "W3C PROV Entity",
+        "CSL drift_finding (deployment drift observation)"
+      ],
+      "note": "A CSL governance record: drift is observed against a deployed source system (the EDC), which OpenStudyBuilder has no view of; its own native packages are verified through NativeOperationEvidenceV1 (see osbPlatformNodes)."
+    },
+    {
+      "cslObjectType": "DriftResolution",
+      "profile": "provenance-governance",
+      "dataPlane": "global-definition",
+      "osbClasses": [],
+      "osbResourceTypes": [],
+      "ilAssertionTypes": [],
+      "correspondence": "none",
+      "standardsBasis": [
+        "W3C PROV Activity (with the reviewer as Agent)",
+        "CSL drift_resolution (verified correction or accepted exception)"
+      ],
+      "note": "A CSL governance record; OpenStudyBuilder has no deployment plane and nothing on its side resolves drift."
+    },
+    {
+      "cslObjectType": "StudyStandardsSelectionRecord",
+      "profile": "provenance-governance",
+      "dataPlane": "global-definition",
+      "osbClasses": [],
+      "osbResourceTypes": [],
+      "ilAssertionTypes": [],
+      "correspondence": "none",
+      "standardsBasis": [
+        "CSL study_standards_selection_record (StudyStandardsSelectionRecordV1)"
+      ],
+      "note": "A CSL governance record; OpenStudyBuilder has no signed sponsor standards selection. Its StudyStandardVersion is a CT package pin on the study, mapped to the SemanticSnapshot."
+    },
+    {
+      "cslObjectType": "SemanticModuleArtifact",
+      "profile": "provenance-governance",
+      "dataPlane": "global-definition",
+      "osbClasses": [],
+      "osbResourceTypes": [],
+      "ilAssertionTypes": [],
+      "correspondence": "none",
+      "standardsBasis": [
+        "CSL module_artifact with module_artifact_approval (semantic module)"
+      ],
+      "note": "A CSL governance record; OpenStudyBuilder stores the native package it receives (OsbNativePackageV2, see osbPlatformNodes), not the registered module artifact or its review."
+    },
+    {
       "cslObjectType": "MonitoringFinding",
       "profile": "operations",
       "dataPlane": "external-system",
@@ -1778,6 +1952,21 @@
         "CSL adapter_registration"
       ],
       "note": "A data supplier with its study selection is a source system."
+    },
+    {
+      "cslObjectType": "OperationalIdentityMapRevision",
+      "profile": "operations",
+      "dataPlane": "global-definition",
+      "osbClasses": [],
+      "osbResourceTypes": [],
+      "ilAssertionTypes": [],
+      "correspondence": "none",
+      "standardsBasis": [
+        "CSL operational_identity_map_revision (csl-operational-identity-map-revision/1)",
+        "CTMS provider-local site identities",
+        "EDC site census (root and child studies)"
+      ],
+      "note": "OpenStudyBuilder holds no site model by design (see Site); an identity map over CTMS, QMS, eTMF and EDC site and arm identities has nothing on its side."
     }
   ],
   "osbClasses": [
@@ -1785,19 +1974,19 @@
       "osbClass": "ActiveSubstanceRoot",
       "file": "active_substance.py",
       "base": "ConceptRoot",
-      "cslObjectType": "Ingredient",
+      "cslObjectType": "Substance",
       "cslLinkType": null,
       "correspondence": "versioning",
-      "note": "Identity (uid) of the exact counterpart Ingredient; The active substance with its UNII code."
+      "note": "Identity (uid) of the exact counterpart Substance; The active substance with its UNII code."
     },
     {
       "osbClass": "ActiveSubstanceValue",
       "file": "active_substance.py",
       "base": "ConceptValue",
-      "cslObjectType": "Ingredient",
+      "cslObjectType": "Substance",
       "cslLinkType": null,
       "correspondence": "exact",
-      "note": "Versioned content of Ingredient; The active substance with its UNII code."
+      "note": "Versioned content of Substance; The active substance with its UNII code."
     },
     {
       "osbClass": "ActivityGrouping",
@@ -2994,7 +3183,7 @@
       "cslObjectType": "Dose",
       "cslLinkType": null,
       "correspondence": "property",
-      "note": "Identity (uid) of the property counterpart Dose; Dose values and strengths are numeric-with-unit nodes; CSL Dose is an object, strengths are Ingredient properties."
+      "note": "Identity (uid) of the property counterpart Dose; Dose values and strengths are numeric-with-unit nodes; CSL Dose and Strength are governed objects."
     },
     {
       "osbClass": "NumericValueWithUnitValue",
@@ -3003,7 +3192,7 @@
       "cslObjectType": "Dose",
       "cslLinkType": null,
       "correspondence": "property",
-      "note": "Versioned content of Dose; Dose values and strengths are numeric-with-unit nodes; CSL Dose is an object, strengths are Ingredient properties."
+      "note": "Versioned content of Dose; Dose values and strengths are numeric-with-unit nodes; CSL Dose and Strength are governed objects."
     },
     {
       "osbClass": "ObjectivePreInstanceRoot",
@@ -3633,7 +3822,7 @@
       "cslObjectType": "SourceSystem",
       "cslLinkType": null,
       "correspondence": "narrower",
-      "note": "Study selection of a data supplier."
+      "note": "Study selection of a data supplier; its blinded flag is the one per-role masking OSB states (CSL Masking, narrower)."
     },
     {
       "osbClass": "StudyDayRoot",
@@ -3876,7 +4065,7 @@
       "cslObjectType": "Study",
       "cslLinkType": null,
       "correspondence": "property",
-      "note": "One typed field node per configured study field; properties of Study, StudyDesign or StudyVersion in CSL (STUDY_DESIGN_ATTRIBUTE, STUDY_ADMINISTRATION_FACT)."
+      "note": "One typed field node per configured study field; properties of Study, StudyDesign or StudyVersion in CSL (STUDY_DESIGN_ATTRIBUTE, STUDY_ADMINISTRATION_FACT). The study_stop_rules field is the OSB side of a CSL Condition (property)."
     },
     {
       "osbClass": "StudyTimeField",
@@ -3903,7 +4092,7 @@
       "cslObjectType": "StudyVersion",
       "cslLinkType": null,
       "correspondence": "exact",
-      "note": "Lock/unlock reasons are CT terms."
+      "note": "Lock/unlock reasons are CT terms; amendment_json and previous_locked_version are the OSB side of a CSL StudyAmendment (narrower)."
     },
     {
       "osbClass": "StudyVisit",
@@ -5723,9 +5912,9 @@
       "declaredOn": [
         "Ingredient:to:NumericValueWithUnitRoot"
       ],
-      "correspondence": "property",
-      "target": "Ingredient.strength",
-      "note": ""
+      "correspondence": "link",
+      "target": "hasStrength",
+      "note": "Strength of an ingredient; in CSL the strength hangs off the Substance (USDM Substance.strengths): Substance hasStrength Strength."
     },
     {
       "type": "HAS_STUDY_ACTIVITY",
@@ -6100,9 +6289,9 @@
       "declaredOn": [
         "Ingredient:to:ActiveSubstanceRoot"
       ],
-      "correspondence": "property",
-      "target": "Ingredient",
-      "note": "Active substance of an ingredient."
+      "correspondence": "link",
+      "target": "ingredientSubstance",
+      "note": "Active substance of an ingredient; Ingredient ingredientSubstance Substance."
     },
     {
       "type": "HAS_TERM",
@@ -6226,7 +6415,7 @@
         "ActiveSubstanceValue:to:DictionaryTermRoot"
       ],
       "correspondence": "terminology",
-      "target": "Ingredient.unii",
+      "target": "Substance.unii",
       "note": ""
     },
     {
@@ -7487,5 +7676,5 @@
       "note": "Domain audit export bundle; no CSL table."
     }
   ],
-  "mapHash": "sha256:586b8b21e8c9fedc776f0b9bfa2487bc0f1ef73f5c2d37045e0231c6c1b9c84c"
+  "mapHash": "sha256:f072d349e9654e74ff95b493ad83607806787272e2097f7b1bb5d29823a49a00"
 }
