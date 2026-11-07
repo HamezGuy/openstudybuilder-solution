@@ -106,9 +106,7 @@
         "StudyVersion"
       ],
       "osbResourceTypes": [],
-      "ilAssertionTypes": [
-        "STUDY_ADMINISTRATION_FACT"
-      ],
+      "ilAssertionTypes": [],
       "correspondence": "exact",
       "standardsBasis": [
         "USDM 4.0 StudyVersion",
@@ -126,26 +124,10 @@
       ],
       "osbResourceTypes": [],
       "ilAssertionTypes": [
-        "ABBREVIATION_DEFINITION",
-        "AESI_DEFINITION",
-        "AE_REPORTING_RULES",
-        "CDASH_VARIABLE_BINDING",
-        "CONCOMITANT_MEDICATION_POLICY",
-        "CONSENT_ELEMENT",
-        "DLT_DEFINITION",
-        "EDIT_CHECK",
-        "ENDPOINT_TIMEFRAME",
-        "FIELD_CONDITION",
-        "PREGNANCY_REPORTING",
-        "PROTOCOL_OBLIGATION",
         "PROTOCOL_STATEMENT",
         "RETAINED_SOURCE_RECORD",
-        "SAE_PROCEDURES",
-        "STOPPING_RULE",
         "STUDY_DESIGN_ATTRIBUTE",
-        "USER_AUTHORED",
-        "VALIDATION_RULE_SOURCE",
-        "WITHDRAWAL_CRITERION"
+        "USER_AUTHORED"
       ],
       "correspondence": "broader",
       "standardsBasis": [
@@ -464,6 +446,7 @@
         "StudySelectionEndpoint"
       ],
       "ilAssertionTypes": [
+        "ENDPOINT_TIMEFRAME",
         "STUDY_ENDPOINT"
       ],
       "correspondence": "exact",
@@ -526,7 +509,9 @@
       "osbResourceTypes": [
         "RetainedNarrative"
       ],
-      "ilAssertionTypes": [],
+      "ilAssertionTypes": [
+        "CONSENT_ELEMENT"
+      ],
       "correspondence": "none",
       "standardsBasis": [
         "USDM 4.0 NarrativeContent"
@@ -557,13 +542,19 @@
         "StudyTextField"
       ],
       "osbResourceTypes": [],
-      "ilAssertionTypes": [],
+      "ilAssertionTypes": [
+        "AESI_DEFINITION",
+        "CONCOMITANT_MEDICATION_POLICY",
+        "DLT_DEFINITION",
+        "STOPPING_RULE",
+        "WITHDRAWAL_CRITERION"
+      ],
       "correspondence": "property",
       "standardsBasis": [
         "USDM 4.0 Condition",
         "OSB:StudyTextField study_stop_rules"
       ],
-      "note": "OSB holds a stopping rule only as the study_stop_rules text field (study_metadata.py); no condition node. The IL rules that will land on Condition are a ruleset version of their own (ilAssertionTypes follows the ruleset)."
+      "note": "OSB holds a stopping rule only as the study_stop_rules text field (study_metadata.py); no condition node. Ruleset 1.28.0 lands STOPPING_RULE, WITHDRAWAL_CRITERION and DLT_DEFINITION on Condition canonically and AESI_DEFINITION and CONCOMITANT_MEDICATION_POLICY as governed extensions of it (ilAssertionTypes follows the ruleset)."
     },
     {
       "cslObjectType": "StudyAmendment",
@@ -587,12 +578,14 @@
       "dataPlane": "global-definition",
       "osbClasses": [],
       "osbResourceTypes": [],
-      "ilAssertionTypes": [],
+      "ilAssertionTypes": [
+        "ABBREVIATION_DEFINITION"
+      ],
       "correspondence": "none",
       "standardsBasis": [
         "USDM 4.0 Abbreviation"
       ],
-      "note": "OSB has no glossary object: protocol abbreviations have no node, and its RetainedNarrative resource routes ABBREVIATION_DEFINITION to NarrativeContent until the ruleset re-targets it."
+      "note": "OSB has no glossary object: protocol abbreviations have no node. Ruleset 1.28.0 lands ABBREVIATION_DEFINITION on Abbreviation canonically; its RetainedNarrative resource is the retained-narrative plane, not a NarrativeContent object."
     },
     {
       "cslObjectType": "Form",
@@ -649,6 +642,7 @@
         "OdmItem"
       ],
       "ilAssertionTypes": [
+        "CDASH_VARIABLE_BINDING",
         "MEDICAL_HISTORY_FIELD",
         "STUDY_ITEM"
       ],
@@ -780,7 +774,9 @@
       "osbResourceTypes": [
         "OdmCondition"
       ],
-      "ilAssertionTypes": [],
+      "ilAssertionTypes": [
+        "FIELD_CONDITION"
+      ],
       "correspondence": "exact",
       "standardsBasis": [
         "ODM 1.3.2 ConditionDef",
@@ -810,7 +806,10 @@
       "dataPlane": "global-definition",
       "osbClasses": [],
       "osbResourceTypes": [],
-      "ilAssertionTypes": [],
+      "ilAssertionTypes": [
+        "EDIT_CHECK",
+        "VALIDATION_RULE_SOURCE"
+      ],
       "correspondence": "none",
       "standardsBasis": [
         "CDISC ODM RangeCheck (partial)",
@@ -824,7 +823,13 @@
       "dataPlane": "global-definition",
       "osbClasses": [],
       "osbResourceTypes": [],
-      "ilAssertionTypes": [],
+      "ilAssertionTypes": [
+        "AE_REPORTING_RULES",
+        "PREGNANCY_REPORTING",
+        "PROTOCOL_OBLIGATION",
+        "SAE_PROCEDURES",
+        "STUDY_ADMINISTRATION_FACT"
+      ],
       "correspondence": "none",
       "standardsBasis": [
         "EDC exported study task"
@@ -7676,5 +7681,5 @@
       "note": "Domain audit export bundle; no CSL table."
     }
   ],
-  "mapHash": "sha256:f072d349e9654e74ff95b493ad83607806787272e2097f7b1bb5d29823a49a00"
+  "mapHash": "sha256:ca344edaf0a144b4c67d9764213a1f45b7e394cf3f8c0b5f6d4de58ce16d6937"
 }
