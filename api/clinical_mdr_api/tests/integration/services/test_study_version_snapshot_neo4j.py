@@ -4,10 +4,13 @@
 # pylint: disable=redefined-outer-name
 
 import json
+import os
+from pathlib import Path
 
 import pytest
 from neomodel import db
 
+from clinical_mdr_api.routers.integrations import study_authority
 from clinical_mdr_api.services.studies.study_version_snapshot import (
     StudyVersionSnapshotService,
 )
@@ -141,6 +144,48 @@ def test_http_amendment_relock_can_reference_removed_arm_without_history_leak(
 ):
     fixture, reasons = protocol_graph
     study_uid, arms = version_case
+    lifecycle_client.app.include_router(
+        study_authority.router, prefix="/integrations/study-authority"
+    )
+    evidence = []
+
+    def observe(expected_versions):
+        response = lifecycle_client.get(
+            f"/integrations/study-authority/studies/{study_uid}/native-observation"
+        )
+        assert response.status_code == 200, response.text
+        snapshot = response.json()
+        rows = {
+            entry["nativeUid"]: {
+                k: v for k, v in entry["record"].items() if k != "state_changes"
+            }
+            for entry in snapshot["records"]
+            if entry["collection"] == "study_version_decisions"
+        }
+        assert rows == {
+            version: {"study_uid": study_uid, **history}
+            for version, history in expected_versions.items()
+            if set(history["study_status"]) & {"LOCKED", "RELEASED"}
+        }
+        evidence.append(snapshot)
+        for entry in snapshot["records"]:
+            if entry["collection"] == "study_version_decisions":
+                transitions = entry["record"]["state_changes"]
+                assert transitions and all(
+                    state["at"] and state["nativeActorId"] for state in transitions
+                )
+                previous = next(
+                    (
+                        row
+                        for row in evidence[0]["records"]
+                        if row["collection"] == "study_version_decisions"
+                        and row["nativeUid"] == entry["nativeUid"]
+                    ),
+                    None,
+                )
+                if previous:
+                    assert previous["record"]["state_changes"] == transitions
+
     initial = _amendment(arms, "Synthetic initial protocol")
     assert _lock(lifecycle_client, study_uid, reasons, amendment=initial) == "1"
     first = _snapshot_history(lifecycle_client, study_uid)["1"]
@@ -154,6 +199,7 @@ def test_http_amendment_relock_can_reference_removed_arm_without_history_leak(
     )
     assert first["modified_by"]
     assert first["modified_date"]
+    observe({"1": first})
 
     _unlock(lifecycle_client, study_uid, reasons)
     history = _snapshot_history(lifecycle_client, study_uid)
@@ -166,6 +212,7 @@ def test_http_amendment_relock_can_reference_removed_arm_without_history_leak(
         == reasons["reason_for_unlock_terms"][0].sponsor_preferred_name
     )
     assert draft["other_reason_for_unlocking"] == "Synthetic lifecycle amendment"
+    observe(history)
 
     response = lifecycle_client.patch(
         f"/studies/{study_uid}",
@@ -205,6 +252,7 @@ def test_http_amendment_relock_can_reference_removed_arm_without_history_leak(
         == first["other_reason_for_locking_releasing"]
     )
     assert history["2"]["reason_for_unlock_name"] == draft["reason_for_unlock_name"]
+    observe(history)
 
     _unlock(lifecycle_client, study_uid, reasons)
     response = lifecycle_client.post(
@@ -214,11 +262,16 @@ def test_http_amendment_relock_can_reference_removed_arm_without_history_leak(
     history = _snapshot_history(lifecycle_client, study_uid)
     assert history["2.1"]["amendment"] is None
     assert history["2"]["amendment"] == removed
+    observe(history)
     assert _lock(lifecycle_client, study_uid, reasons) == "3"
     history = _snapshot_history(lifecycle_client, study_uid)
     assert history["3"]["amendment"] is None
     assert history["1"]["amendment"] == initial
     assert history["2"]["amendment"] == removed
+    observe(history)
+    # Cross-service qualification can hand the exact synthetic native reads to CSL.
+    if destination := os.environ.get("OSB_TEST_VERSION_OBSERVATIONS_OUT"):
+        Path(destination).write_text(json.dumps(evidence), encoding="utf-8")
     # The read-only diff must not add an amendment or any other graph state.
     baseline = _fingerprint(fixture)
     _diff(lifecycle_client, study_uid, "1", "3")

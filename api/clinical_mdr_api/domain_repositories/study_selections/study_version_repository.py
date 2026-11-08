@@ -468,11 +468,13 @@ class StudyVersionRepository:
         WITH study_value, all_versions, max_date,
         head([v IN all_versions WHERE coalesce(v.end_date, v.start_date) = max_date]) as latest_version
 
-        WITH study_value, max_date, latest_version, apoc.coll.sort([v IN all_versions | v.status]) as all_statuses
+        WITH study_value, max_date, latest_version, apoc.coll.sort([v IN all_versions | v.status]) as all_statuses,
+             [v IN all_versions WHERE v.version=latest_version.version AND v.status IN ['LOCKED','RELEASED'] |
+                {status:v.status, at:toString(v.start_date), nativeActorId:v.author_id}] AS state_changes
     
         OPTIONAL MATCH (user:User)
         WHERE user.user_id = latest_version.author_id
-        WITH study_value, latest_version, max_date as date, all_statuses as statuses, coalesce(user.username, latest_version.author_id) as modified_by
+        WITH study_value, latest_version, state_changes, max_date as date, all_statuses as statuses, coalesce(user.username, latest_version.author_id) as modified_by
 
         OPTIONAL MATCH (study_value)-[:HAS_STUDY_VERSION]->(sv:StudyVersion)
         OPTIONAL MATCH (sv)-[:HAS_REASON_FOR_LOCK]->(:CTTermContext)-[:HAS_SELECTED_TERM]->(:CTTermRoot)-->(:CTTermNameRoot)-[:LATEST_FINAL]->(lock_term_val:CTTermNameValue)
@@ -503,7 +505,7 @@ class StudyVersionRepository:
                 [(version_root:StudyRoot {uid:$study_uid})-[version_rel:HAS_VERSION]->(version_value:StudyValue)
                     WHERE version_rel.version=latest_version.version | elementId(version_value)]
             END AS _version_values,
-            date, statuses, modified_by
+            date, statuses, modified_by, state_changes
         // If there is Draft version, return it first, then order by metadata_version descending
         ORDER BY 
             CASE WHEN statuses=["DRAFT"] THEN 0 ELSE 1 END, 

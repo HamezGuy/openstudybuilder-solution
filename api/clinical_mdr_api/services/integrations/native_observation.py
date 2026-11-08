@@ -417,6 +417,7 @@ def collect_native_observation(
     readers: dict[str, tuple[Callable, Callable | None]] | None = None,
     native_study: dict[str, Any] | None = None,
     study_audit: list[Any] | None = None,
+    version_history: list[Any] | None = None,
     raw_actions: list[Any] | None = None,
     raw_history_readers: dict[str, Callable] | None = None,
     user_projection: list[Any] | None = None,
@@ -476,6 +477,81 @@ def collect_native_observation(
             "auditCount": len(study_audit or []),
         }
     )
+    if readers is None and version_history is None:
+        from clinical_mdr_api.domain_repositories.study_selections.study_version_repository import (
+            StudyVersionRepository,
+        )
+        from clinical_mdr_api.models.study_selections.study import StudyVersionHistory
+
+        versions, total = StudyVersionRepository().retrieve_study_snapshot_history(
+            study_uid=study_uid, page_number=1, page_size=0, total_count=True
+        )
+        if total != len(versions):
+            raise NativeObservationError("NATIVE_OBSERVATION_COLLECTION_TRUNCATED")
+        version_history = [
+            {
+                **StudyVersionHistory.from_repository_output(row).model_dump(
+                    mode="json"
+                ),
+                # History.modified_date can move when a state is closed; these
+                # timestamps are the actual starts of the immutable state edges.
+                "state_changes": sorted(
+                    row["state_changes"],
+                    key=lambda state: (
+                        state["at"] or "",
+                        state["status"],
+                        state["nativeActorId"] or "",
+                    ),
+                ),
+            }
+            for row in versions
+        ]
+    if version_history is not None:
+        # The version repository verifies ownership of the StudyValue, the authored
+        # amendment and its parent pin. Its mutable draft is already read in native_study.
+        version_ids = set()
+        for value in version_history:
+            version = _json(value)
+            if (
+                not isinstance(version, dict)
+                or version.get("study_uid", study_uid) != study_uid
+            ):
+                raise NativeObservationError("NATIVE_OBSERVATION_VERSION_SCOPE")
+            statuses = version.get("study_status")
+            if (
+                not isinstance(statuses, list)
+                or not statuses
+                or any(
+                    status not in ("DRAFT", "LOCKED", "RELEASED") for status in statuses
+                )
+            ):
+                raise NativeObservationError("NATIVE_OBSERVATION_VERSION_STATUS")
+            if all(status == "DRAFT" for status in statuses):
+                continue
+            version_id = version.get("metadata_version")
+            if (
+                not isinstance(version_id, str)
+                or not version_id.strip()
+                or version_id in version_ids
+            ):
+                raise NativeObservationError("NATIVE_OBSERVATION_VERSION_IDENTITY")
+            version_ids.add(version_id)
+            add_record(
+                "study_version_decisions",
+                "StudyVersionHistory",
+                version_id,
+                {"study_uid": study_uid, **version},
+            )
+        coverage.append(
+            {
+                "collection": "study_version_decisions",
+                "complete": True,
+                "recordCount": len(version_ids),
+                "auditCount": 0,
+                "auditStatus": "unavailable",
+                "scope": "Native snapshot-history rows for locked and released metadata versions",
+            }
+        )
     for spec in COLLECTIONS:
         if readers is not None and spec.collection not in readers:
             continue
@@ -671,6 +747,13 @@ def collect_native_observation(
         for field in ("author_username", "version_author"):
             if isinstance(record.get(field), str) and record[field]:
                 editor_names.add(record[field])
+    for entry in records:
+        if entry["collection"] == "study_version_decisions":
+            modified_by = entry["record"].get("modified_by")
+            # Native snapshot history states a username, or the underlying id if no user joined.
+            if isinstance(modified_by, str) and modified_by:
+                editor_ids.add(modified_by)
+                editor_names.add(modified_by)
     if readers is None and user_projection is None:
         user_projection = collect_user_projection(editor_ids, editor_names)
     users = (

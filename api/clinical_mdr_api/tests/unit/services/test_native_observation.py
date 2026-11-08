@@ -14,6 +14,60 @@ from common.exceptions import NotFoundException
 
 
 class NativeObservationTests(unittest.TestCase):
+    def test_locked_version_decision_retains_authored_source_and_distinguishes_drafts(
+        self,
+    ):
+        amendment = {
+            "amendment_type": "arm-metadata-change",
+            "affected_arm_uids": ["A-1"],
+            "authorizing_decision_ref": "Signed protocol committee record 03",
+        }
+        locked = {
+            "metadata_version": "2",
+            "study_status": ["LOCKED"],
+            "amendment": amendment,
+            "modified_date": "2026-11-01T10:00:00Z",
+            "modified_by": "native-reviewer",
+            "reason_for_lock_name": "Protocol amendment",
+            "description": "Adjusted arm description",
+        }
+
+        def observe(versions):
+            return collect_native_observation(
+                "S1",
+                readers={},
+                native_study={"uid": "S1"},
+                study_audit=[],
+                version_history=versions,
+            )
+
+        result = observe(
+            [
+                locked,
+                {
+                    "metadata_version": "2.1",
+                    "study_status": ["DRAFT"],
+                    "amendment": None,
+                },
+            ]
+        )
+        rows = [
+            row
+            for row in result["records"]
+            if row["collection"] == "study_version_decisions"
+        ]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["nativeUid"], "2")
+        self.assertEqual(rows[0]["record"], {"study_uid": "S1", **locked})
+        self.assertEqual(result["coverage"]["releaseAuthority"], False)
+        self.assertEqual(observe([])["coverage"]["collections"][-1]["recordCount"], 0)
+        with self.assertRaisesRegex(NativeObservationError, "VERSION_IDENTITY"):
+            observe([locked, locked])
+        with self.assertRaisesRegex(NativeObservationError, "VERSION_IDENTITY"):
+            observe([{**locked, "metadata_version": None}])
+        with self.assertRaisesRegex(NativeObservationError, "VERSION_SCOPE"):
+            observe([{**locked, "study_uid": "another-study"}])
+
     def test_profile_11_only_excludes_exact_generated_endpoint_objective_label(self):
         label = "LATEST on 2026-09-06T00:00:00Z"
         source = {
