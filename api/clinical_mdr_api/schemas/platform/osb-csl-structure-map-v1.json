@@ -1395,6 +1395,19 @@
       "note": "OpenStudyBuilder is a study-definition MDR with no conduct plane; nothing on its side records this."
     },
     {
+      "cslObjectType": "ArmEnrollment",
+      "profile": "conduct",
+      "dataPlane": "external-system",
+      "osbClasses": [],
+      "osbResourceTypes": [],
+      "ilAssertionTypes": [],
+      "correspondence": "none",
+      "standardsBasis": [
+        "Source-attested nonrandomized study arm enrollment"
+      ],
+      "note": "The enrollment is regional participant conduct. Only its target StudyArm has an OpenStudyBuilder design counterpart."
+    },
+    {
       "cslObjectType": "Randomization",
       "profile": "conduct",
       "dataPlane": "external-system",
@@ -7681,5 +7694,5 @@
       "note": "Domain audit export bundle; no CSL table."
     }
   ],
-  "mapHash": "sha256:ca344edaf0a144b4c67d9764213a1f45b7e394cf3f8c0b5f6d4de58ce16d6937"
+  "mapHash": "sha256:a30829c57de7b1c841980a90047471e58309aba4bb037fd087bf394dce012a75"
 }
