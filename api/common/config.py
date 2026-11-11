@@ -296,6 +296,9 @@ class Settings(BaseSettings):
     governed_study_creation_enabled: bool = Field(
         default=False, alias="OSB_GOVERNED_STUDY_CREATION_ENABLED"
     )
+    governed_candidates_enabled: bool = Field(
+        default=False, alias="OSB_GOVERNED_CANDIDATES_ENABLED"
+    )
     native_identity_inventory_enabled: bool = Field(
         default=False, alias="OSB_NATIVE_IDENTITY_INVENTORY_ENABLED"
     )
@@ -333,6 +336,7 @@ class Settings(BaseSettings):
 
     def assert_native_identity_startup_safe(self) -> None:
         """P1 lands the endpoint while P2 still owns signed publication."""
+        self.assert_governed_candidates_startup_safe()
         if self.governed_study_creation_enabled:
             endpoint = urlparse(os.getenv("OSB_NATIVE_IDENTITY_SIGNING_URL", ""))
             if (
@@ -370,6 +374,44 @@ class Settings(BaseSettings):
             raise ValueError(
                 "OSB_NATIVE_IDENTITY_PRODUCTION_PROHIBITED: "
                 "prototype identity/command migration surfaces may not run in production"
+            )
+
+    def assert_governed_candidates_startup_safe(self) -> None:
+        """Admit only authenticated candidate review with trusted HTTPS custody."""
+        if not self.governed_candidates_enabled:
+            return
+        endpoints = [
+            urlparse(os.getenv(name, ""))
+            for name in (
+                "OSB_PLATFORM_COMMAND_SIGNING_URL",
+                "OSB_PLATFORM_ARTIFACT_SIGNING_URL",
+                "OSB_CANDIDATE_REQUEST_SIGNATURE_VERIFICATION_URL",
+            )
+        ]
+        if (
+            # One lane per deployment: with both switches on, the governed
+            # receipt read and upload header would silently replace the
+            # prototype ones. The semantic layer refuses the same combination.
+            self.platform_commands_prototype_enabled
+            or not self.oauth_enabled
+            or not self.delegated_claims_required
+            or not os.path.isabs(os.getenv("OSB_PLATFORM_SIGNING_TOKEN_FILE", ""))
+            or not os.getenv("OSB_PLATFORM_ARTIFACT_REGION", "").strip()
+            or not os.getenv("OSB_PLATFORM_PRODUCER_VERSION", "").strip()
+            or any(
+                endpoint.scheme != "https"
+                or not endpoint.hostname
+                or endpoint.username is not None
+                or endpoint.password is not None
+                or endpoint.query
+                or endpoint.fragment
+                for endpoint in endpoints
+            )
+        ):
+            raise ValueError(
+                "OSB_GOVERNED_CANDIDATES_CONFIGURATION_REQUIRED: candidate review "
+                "requires delegated OIDC, authenticated HTTPS signing and verification, "
+                "explicit artifact region/version, and the prototype command switch off"
             )
 
     def assert_mapping_authority_startup_safe(self) -> None:

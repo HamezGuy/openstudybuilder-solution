@@ -1,5 +1,6 @@
 """Default-off CC-commanded OSB draft-root create/bind endpoint."""
 
+import base64
 import json
 import os
 import urllib.error
@@ -10,9 +11,12 @@ from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from neomodel import db
+from starlette.concurrency import run_in_threadpool
 
 from clinical_mdr_api.generated.platform_contracts.hash_signing_v1 import (
     canonical_json,
+    canonical_json_hash_ref,
+    hash_refs_equal,
     sha256_bytes,
 )
 from clinical_mdr_api.generated.platform_contracts.models_v1 import (
@@ -58,10 +62,12 @@ from clinical_mdr_api.services.integrations.atomic_signed_command import (
 from clinical_mdr_api.services.integrations.candidate_set import (
     CANDIDATE_SET_MEDIA_TYPE,
     OsbCandidateSetError,
+    assert_governed_candidate_identity,
     decode_signed_artifact_envelope_header,
     generate_candidate_set,
     load_candidate_request,
     read_candidate_set_for_publication,
+    read_native_binding_proof,
     store_candidate_request_bytes,
 )
 from clinical_mdr_api.services.integrations.canonical_json import canonical_hash
@@ -75,6 +81,7 @@ from clinical_mdr_api.services.integrations.native_identity import (
     Neo4jOsbNativeIdentityStoreV1,
 )
 from clinical_mdr_api.services.integrations.native_package_artifact_custody import (
+    encode_artifact_reference_header,
     retained_artifact_headers,
 )
 from clinical_mdr_api.services.integrations.native_package_carrier_v2 import (
@@ -105,7 +112,9 @@ from clinical_mdr_api.services.integrations.review_workspace_migration import (
     is_review_workspace_claim,
 )
 from clinical_mdr_api.services.integrations.signing_authorization import (
+    _RejectSigningRedirects,
     platform_signing_authorization,
+    platform_signing_request,
 )
 from common.auth.dependencies import platform_security
 from common.auth.user import user
@@ -227,11 +236,6 @@ class _RemoteNativeIdentityReceiptPublisher:
         return envelope
 
 
-class _RejectSigningRedirects(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, request, file_pointer, code, message, headers, new_url):
-        return None
-
-
 def _native_identity_publisher() -> Any:
     """The real publisher when an endpoint is configured; fail-closed otherwise."""
 
@@ -251,6 +255,21 @@ processor = NativeIdentityCommandProcessorV1(
     publisher=_native_identity_publisher(),
 )
 platform_command_store = Neo4jOsbPlatformCommandStore()
+CANDIDATE_ACTIONS = ("osb.candidate-set.generate", "osb.candidate-set.publish")
+
+
+def _candidate_review_enabled() -> bool:
+    """Return whether this is the narrow governed lane; retain prototype behavior."""
+    if settings.governed_candidates_enabled:
+        try:
+            settings.assert_governed_candidates_startup_safe()
+        except ValueError as error:
+            raise HTTPException(
+                status_code=503, detail="OSB_GOVERNED_CANDIDATES_CONFIGURATION_REQUIRED"
+            ) from error
+        return True
+    _platform_commands_enabled()
+    return False
 
 
 class _SignedConformanceHandler:
@@ -289,6 +308,11 @@ def _platform_principal(capability: str, platform_study_id: str):
     return principal
 
 
+def _hash_value(hash_ref: Any) -> Any:
+    """Return the value of a hash reference, or None when it is not an object."""
+    return hash_ref.get("value") if isinstance(hash_ref, dict) else None
+
+
 def _verify_candidate_request_signature(
     payload: dict[str, Any], signed_envelope: dict[str, Any]
 ) -> dict[str, Any]:
@@ -314,6 +338,37 @@ def _verify_candidate_request_signature(
         "payloadByteSize": len(payload_bytes),
         "envelope": signed_envelope,
     }, separators=(",", ":")).encode("utf-8")
+    if settings.governed_candidates_enabled:
+        try:
+            response_body = platform_signing_request(
+                endpoint, json.loads(request_body), settings.deployment_environment
+            )
+        except ValueError as error:
+            raise OsbCandidateSetError(
+                "OSB_CANDIDATE_REQUEST_SIGNATURE_VERIFICATION_FAILED",
+                "Trusted verification is unavailable.",
+                503,
+            ) from error
+        verification = response_body.get("verification")
+        if (
+            response_body.get("productionEligible") is not True
+            or not isinstance(verification, dict)
+            or verification.get("verified") is not True
+            or _hash_value(verification.get("payloadHash"))
+            != sha256_bytes(payload_bytes)
+            or not hash_refs_equal(
+                verification.get("envelopeHash"),
+                canonical_json_hash_ref(
+                    signed_envelope, schema_version="SignedArtifactEnvelopeV1@1.0.0"
+                ),
+            )
+        ):
+            raise OsbCandidateSetError(
+                "OSB_CANDIDATE_REQUEST_SIGNATURE_UNVERIFIED",
+                "Trusted verification does not name these exact bytes.",
+                422,
+            )
+        return verification
     remote_request = urllib.request.Request(
         endpoint,
         data=request_body,
@@ -339,6 +394,45 @@ def _verify_candidate_request_signature(
     return verification
 
 
+def _verify_governed_candidate_request(payload, envelope):
+    # One read of the retained receipt: the identity check returns the proof it
+    # checked, and the signature of that same receipt is verified next.
+    proof = assert_governed_candidate_identity(
+        payload, payload["tenantId"], payload["platformStudyId"]
+    )
+    _verify_candidate_request_signature(
+        proof["receipt"], proof["signedReceiptEnvelope"]
+    )
+    return _verify_candidate_request_signature(payload, envelope)
+
+
+@router.get(
+    "/native-study-bindings/{receipt_id}",
+    dependencies=[platform_security],
+    summary="Read one retained native identity receipt with its exact current state proof",
+)
+def get_native_study_binding(receipt_id: str, request: Request) -> dict[str, Any]:
+    _candidate_review_enabled()
+    study_id = str(request.headers.get("x-platform-study-id") or "").strip()
+    principal = _platform_principal("candidate:read", study_id)
+    try:
+        proof = read_native_binding_proof(
+            tenant_id=principal.tenant_id,
+            platform_study_id=study_id,
+            receipt_id=receipt_id,
+            include_binding_metadata=True,
+        )
+        _verify_candidate_request_signature(
+            proof["receipt"], proof["signedReceiptEnvelope"]
+        )
+        return {"ok": True, "data": proof}
+    except OsbCandidateSetError as error:
+        raise HTTPException(
+            status_code=error.status_code,
+            detail={"code": error.code, "message": str(error)},
+        ) from error
+
+
 @router.get(
     "/commands/{command_id}/receipt",
     dependencies=[platform_security],
@@ -347,7 +441,7 @@ def _verify_candidate_request_signature(
 def get_platform_command_receipt(command_id: str, request: Request) -> dict[str, Any]:
     # OP-23: the reads answer 503 wherever the commands that write them do, and a
     # receipt is read only with the capability its command was executed under.
-    _platform_commands_enabled()
+    governed = _candidate_review_enabled()
     platform_study_id = str(request.headers.get("x-platform-study-id") or "").strip()
     principal = user()
     if (
@@ -356,12 +450,21 @@ def get_platform_command_receipt(command_id: str, request: Request) -> dict[str,
         or not principal.tenant_id
     ):
         raise HTTPException(status_code=403, detail="OSB_PLATFORM_COMMAND_RECEIPT_SCOPE_DENIED")
+    lookup_args = {"allowed_actions": CANDIDATE_ACTIONS} if governed else {}
     found = platform_command_store.lookup_with_capability(
-        principal.tenant_id, platform_study_id, command_id
+        principal.tenant_id, platform_study_id, command_id, **lookup_args
     )
     if found is None:
         raise HTTPException(status_code=404, detail="PLATFORM_COMMAND_RECEIPT_NOT_FOUND")
     target_capability, result = found
+    if governed and (
+        target_capability != "candidate:generate"
+        or result.get("publicationMode") != "signed"
+        or not result.get("signedReceiptEnvelope")
+    ):
+        raise HTTPException(
+            status_code=403, detail="OSB_PLATFORM_COMMAND_RECEIPT_SCOPE_DENIED"
+        )
     if not target_capability or target_capability not in principal.capabilities:
         raise HTTPException(status_code=403, detail="OSB_PLATFORM_COMMAND_RECEIPT_SCOPE_DENIED")
     return {"ok": True, "data": result}
@@ -575,11 +678,7 @@ def execute_conformance_command(body: dict[str, Any]) -> dict[str, Any]:
     summary="Store exact canonical CSL candidate-request bytes",
 )
 async def upload_candidate_request(request: Request) -> dict[str, Any]:
-    if (
-        not settings.platform_commands_prototype_enabled
-        or settings.deployment_environment.strip().lower() in {"prod", "production"}
-    ):
-        raise HTTPException(status_code=503, detail="OSB_PLATFORM_COMMANDS_DISABLED")
+    governed = _candidate_review_enabled()
     platform_study_id = str(request.headers.get("x-platform-study-id") or "").strip()
     expected_hash = str(request.headers.get("x-content-sha256") or "").strip()
     principal = _platform_principal("candidate:generate", platform_study_id)
@@ -594,18 +693,33 @@ async def upload_candidate_request(request: Request) -> dict[str, Any]:
     # Reading the request body first keeps the transaction to code that cannot
     # yield.
     payload_bytes = await request.body()
-    signed_envelope = decode_signed_artifact_envelope_header(
-        request.headers.get("x-signed-artifact-envelope")
-    )
-    try:
+
+    def store() -> dict[str, Any]:
+        # The governed caller sends the exact base64url canonical envelope.
+        signed_envelope = decode_signed_artifact_envelope_header(
+            request.headers.get("x-signed-artifact-envelope"),
+            exact_base64url=governed,
+        )
         with db.transaction:
-            result = store_candidate_request_bytes(
+            return store_candidate_request_bytes(
                 tenant_id=principal.tenant_id,
                 platform_study_id=platform_study_id,
                 bytes_value=payload_bytes,
                 expected_hash=expected_hash,
                 signed_envelope=signed_envelope,
+                verify_signature=(
+                    _verify_governed_candidate_request if governed else None
+                ),
             )
+
+    try:
+        # The governed store calls the signature verifier over HTTPS, twice,
+        # with a 60 second timeout each. On the event loop that would stop
+        # every other request, the health check included, while a verifier is
+        # slow. So it runs on a worker thread, as the sync command routes do;
+        # the transaction opens and closes on that one thread. The prototype
+        # store makes no network call and stays where it was.
+        result = await run_in_threadpool(store) if governed else store()
         return {"ok": True, "data": result}
     except OsbCandidateSetError as error:
         raise HTTPException(
@@ -620,11 +734,7 @@ async def upload_candidate_request(request: Request) -> dict[str, Any]:
     summary="Generate one immutable OSB candidate set from an exact CSL request",
 )
 def execute_candidate_set_command(body: dict[str, Any], request: Request) -> dict[str, Any]:
-    if (
-        not settings.platform_commands_prototype_enabled
-        or settings.deployment_environment.strip().lower() in {"prod", "production"}
-    ):
-        raise HTTPException(status_code=503, detail="OSB_PLATFORM_COMMANDS_DISABLED")
+    governed = _candidate_review_enabled()
     publish_candidate = body.get("action") == "osb.candidate-set.publish"
     if body.get("action") not in {"osb.candidate-set.generate", "osb.candidate-set.publish"} \
             or body.get("targetCapability") != "candidate:generate":
@@ -649,9 +759,11 @@ def execute_candidate_set_command(body: dict[str, Any], request: Request) -> dic
         request_payload = load_candidate_request(
             payload_hash["value"], principal.tenant_id, body["platformStudyId"]
         )
-        signature_verification = _verify_candidate_request_signature(
-            request_payload, signed_envelope
-        )
+        signature_verification = (
+            _verify_governed_candidate_request
+            if governed
+            else _verify_candidate_request_signature
+        )(request_payload, signed_envelope)
         if publish_candidate or candidate_artifact_override is not None:
             candidate_artifact = candidate_artifact_override or input_payload.get("candidateSetArtifact")
             if not isinstance(candidate_artifact, dict):
@@ -677,6 +789,10 @@ def execute_candidate_set_command(body: dict[str, Any], request: Request) -> dic
                 supersedes_candidate_set_version_id=input_payload.get("supersedesCandidateSetVersionId"),
             )
         candidate_records = generated["payload"]["candidateRecords"]
+        if governed:
+            _verify_candidate_request_signature(
+                generated["payload"], generated["signedEnvelope"]
+            )
         deferred_members = generated["payload"].get("deferredMembers") or []
         candidate_blockers = generated["payload"].get("blockers") or []
         blocker_count = len(candidate_blockers)
@@ -788,24 +904,80 @@ def execute_candidate_set_command(body: dict[str, Any], request: Request) -> dic
     summary="Read exact canonical OSB candidate-set bytes",
 )
 def get_candidate_set(candidate_set_version_id: str, request: Request) -> Response:
-    _platform_commands_enabled()
+    governed = _candidate_review_enabled()
     platform_study_id = str(request.headers.get("x-platform-study-id") or "").strip()
     principal = _platform_principal("candidate:read", platform_study_id)
     rows, _ = db.cypher_query(
         """MATCH (candidate:OsbCandidateSetV1 {tenant_id: $tenant_id,
              platform_study_id: $platform_study_id,
              candidate_set_version_id: $candidate_set_version_id})
-           RETURN candidate.payload_json,candidate.payload_hash""",
-        {"tenant_id": principal.tenant_id, "platform_study_id": platform_study_id,
-         "candidate_set_version_id": candidate_set_version_id},
+           RETURN candidate.payload_json,candidate.payload_hash,
+                  candidate.artifact_ref_json,candidate.signed_envelope_json""",
+        {
+            "tenant_id": principal.tenant_id,
+            "platform_study_id": platform_study_id,
+            "candidate_set_version_id": candidate_set_version_id,
+        },
     )
     if not rows:
         raise HTTPException(status_code=404, detail="OSB_CANDIDATE_SET_NOT_FOUND")
     payload_bytes = str(rows[0][0]).encode("utf-8")
+    headers = {"etag": f'"{rows[0][1]}"', "content-length": str(len(payload_bytes))}
+    if governed:
+        try:
+            payload, artifact, envelope = (
+                json.loads(str(rows[0][0])),
+                json.loads(str(rows[0][2])),
+                json.loads(str(rows[0][3])),
+            )
+            if not all(
+                isinstance(value, dict) for value in (payload, artifact, envelope)
+            ):
+                raise ValueError()
+            descriptor = {
+                "contractVersion": "ArtifactDescriptorV1@1.0.0",
+                **{
+                    key: value
+                    for key, value in artifact.items()
+                    if key not in {"contractVersion", "descriptorHash"}
+                },
+            }
+            if (
+                len(rows) != 1
+                or canonical_json(payload).encode("utf-8") != payload_bytes
+                or sha256_bytes(payload_bytes) != str(rows[0][1])
+                or _hash_value(artifact.get("payloadHash")) != str(rows[0][1])
+                or artifact.get("byteSize") != len(payload_bytes)
+                or artifact.get("tenantId") != principal.tenant_id
+                or payload.get("tenantId") != principal.tenant_id
+                or payload.get("platformStudyId") != platform_study_id
+                or payload.get("candidateSetVersionId") != candidate_set_version_id
+                or artifact.get("artifactVersionId") != candidate_set_version_id
+                or artifact.get("kind") != "osb-candidate-set"
+                or not hash_refs_equal(
+                    artifact.get("descriptorHash"),
+                    canonical_json_hash_ref(
+                        descriptor, schema_version="ArtifactDescriptorV1@1.0.0"
+                    ),
+                )
+                or envelope.get("artifactDescriptor") != descriptor
+            ):
+                raise ValueError()
+            _verify_candidate_request_signature(payload, envelope)
+            headers["x-artifact-reference"] = encode_artifact_reference_header(artifact)
+            headers["x-signed-artifact-envelope"] = (
+                base64.urlsafe_b64encode(canonical_json(envelope).encode("utf-8"))
+                .rstrip(b"=")
+                .decode("ascii")
+            )
+        except (ValueError, TypeError, IndexError, OsbCandidateSetError) as error:
+            raise HTTPException(
+                status_code=409, detail="OSB_CANDIDATE_SET_CUSTODY_INVALID"
+            ) from error
     return Response(
         content=payload_bytes,
         media_type=CANDIDATE_SET_MEDIA_TYPE,
-        headers={"etag": f'"{rows[0][1]}"', "content-length": str(len(payload_bytes))},
+        headers=headers,
     )
 
 

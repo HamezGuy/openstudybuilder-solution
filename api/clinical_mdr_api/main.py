@@ -119,7 +119,10 @@ middlewares.append(Middleware(ExceptionTracebackMiddleware))
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    if settings.platform_commands_prototype_enabled:
+    if (
+        settings.platform_commands_prototype_enabled
+        or settings.governed_candidates_enabled
+    ):
         from clinical_mdr_api.services.integrations.platform_command import (
             ensure_platform_command_schema,
         )

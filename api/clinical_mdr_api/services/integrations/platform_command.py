@@ -864,7 +864,11 @@ class Neo4jOsbPlatformCommandStore:
 
     @staticmethod
     def lookup_with_capability(
-        tenant_id: str, platform_study_id: str, command_id: str
+        tenant_id: str,
+        platform_study_id: str,
+        command_id: str,
+        *,
+        allowed_actions: tuple[str, ...] | None = None,
     ) -> tuple[str, dict[str, Any]] | None:
         """The published result and the command's target capability, which the
         receipt itself does not carry (the receipt read requires it, OP-23)."""
@@ -872,13 +876,20 @@ class Neo4jOsbPlatformCommandStore:
             """MATCH (effect:PlatformCommandEffect {
                  tenant_id: $tenant_id, platform_study_id: $platform_study_id,
                  command_id: $command_id})
+               WHERE $allowed_actions IS NULL OR effect.action IN $allowed_actions
                RETURN effect.target_effect_id, effect.command_intent_hash,
                       effect.receipt_json, effect.effect_payload_json,
                       effect.signed_envelope_json,effect.signature_verification_json,
                       effect.publication_mode, effect.target_capability
                ORDER BY effect.created_at LIMIT 1""",
-            {"tenant_id": tenant_id, "platform_study_id": platform_study_id,
-             "command_id": command_id},
+            {
+                "tenant_id": tenant_id,
+                "platform_study_id": platform_study_id,
+                "command_id": command_id,
+                "allowed_actions": (
+                    list(allowed_actions) if allowed_actions is not None else None
+                ),
+            },
         )
         if not rows:
             return None

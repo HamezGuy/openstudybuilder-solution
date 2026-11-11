@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import re
 from datetime import UTC, datetime
 from typing import Any, NoReturn
@@ -37,9 +38,13 @@ from clinical_mdr_api.services.integrations.osb_family_map import (
     SUPPORTED_RESOURCE_FAMILIES,
     canonicalize_family,
 )
+from clinical_mdr_api.services.integrations.signing_authorization import (
+    platform_signing_request,
+)
 from clinical_mdr_api.services.integrations.study_metadata_mapping import (
     prepare_metadata_offers,
 )
+from common.config import settings
 
 # Fail-closed contract checks list every required property in one condition;
 # splitting them would hide the rule they enforce.
@@ -49,6 +54,9 @@ CANDIDATE_REQUEST_MEDIA_TYPE = (
     "application/vnd.accuratrials.osb-candidate-request-v1+json"
 )
 CANDIDATE_SET_MEDIA_TYPE = "application/vnd.accuratrials.osb-candidate-set-v1+json"
+# Command Center refuses a signed-envelope header longer than this on the
+# candidate-set transfer; the governed request upload uses the same bound.
+MAX_SIGNED_ENVELOPE_HEADER_CHARACTERS = 64 * 1024
 
 # The signed-envelope binding evidence was added in ExternalStudyIdentityV1
 # 1.1. The identity coordinates and active native binding checks are unchanged.
@@ -822,13 +830,45 @@ def assert_candidate_request_transfer_envelope(
     return envelope
 
 
-def decode_signed_artifact_envelope_header(value: str | None) -> dict[str, Any]:
+def decode_signed_artifact_envelope_header(
+    value: str | None, *, exact_base64url: bool = False
+) -> dict[str, Any]:
+    """Read the signed envelope a caller sends beside the request bytes.
+
+    The prototype lane sends padded standard base64 of the envelope JSON. The
+    governed lane sends unpadded base64url of the canonical envelope JSON, the
+    same form OSB returns on the candidate-set read. With `exact_base64url` only
+    that exact form is accepted, so one envelope has one header value.
+    """
     if not isinstance(value, str) or not value.strip():
         raise OsbCandidateSetError(
             "OSB_CANDIDATE_REQUEST_SIGNATURE_REQUIRED",
             "Signed candidate-request envelope is required on transfer.",
             422,
         )
+    if exact_base64url:
+        try:
+            if len(value) > MAX_SIGNED_ENVELOPE_HEADER_CHARACTERS or not re.fullmatch(
+                r"[A-Za-z0-9_-]+", value
+            ):
+                raise ValueError()
+            encoded = base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+            decoded = json.loads(encoded.decode("utf-8"))
+            if (
+                not isinstance(decoded, dict)
+                or base64.urlsafe_b64encode(encoded).rstrip(b"=").decode("ascii")
+                != value
+                or canonical_json(decoded).encode("utf-8") != encoded
+            ):
+                raise ValueError()
+        except (ValueError, RecursionError) as error:
+            # RecursionError: JSON nested deeper than the interpreter reads.
+            raise OsbCandidateSetError(
+                "OSB_CANDIDATE_REQUEST_SIGNATURE_INVALID",
+                "Signed envelope header is not exact base64url canonical JSON.",
+                422,
+            ) from error
+        return decoded
     try:
         decoded = json.loads(base64.b64decode(value, validate=True).decode("utf-8"))
     except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
@@ -860,6 +900,7 @@ def store_candidate_request_bytes(
     bytes_value: bytes,
     expected_hash: str,
     signed_envelope: dict[str, Any] | None = None,
+    verify_signature: Any | None = None,
 ) -> dict[str, Any]:
     if sha256_bytes(bytes_value) != expected_hash:
         raise OsbCandidateSetError(
@@ -900,6 +941,11 @@ def store_candidate_request_bytes(
     envelope = assert_candidate_request_transfer_envelope(
         payload, expected_hash, signed_envelope
     )
+    if verify_signature is not None:
+        # The governed callback checks the identity evidence against the
+        # retained receipt and then both signatures. The scope check above has
+        # already tied the payload's tenant and study to the caller's.
+        verify_signature(payload, envelope)
     _assert_request_source_context(
         payload,
         [
@@ -1014,8 +1060,11 @@ def _assert_identity_binding(
     tenant_id: str,
     platform_study_id: str,
     error_code: str,
-) -> None:
+) -> dict[str, Any] | None:
     """Resolve a platform binding through OSB's own published receipt.
+
+    Returns the retained proof that was checked (version 1.1), or None for a
+    version 1.0 identity, which names the binding directly.
 
     The platform and native binding UUIDs belong to different registries.
     Version 1.1 carries the hashes of the exact receipt and envelope joining
@@ -1035,7 +1084,7 @@ def _assert_identity_binding(
     if identity.get("contractVersion") == "1.0.0":
         if identity.get("bindingId") != binding["bindingId"]:
             reject()
-        return
+        return None
     if (
         identity.get("contractVersion") != "1.1.0"
         or identity.get("tenantId") != tenant_id
@@ -1050,6 +1099,51 @@ def _assert_identity_binding(
     evidence = identity.get("evidence")
     if not isinstance(evidence, dict) or not isinstance(evidence.get("receiptId"), str):
         reject()
+    proof = read_native_binding_proof(
+        tenant_id=tenant_id,
+        platform_study_id=platform_study_id,
+        receipt_id=evidence["receiptId"],
+        binding=binding,
+        error_code=error_code,
+    )
+    if not hash_refs_equal(
+        evidence.get("receiptPayloadHash"),
+        canonical_json_hash_ref(
+            proof["receipt"],
+            schema_version="NativeIdentityBindingReceiptV1@1.0.0",
+        ),
+    ) or not hash_refs_equal(
+        evidence.get("signedEnvelopeHash"),
+        canonical_json_hash_ref(
+            proof["signedReceiptEnvelope"],
+            schema_version="SignedArtifactEnvelopeV1@1.0.0",
+        ),
+    ):
+        reject()
+    return proof
+
+
+def read_native_binding_proof(
+    *,
+    tenant_id: str,
+    platform_study_id: str,
+    receipt_id: str,
+    binding: dict[str, str] | None = None,
+    error_code: str = "OSB_NATIVE_BINDING_PROOF_PRECONDITION_FAILED",
+    include_binding_metadata: bool = False,
+) -> dict[str, Any]:
+    """Read one retained receipt; return a state only if its signed hash matches.
+
+    The state is reconstructed from the current native checkpoint. It is never
+    substituted into the retained receipt or used to refresh an old signature.
+    """
+
+    def reject() -> NoReturn:
+        raise OsbCandidateSetError(
+            error_code, "OSB binding evidence or native checkpoint changed."
+        )
+
+    binding = binding or active_osb_binding(tenant_id, platform_study_id)
     rows, _ = db.cypher_query(
         """MATCH (audit:PlatformNativeIdentityAudit {
              tenant_id: $tenant_id, platform_study_id: $platform_study_id,
@@ -1061,7 +1155,7 @@ def _assert_identity_binding(
         {
             "tenant_id": tenant_id,
             "platform_study_id": platform_study_id,
-            "receipt_id": evidence["receiptId"],
+            "receipt_id": receipt_id,
         },
     )
     if len(rows) != 1:
@@ -1075,7 +1169,7 @@ def _assert_identity_binding(
         reject()
     expected_receipt = {
         "contractVersion": "1.0.0",
-        "receiptId": evidence["receiptId"],
+        "receiptId": receipt_id,
         "tenantId": tenant_id,
         "platformStudyId": platform_study_id,
         "targetSystem": "osb",
@@ -1084,23 +1178,7 @@ def _assert_identity_binding(
         "nativeIdentity": binding["nativeIdentity"],
         "nativeVersion": binding["nativeVersion"],
     }
-    if (
-        any(receipt.get(key) != value for key, value in expected_receipt.items())
-        or not hash_refs_equal(
-            evidence.get("receiptPayloadHash"),
-            canonical_json_hash_ref(
-                receipt,
-                schema_version="NativeIdentityBindingReceiptV1@1.0.0",
-            ),
-        )
-        or not hash_refs_equal(
-            evidence.get("signedEnvelopeHash"),
-            canonical_json_hash_ref(
-                envelope,
-                schema_version="SignedArtifactEnvelopeV1@1.0.0",
-            ),
-        )
-    ):
+    if any(receipt.get(key) != value for key, value in expected_receipt.items()):
         reject()
     try:
         head = read_current_study_head(binding["nativeIdentity"], query=db.cypher_query)
@@ -1123,6 +1201,44 @@ def _assert_identity_binding(
         ),
     ):
         reject()
+
+    proof = {
+        "receipt": receipt,
+        "signedReceiptEnvelope": envelope,
+        "targetState": target_state,
+    }
+    if include_binding_metadata:
+        metadata, _ = db.cypher_query(
+            """MATCH (binding:PlatformNativeStudyBinding {
+                 tenant_id: $tenant_id, platform_study_id: $platform_study_id,
+                 binding_id: $binding_id, native_study_id: $native_study_id,
+                 namespace: 'accuratrials-osb', object_type: 'study-draft-root',
+                 status: 'active'})
+               RETURN toString(binding.created_at),binding.actor_subject""",
+            {
+                "tenant_id": tenant_id,
+                "platform_study_id": platform_study_id,
+                "binding_id": binding["bindingId"],
+                "native_study_id": binding["nativeIdentity"],
+            },
+        )
+        if (
+            len(metadata) != 1
+            or len(metadata[0]) != len(("createdAt", "createdBy"))
+            or not all(
+                isinstance(value, str) and value.strip() for value in metadata[0]
+            )
+        ):
+            reject()
+        try:
+            _iso(metadata[0][0])
+        except ValueError, TypeError:
+            reject()
+        proof["bindingMetadata"] = {
+            "createdAt": metadata[0][0],
+            "createdBy": metadata[0][1],
+        }
+    return proof
 
 
 def _census_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
@@ -1244,7 +1360,41 @@ def candidate_assignment_identity(
     }
 
 
-def bind_candidate_set_envelope(artifact_ref: dict[str, Any]) -> dict[str, Any]:
+def assert_governed_candidate_identity(
+    payload: dict[str, Any],
+    tenant_id: str,
+    platform_study_id: str,
+) -> dict[str, Any]:
+    """Check version 1.1 identity evidence; return the retained proof it names."""
+    identity = _record(
+        payload.get("osbStudyIdentity"), "OSB_CANDIDATE_REQUEST_IDENTITY_REQUIRED"
+    )
+    if identity.get("contractVersion") != "1.1.0":
+        raise OsbCandidateSetError(
+            "OSB_GOVERNED_IDENTITY_PROOF_REQUIRED",
+            "Signed identity evidence version 1.1 is required.",
+            422,
+        )
+    proof = _assert_identity_binding(
+        identity,
+        active_osb_binding(tenant_id, platform_study_id),
+        tenant_id=tenant_id,
+        platform_study_id=platform_study_id,
+        error_code="OSB_CANDIDATE_REQUEST_NATIVE_PRECONDITION_FAILED",
+    )
+    if not isinstance(proof, dict):
+        raise OsbCandidateSetError(
+            "OSB_GOVERNED_IDENTITY_PROOF_REQUIRED",
+            "Signed identity evidence version 1.1 is required.",
+            422,
+        )
+    return proof
+
+
+def bind_candidate_set_envelope(
+    artifact_ref: dict[str, Any],
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     descriptor = {
         "contractVersion": "ArtifactDescriptorV1@1.0.0",
         **{
@@ -1259,6 +1409,61 @@ def bind_candidate_set_envelope(artifact_ref: dict[str, Any]) -> dict[str, Any]:
         raise OsbCandidateSetError(
             "OSB_CANDIDATE_SET_SIGNATURE_INVALID", "Envelope payload hash differs.", 422
         )
+    if settings.governed_candidates_enabled:
+        if payload is None:
+            raise OsbCandidateSetError(
+                "OSB_CANDIDATE_SET_SIGNATURE_INVALID",
+                "Exact artifact bytes are required.",
+                422,
+            )
+        try:
+            settings.assert_governed_candidates_startup_safe()
+            result = platform_signing_request(
+                os.getenv("OSB_PLATFORM_ARTIFACT_SIGNING_URL", ""),
+                {
+                    "producerService": "osb.package",
+                    "signingPurpose": "osb-candidate-set",
+                    "artifactDescriptor": descriptor,
+                    "platformArtifactBase64": base64.b64encode(
+                        canonical_json(payload).encode("utf-8")
+                    ).decode("ascii"),
+                },
+                settings.deployment_environment,
+            )
+        except ValueError as error:
+            raise OsbCandidateSetError(
+                "OSB_CANDIDATE_SET_SIGNING_UNAVAILABLE",
+                "Trusted candidate signing is unavailable.",
+                503,
+            ) from error
+        envelope = _record(
+            result.get("signedArtifactEnvelope"), "OSB_CANDIDATE_SET_SIGNATURE_INVALID"
+        )
+        verification = _record(
+            result.get("verification"), "OSB_CANDIDATE_SET_SIGNATURE_INVALID"
+        )
+        if (
+            result.get("productionEligible") is not True
+            or verification.get("verified") is not True
+            or envelope.get("artifactDescriptor") != descriptor
+            or not hash_refs_equal(
+                verification.get("payloadHash"), artifact_ref["payloadHash"]
+            )
+            or not hash_refs_equal(
+                verification.get("envelopeHash"),
+                canonical_json_hash_ref(
+                    envelope, schema_version="SignedArtifactEnvelopeV1@1.0.0"
+                ),
+            )
+            or envelope.get("signingStatement", {}).get("signingPurpose")
+            != "osb-candidate-set"
+        ):
+            raise OsbCandidateSetError(
+                "OSB_CANDIDATE_SET_SIGNATURE_INVALID",
+                "Signer did not verify these exact artifact bytes.",
+                422,
+            )
+        return envelope
     return {
         "contractVersion": "SignedArtifactEnvelopeV1@1.0.0",
         "artifactDescriptor": descriptor,
@@ -1446,7 +1651,9 @@ def read_candidate_set_for_publication(
         "nativeVersion": str(row[6]),
         "assignment": payload.get("assignment"),
         "signedEnvelope": (
-            json.loads(str(row[7])) if row[7] else bind_candidate_set_envelope(artifact)
+            json.loads(str(row[7]))
+            if row[7]
+            else bind_candidate_set_envelope(artifact, payload)
         ),
     }
 
@@ -1622,7 +1829,7 @@ def generate_candidate_set(  # pylint: disable=too-many-locals
         envelope = (
             json.loads(str(row[7]))
             if len(row) > 7 and row[7]
-            else bind_candidate_set_envelope(json.loads(str(row[2])))
+            else bind_candidate_set_envelope(json.loads(str(row[2])), prior_payload)
         )
         assignment = _record(
             prior_payload.get("assignment"), "OSB_CANDIDATE_SET_ASSIGNMENT_REQUIRED"
@@ -1956,17 +2163,35 @@ def generate_candidate_set(  # pylint: disable=too-many-locals
             "byteSize": len(canonical_json(payload).encode("utf-8")),
             "classification": "regulated-non-phi",
             "tenantId": tenant_id,
-            "region": "us-central1",
+            "region": (
+                os.getenv("OSB_PLATFORM_ARTIFACT_REGION", "")
+                if settings.governed_candidates_enabled
+                else "us-central1"
+            ),
             "producerService": "osb.package",
-            "producerEnvironment": "prototype",
-            "producerVersion": "prototype",
+            "producerEnvironment": (
+                "production" if settings.governed_candidates_enabled else "prototype"
+            ),
+            "producerVersion": (
+                os.getenv("OSB_PLATFORM_PRODUCER_VERSION", "")
+                if settings.governed_candidates_enabled
+                else "prototype"
+            ),
             "payloadContract": "accuratrials.osb.OsbCandidateSetV1",
             "payloadContractVersion": "1.0.0",
-            "purpose": "mapping-adjudication",
+            "purpose": (
+                "osb-candidate-set"
+                if settings.governed_candidates_enabled
+                else "mapping-adjudication"
+            ),
             "createdAt": created_at,
         }
     )
-    envelope = (artifact_signer or bind_candidate_set_envelope)(artifact_ref)
+    envelope = (
+        artifact_signer(artifact_ref)
+        if artifact_signer
+        else bind_candidate_set_envelope(artifact_ref, payload)
+    )
     if (
         not isinstance(envelope, dict)
         or envelope.get("contractVersion") != "SignedArtifactEnvelopeV1@1.0.0"
@@ -2061,11 +2286,13 @@ __all__ = [
     "active_osb_binding",
     "assert_candidate_request_transfer_envelope",
     "assert_candidate_set_current",
+    "assert_governed_candidate_identity",
     "bind_candidate_set_envelope",
     "candidate_assignment_identity",
     "decode_signed_artifact_envelope_header",
     "generate_candidate_set",
     "load_candidate_request",
+    "read_native_binding_proof",
     "require_exactly_one_active_osb_binding",
     "store_candidate_request_bytes",
     "verify_candidate_request_artifact",

@@ -138,6 +138,20 @@ services:
       OSB_NATIVE_IDENTITY_INVENTORY_ENABLED: "${OSB_NATIVE_IDENTITY_INVENTORY_ENABLED:-False}"
       OSB_NATIVE_IDENTITY_SIGNING_URL: "${OSB_NATIVE_IDENTITY_SIGNING_URL:-}"
       OSB_PLATFORM_COMMAND_SIGNING_URL: "${OSB_PLATFORM_COMMAND_SIGNING_URL:-}"
+      # Governed candidate review (default off): signed candidate sets for a
+      # study that already holds a signed native binding. Startup refuses the
+      # flag without delegated OIDC, the three HTTPS custody endpoints, the
+      # signing token file (compose.signing.yaml mounts it) and the artifact
+      # region and producer version. Passed to this service only: the consumer
+      # and extensions APIs run the same startup check.
+      OSB_GOVERNED_CANDIDATES_ENABLED: "${OSB_GOVERNED_CANDIDATES_ENABLED:-false}"
+      OSB_PLATFORM_ARTIFACT_SIGNING_URL: "${OSB_PLATFORM_ARTIFACT_SIGNING_URL:-}"
+      OSB_PLATFORM_ARTIFACT_REGION: "${OSB_PLATFORM_ARTIFACT_REGION:-}"
+      OSB_PLATFORM_PRODUCER_VERSION: "${OSB_PLATFORM_PRODUCER_VERSION:-}"
+      # The governed lane carries a signed envelope in one request header. The
+      # production image serves HTTP with h11, which refuses a request whose
+      # header block is over 16 KiB unless this limit is raised.
+      UVICORN_H11_MAX_INCOMPLETE_EVENT_SIZE: "131072"
       # Domain audit chain of the platform command store
       # (services/integrations/platform_command.py). .dockerignore keeps every
       # .env out of the image, so these reach the container only from here. The
