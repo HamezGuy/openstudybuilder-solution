@@ -1,12 +1,12 @@
 {
   "contractVersion": "OsbVocabularyRegistryV1@1.1.0",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "owner": "ClinicalSemanticLayer",
   "canonicalNames": "OpenStudyBuilder resource type names, as its proposal target taxonomy names them; the IL ruleset uses the same names from 1.17.0 (formerNames records what 1.16.0 and earlier called three of them)",
   "sources": {
     "ruleset": {
       "path": "packages/mappings/il-to-usdm-v4.rules.json",
-      "version": "1.29.0"
+      "version": "1.30.0"
     },
     "generatedModule": "packages/semantic-core/src/generated/osb-vocabulary-registry.ts (scripts/generate-osb-vocabulary.mjs, part of contracts:generate and contracts:check)",
     "osbCopy": "clinical_mdr_api/schemas/platform/osb-vocabulary-registry-v1.json (registry:export-osb-vocabulary; byte identical)",
@@ -523,7 +523,8 @@
       "correspondence": "exact",
       "cslAssertionTypes": [
         "ELIGIBILITY_EXCLUSION",
-        "ELIGIBILITY_INCLUSION"
+        "ELIGIBILITY_INCLUSION",
+        "WITHDRAWAL_CRITERION"
       ],
       "cslCapability": "native_study_mutation",
       "cslExecutable": true,
@@ -546,7 +547,7 @@
       ],
       "apiPath": "/studies/{studyUid}/study-criteria",
       "semanticMismatch": false,
-      "note": "",
+      "note": "Ruleset 1.30.0: a WITHDRAWAL_CRITERION whose stated type is STUDY_WITHDRAWAL or TREATMENT_DISCONTINUATION routes here as a criterion of type Withdrawal Criteria (the rule's field scope); its other stated types stay an IntegrationExtension.",
       "captureReadbackResourceType": null,
       "cslCandidateRouting": "study-mutation",
       "cslNativeRoute": {
@@ -1709,6 +1710,7 @@
       "cslAssertionTypes": [
         "ABBREVIATION_DEFINITION",
         "PROTOCOL_STATEMENT",
+        "REGISTRY_SOURCE_OBSERVATION",
         "RETAINED_SOURCE_RECORD",
         "STATISTICAL_CONSIDERATION"
       ],
@@ -1728,7 +1730,7 @@
       ],
       "apiPath": null,
       "semanticMismatch": false,
-      "note": "Verbatim sentences are retained as claims in CSL; NarrativeContent only when a definition must reference a text as a whole.",
+      "note": "Verbatim sentences are retained as claims in CSL; NarrativeContent only when a definition must reference a text as a whole. Ruleset 1.30.0: a registry observation (REGISTRY_SOURCE_OBSERVATION) is retained the same way, as an observation the registry reports beside the protocol.",
       "captureReadbackResourceType": null,
       "cslCandidateRouting": null,
       "cslNativeRoute": null,
@@ -1763,5 +1765,5 @@
       "dependencies": []
     }
   ],
-  "registryHash": "sha256:a2026b309959b663cc7a52edc45dcc4060059569c9aecb70fd9c8d34b1de59e5"
+  "registryHash": "sha256:0df18ae3fa2438d6c9eceef7c984bc96a883f17e3379b8dbbc149fb088186466"
 }

@@ -125,6 +125,7 @@
       "osbResourceTypes": [],
       "ilAssertionTypes": [
         "PROTOCOL_STATEMENT",
+        "REGISTRY_SOURCE_OBSERVATION",
         "RETAINED_SOURCE_RECORD",
         "STUDY_DESIGN_ATTRIBUTE",
         "USER_AUTHORED"
@@ -1222,7 +1223,7 @@
     },
     {
       "cslObjectType": "Site",
-      "profile": "conduct",
+      "profile": "usdm-study-design",
       "dataPlane": "global-definition",
       "osbClasses": [],
       "osbResourceTypes": [],
@@ -7694,5 +7695,5 @@
       "note": "Domain audit export bundle; no CSL table."
     }
   ],
-  "mapHash": "sha256:a30829c57de7b1c841980a90047471e58309aba4bb037fd087bf394dce012a75"
+  "mapHash": "sha256:ea38b7de8b613f7c9758d7144f84d7af4d1222778078f231d81546a3545f21b1"
 }
