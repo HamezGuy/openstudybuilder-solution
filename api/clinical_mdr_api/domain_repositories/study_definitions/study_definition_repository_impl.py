@@ -35,10 +35,12 @@ from clinical_mdr_api.domain_repositories.models.generic import (
 from clinical_mdr_api.domain_repositories.models.project import Project
 from clinical_mdr_api.domain_repositories.models.study import StudyRoot, StudyValue
 from clinical_mdr_api.domain_repositories.models.study_audit_trail import (
+    Archive,
     Create,
     Delete,
     Edit,
     StudyAction,
+    Unarchive,
 )
 from clinical_mdr_api.domain_repositories.models.study_field import (
     StudyArrayField,
@@ -68,6 +70,7 @@ from clinical_mdr_api.domains.study_definition_aggregates.study_configuration im
 )
 from clinical_mdr_api.domains.study_definition_aggregates.study_metadata import (
     HighLevelStudyDesignVO,
+    StudyArchiveVO,
     StudyDescriptionVO,
     StudyFieldAuditTrailActionVO,
     StudyFieldAuditTrailEntryAR,
@@ -634,6 +637,7 @@ class StudyDefinitionRepositoryImpl(StudyDefinitionRepository, RepositoryImpl):
                 if draft_end is None
                 else StudyStatus.LOCKED.value
             ),
+            archive=cls._retrieve_study_archive(root.uid),
         )
 
         # Build _AdditionalClosure for update flow by inflating raw relationship objects
@@ -694,6 +698,21 @@ class StudyDefinitionRepositoryImpl(StudyDefinitionRepository, RepositoryImpl):
 
         # we do nothing if nothing changed
         if previous_snapshot == current_snapshot and not is_subpart_relationship_update:
+            return
+
+        # an archive or unarchive act: one :StudyAction:Archive or :StudyAction:Unarchive node on the audit trail, and
+        # nothing else. StudyDefinitionAR.mark_archived and mark_unarchived change only the archive, and the service
+        # saves the aggregate right after either, so no study value, version or relationship changes with the act.
+        if current_snapshot.archive != previous_snapshot.archive:
+            if is_subpart_relationship_update or current_snapshot.archive is None:
+                raise exceptions.BusinessLogicException(
+                    msg=f"Study {current_snapshot.uid}: an archive or unarchive act is saved on its own. Nothing was saved."
+                )
+            self._generate_study_archive_audit_node(
+                study_root_node=root,
+                study_value_node=previous_value,
+                archive=current_snapshot.archive,
+            )
             return
 
         # generate :StudyAction:Delete node
@@ -2540,6 +2559,52 @@ class StudyDefinitionRepositoryImpl(StudyDefinitionRepository, RepositoryImpl):
         study_root_node.audit_trail.connect(audit_node)
         return audit_node
 
+    @staticmethod
+    def _generate_study_archive_audit_node(
+        study_root_node: StudyRoot,
+        study_value_node: StudyValue,
+        archive: StudyArchiveVO,
+    ) -> StudyAction:
+        """
+        Records an archive or unarchive act on the study's audit trail: a :StudyAction:Archive (or :Unarchive) node
+        with the date, the author and the stated reason, whose AFTER points to the study value current at the time
+        (the version the act applies to, unchanged by it). Nothing else is written: no study value, version or
+        relationship is made, ended or removed, so unarchiving restores the study exactly.
+        """
+        audit_node = Archive() if archive.archived else Unarchive()
+        audit_node.date = archive.date
+        if archive.author_id:
+            audit_node.author_id = archive.author_id
+        audit_node.change_reason = archive.reason
+        audit_node.save()
+        audit_node.study_value_node_has_after.connect(study_value_node)
+        study_root_node.audit_trail.connect(audit_node)
+        return audit_node
+
+    @staticmethod
+    def _retrieve_study_archive(uid: str) -> StudyArchiveVO | None:
+        """The newest archive or unarchive act on the study's audit trail; None when the study was never archived."""
+        rows, _ = db.cypher_query(
+            """
+            MATCH (:StudyRoot {uid: $uid})-[:AUDIT_TRAIL]->(act:StudyAction)
+            WHERE act:Archive OR act:Unarchive
+            RETURN act:Archive AS archived, act.date AS date, act.author_id AS author_id,
+                   act.change_reason AS reason
+            ORDER BY act.date DESC, elementId(act) DESC
+            LIMIT 1
+            """,
+            params={"uid": uid},
+        )
+        if not rows:
+            return None
+        archived, date, author_id, reason = rows[0]
+        return StudyArchiveVO(
+            archived=archived is True,
+            date=convert_to_datetime(value=date),
+            author_id=author_id,
+            reason=reason,
+        )
+
     def _create_versioning_data(
         self, snapshot: StudyDefinitionSnapshot
     ) -> Mapping[str, Any]:
@@ -2573,8 +2638,11 @@ class StudyDefinitionRepositoryImpl(StudyDefinitionRepository, RepositoryImpl):
     def _retrieve_fields_audit_trail(
         self, uid: str
     ) -> list[StudyFieldAuditTrailEntryAR] | None:
+        # An archive or unarchive act changes no field (its AFTER is the unchanged study value), so it is not a row of
+        # the field audit trail; the study read states it (archive).
         query = """
         MATCH (root:StudyRoot {uid: $studyuid})-[:AUDIT_TRAIL]->(action)
+        WHERE NOT action:Archive AND NOT action:Unarchive
 
         OPTIONAL MATCH (action)-[:BEFORE]->(before)
         WHERE "StudyField" in labels(before) or "StudyValue" in labels(before)

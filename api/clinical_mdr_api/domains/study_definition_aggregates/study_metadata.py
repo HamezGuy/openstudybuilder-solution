@@ -388,6 +388,26 @@ class StudyVersionMetadataVO:
 
 
 @dataclass(frozen=True)
+class StudyArchiveVO:
+    """
+    A study's archive state: the newest archive or unarchive act on its audit trail (a :StudyAction:Archive or
+    :StudyAction:Unarchive node). An archive is soft and restorable: it changes no version, deletes nothing and leaves
+    the study status (DRAFT, LOCKED) as it was; unarchiving restores the study exactly. A study never archived has none.
+
+    *Attributes*:
+        * archived - whether the study is archived now
+        * date - when the act was made
+        * author_id - who made it (the user id the audit trail records for every study act)
+        * reason - why, as the person stated it
+    """
+
+    archived: bool
+    date: datetime | None = None
+    author_id: str | None = None
+    reason: str | None = None
+
+
+@dataclass(frozen=True)
 class HighLevelStudyDesignVO:
     study_type_code: str | None = None
     observational_model_code: str | None = None

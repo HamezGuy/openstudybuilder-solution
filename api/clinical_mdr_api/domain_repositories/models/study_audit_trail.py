@@ -74,5 +74,15 @@ class Edit(StudyAction):
     pass
 
 
+class Archive(StudyAction):
+    """A study archived: AFTER points to the study value current when it was archived, change_reason states why.
+    The newest Archive or Unarchive on a study's audit trail is its archive state (StudyArchiveVO).
+    """
+
+
+class Unarchive(StudyAction):
+    """An archived study restored: AFTER points to the study value current when it was restored."""
+
+
 class UpdateSoASnapshot(StudyAction):
     object_type = StringProperty()

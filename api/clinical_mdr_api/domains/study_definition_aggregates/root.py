@@ -10,6 +10,7 @@ from clinical_mdr_api.domains.study_definition_aggregates.registry_identifiers i
 from clinical_mdr_api.domains.study_definition_aggregates.study_metadata import (
     HighLevelStudyDesignVO,
     StudyAction,
+    StudyArchiveVO,
     StudyDescriptionVO,
     StudyIdentificationMetadataVO,
     StudyInterventionVO,
@@ -34,6 +35,7 @@ class StudyDefinitionSnapshot:
         * released_metadata - only valid if draft_metadata provided
         * locked_metadata_versions - sequence of locked versions in order of version increasing version numbers
             (version 1 goes first)
+        * archive - the newest archive or unarchive act of the study (None when it was never archived)
     """
 
     uid: str
@@ -46,6 +48,7 @@ class StudyDefinitionSnapshot:
     study_status: str | None
     deleted: bool
     specific_metadata: StudyMetadataVO | None = None
+    archive: StudyArchiveVO | None = None
 
 
 # a global helper variables used as a default for some methods arguments in the StudyDefinitionAR class
@@ -138,15 +141,30 @@ class StudyDefinitionAR:
     _locked_metadata_versions: list[StudyMetadataVO]
     _deleted: bool
     _specific_metadata: StudyMetadataVO | None = None
+    # the newest archive or unarchive act (None when the study was never archived)
+    _archive: StudyArchiveVO | None = None
 
     @property
     def uid(self) -> str:
         return self._uid
 
+    @property
+    def archive(self) -> StudyArchiveVO | None:
+        return self._archive
+
+    @property
+    def archived(self) -> bool:
+        return self._archive is not None and self._archive.archived
+
     def get_possible_actions(self):
         """
-        Returns set of possible actions
+        Returns set of possible actions. An archived study is not deleted until it is unarchived (mark_deleted).
         """
+        if self.archived:
+            return set(self._possible_actions_by_status()) - {StudyAction.DELETE}
+        return self._possible_actions_by_status()
+
+    def _possible_actions_by_status(self):
         if self.study_status == StudyStatus.DRAFT and not self.latest_locked_metadata:
             if self.study_parent_part_uid:
                 return {StudyAction.DELETE}
@@ -630,6 +648,10 @@ class StudyDefinitionAR:
 
     def mark_deleted(self) -> None:
         BusinessLogicException.raise_if(
+            self.archived,
+            msg=f"OSB_STUDY_ARCHIVED: Study {self.uid} is archived. Unarchive it before deleting it; nothing was deleted.",
+        )
+        BusinessLogicException.raise_if(
             self.latest_locked_metadata is not None,
             msg=f"Study {self.uid}: cannot delete a StudyDefinition having some locked versions.",
         )
@@ -638,6 +660,45 @@ class StudyDefinitionAR:
             msg=f"Study {self.uid}: cannot delete a Study having Study Subparts: {self.study_subpart_uids}.",
         )
         self._deleted = True
+
+    def _archive_act(self, *, archived: bool, author_id: str, reason: str) -> bool:
+        """
+        The study becomes archived (or active again), recorded with who and why. Answers False, changing nothing, when
+        it already is: archiving is idempotent. A soft archive: no version is made, ended or deleted, the study status
+        (DRAFT, LOCKED) and every version stay as they are, and unarchiving restores the study exactly. A study with
+        locked versions is archived like any other; a subpart is archived with its parent study.
+        """
+        stated = (reason or "").strip()
+        ValidationException.raise_if(
+            not stated,
+            msg="OSB_STUDY_ARCHIVE_REASON_REQUIRED: State why; the reason is recorded with the act. Nothing was changed.",
+        )
+        BusinessLogicException.raise_if(
+            self._deleted,
+            msg=f"OSB_STUDY_ARCHIVE_DELETED: Study {self.uid} is deleted, so it is neither archived nor unarchived. Nothing was changed.",
+        )
+        BusinessLogicException.raise_if(
+            bool(self.study_parent_part_uid),
+            msg=f"OSB_STUDY_ARCHIVE_SUBPART: Study {self.uid} is a subpart of Study {self.study_parent_part_uid}; "
+            "a subpart is archived and unarchived with its parent study. Nothing was changed.",
+        )
+        if self.archived == archived:
+            return False
+        self._archive = StudyArchiveVO(
+            archived=archived,
+            date=datetime.now(UTC),
+            author_id=author_id,
+            reason=stated,
+        )
+        return True
+
+    def mark_archived(self, author_id: str, reason: str) -> bool:
+        """Archives the study. False when it is already archived (nothing changes)."""
+        return self._archive_act(archived=True, author_id=author_id, reason=reason)
+
+    def mark_unarchived(self, author_id: str, reason: str) -> bool:
+        """Restores an archived study. False when it is not archived (nothing changes)."""
+        return self._archive_act(archived=False, author_id=author_id, reason=reason)
 
     @property
     def latest_locked_metadata(self) -> StudyMetadataVO | None:
@@ -738,6 +799,7 @@ class StudyDefinitionAR:
             current_metadata=current_metadata,
             draft_metadata=draft_metadata,
             study_status=study_status,
+            archive=self._archive,
         )
 
     @staticmethod
@@ -818,6 +880,7 @@ class StudyDefinitionAR:
             _locked_metadata_versions=locked_metadata_versions,
             _deleted=study_snapshot.deleted,
             _specific_metadata=specific_metadata,
+            _archive=study_snapshot.archive,
         )
 
     @classmethod

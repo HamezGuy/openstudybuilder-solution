@@ -27,6 +27,7 @@ from clinical_mdr_api.domains.study_definition_aggregates.registry_identifiers i
 from clinical_mdr_api.domains.study_definition_aggregates.root import StudyDefinitionAR
 from clinical_mdr_api.domains.study_definition_aggregates.study_metadata import (
     HighLevelStudyDesignVO,
+    StudyArchiveVO,
     StudyComponentEnum,
     StudyDescriptionVO,
     StudyFieldAuditTrailEntryAR,
@@ -53,6 +54,7 @@ from clinical_mdr_api.models.utils import (
     PatchInputModel,
     PostInputModel,
 )
+from clinical_mdr_api.services.user_info import UserInfoService
 from common.config import settings
 from common.exceptions import (
     BusinessLogicException,
@@ -2266,6 +2268,57 @@ class StudySimple(StudyMinimal):
         )
 
 
+class StudyArchive(BaseModel):
+    archived: Annotated[
+        bool,
+        Field(
+            description="Whether the study is archived. An archived study keeps every version and its study status "
+            "(current_metadata.version_metadata.study_status is still DRAFT or LOCKED); "
+            "POST /studies/{study_uid}/unarchive restores it."
+        ),
+    ] = False
+    date: Annotated[
+        datetime | None,
+        Field(
+            description="When the newest archive or unarchive act was made; null when the study was never archived.",
+            json_schema_extra={"nullable": True},
+        ),
+    ] = None
+    author_id: Annotated[
+        str | None,
+        Field(
+            description="Who made the newest archive or unarchive act.",
+            json_schema_extra={"nullable": True},
+        ),
+    ] = None
+    author_username: Annotated[
+        str | None, Field(json_schema_extra={"nullable": True})
+    ] = None
+    reason: Annotated[
+        str | None,
+        Field(
+            description="Why, as stated with the newest archive or unarchive act.",
+            json_schema_extra={"nullable": True},
+        ),
+    ] = None
+
+    @classmethod
+    def from_study_archive_vo(cls, archive: StudyArchiveVO | None) -> Self:
+        if archive is None:
+            return cls(archived=False)
+        return cls(
+            archived=archive.archived,
+            date=archive.date,
+            author_id=archive.author_id,
+            author_username=(
+                UserInfoService.get_author_username_from_id(archive.author_id)
+                if archive.author_id
+                else None
+            ),
+            reason=archive.reason,
+        )
+
+
 class Study(BaseModel):
     uid: Annotated[str, Field(description="The unique id of the study.")]
     study_parent_part: Annotated[
@@ -2282,6 +2335,11 @@ class Study(BaseModel):
             )
         ),
     ]
+    archive: StudyArchive = Field(
+        default_factory=StudyArchive,
+        description="The study's archive state (a soft, restorable archive, recorded on its audit trail). "
+        "Stated for the study as a whole, whichever version is read.",
+    )
     current_metadata: Annotated[
         StudyMetadataJsonModel | None, Field(json_schema_extra={"nullable": True})
     ] = None
@@ -2337,6 +2395,7 @@ class Study(BaseModel):
                 if is_metadata_the_last_one
                 else []
             ),
+            archive=StudyArchive.from_study_archive_vo(study_definition_ar.archive),
             current_metadata=StudyMetadataJsonModel.from_study_metadata_vo(
                 study_metadata_vo=current_metadata,
                 find_project_by_project_number=find_project_by_project_number,
@@ -2496,6 +2555,57 @@ class StudyLockInput(LockReleaseInput):
 class UnlockInput(BaseModel):
     reason_for_change_uid: Annotated[str, Field(min_length=1)]
     other_reason_for_unlocking: Annotated[str | None, Field()] = None
+
+
+STUDY_ARCHIVE_REASON_MAX_LENGTH = 4000
+
+
+class StudyArchiveInput(PostInputModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: Annotated[
+        str,
+        Field(
+            min_length=1,
+            max_length=STUDY_ARCHIVE_REASON_MAX_LENGTH,
+            description="Why the study is archived (or unarchived). Recorded with the act on the study's audit trail.",
+        ),
+    ]
+
+
+class StudyArchiveOutcome(BaseModel):
+    uid: Annotated[str, Field(description="The unique id of the study.")]
+    outcome: Annotated[
+        str,
+        Field(
+            description="archived or unarchived when this request made the act; already-archived or already-active "
+            "when the study already was (nothing changed, and archive states the act that made it so)."
+        ),
+    ]
+    archive: StudyArchive
+    study_status: Annotated[
+        str | None,
+        Field(
+            description="current_metadata.version_metadata.study_status, which an archive never changes.",
+            json_schema_extra={"nullable": True},
+        ),
+    ] = None
+
+    @classmethod
+    def from_study_definition_ar(
+        cls, study_definition_ar: StudyDefinitionAR, outcome: str
+    ) -> Self:
+        current = study_definition_ar.current_metadata
+        return cls(
+            uid=study_definition_ar.uid,
+            outcome=outcome,
+            archive=StudyArchive.from_study_archive_vo(study_definition_ar.archive),
+            study_status=(
+                current.ver_metadata.study_status.value
+                if current is not None and current.ver_metadata is not None
+                else None
+            ),
+        )
 
 
 class StudyFieldAuditTrailAction(BaseModel):

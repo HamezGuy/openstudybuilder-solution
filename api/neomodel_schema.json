@@ -7730,6 +7730,75 @@
       ]
     },
     {
+      "class": "Archive",
+      "label": "Archive",
+      "module": "clinical_mdr_api.domain_repositories.models.study_audit_trail",
+      "properties": {
+        "author_id": "StringProperty",
+        "change_reason": "StringProperty",
+        "date": "ZonedDateTimeProperty",
+        "status": "StringProperty"
+      },
+      "relationships": [
+        {
+          "attribute": "audit_trail",
+          "cardinality": "ZeroOrMore",
+          "direction": "INCOMING",
+          "rel_properties_model": "clinical_mdr_api.domain_repositories.models.generic.ClinicalMdrRel",
+          "relation_type": "AUDIT_TRAIL",
+          "target_class": "clinical_mdr_api.domain_repositories.models.study.StudyRoot"
+        },
+        {
+          "attribute": "has_after",
+          "cardinality": "One",
+          "direction": "OUTGOING",
+          "rel_properties_model": "clinical_mdr_api.domain_repositories.models.generic.ConjunctionRelation",
+          "relation_type": "AFTER",
+          "target_class": "clinical_mdr_api.domain_repositories.models.study_selections.StudySelection"
+        },
+        {
+          "attribute": "has_before",
+          "cardinality": "ZeroOrOne",
+          "direction": "OUTGOING",
+          "rel_properties_model": "clinical_mdr_api.domain_repositories.models.generic.ConjunctionRelation",
+          "relation_type": "BEFORE",
+          "target_class": "clinical_mdr_api.domain_repositories.models.study_selections.StudySelection"
+        },
+        {
+          "attribute": "study_field_has_before",
+          "cardinality": "ZeroOrOne",
+          "direction": "OUTGOING",
+          "rel_properties_model": "clinical_mdr_api.domain_repositories.models.generic.ConjunctionRelation",
+          "relation_type": "BEFORE",
+          "target_class": "clinical_mdr_api.domain_repositories.models.study_field.StudyField"
+        },
+        {
+          "attribute": "study_field_node_has_after",
+          "cardinality": "One",
+          "direction": "OUTGOING",
+          "rel_properties_model": "clinical_mdr_api.domain_repositories.models.generic.ConjunctionRelation",
+          "relation_type": "AFTER",
+          "target_class": "clinical_mdr_api.domain_repositories.models.study_field.StudyField"
+        },
+        {
+          "attribute": "study_value_has_before",
+          "cardinality": "ZeroOrOne",
+          "direction": "OUTGOING",
+          "rel_properties_model": "clinical_mdr_api.domain_repositories.models.generic.ConjunctionRelation",
+          "relation_type": "BEFORE",
+          "target_class": "clinical_mdr_api.domain_repositories.models.study.StudyValue"
+        },
+        {
+          "attribute": "study_value_node_has_after",
+          "cardinality": "One",
+          "direction": "OUTGOING",
+          "rel_properties_model": "clinical_mdr_api.domain_repositories.models.generic.ConjunctionRelation",
+          "relation_type": "AFTER",
+          "target_class": "clinical_mdr_api.domain_repositories.models.study.StudyValue"
+        }
+      ]
+    },
+    {
       "class": "Create",
       "label": "Create",
       "module": "clinical_mdr_api.domain_repositories.models.study_audit_trail",
@@ -7941,6 +8010,75 @@
     {
       "class": "StudyAction",
       "label": "StudyAction",
+      "module": "clinical_mdr_api.domain_repositories.models.study_audit_trail",
+      "properties": {
+        "author_id": "StringProperty",
+        "change_reason": "StringProperty",
+        "date": "ZonedDateTimeProperty",
+        "status": "StringProperty"
+      },
+      "relationships": [
+        {
+          "attribute": "audit_trail",
+          "cardinality": "ZeroOrMore",
+          "direction": "INCOMING",
+          "rel_properties_model": "clinical_mdr_api.domain_repositories.models.generic.ClinicalMdrRel",
+          "relation_type": "AUDIT_TRAIL",
+          "target_class": "clinical_mdr_api.domain_repositories.models.study.StudyRoot"
+        },
+        {
+          "attribute": "has_after",
+          "cardinality": "One",
+          "direction": "OUTGOING",
+          "rel_properties_model": "clinical_mdr_api.domain_repositories.models.generic.ConjunctionRelation",
+          "relation_type": "AFTER",
+          "target_class": "clinical_mdr_api.domain_repositories.models.study_selections.StudySelection"
+        },
+        {
+          "attribute": "has_before",
+          "cardinality": "ZeroOrOne",
+          "direction": "OUTGOING",
+          "rel_properties_model": "clinical_mdr_api.domain_repositories.models.generic.ConjunctionRelation",
+          "relation_type": "BEFORE",
+          "target_class": "clinical_mdr_api.domain_repositories.models.study_selections.StudySelection"
+        },
+        {
+          "attribute": "study_field_has_before",
+          "cardinality": "ZeroOrOne",
+          "direction": "OUTGOING",
+          "rel_properties_model": "clinical_mdr_api.domain_repositories.models.generic.ConjunctionRelation",
+          "relation_type": "BEFORE",
+          "target_class": "clinical_mdr_api.domain_repositories.models.study_field.StudyField"
+        },
+        {
+          "attribute": "study_field_node_has_after",
+          "cardinality": "One",
+          "direction": "OUTGOING",
+          "rel_properties_model": "clinical_mdr_api.domain_repositories.models.generic.ConjunctionRelation",
+          "relation_type": "AFTER",
+          "target_class": "clinical_mdr_api.domain_repositories.models.study_field.StudyField"
+        },
+        {
+          "attribute": "study_value_has_before",
+          "cardinality": "ZeroOrOne",
+          "direction": "OUTGOING",
+          "rel_properties_model": "clinical_mdr_api.domain_repositories.models.generic.ConjunctionRelation",
+          "relation_type": "BEFORE",
+          "target_class": "clinical_mdr_api.domain_repositories.models.study.StudyValue"
+        },
+        {
+          "attribute": "study_value_node_has_after",
+          "cardinality": "One",
+          "direction": "OUTGOING",
+          "rel_properties_model": "clinical_mdr_api.domain_repositories.models.generic.ConjunctionRelation",
+          "relation_type": "AFTER",
+          "target_class": "clinical_mdr_api.domain_repositories.models.study.StudyValue"
+        }
+      ]
+    },
+    {
+      "class": "Unarchive",
+      "label": "Unarchive",
       "module": "clinical_mdr_api.domain_repositories.models.study_audit_trail",
       "properties": {
         "author_id": "StringProperty",
@@ -13460,5 +13598,5 @@
       ]
     }
   ],
-  "structured_node_class_count": 254
+  "structured_node_class_count": 256
 }

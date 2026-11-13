@@ -3,7 +3,7 @@
   "info": {
     "title": "OpenStudyBuilder API",
     "description": "\n## NOTICE\n\nThis license information is applicable to the swagger documentation of the clinical-mdr-api, that is the openapi.json.\n\n## License Terms (MIT)\n\nCopyright (C) 2025 Novo Nordisk A/S, Danish company registration no. 24256790\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies\nof the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS\nFOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER\nIN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\n\n## Licenses and Acknowledgements for Incorporated Software\n\nThis component contains software licensed under different licenses when compiled, please refer to the third-party-licenses.md file for further information and full license texts.\n\n## Authentication\n\nSupports OAuth2 [Authorization Code Flow](https://datatracker.ietf.org/doc/html/rfc6749#section-4.1),\nat paths described in the OpenID Connect Discovery metadata document (whose URL is defined by the `OAUTH_METADATA_URL` environment variable).\n\nMicrosoft Identity Platform documentation can be read \n([here](https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-auth-code-flow)).\n\nAuthentication can be turned off with `OAUTH_ENABLED=false` environment variable. \n\nWhen authentication is turned on, all requests to protected API endpoints must provide a valid bearer (JWT) token inside the `Authorization` http header. \n",
-    "version": "3.0.720"
+    "version": "3.0.721"
   },
   "paths": {
     "/": {
@@ -71410,7 +71410,7 @@
           "Studies"
         ],
         "summary": "Deletes a Study",
-        "description": "State before:\n - uid must exist\n - The Study must be in status Draft and it couldn't be locked before.\n\nBusiness logic:\n - The draft Study is deleted.\n\nState after:\n - Study is successfully deleted.\n\nPossible errors:\n - Invalid uid or status not Draft or Study was previously locked.",
+        "description": "State before:\n - uid must exist\n - The Study must be in status Draft and it couldn't be locked before.\n\nBusiness logic:\n - The draft Study is deleted.\n\nState after:\n - Study is successfully deleted.\n\nPossible errors:\n - Invalid uid or status not Draft or Study was previously locked.\n - The Study is archived (OSB_STUDY_ARCHIVED): unarchive it first.",
         "operationId": "delete_study_studies__study_uid__delete",
         "security": [
           {
@@ -71656,6 +71656,168 @@
           },
           "400": {
             "description": "Some application/business rules forbid to process the request. Expect more detailed information in response body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found - The study with the specified 'study_uid'.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/studies/{study_uid}/archive": {
+      "post": {
+        "tags": [
+          "Studies"
+        ],
+        "summary": "Archives a Study: a soft, restorable archive recorded on its audit trail",
+        "description": "State before:\n - uid must exist; the Study is not deleted and is not a subpart (a subpart is archived with its parent).\n\nBusiness logic:\n - A :StudyAction:Archive node is added to the Study's audit trail with the date, the author and the stated reason.\n - Nothing else changes: no version is made, ended or deleted, the study status (DRAFT, LOCKED) stays as it is, and a\n   Study with locked versions is archived like any other. This is never the soft delete (DELETE /studies/{study_uid}).\n - Idempotent: an archived Study answers `already-archived` and keeps the act that archived it.\n\nState after:\n - GET /studies/{study_uid} states `archive.archived: true` with the act's date, author and reason;\n   POST /studies/{study_uid}/unarchive restores the Study. An archived Study is not deleted until it is unarchived.\n\nRequires the Admin.Write role.",
+        "operationId": "archive_study_studies__study_uid__archive_post",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "study_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The unique id of the study.",
+              "title": "Study Uid"
+            },
+            "description": "The unique id of the study."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudyArchiveInput",
+                "description": "Why the study is archived."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudyArchiveOutcome"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BusinessLogicException - the message starts with its code: OSB_STUDY_ARCHIVE_DELETED (the study is deleted) or OSB_STUDY_ARCHIVE_SUBPART (a subpart is archived with its parent study). Nothing was changed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found - The study with the specified 'study_uid'.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/studies/{study_uid}/unarchive": {
+      "post": {
+        "tags": [
+          "Studies"
+        ],
+        "summary": "Restores an archived Study",
+        "description": "State before:\n - uid must exist; the Study is not deleted and is not a subpart.\n\nBusiness logic:\n - A :StudyAction:Unarchive node is added to the Study's audit trail with the date, the author and the stated reason.\n - Nothing else changes: the Study's versions and study status are those it had before it was archived.\n - Idempotent: a Study that is not archived answers `already-active`.\n\nState after:\n - GET /studies/{study_uid} states `archive.archived: false` with the act's date, author and reason.\n\nRequires the Admin.Write role.",
+        "operationId": "unarchive_study_studies__study_uid__unarchive_post",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "study_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "The unique id of the study.",
+              "title": "Study Uid"
+            },
+            "description": "The unique id of the study."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudyArchiveInput",
+                "description": "Why the study is restored."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudyArchiveOutcome"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BusinessLogicException - the message starts with its code: OSB_STUDY_ARCHIVE_DELETED (the study is deleted) or OSB_STUDY_ARCHIVE_SUBPART (a subpart is archived with its parent study). Nothing was changed.",
             "content": {
               "application/json": {
                 "schema": {
@@ -167010,6 +167172,10 @@
             "title": "Possible Actions",
             "description": "Holds those actions that can be performed on the ActivityInstances. Actions are: 'lock', 'release', 'unlock', 'delete'."
           },
+          "archive": {
+            "$ref": "#/components/schemas/StudyArchive",
+            "description": "The study's archive state (a soft, restorable archive, recorded on its audit trail). Stated for the study as a whole, whichever version is read."
+          },
           "current_metadata": {
             "anyOf": [
               {
@@ -167969,6 +168135,124 @@
         ],
         "title": "StudyAmendment",
         "description": "Authored facts only. An empty arm list does not mean all arms."
+      },
+      "StudyArchive": {
+        "properties": {
+          "archived": {
+            "type": "boolean",
+            "title": "Archived",
+            "description": "Whether the study is archived. An archived study keeps every version and its study status (current_metadata.version_metadata.study_status is still DRAFT or LOCKED); POST /studies/{study_uid}/unarchive restores it.",
+            "default": false
+          },
+          "date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date",
+            "description": "When the newest archive or unarchive act was made; null when the study was never archived.",
+            "nullable": true
+          },
+          "author_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Id",
+            "description": "Who made the newest archive or unarchive act.",
+            "nullable": true
+          },
+          "author_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Username",
+            "nullable": true
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason",
+            "description": "Why, as stated with the newest archive or unarchive act.",
+            "nullable": true
+          }
+        },
+        "type": "object",
+        "title": "StudyArchive"
+      },
+      "StudyArchiveInput": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Reason",
+            "description": "Why the study is archived (or unarchived). Recorded with the act on the study's audit trail."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "title": "StudyArchiveInput"
+      },
+      "StudyArchiveOutcome": {
+        "properties": {
+          "uid": {
+            "type": "string",
+            "title": "Uid",
+            "description": "The unique id of the study."
+          },
+          "outcome": {
+            "type": "string",
+            "title": "Outcome",
+            "description": "archived or unarchived when this request made the act; already-archived or already-active when the study already was (nothing changed, and archive states the act that made it so)."
+          },
+          "archive": {
+            "$ref": "#/components/schemas/StudyArchive"
+          },
+          "study_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Study Status",
+            "description": "current_metadata.version_metadata.study_status, which an archive never changes.",
+            "nullable": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "uid",
+          "outcome",
+          "archive"
+        ],
+        "title": "StudyArchiveOutcome"
       },
       "StudyArmLifecycleEvent": {
         "properties": {

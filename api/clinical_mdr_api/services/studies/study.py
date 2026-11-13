@@ -77,6 +77,7 @@ from clinical_mdr_api.models.study_selections.study import (
     RegistryIdentifiersJsonModel,
     Study,
     StudyAmendment,
+    StudyArchiveOutcome,
     StudyCloneInput,
     StudyCreateInput,
     StudyDescriptionJsonModel,
@@ -297,6 +298,7 @@ class StudyService:
             "study_parent_part",
             "study_subpart_uids",
             "possible_actions",
+            "archive",
         }
         if include_sections:
             include_spec_set = {
@@ -1473,6 +1475,52 @@ class StudyService:
 
             if is_subpart:
                 self.reorder_study_subparts(study_definition.study_parent_part_uid)
+        finally:
+            self._close_all_repos()
+
+    @ensure_transaction(db)
+    def archive(self, uid: str, reason: str) -> StudyArchiveOutcome:
+        """A soft, restorable archive of the study (StudyDefinitionAR.mark_archived), recorded on its audit trail.
+        Never the soft delete: it works for a study with locked versions and unarchive restores it.
+        """
+        return self._archive_act(uid=uid, reason=reason, archived=True)
+
+    @ensure_transaction(db)
+    def unarchive(self, uid: str, reason: str) -> StudyArchiveOutcome:
+        """Restores an archived study (StudyDefinitionAR.mark_unarchived), recorded on its audit trail."""
+        return self._archive_act(uid=uid, reason=reason, archived=False)
+
+    def _archive_act(
+        self, *, uid: str, reason: str, archived: bool
+    ) -> StudyArchiveOutcome:
+        try:
+            repository = self._repos.study_definition_repository
+            # A deleted study is refused by name before the update read, which refuses it without a code.
+            BusinessLogicException.raise_if(
+                repository.check_if_study_is_deleted(study_uid=uid),
+                msg=f"OSB_STUDY_ARCHIVE_DELETED: Study {uid} is deleted, so it is neither archived nor unarchived. "
+                "Nothing was changed.",
+            )
+            study_definition = repository.find_by_uid(uid, for_update=True)
+            if study_definition is None or not _caller_may_see(study_definition):
+                raise NotFoundException("Study Definition", uid)
+            changed = (
+                study_definition.mark_archived(author_id=self.author_id, reason=reason)
+                if archived
+                else study_definition.mark_unarchived(
+                    author_id=self.author_id, reason=reason
+                )
+            )
+            if changed:
+                repository.save(study_definition)
+            outcome = (
+                ("archived" if archived else "unarchived")
+                if changed
+                else ("already-archived" if archived else "already-active")
+            )
+            return StudyArchiveOutcome.from_study_definition_ar(
+                study_definition, outcome=outcome
+            )
         finally:
             self._close_all_repos()
 

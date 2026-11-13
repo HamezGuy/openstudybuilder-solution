@@ -23,6 +23,8 @@ from clinical_mdr_api.models.study_selections.study import (
     CompactStudy,
     LockReleaseInput,
     Study,
+    StudyArchiveInput,
+    StudyArchiveOutcome,
     StudyCloneInput,
     StudyCreateInput,
     StudyFieldAuditTrailEntry,
@@ -731,6 +733,7 @@ State after:
 
 Possible errors:
  - Invalid uid or status not Draft or Study was previously locked.
+ - The Study is archived (OSB_STUDY_ARCHIVED): unarchive it first.
     """,
     status_code=204,
     responses={
@@ -749,6 +752,82 @@ Possible errors:
 def delete_study(study_uid: Annotated[str, StudyUID]):
     study_service = StudyService()
     study_service.soft_delete(uid=study_uid)
+
+
+_ARCHIVE_RESPONSES: dict[int | str, dict[str, Any]] = {
+    403: _generic_descriptions.ERROR_403,
+    400: {
+        "model": ErrorResponse,
+        "description": "BusinessLogicException - the message starts with its code: OSB_STUDY_ARCHIVE_DELETED (the "
+        "study is deleted) or OSB_STUDY_ARCHIVE_SUBPART (a subpart is archived with its parent study). Nothing was changed.",
+    },
+    404: {
+        "model": ErrorResponse,
+        "description": "Not Found - The study with the specified 'study_uid'.",
+    },
+}
+
+
+@router.post(
+    "/{study_uid}/archive",
+    dependencies=[security, rbac.ADMIN_WRITE],
+    summary="Archives a Study: a soft, restorable archive recorded on its audit trail",
+    description="""
+State before:
+ - uid must exist; the Study is not deleted and is not a subpart (a subpart is archived with its parent).
+
+Business logic:
+ - A :StudyAction:Archive node is added to the Study's audit trail with the date, the author and the stated reason.
+ - Nothing else changes: no version is made, ended or deleted, the study status (DRAFT, LOCKED) stays as it is, and a
+   Study with locked versions is archived like any other. This is never the soft delete (DELETE /studies/{study_uid}).
+ - Idempotent: an archived Study answers `already-archived` and keeps the act that archived it.
+
+State after:
+ - GET /studies/{study_uid} states `archive.archived: true` with the act's date, author and reason;
+   POST /studies/{study_uid}/unarchive restores the Study. An archived Study is not deleted until it is unarchived.
+
+Requires the Admin.Write role.
+    """,
+    status_code=200,
+    responses=_ARCHIVE_RESPONSES,
+)
+def archive_study(
+    study_uid: Annotated[str, StudyUID],
+    archive_input: Annotated[
+        StudyArchiveInput, Body(description="Why the study is archived.")
+    ],
+) -> StudyArchiveOutcome:
+    return StudyService().archive(uid=study_uid, reason=archive_input.reason)
+
+
+@router.post(
+    "/{study_uid}/unarchive",
+    dependencies=[security, rbac.ADMIN_WRITE],
+    summary="Restores an archived Study",
+    description="""
+State before:
+ - uid must exist; the Study is not deleted and is not a subpart.
+
+Business logic:
+ - A :StudyAction:Unarchive node is added to the Study's audit trail with the date, the author and the stated reason.
+ - Nothing else changes: the Study's versions and study status are those it had before it was archived.
+ - Idempotent: a Study that is not archived answers `already-active`.
+
+State after:
+ - GET /studies/{study_uid} states `archive.archived: false` with the act's date, author and reason.
+
+Requires the Admin.Write role.
+    """,
+    status_code=200,
+    responses=_ARCHIVE_RESPONSES,
+)
+def unarchive_study(
+    study_uid: Annotated[str, StudyUID],
+    archive_input: Annotated[
+        StudyArchiveInput, Body(description="Why the study is restored.")
+    ],
+) -> StudyArchiveOutcome:
+    return StudyService().unarchive(uid=study_uid, reason=archive_input.reason)
 
 
 @router.get(
