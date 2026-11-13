@@ -611,6 +611,8 @@ class OsbProposalDb:
             or authority.get("contractVersion") != "1.0"
             or authority.get("tenantId") != proposal.get("tenantId")
             or authority.get("studyId") != proposal.get("studyId")
+            or not isinstance(authority.get("studyId"), str)
+            or not authority["studyId"].strip()
             or authority.get("mediaType")
             != "application/vnd.accuratrials.semantic-claim-projection+json;version=1.0"
         ):
@@ -641,6 +643,10 @@ class OsbProposalDb:
                 "OSB_SEMANTIC_SOURCE_CONFIGURATION_UNAVAILABLE"
             ) from error
         tenant_id = authority["tenantId"]
+        # The semantic layer reads an object only inside an exact study context
+        # (400 STUDY_ID_REQUIRED without one): the proposal's own study, which
+        # the authority was checked to name.
+        study_id = authority["studyId"]
         try:
             response = requests.get(
                 f"{base_url}/v1/objects/sha256/{content_hash[7:]}",
@@ -649,6 +655,7 @@ class OsbProposalDb:
                     "Authorization": f"Bearer {token}",
                     "x-semantic-adapter-id": adapter_id,
                     "x-semantic-tenant-id": tenant_id,
+                    "x-semantic-study-id": study_id,
                 },
                 timeout=120,
             )
