@@ -1,5 +1,7 @@
 """Test JWT validation with crafted tokens signed with a test JWK"""
 
+import base64
+import json
 import logging
 import time
 from collections.abc import Iterable, Mapping
@@ -236,3 +238,56 @@ async def test_token_invalid_issuer(jwk_service, jwk_good_key):
     token = mk_jwt(claims, jwk_good_key)
     with pytest.raises(authlib.jose.errors.InvalidClaimError, match=r"\biss\b"):
         await jwk_service.validate_jwt(token)
+
+
+def _service_publishing(*keys: dict[str, Any]) -> JWKService:
+    service = JWKService(
+        MockOauthClient(metadata={"issuer": ISSUER, "jwks_uri": "patched"}),
+        audience=GOOD_AUDIENCE,
+    )
+
+    async def return_jwks_doc(url):
+        return {"keys": list(keys)}
+
+    setattr(service, "_fetch_json", return_jwks_doc)
+    return service
+
+
+@pytest.mark.asyncio
+async def test_only_rs256_is_accepted_even_for_a_key_the_issuer_publishes(
+    jwk_good_key,
+):
+    """(hole) authlib's default decoder admits HS*, ES*, PS*, EdDSA; RS256 only."""
+    hmac_key = dict(JsonWebKey.generate_key("oct", 512, is_private=True))
+    hmac_key["kid"] = "published-hmac-key"
+    ec_key = dict(JsonWebKey.generate_key("EC", "P-256", is_private=True))
+    ec_key["kid"] = "published-ec-key"
+    service = _service_publishing(jwk_good_key, hmac_key, ec_key)
+    claims = mk_claims()
+
+    for alg, key in (("HS256", hmac_key), ("HS512", hmac_key), ("ES256", ec_key)):
+        token = jwt.encode({"alg": alg, "kid": key["kid"]}, claims, key)
+        # The library default would verify it: the pin is what refuses it.
+        assert jwt.decode(token, JsonWebKey.import_key(key)) == claims
+        with pytest.raises(authlib.jose.errors.UnsupportedAlgorithmError):
+            await service.validate_jwt(token)
+
+    rs256 = jwt.encode(
+        {"alg": "RS256", "kid": jwk_good_key["kid"]}, claims, jwk_good_key
+    )
+    assert await service.validate_jwt(rs256) == claims
+
+
+@pytest.mark.asyncio
+async def test_hs256_signed_with_the_published_rsa_key_is_refused(jwk_good_key):
+    """The classic confusion: an HMAC over the issuer's public RSA key material."""
+    service = _service_publishing(jwk_good_key)
+    public = JsonWebKey.import_key(jwk_good_key).as_dict(is_private=False)
+    secret = json.dumps(public, sort_keys=True).encode()
+    forged = jwt.encode(
+        {"alg": "HS256", "kid": jwk_good_key["kid"]},
+        mk_claims(),
+        {"kty": "oct", "k": base64.urlsafe_b64encode(secret).rstrip(b"=").decode()},
+    )
+    with pytest.raises(authlib.jose.errors.UnsupportedAlgorithmError):
+        await service.validate_jwt(forged)

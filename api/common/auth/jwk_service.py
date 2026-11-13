@@ -7,12 +7,20 @@ from collections.abc import Mapping, MutableMapping
 from typing import Any
 
 from authlib.integrations.base_client import OAuth2Mixin
-from authlib.jose import JsonWebKey, JWTClaims, Key, KeySet, jwt
+from authlib.jose import JsonWebKey, JsonWebToken, JWTClaims, Key, KeySet
 from httpx import AsyncClient
 
 from common.exceptions import NotAuthenticatedException
 
 log = logging.getLogger(__name__)
+
+# Command Center signs every OSB access token with RS256 (its discovery states
+# id_token_signing_alg_values_supported ["RS256"]), as does every other issuer
+# this fork is configured with. authlib's module-level `jwt` decoder admits all
+# registered algorithms, HS256/HS384/HS512 among them; this one refuses any
+# other `alg` before a key is used (UnsupportedAlgorithmError, a JoseError).
+ACCEPTED_JWS_ALGORITHMS: tuple[str, ...] = ("RS256",)
+_jwt = JsonWebToken(list(ACCEPTED_JWS_ALGORITHMS))
 
 
 class JWKService(KeySet):
@@ -175,7 +183,7 @@ class JWKService(KeySet):
             raise NotAuthenticatedException("JWT signing key is absent or revoked")
 
         try:
-            claims = jwt.decode(
+            claims = _jwt.decode(
                 token,
                 key=self,
                 claims_options=self.claims_options,
@@ -193,7 +201,7 @@ class JWKService(KeySet):
                 ) from exc
 
             # retry decoding of JWT
-            claims = jwt.decode(token, key=self, claims_options=self.claims_options)
+            claims = _jwt.decode(token, key=self, claims_options=self.claims_options)
 
         claims.validate(leeway=self.leeway)
 
