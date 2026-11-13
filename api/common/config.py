@@ -1,12 +1,23 @@
 """Configuration parameters."""
 
+import logging
 import os
 import string
 from typing import Any, Final, Literal
 from urllib.parse import urlparse
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+log = logging.getLogger(__name__)
+
+# The clients Command Center issues delegated OSB tokens through (its config.js
+# platformDelegationClientId and platformServiceClients). OSB trusts Command
+# Center exactly when OIDC_EXCHANGING_CLIENTS names one of them, as it does by
+# default.
+COMMAND_CENTER_CLIENTS: Final = frozenset(
+    {"accuratrial-command-center", "accuratrial-control-worker"}
+)
 
 
 def assert_mapping_authority_configuration(
@@ -211,6 +222,38 @@ class Settings(BaseSettings):
     @property
     def oauth_revoked_kids(self) -> list[str]:
         return [value.strip() for value in self.ENV_OAUTH_REVOKED_KIDS.split(",") if value.strip()]
+
+    @property
+    def trusts_command_center(self) -> bool:
+        """OAuth is on and the exchanging clients name a Command Center client."""
+        return self.oauth_enabled and not COMMAND_CENTER_CLIENTS.isdisjoint(
+            self.oauth_exchanging_clients
+        )
+
+    @model_validator(mode="after")
+    def require_delegated_profile_behind_command_center(self) -> "Settings":
+        """An OSB that trusts Command Center enforces its delegated profile.
+
+        OIDC_DELEGATED_CLAIMS_REQUIRED defaults to false and was forced only in
+        production, so a staging or prototype OSB trusting Command Center checked
+        a token's signature, issuer, audience and route role, but not its
+        tenant, purpose, capabilities, lifetime or actor chain, and the
+        development study visibility let any Study.Read token (a Command Center
+        viewer's) read every study. Here the delegated profile and strict study
+        visibility follow from the trust itself. OAuth off (the local compose
+        default) and an issuer whose exchanging clients are not Command
+        Center's (the synthetic sandbox's harness issuer) are unchanged.
+        """
+        if self.trusts_command_center and not self.delegated_claims_required:
+            if "delegated_claims_required" in self.model_fields_set:
+                log.warning(
+                    "OIDC_DELEGATED_CLAIMS_REQUIRED=false is overridden: OSB trusts "
+                    "Command Center's clients (%s), whose tokens are always held to "
+                    "the delegated profile",
+                    ",".join(sorted(COMMAND_CENTER_CLIENTS & set(self.oauth_exchanging_clients))),
+                )
+            self.delegated_claims_required = True
+        return self
 
     def assert_delegated_auth_startup_safe(self) -> None:
         if self.deployment_environment.strip().lower() in {"prod", "production"}:
