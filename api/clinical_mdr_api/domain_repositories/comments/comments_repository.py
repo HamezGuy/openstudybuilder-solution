@@ -1,4 +1,5 @@
 import logging
+import re
 from collections.abc import Collection
 from datetime import datetime
 from threading import Lock
@@ -31,6 +32,50 @@ from common.config import settings
 from common.utils import convert_to_datetime, validate_max_skip_clause
 
 log = logging.getLogger(__name__)
+
+# A bare study topic, "studies/{uid}" or "/studies/{uid}" (D-45, section 5.3).
+_BARE_STUDY_TOPIC = re.compile(r"/?studies/[^/]+")
+
+
+def _topic_clause(
+    params: dict,
+    topic_path: str | None,
+    topic_path_partial_match: bool,
+    exact_case: bool,
+    topic_prefixes: list[str] | None,
+) -> str:
+    """The topic conditions of the thread and topic listings.
+
+    By default the clause of today: a case-insensitive equality or CONTAINS.
+    The delegated profile passes ``exact_case`` and, for a list without a
+    topic, ``topic_prefixes`` (D-45, OSB_ISOLATION_DESIGN.md section 5.3): the
+    match is then case-sensitive, a partial match is STARTS WITH, and a bare
+    ``studies/{uid}``, like each prefix, matches itself or what lies below it,
+    so ``studies/Study_00099`` never matches ``studies/Study_000990``.
+    """
+    clause = ""
+    if topic_path is not None:
+        if not exact_case:
+            if topic_path_partial_match:
+                clause = "AND toLower(topic.topic_path) CONTAINS toLower($topic_path) "
+            else:
+                clause = "AND toLower(topic.topic_path) = toLower($topic_path) "
+        elif not topic_path_partial_match:
+            clause = "AND topic.topic_path = $topic_path "
+        elif _BARE_STUDY_TOPIC.fullmatch(topic_path):
+            clause = (
+                "AND (topic.topic_path = $topic_path "
+                "OR topic.topic_path STARTS WITH $topic_path + '/') "
+            )
+        else:
+            clause = "AND topic.topic_path STARTS WITH $topic_path "
+    if topic_prefixes is not None:
+        params["topic_prefixes"] = list(topic_prefixes)
+        clause += (
+            "AND any(prefix IN $topic_prefixes WHERE topic.topic_path = prefix "
+            "OR topic.topic_path STARTS WITH prefix + '/') "
+        )
+    return clause
 
 
 class CommentsRepository:
@@ -253,6 +298,8 @@ class CommentsRepository:
         status: CommentThreadStatus | None = None,
         page_number: int = 1,
         page_size: int = 0,
+        exact_case: bool = False,
+        topic_prefixes: list[str] | None = None,
     ) -> tuple[list[CommentThreadAR], int]:
         validate_max_skip_clause(page_number=page_number, page_size=page_size)
         params = {
@@ -261,14 +308,9 @@ class CommentsRepository:
             "limit": page_size,
         }
 
-        topic_clause = ""
-        if topic_path is not None:
-            if topic_path_partial_match:
-                topic_clause = (
-                    "AND toLower(topic.topic_path) CONTAINS toLower($topic_path) "
-                )
-            else:
-                topic_clause = "AND toLower(topic.topic_path) = toLower($topic_path) "
+        topic_clause = _topic_clause(
+            params, topic_path, topic_path_partial_match, exact_case, topic_prefixes
+        )
 
         if status is None:
             status_clause = ""
@@ -373,6 +415,8 @@ class CommentsRepository:
         topic_path_partial_match: bool = False,
         page_number: int = 1,
         page_size: int = 0,
+        exact_case: bool = False,
+        topic_prefixes: list[str] | None = None,
     ) -> tuple[list[CommentTopicAR], int]:
         validate_max_skip_clause(page_number=page_number, page_size=page_size)
         params = {
@@ -381,14 +425,9 @@ class CommentsRepository:
             "limit": page_size,
         }
 
-        topic_clause = ""
-        if topic_path is not None:
-            if topic_path_partial_match:
-                topic_clause = (
-                    "AND toLower(topic.topic_path) CONTAINS toLower($topic_path) "
-                )
-            else:
-                topic_clause = "AND toLower(topic.topic_path) = toLower($topic_path) "
+        topic_clause = _topic_clause(
+            params, topic_path, topic_path_partial_match, exact_case, topic_prefixes
+        )
 
         full_query = f"""
             MATCH (topic:CommentTopic)<-[:TOPIC]-(thread:CommentThread)
