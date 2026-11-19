@@ -17,6 +17,7 @@ from clinical_mdr_api.domains.study_definition_aggregates.study_metadata import 
     HighLevelStudyDesignVO,
     StudyComponentEnum,
     StudyIdentificationMetadataVO,
+    StudyPopulationVO,
     StudyStatus,
 )
 from clinical_mdr_api.models.study_selections.study import (
@@ -123,6 +124,53 @@ class TestStudyService(unittest.TestCase):
                 StudyComponentEnum.STUDY_DESIGN.value,
             },
         )
+
+    def test_population_uses_dictionary_terms_and_prefetches_only_ct_names(self):
+        dictionary_uids = ["d-therapy", "d-indication", "d-diagnosis"]
+        ct_uid = "ct-sex"
+        term = SimpleNamespace(uid=ct_uid)
+        for mixed in (False, True):
+            with self.subTest(mixed=mixed):
+                service = StudyService.__new__(StudyService)
+                service._repos = MagicMock()
+
+                def find_ct(term_uids, at_specific_date=None):
+                    self.assertEqual(term_uids, [ct_uid])
+                    return [term]
+
+                service._repos.ct_term_name_repository.find_by_uids = find_ct
+                population = StudyPopulationVO(
+                    therapeutic_area_codes=[dictionary_uids[0]],
+                    disease_condition_or_indication_codes=[dictionary_uids[1]],
+                    diagnosis_group_codes=[dictionary_uids[2]],
+                    sex_of_participants_code=ct_uid if mixed else None,
+                )
+                lookup = service._build_batched_term_lookup(
+                    study_definition=SimpleNamespace(
+                        current_metadata=SimpleNamespace(study_population=population),
+                        study_parent_part_uid=None,
+                    ),
+                    status=None,
+                    study_value_version=None,
+                    terms_at_specific_datetime=None,
+                    needed_sections={StudyComponentEnum.STUDY_POPULATION.value},
+                )
+                if mixed:
+                    self.assertEqual(lookup([ct_uid]), [term])
+                else:
+                    def find_dictionary(uid):
+                        self.assertIn(uid, dictionary_uids)
+                        return SimpleNamespace(dictionary_term_vo=SimpleNamespace(name=uid))
+
+                    view = StudyPopulationJsonModel.from_study_population_vo(
+                        population, MagicMock(), lookup, find_dictionary
+                    )
+                    rendered = [
+                        *view.therapeutic_area_codes,
+                        *view.disease_condition_or_indication_codes,
+                        *view.diagnosis_group_codes,
+                    ]
+                    self.assertEqual([item.name for item in rendered], dictionary_uids)
 
     def test__build_batched_term_lookup__keeps_cache_per_specific_date(self):
         term_uid = "TERM_001"

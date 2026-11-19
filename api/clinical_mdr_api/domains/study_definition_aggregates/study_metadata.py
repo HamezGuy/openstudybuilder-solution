@@ -793,6 +793,27 @@ class StudyPopulationVO:
     number_of_expected_subjects: int | None = None
     number_of_expected_subjects_null_value_code: str | None = None
 
+    def controlled_terminology_uids(self) -> list[str]:
+        """CT name references in this population. The three dictionary code lists have their own reader."""
+        codes = (
+            self.therapeutic_area_null_value_code,
+            self.diagnosis_group_null_value_code,
+            self.disease_condition_or_indication_null_value_code,
+            self.sex_of_participants_code,
+            self.sex_of_participants_null_value_code,
+            self.rare_disease_indicator_null_value_code,
+            self.healthy_subject_indicator_null_value_code,
+            self.planned_minimum_age_of_subjects_null_value_code,
+            self.planned_maximum_age_of_subjects_null_value_code,
+            self.stable_disease_minimum_duration_null_value_code,
+            self.pediatric_study_indicator_null_value_code,
+            self.pediatric_postmarket_study_indicator_null_value_code,
+            self.pediatric_investigation_plan_indicator_null_value_code,
+            self.relapse_criteria_null_value_code,
+            self.number_of_expected_subjects_null_value_code,
+        )
+        return list(dict.fromkeys(code for code in codes if code is not None))
+
     @classmethod
     def from_input_values(
         cls,

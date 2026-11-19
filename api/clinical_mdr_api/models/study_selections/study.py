@@ -1266,29 +1266,7 @@ class StudyPopulationJsonModel(BaseModel):
         if study_population_vo is None:
             return None
 
-        c_codes = [
-            code
-            for code in list(
-                {
-                    study_population_vo.therapeutic_area_null_value_code,
-                    study_population_vo.diagnosis_group_null_value_code,
-                    study_population_vo.disease_condition_or_indication_null_value_code,
-                    study_population_vo.sex_of_participants_code,
-                    study_population_vo.sex_of_participants_null_value_code,
-                    study_population_vo.rare_disease_indicator_null_value_code,
-                    study_population_vo.healthy_subject_indicator_null_value_code,
-                    study_population_vo.planned_minimum_age_of_subjects_null_value_code,
-                    study_population_vo.planned_maximum_age_of_subjects_null_value_code,
-                    study_population_vo.stable_disease_minimum_duration_null_value_code,
-                    study_population_vo.pediatric_study_indicator_null_value_code,
-                    study_population_vo.pediatric_postmarket_study_indicator_null_value_code,
-                    study_population_vo.pediatric_investigation_plan_indicator_null_value_code,
-                    study_population_vo.relapse_criteria_null_value_code,
-                    study_population_vo.number_of_expected_subjects_null_value_code,
-                }
-            )
-            if code is not None
-        ]
+        c_codes = study_population_vo.controlled_terminology_uids()
 
         if ct_term_generic_repository.__name__ == find_term_by_uids.__module__:
             terms = {

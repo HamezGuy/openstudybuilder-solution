@@ -597,9 +597,7 @@ class StudyService:
             and current_metadata.study_population
         ):
             all_term_uids.update(
-                self._collect_term_uids_from_dataclass(
-                    current_metadata.study_population
-                )
+                current_metadata.study_population.controlled_terminology_uids()
             )
 
         if (
