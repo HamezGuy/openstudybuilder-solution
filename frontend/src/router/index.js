@@ -10,6 +10,7 @@ import { useFeatureFlagsStore } from '@/stores/feature-flags'
 import roles from '@/constants/roles'
 import study from '@/api/study'
 import { DEMO_MODE } from '@/demo/isDemoMode'
+import { clearRouteChunkRetry, retryRouteChunk } from '@/utils/routeChunkRecovery'
 
 const routes = [
   {
@@ -1364,14 +1365,12 @@ router.beforeEach(async (to, from, next) => {
   }
 })
 
-router.onError((error) => {
-  // In case of 'Loading chunk x failed' error, reload the page once
-  if (/loading chunk \d* failed./i.test(error.message)) {
-    if (window.location.hash !== 'reloaded') {
-      window.location.hash = 'reloaded'
-      window.location.reload()
-    }
-  }
+router.onError((error, to) => {
+  if (to) retryRouteChunk(error, router.resolve(to).href, window)
+})
+
+router.afterEach((to, _from, failure) => {
+  if (!failure) clearRouteChunkRetry(router.resolve(to).href, window)
 })
 
 router.beforeEach(async (to, from, next) => {

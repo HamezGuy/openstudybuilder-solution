@@ -49,6 +49,16 @@ server {
     server_name  localhost;
     include      mime.types;
 
+    # A sealed release normalizes file mtimes. A cached HTML document or runtime
+    # configuration must not be validated by that timestamp or by file length.
+    location ~ ^/(index\.html|config\.json)$ {
+        root /usr/share/nginx/html;
+        try_files $uri =404;
+        etag off;
+        if_modified_since off;
+        add_header Cache-Control "no-store" always;
+    }
+
     # A missing static asset must 404 and never fall through to index.html.
     # Returning HTML for a .js request makes the browser execute HTML as a
     # module: it fails silently, leaves a blank page, and logs nothing anywhere.

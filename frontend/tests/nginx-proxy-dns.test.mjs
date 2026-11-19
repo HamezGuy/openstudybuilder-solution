@@ -24,7 +24,7 @@ test(
     const frontend = `osb-dns-frontend-${suffix}`
     const temp = mkdtempSync(path.join(tmpdir(), 'osb-nginx-dns-'))
     const template = fileURLToPath(
-      new URL('../config/nginx/default.conf.template', import.meta.url)
+      new URL('../config/nginx/standalone.conf.template', import.meta.url)
     )
     const docker = (...args) =>
       execFileSync('docker', args, {
@@ -121,6 +121,17 @@ test(
         `Frontend did not start without backends: ${docker('logs', frontend)}`
       )
       assert.match(root.headers.get('content-type') || '', /text\/html/)
+      const currentEntry = await root.text()
+      for (const route of ['/studies/summary', '/library', '/config.json']) {
+        const response = await fetch(origin + route, {
+          headers: { 'If-Modified-Since': 'Thu, 01 Jan 1970 00:00:00 GMT' },
+        })
+        assert.equal(response.status, 200)
+        assert.match(response.headers.get('cache-control') || '', /no-store/i)
+        assert.equal(response.headers.get('etag'), null)
+        if (route !== '/config.json')
+          assert.equal(await response.text(), currentEntry)
+      }
       const unavailable = await fetch(origin + '/api/system/information', {
         signal: AbortSignal.timeout(7000),
       })

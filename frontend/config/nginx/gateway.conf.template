@@ -24,6 +24,16 @@ server {
     server_name  localhost;
     include      mime.types;
 
+    # A sealed release normalizes file mtimes. A cached HTML document or runtime
+    # configuration must not be validated by that timestamp or by file length.
+    location ~ ^/(index\.html|config\.json)$ {
+        root /usr/share/nginx/html;
+        try_files $uri =404;
+        etag off;
+        if_modified_since off;
+        add_header Cache-Control "no-store" always;
+    }
+
     location / {
         root   /usr/share/nginx/html;
         try_files $uri $uri/ /index.html;
