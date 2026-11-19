@@ -2146,7 +2146,9 @@
         "hide_all": "Hide criteria details"
     },
     "StudyPopulationSummary": {
-        "info_column": "Study population information"
+        "info_column": "Study population information",
+        "read_failed": "Study population information could not be loaded.",
+        "retry": "Retry"
     },
     "StudyTypeView": {
         "title": "Study Type"

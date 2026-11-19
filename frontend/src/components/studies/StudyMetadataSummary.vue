@@ -81,7 +81,8 @@
             class="text-medium-emphasis"
           >
             {{
-              !metadata || Object.keys(metadata).length === 0
+              !metadata ||
+              (!metadataReady && Object.keys(metadata).length === 0)
                 ? 'Loading…'
                 : metadata[item.null_value_key]
                   ? 'Not provided'
@@ -168,6 +169,10 @@ const props = defineProps({
   metadata: {
     type: Object,
     default: undefined,
+  },
+  metadataReady: {
+    type: Boolean,
+    default: false,
   },
   firstColLabel: {
     type: String,

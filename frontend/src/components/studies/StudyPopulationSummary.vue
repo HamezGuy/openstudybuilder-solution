@@ -2,7 +2,16 @@
   <v-alert type="info" variant="tonal" density="compact" class="mb-4">
     {{ $t('StudyPopulationForm.number_of_expected_subjects_hint') }}
   </v-alert>
+  <v-alert v-if="readFailed" type="error" variant="tonal" class="mb-4">
+    {{ $t('StudyPopulationSummary.read_failed') }}
+    <v-btn variant="text" @click="fetchMetadata">
+      {{ $t('StudyPopulationSummary.retry') }}
+    </v-btn>
+  </v-alert>
+  <v-skeleton-loader v-else-if="loading" type="table" />
   <StudyMetadataSummary
+    v-else
+    metadata-ready
     :metadata="metadata"
     :params="params"
     :first-col-label="$t('StudyPopulationSummary.info_column')"
@@ -35,6 +44,8 @@ const { t } = useI18n()
 const studiesGeneralStore = useStudiesGeneralStore()
 
 const metadata = ref({})
+const loading = ref(false)
+const readFailed = ref(false)
 
 const params = [
   {
@@ -116,11 +127,19 @@ function onMetadataUpdated() {
   fetchMetadata()
 }
 
-function fetchMetadata() {
-  study
-    .getStudyPopulationMetadata(studiesGeneralStore.selectedStudy.uid)
-    .then((resp) => {
-      metadata.value = resp.data.current_metadata.study_population
-    })
+async function fetchMetadata() {
+  if (loading.value) return
+  loading.value = true
+  readFailed.value = false
+  try {
+    const { data } = await study.getStudyPopulationMetadata(
+      studiesGeneralStore.selectedStudy.uid
+    )
+    metadata.value = data.current_metadata.study_population ?? {}
+  } catch {
+    readFailed.value = true
+  } finally {
+    loading.value = false
+  }
 }
 </script>
