@@ -69,6 +69,9 @@ const updateTabKey = (value) => {
 // at find(...)[props.tabTitle].
 const resolveTabKey = (raw) => {
   if (raw && props.tabs.some((el) => el[props.tabKey] === raw)) return raw
+  // Older study views stored the translated label in the URL and breadcrumbs.
+  const legacy = props.tabs.find((el) => el[props.tabTitle] === raw)
+  if (legacy) return legacy[props.tabKey]
   return props.tabs[0][props.tabKey]
 }
 
@@ -86,10 +89,23 @@ watch(tab, async (newValue) => {
   const match =
     props.tabs.find((el) => el[props.tabKey] === newValue) ?? props.tabs[0]
   const tabName = match[props.tabTitle]
-  await router.push({
+  const destination = {
     name: route.name,
     params: { ...route.params, tab: newValue },
-  })
+    query: route.query,
+    hash: route.hash,
+  }
+  if (route.params.tab !== newValue) {
+    if (resolveTabKey(route.params.tab) === newValue)
+      await router.replace(destination)
+    else await router.push(destination)
+  }
+  if (
+    route.name !== destination.name ||
+    tab.value !== newValue ||
+    route.params.tab !== newValue
+  )
+    return
   activePanel.value = newValue
   appStore.addBreadcrumbsLevel(
     tabName,

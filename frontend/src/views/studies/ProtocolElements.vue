@@ -21,54 +21,51 @@
         </v-tooltip>
       </v-btn>
     </div>
-    <v-tabs v-model="tab" bg-color="white">
-      <v-tab v-for="item of tabs" :key="item.tab" :value="item.tab">
-        {{ item.name }}
-      </v-tab>
-    </v-tabs>
-    <v-window v-model="tab" class="bg-white">
-      <v-window-item value="tab-0">
-        <ProtocolTitlePage :key="`tab-0-${tabKeys['tab-0']}`" />
-      </v-window-item>
-      <v-window-item value="tab-1">
-        <ProtocolFlowchart
-          :key="`tab-1-${tabKeys['tab-1']}`"
-          :study-uid="selectedStudy.uid"
-          :update="updateFlowchart"
-        />
-      </v-window-item>
-      <v-window-item value="tab-2">
-        <ProtocolElementsObjectiveTable
-          :key="`tab-2-${tabKeys['tab-2']}`"
-          :study-uid="selectedStudy.uid"
-          :update="updateObjectives"
-        />
-      </v-window-item>
-      <v-window-item value="tab-3">
-        <ProtocolElementsStudyDesign
-          :key="`tab-3-${tabKeys['tab-3']}`"
-          :study-uid="selectedStudy.uid"
-          :update="updateDesign"
-        />
-      </v-window-item>
-      <v-window-item value="tab-4">
-        <ProtocolElementsStudyPopulationSummary
-          :key="`tab-4-${tabKeys['tab-4']}`"
-        />
-      </v-window-item>
-      <v-window-item value="tab-5">
-        <ProtocolElementsStudyInterventions
-          :key="`tab-5-${tabKeys['tab-5']}`"
-          :study-uid="selectedStudy.uid"
-          :update="updateInterventions"
-        />
-      </v-window-item>
-      <v-window-item value="tab-6">
-        <ProtocolElementsProceduresAndActivities
-          :key="`tab-6-${tabKeys['tab-6']}`"
-        />
-      </v-window-item>
-    </v-window>
+    <NavigationTabs :tabs="tabs" @tab-changed="tab = $event">
+      <template #default="{ tabKeys }">
+        <v-window-item value="tab-0">
+          <ProtocolTitlePage :key="`tab-0-${tabKeys['tab-0']}`" />
+        </v-window-item>
+        <v-window-item value="tab-1">
+          <ProtocolFlowchart
+            :key="`tab-1-${tabKeys['tab-1']}`"
+            :study-uid="selectedStudy.uid"
+            :update="updateFlowchart"
+          />
+        </v-window-item>
+        <v-window-item value="tab-2">
+          <ProtocolElementsObjectiveTable
+            :key="`tab-2-${tabKeys['tab-2']}`"
+            :study-uid="selectedStudy.uid"
+            :update="updateObjectives"
+          />
+        </v-window-item>
+        <v-window-item value="tab-3">
+          <ProtocolElementsStudyDesign
+            :key="`tab-3-${tabKeys['tab-3']}`"
+            :study-uid="selectedStudy.uid"
+            :update="updateDesign"
+          />
+        </v-window-item>
+        <v-window-item value="tab-4">
+          <ProtocolElementsStudyPopulationSummary
+            :key="`tab-4-${tabKeys['tab-4']}`"
+          />
+        </v-window-item>
+        <v-window-item value="tab-5">
+          <ProtocolElementsStudyInterventions
+            :key="`tab-5-${tabKeys['tab-5']}`"
+            :study-uid="selectedStudy.uid"
+            :update="updateInterventions"
+          />
+        </v-window-item>
+        <v-window-item value="tab-6">
+          <ProtocolElementsProceduresAndActivities
+            :key="`tab-6-${tabKeys['tab-6']}`"
+          />
+        </v-window-item>
+      </template>
+    </NavigationTabs>
     <v-dialog v-model="showSoaSettings" max-width="800px">
       <SoaSettingsForm @close="closeSoaSettings" />
     </v-dialog>
@@ -86,14 +83,14 @@ import ProtocolFlowchart from '@/components/studies/ProtocolFlowchart.vue'
 import ProtocolTitlePage from '@/components/studies/ProtocolTitlePage.vue'
 import HelpButton from '@/components/tools/HelpButton.vue'
 import SoaSettingsForm from '@/components/studies/SoaSettingsForm.vue'
-import { useAppStore } from '@/stores/app'
+import NavigationTabs from '@/components/tools/NavigationTabs.vue'
 import { useStudiesGeneralStore } from '@/stores/studies-general'
 import { useSoaContentLoadingStore } from '@/stores/soa-content-loading'
 import { useAccessGuard } from '@/composables/accessGuard'
-import { useTabKeys } from '@/composables/tabKeys'
 
 export default {
   components: {
+    NavigationTabs,
     ProtocolElementsObjectiveTable,
     ProtocolFlowchart,
     ProtocolTitlePage,
@@ -105,12 +102,10 @@ export default {
     SoaSettingsForm,
   },
   setup() {
-    const appStore = useAppStore()
     const studiesGeneralStore = useStudiesGeneralStore()
     const soaContentLoadingStore = useSoaContentLoadingStore()
     const accessGuard = useAccessGuard()
     return {
-      addBreadcrumbsLevel: appStore.addBreadcrumbsLevel,
       selectedStudy: computed(() => studiesGeneralStore.selectedStudy),
       selectedStudyVersion: computed(
         () => studiesGeneralStore.selectedStudyVersion
@@ -118,7 +113,6 @@ export default {
       studyId: computed(() => studiesGeneralStore.studyId),
       soaContentLoadingStore,
       ...accessGuard,
-      ...useTabKeys({ persist: true }),
     }
   },
   data() {
@@ -162,23 +156,6 @@ export default {
   },
   watch: {
     tab(value) {
-      const tabName = value
-        ? this.tabs.find((el) => el.tab === value).name
-        : this.tabs[0].name
-      this.$router.push({
-        name: 'ProtocolElements',
-        params: { study_id: this.selectedStudy.uid, tab: tabName },
-      })
-      this.addBreadcrumbsLevel(
-        tabName,
-        {
-          name: 'ProtocolElements',
-          params: { study_id: this.selectedStudy.uid, tab: tabName },
-        },
-        3,
-        true
-      )
-      localStorage.setItem('templatesTab', value)
       switch (value) {
         case 'tab-1':
           this.updateFlowchart++
@@ -193,26 +170,9 @@ export default {
           this.updateInterventions++
           break
       }
-      this.updateTabKey(value)
     },
   },
-  mounted() {
-    this.tab = localStorage.getItem('templatesTab') || 'tab-0'
-    const tabName = this.tab
-      ? this.tabs.find((el) => el.tab === this.tab).name
-      : this.tabs[0].name
-    setTimeout(() => {
-      this.addBreadcrumbsLevel(
-        tabName,
-        {
-          name: 'ProtocolElements',
-          params: { study_id: this.selectedStudy.uid, tab: tabName },
-        },
-        3,
-        true
-      )
-    }, 100)
-  },
+
   methods: {
     openSoaSettings() {
       this.showSoaSettings = true
