@@ -8,7 +8,11 @@ import pytest
 from clinical_mdr_api.domain_repositories.controlled_terminologies.ct_package_repository import (
     is_sdtm_ct_package,
 )
+from clinical_mdr_api.services.studies.study_standard_version_selection import (
+    StudyStandardVersionService,
+)
 from common.config import settings
+from common.exceptions import AlreadyExistsException
 
 SDTM = settings.sdtm_ct_catalogue_name
 
@@ -52,6 +56,26 @@ def test_a_repository_double_without_a_catalogue_keeps_the_name_convention():
     mocked = MagicMock()
     assert is_sdtm_ct_package(f"{SDTM} 2024-03-29", mocked) is True
     assert is_sdtm_ct_package("Documents CT 3f2a", mocked) is False
+
+
+@pytest.mark.parametrize("operation", ["create", "edit"])
+def test_another_selection_in_the_same_native_catalogue_is_rejected(operation):
+    service = StudyStandardVersionService.__new__(StudyStandardVersionService)
+    service._repos = MagicMock()
+    service.repo = service._repos.study_standard_version_repository
+    service._repos.ct_package_repository.find_by_uid.return_value.catalogue_name = SDTM
+    service._repos.ct_package_repository.find_catalogue_name.return_value = SDTM
+    current = SimpleNamespace(uid="selection_a", ct_package_uid="opaque-base")
+    other = SimpleNamespace(uid="selection_b", ct_package_uid="opaque-second")
+    service.repo.find_standard_versions_in_study.return_value = [current, other]
+    service.repo.find_by_uid.return_value = current
+    selection = SimpleNamespace(ct_package_uid="opaque-replacement", description=None)
+    with pytest.raises(AlreadyExistsException, match="selection_b" if operation == "edit" else "selection_a"):
+        if operation == "edit":
+            service.edit.__wrapped__(service, "study", current.uid, selection)
+        else:
+            service.create.__wrapped__(service, "study", selection)
+    service.repo.save.assert_not_called()
 
 
 @pytest.mark.parametrize("package_uid", [None, ""])

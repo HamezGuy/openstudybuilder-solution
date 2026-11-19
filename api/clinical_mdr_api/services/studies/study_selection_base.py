@@ -181,10 +181,12 @@ class StudySelectionMixin:
         study_standard_versions_sdtm = [
             study_standard_version
             for study_standard_version in study_standard_versions
-            if "SDTM CT" in study_standard_version.ct_package_uid
+            if is_sdtm_ct_package(
+                study_standard_version.ct_package_uid, self._repos.ct_package_repository
+            )
         ]
         study_standard_version_sdtm = (
-            study_standard_versions_sdtm[0] if study_standard_versions_sdtm else None
+            study_standard_versions_sdtm[0] if len(study_standard_versions_sdtm) == 1 else None
         )
         terms_at_specific_date = None
         if study_standard_version_sdtm:
@@ -826,7 +828,7 @@ class StudySelectionMixin:
             )
         ]
         study_standard_version_sdtm = (
-            study_standard_versions_sdtm[0] if study_standard_versions_sdtm else None
+            study_standard_versions_sdtm[0] if len(study_standard_versions_sdtm) == 1 else None
         )
         terms_at_specific_datetime = None
         if study_standard_version_sdtm:
@@ -878,6 +880,12 @@ class StudySelectionMixin:
         # package. Cache only this call's derived value; the next read must
         # still observe the repository's current package data.
         package_effective_dates: dict[str, datetime] = {}
+        sdtm_packages: dict[str, bool] = {}
+
+        def is_selected_sdtm(uid: str) -> bool:
+            if uid not in sdtm_packages:
+                sdtm_packages[uid] = is_sdtm_ct_package(uid, repos.ct_package_repository)
+            return sdtm_packages[uid]
 
         for start_date in list_of_start_dates:
             matching_version = next(
@@ -887,6 +895,7 @@ class StudySelectionMixin:
                     if version.start_date is not None
                     and start_date >= version.start_date
                     and (not version.end_date or start_date < version.end_date)
+                    and is_selected_sdtm(version.ct_package_uid)
                 ),
                 None,
             )

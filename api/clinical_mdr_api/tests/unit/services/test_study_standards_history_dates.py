@@ -1,7 +1,7 @@
 """Per-read CT package reuse must preserve historical interval semantics."""
 
 import unittest
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from types import SimpleNamespace
 from unittest.mock import Mock, call
 
@@ -24,6 +24,7 @@ def service(versions, packages):
             get_all_study_version_versions=Mock(return_value=versions)
         ),
         ct_package_repository=SimpleNamespace(
+            find_catalogue_name=Mock(return_value="SDTM CT"),
             find_by_uid=Mock(side_effect=lambda uid: packages[uid])
         ),
     )
@@ -31,6 +32,35 @@ def service(versions, packages):
 
 
 class StudyStandardsHistoryDateTests(unittest.TestCase):
+    def test_visit_date_comes_from_catalogue_even_for_an_opaque_package_identifier(self):
+        uid = "SDTM__CT__2024-09-27"
+        instance = service([], {uid: SimpleNamespace(effective_date=date(2024, 9, 27))})
+        instance._repos.study_standard_version_repository.find_standard_versions_in_study = Mock(
+            return_value=[SimpleNamespace(ct_package_uid="Misleading SDTM CT"), SimpleNamespace(ct_package_uid=uid)]
+        )
+        instance._repos.ct_package_repository.find_catalogue_name.side_effect = {
+            "Misleading SDTM CT": "DDF CT", uid: "SDTM CT",
+        }.__getitem__
+        assert instance.get_study_standard_version_ct_terms_datetime("S1") == datetime(
+            2024, 9, 27, 23, 59, 59, 999999, tzinfo=UTC,
+        )
+        instance._repos.ct_package_repository.find_by_uid.assert_called_once_with(uid)
+
+    def test_overlapping_other_catalogue_does_not_supply_the_sdtm_date(self):
+        earlier = datetime(2024, 1, 1)
+        authoritative = "SDTM__CT__2024-09-27"
+        instance = service(
+            [version("DDF", earlier), version(authoritative, earlier)],
+            {authoritative: SimpleNamespace(effective_date=date(2024, 9, 27))},
+        )
+        lookup = instance._repos.ct_package_repository
+        lookup.find_catalogue_name.side_effect = {"DDF": "DDF CT", authoritative: "SDTM CT"}.__getitem__
+        assert instance._extract_multiple_version_study_standards_effective_date("S1", [earlier, earlier]) == [
+            datetime(2024, 9, 27, 23, 59, 59, 999999)
+        ] * 2
+        assert lookup.find_catalogue_name.call_count == 2
+        lookup.find_by_uid.assert_called_once_with(authoritative)
+
     def test_6007_same_package_rows_fetch_once_and_the_next_call_reads_fresh_data(self):
         packages = {"CT-A": SimpleNamespace(effective_date=date(2024, 1, 15))}
         instance = service([version("CT-A", datetime(2024, 1, 1))], packages)

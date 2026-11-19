@@ -4,6 +4,9 @@ from typing import Any
 
 from neomodel import db
 
+from clinical_mdr_api.domain_repositories.controlled_terminologies.ct_package_repository import (
+    package_belongs_to_catalogue,
+)
 from clinical_mdr_api.domains.study_definition_aggregates.study_metadata import (
     StudyStatus,
 )
@@ -180,7 +183,11 @@ class StudyStandardVersionService:
         is_catalogue_used = [
             (study_standard_version.uid, study_standard_version.ct_package_uid)
             for study_standard_version in study_standard_versions
-            if ct_package.catalogue_name in study_standard_version.ct_package_uid
+            if package_belongs_to_catalogue(
+                study_standard_version.ct_package_uid,
+                ct_package.catalogue_name,
+                self._repos.ct_package_repository,
+            )
         ]
         # CHECK IF IT EXISTS FOR THE SPECIFIC CATALOGUE that is requesting
         if is_catalogue_used:
@@ -234,11 +241,14 @@ class StudyStandardVersionService:
                     study_uid
                 )
                 is_catalogue_used = [
-                    (study_standard_version.uid, study_standard_version.ct_package_uid)
+                    (i_study_standard_version.uid, i_study_standard_version.ct_package_uid)
                     for i_study_standard_version in study_standard_versions
-                    if ct_package.catalogue_name
-                    in i_study_standard_version.ct_package_uid
-                    and i_study_standard_version.uid != study_standard_version_uid
+                    if i_study_standard_version.uid != study_standard_version_uid
+                    and package_belongs_to_catalogue(
+                        i_study_standard_version.ct_package_uid,
+                        ct_package.catalogue_name,
+                        self._repos.ct_package_repository,
+                    )
                 ]
                 # CHECK IF IT EXISTS FOR THE SPECIFIC CATALOGUE that is requesting
                 if is_catalogue_used:

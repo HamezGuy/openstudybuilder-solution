@@ -30,12 +30,20 @@ def is_sdtm_ct_package(package_uid: str | None, repository: Any) -> bool:
     ambiguous. The package's own catalogue decides; the name convention
     applies only when the catalogue is unknown (no single catalogue found).
     """
+    return package_belongs_to_catalogue(
+        package_uid, settings.sdtm_ct_catalogue_name, repository
+    )
+
+
+def package_belongs_to_catalogue(
+    package_uid: str | None, catalogue: str, repository: Any
+) -> bool:
     if not isinstance(package_uid, str) or not package_uid:
         return False
     catalogue_name = repository.find_catalogue_name(package_uid)
     if isinstance(catalogue_name, str) and catalogue_name:
-        return catalogue_name == settings.sdtm_ct_catalogue_name
-    return settings.sdtm_ct_catalogue_name in package_uid
+        return catalogue_name == catalogue
+    return catalogue in package_uid
 
 
 class CTPackageRepository:

@@ -25,7 +25,7 @@ from clinical_mdr_api.domains.study_selections.study_selection_activity import (
     StudySelectionActivityAR,
     StudySelectionActivityVO,
 )
-from common import exceptions
+from common import exceptions, queries
 from common.telemetry import trace_calls
 from common.utils import convert_to_datetime
 
@@ -115,15 +115,11 @@ class StudySelectionActivityRepository(
         )
 
     def _additional_match(self, **kwargs) -> str:
-        return """
-            WITH sr, sv
-            
-            CALL (sr, sv) {
-                OPTIONAL MATCH (sv)-[:HAS_STUDY_STANDARD_VERSION]->(study_standard_version:StudyStandardVersion)<-[:AFTER]-(:StudyAction)<-[:AUDIT_TRAIL]-(sr)
-                OPTIONAL MATCH (study_standard_version)-[:HAS_CT_PACKAGE]->(ct_package:CTPackage)
-                WHERE ct_package.uid CONTAINS "SDTM CT"
-                RETURN datetime(toString(date(ct_package.effective_date)) + 'T23:59:59.999999000Z') AS terms_at_specific_datetime
-            }
+        return (
+            "WITH sr, sv, sv AS study_value\n"
+            + queries.study_standard_version_ct_terms_datetime
+            + """
+            WITH sr, sv, ct_terms_datetime AS terms_at_specific_datetime
             
             MATCH (sv)-[:HAS_STUDY_ACTIVITY]->(sa:StudyActivity)-[:HAS_SELECTED_ACTIVITY]->(av:ActivityValue)<-[ver:HAS_VERSION]-(ar:ActivityRoot)<-[:CONTAINS_CONCEPT]-(lib:Library)
             
@@ -147,6 +143,7 @@ class StudySelectionActivityRepository(
                 LIMIT 1
             }
         """
+        )
 
     def _filter_clause(self, query_parameters: dict[Any, Any], **kwargs) -> str:
         # Filter on Activity, ActivityGroup or ActivityGroupNames if provided as a specific filter

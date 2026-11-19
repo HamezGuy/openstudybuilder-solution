@@ -5,10 +5,14 @@ from textwrap import dedent
 # Gives ct_terms_datetime for effective study_standard_version of a StudyValue
 study_standard_version_ct_terms_datetime = dedent("""
     CALL {
-        WITH study_value 
+        WITH study_value
         OPTIONAL MATCH (study_value)-[:HAS_STUDY_STANDARD_VERSION]->(study_standard_version:StudyStandardVersion)-[:HAS_CT_PACKAGE]->(ct_package:CTPackage)
-        WHERE ct_package.uid CONTAINS "SDTM CT"
-        RETURN datetime(toString(date(ct_package.effective_date)) + 'T23:59:59.999999000Z') AS ct_terms_datetime
+        WITH ct_package, [(catalogue:CTCatalogue)-[:CONTAINS_PACKAGE]->(ct_package) | catalogue.name] AS catalogues
+        WHERE 'SDTM CT' IN catalogues OR (size(catalogues) = 0 AND ct_package.uid CONTAINS 'SDTM CT')
+        WITH collect(DISTINCT ct_package) AS selected
+        RETURN CASE WHEN size(selected) = 1 THEN
+            datetime(toString(date(selected[0].effective_date)) + 'T23:59:59.999999000Z')
+        END AS ct_terms_datetime
     }
 """)
 
