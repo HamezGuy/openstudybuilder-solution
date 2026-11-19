@@ -1123,6 +1123,52 @@ def _assert_identity_binding(
     return proof
 
 
+def read_created_root_proof_by_intent(
+    *, tenant_id: str, platform_study_id: str, intent_id: str, actor_subject: str
+) -> dict[str, Any]:
+    rows, _ = db.cypher_query(
+        """MATCH (effect:PlatformNativeIdentityEffect {
+             tenant_id: $tenant, platform_study_id: $study, intent_id: $intent})
+           OPTIONAL MATCH (audit:PlatformNativeIdentityAudit {
+             tenant_id: $tenant, platform_study_id: $study,
+             action: 'PLATFORM_NATIVE_IDENTITY_PUBLISHED'})-[:AUDITS_EFFECT]->(effect)
+           RETURN effect.namespace, effect.object_type, effect.effect_type,
+                  effect.intent_hash_value, audit.receipt_id, audit.actor_subject""",
+        {"tenant": tenant_id, "study": platform_study_id, "intent": intent_id},
+    )
+    if not rows:
+        raise OsbCandidateSetError(
+            "OSB_IDENTITY_INTENT_RECEIPT_NOT_FOUND", "No publication for this study intent.", 404
+        )
+    if len(rows) != 1 or list(rows[0][:3]) != ["accuratrials-osb", "study-draft-root", "created"]:
+        raise OsbCandidateSetError("OSB_IDENTITY_INTENT_RECEIPT_INVALID", "Expected one native creation effect.")
+    digest, receipt_id, actor = rows[0][3:]
+    if not digest or not receipt_id or not actor:
+        raise OsbCandidateSetError("OSB_IDENTITY_INTENT_RECEIPT_INVALID", "Creation evidence is incomplete.")
+    if actor != actor_subject:
+        raise OsbCandidateSetError("OSB_IDENTITY_INTENT_ACTOR_DENIED", "Intent actor differs.", 403)
+    proof = read_native_binding_proof(
+        tenant_id=tenant_id, platform_study_id=platform_study_id, receipt_id=receipt_id
+    )
+    receipt = proof["receipt"]
+    retained_hash = receipt.get("createIntentHash")
+    if (
+        receipt.get("intentId") != intent_id
+        or receipt.get("effectType") != "created"
+        or not isinstance(retained_hash, dict)
+        or retained_hash.get("value") != digest
+    ):
+        raise OsbCandidateSetError("OSB_IDENTITY_INTENT_RECEIPT_INVALID", "Creation evidence differs from its receipt.")
+    state = proof["targetState"]
+    return {
+        "receipt": receipt, "signedReceiptEnvelope": proof["signedReceiptEnvelope"],
+        "currentBinding": {
+            "domainBindingId": state["domainBindingId"], "status": "active",
+            "nativeIdentity": state["nativeIdentity"], "nativeVersion": state["nativeVersion"],
+        },
+    }
+
+
 def read_native_binding_proof(
     *,
     tenant_id: str,
@@ -2293,6 +2339,7 @@ __all__ = [
     "generate_candidate_set",
     "load_candidate_request",
     "read_native_binding_proof",
+    "read_created_root_proof_by_intent",
     "require_exactly_one_active_osb_binding",
     "store_candidate_request_bytes",
     "verify_candidate_request_artifact",

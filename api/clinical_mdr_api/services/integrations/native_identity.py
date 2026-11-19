@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from neomodel import db
 
+from clinical_mdr_api.domain_repositories.controlled_terminologies.ct_package_repository import CTPackageRepository
 from clinical_mdr_api.generated.platform_contracts.hash_signing_v1 import canonical_json
 from clinical_mdr_api.generated.platform_contracts.models_v1 import ExternalIdentityCreateIntentV1
 from clinical_mdr_api.generated.platform_contracts.native_identity_command_processor_v1 import NativeIdentityCommandError
@@ -26,6 +27,7 @@ from clinical_mdr_api.services.studies.study import StudyService
 from clinical_mdr_api.services.studies.study_standard_version_selection import (
     StudyStandardVersionService,
 )
+from common.config import settings
 
 # The catalogues a governed mapping context REQUIRES. MappingContextService
 # demands "DDF CT" for every request and adds "SDTM CT"/"CDASH CT" as soon as a
@@ -312,13 +314,17 @@ class Neo4jOsbNativeIdentityTransactionV1:
                     "OSB assigns the native draft identity during expected-absence creation.",
                     422,
                 )
+            study_number = _text(
+                initial.get("studyNumber"), "studyNumber", required=initial.get("studyNumber") is not None
+            )
             created = StudyService().create(
                 StudyCreateInput(
                     project_number=_text(initial.get("projectNumber"), "projectNumber"),
-                    study_number=_text(initial.get("studyNumber"), "studyNumber", required=False),
+                    study_number=study_number,
                     study_acronym=_text(initial.get("studyAcronym"), "studyAcronym", required=False),
                     description=_text(initial.get("description"), "description", required=False),
-                )
+                ),
+                platform_study_id=self.platform_study_id,
             )
             native_identity, effect_type = created.uid, "created"
             standards_refs = self._select_required_standards(native_identity)
@@ -366,8 +372,8 @@ class Neo4jOsbNativeIdentityTransactionV1:
         against a bare draft returned zero candidates in all seven resource
         families, because this deployment had no StudyStandardVersion at all.
 
-        The LATEST package per catalogue is chosen, from the graph rather than a
-        pinned uid, so the selection follows whatever CT the deployment actually
+        The latest CDISC base package in each catalogue is chosen, so the
+        selection follows the standard terminology the deployment actually
         loaded. Failure here does NOT fail the binding: the study exists and is
         governed either way, and a catalogue this deployment has not imported is
         an operator fact, not a reason to refuse an identity. What must not
@@ -377,20 +383,10 @@ class Neo4jOsbNativeIdentityTransactionV1:
         refs: list[str] = []
         for catalogue in PLATFORM_REQUIRED_CT_CATALOGUES:
             try:
-                rows, _ = db.cypher_query(
-                    """
-                    MATCH (catalogue:CTCatalogue {name: $catalogue})
-                          -[:CONTAINS_PACKAGE]->(package:CTPackage)
-                    RETURN package.uid AS uid
-                    ORDER BY package.effective_date DESC
-                    LIMIT 1
-                    """,
-                    {"catalogue": catalogue},
-                )
-                if not rows:
+                package_uid = CTPackageRepository().latest_standard_uid(catalogue, settings.cdisc_library_name)
+                if not package_uid:
                     refs.append(f"osb-standard-version-absent:{catalogue}")
                     continue
-                package_uid = str(rows[0][0])
                 selection = call_in_ambient_transaction(
                     StudyStandardVersionService().create,
                     study_uid=native_identity,

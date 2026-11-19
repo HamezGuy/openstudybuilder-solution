@@ -39,6 +39,18 @@ def is_sdtm_ct_package(package_uid: str | None, repository: Any) -> bool:
 
 
 class CTPackageRepository:
+    _BASE_PACKAGE = "NOT EXISTS((package)-[:EXTENDS_PACKAGE]->())"
+
+    def latest_standard_uid(self, catalogue_name: str, library_name: str) -> str | None:
+        rows, _ = db.cypher_query(
+            f"""MATCH (:Library {{name: $library}})-[:CONTAINS_CATALOGUE]->
+                      (:CTCatalogue {{name: $catalogue}})-[:CONTAINS_PACKAGE]->(package:CTPackage)
+                WHERE {self._BASE_PACKAGE} AND package.effective_date IS NOT NULL
+                RETURN package.uid ORDER BY package.effective_date DESC, package.uid LIMIT 1""",
+            {"library": library_name, "catalogue": catalogue_name},
+        )
+        return rows[0][0] if rows else None
+
     def find_catalogue_name(self, package_uid: str) -> str | None:
         """The one catalogue containing the package, or None when unknown."""
         rows, _ = db.cypher_query(
@@ -65,7 +77,7 @@ class CTPackageRepository:
         if catalogue_name is not None:
             where_clause_elements.append("catalogue.name=$catalogue_name")
         if standards_only:
-            where_clause_elements.append("NOT EXISTS((package)-[:EXTENDS_PACKAGE]->())")
+            where_clause_elements.append(self._BASE_PACKAGE)
         where_clause = (
             f"WHERE {' AND '.join(where_clause_elements)}"
             if len(where_clause_elements) > 0

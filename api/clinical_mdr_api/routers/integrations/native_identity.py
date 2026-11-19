@@ -67,6 +67,7 @@ from clinical_mdr_api.services.integrations.candidate_set import (
     generate_candidate_set,
     load_candidate_request,
     read_candidate_set_for_publication,
+    read_created_root_proof_by_intent,
     read_native_binding_proof,
     store_candidate_request_bytes,
 )
@@ -404,6 +405,32 @@ def _verify_governed_candidate_request(payload, envelope):
         proof["receipt"], proof["signedReceiptEnvelope"]
     )
     return _verify_candidate_request_signature(payload, envelope)
+
+
+@router.get(
+    "/native-study-roots/intents/{intent_id}/receipt",
+    dependencies=[platform_security],
+    summary="Recover the original signed create receipt for the same study and actor",
+)
+def get_created_root_receipt(intent_id: str, request: Request) -> dict[str, Any]:
+    if not settings.governed_study_creation_enabled:
+        raise HTTPException(status_code=503, detail="OSB_NATIVE_IDENTITY_ENDPOINT_DISABLED")
+    study_id = str(request.headers.get("x-platform-study-id") or "").strip()
+    principal = _platform_principal("native-identity:bind", study_id)
+    if not {"service", "Study.Read"}.issubset(principal.roles):
+        raise HTTPException(status_code=403, detail="OSB_PLATFORM_COMMAND_SCOPE_DENIED")
+    origin = (
+        principal.actor_chain[0].get("subject")
+        if principal.actor_chain else principal.human_subject or principal.sub
+    )
+    try:
+        proof = read_created_root_proof_by_intent(
+            tenant_id=principal.tenant_id, platform_study_id=study_id, intent_id=intent_id, actor_subject=origin
+        )
+        _verify_candidate_request_signature(proof["receipt"], proof["signedReceiptEnvelope"])
+        return {"ok": True, "data": proof}
+    except OsbCandidateSetError as error:
+        raise HTTPException(status_code=error.status_code, detail={"code": error.code, "message": str(error)}) from error
 
 
 @router.get(

@@ -1,4 +1,5 @@
 import datetime
+import hashlib
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -722,6 +723,35 @@ return *
             if study_root is not None:
                 return study_root.uid
         return None
+
+    @staticmethod
+    def lock_study_numbers() -> None:
+        # Counter.counterId is unique. The write lock lasts until the surrounding
+        # create or PATCH commits, including across processes and platform studies.
+        db.cypher_query(
+            """MERGE (lock:Counter {counterId: 'StudyNumberAllocationLock'})
+               SET lock.count = coalesce(lock.count, 0) + 1"""
+        )
+
+    @staticmethod
+    def available_platform_study_number(platform_study_id: str) -> str:
+        """Called under lock_study_numbers. Archived roots retain their LATEST value."""
+        rows, _ = db.cypher_query(
+            """MATCH (:StudyRoot)-[:LATEST]->(value:StudyValue)
+               WHERE value.study_number IS NOT NULL
+               RETURN DISTINCT value.study_number"""
+        )
+        occupied = {row[0] for row in rows}
+        # Same seed as the independently packaged sponsor importer's study_number_for.
+        digest = hashlib.sha256(platform_study_id.encode("utf-8")).digest()
+        start = int.from_bytes(digest[:4], "big") % 9000
+        for offset in range(9000):
+            candidate = str(1000 + (start + offset) % 9000)
+            if candidate not in occupied:
+                return candidate
+        raise exceptions.BusinessLogicException(
+            msg="No four-digit study number is available for a new platform study."
+        )
 
     @staticmethod
     def study_number_exists(study_number: str, uid: str | None = None) -> bool:

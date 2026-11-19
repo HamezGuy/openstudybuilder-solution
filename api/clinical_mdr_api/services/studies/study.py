@@ -2158,7 +2158,10 @@ class StudyService:
 
     @ensure_transaction(db)
     def create(
-        self, study_create_input: StudySubpartCreateInput | StudyCreateInput
+        self,
+        study_create_input: StudySubpartCreateInput | StudyCreateInput,
+        *,
+        platform_study_id: str | None = None,
     ) -> Study:
         try:
             study_number = None
@@ -2200,6 +2203,12 @@ class StudyService:
                 )
             else:
                 study_number = study_create_input.study_number
+                if study_number or platform_study_id:
+                    self._repos.study_definition_repository.lock_study_numbers()
+                if not study_number and platform_study_id:
+                    study_number = self._repos.study_definition_repository.available_platform_study_number(
+                        platform_study_id
+                    )
                 project_number = study_create_input.project_number
                 initial_study_description = _DEF_INITIAL_STUDY_DESCRIPTION
                 registry_identifiers = RegistryIdentifiersVO(
@@ -2794,6 +2803,8 @@ class StudyService:
                 study_patch_request.current_metadata.identification_metadata.study_acronym
             )
         try:
+            if _study_number and not dry:
+                self._repos.study_definition_repository.lock_study_numbers()
             study_definition_ar = self._repos.study_definition_repository.find_by_uid(
                 uid, for_update=not dry
             )
