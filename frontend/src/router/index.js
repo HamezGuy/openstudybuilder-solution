@@ -1247,19 +1247,26 @@ const router = createRouter({
   routes,
 })
 
-async function saveStudyUid(studyUid) {
+let navigationRevision = 0
+async function saveStudyUid(studyUid, revision) {
   const store = useStudiesGeneralStore()
   store.hydrateSelectedStudy()
   const currentlySelectedStudy = store.selectedStudy
   if (!currentlySelectedStudy || currentlySelectedStudy.uid !== studyUid) {
     try {
       const resp = await study.getStudy(studyUid)
+      if (revision !== navigationRevision) return false
+      if (resp.data?.uid !== studyUid)
+        throw new Error('Unexpected study identity')
       await store.selectStudy(resp.data)
     } catch (_err) {
-      store.unselectStudy()
-      router.push('/studies')
+      if (revision === navigationRevision) store.unselectStudy()
+      return false
     }
   }
+  return (
+    revision === navigationRevision && store.selectedStudy?.uid === studyUid
+  )
 }
 
 function runtimeConfig() {
@@ -1271,6 +1278,7 @@ function runtimeConfig() {
 }
 
 router.beforeEach(async (to, from, next) => {
+  const revision = ++navigationRevision
   let settled = false
   const go = (location) => {
     if (settled) return
@@ -1292,7 +1300,12 @@ router.beforeEach(async (to, from, next) => {
     const featureFlagsStore = useFeatureFlagsStore()
 
     if (to.params.study_id && to.params.study_id !== '*') {
-      await saveStudyUid(to.params.study_id)
+      if (!(await saveStudyUid(to.params.study_id, revision))) {
+        go(
+          revision === navigationRevision ? { name: 'SelectOrAddStudy' } : false
+        )
+        return
+      }
     }
 
     // Always resolve the caller: Command Center gateway SSO carries the

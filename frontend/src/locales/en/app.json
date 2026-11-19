@@ -1843,6 +1843,7 @@
     "StudyStructureOverview": {
         "arms": "Arms",
         "no_arms": "No study arms have been configured.",
+        "design_load_failed": "The study design table could not be loaded.",
         "branch_arms": "Branch arms",
         "number_of_subjects": "Number of subjects",
         "epochs": "Epochs",
@@ -2280,7 +2281,8 @@
         "no_product_name": "No product name"
     },
     "InterventionOverview": {
-        "no_intervention_selected": "No study intervention selected",
+        "no_intervention_selected": "No study compounds have been selected.",
+        "design_by_epoch": "Protocol design by arm and epoch",
         "study_compounds": "Study Compounds",
         "medicinal_product": "Medicinal product",
         "first_col_title": "Attribute / Compound name",

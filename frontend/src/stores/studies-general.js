@@ -9,6 +9,7 @@ export const useStudiesGeneralStore = defineStore('studiesGeneral', {
   state: () => ({
     selectedStudy: null,
     selectedStudyVersion: null,
+    selectionRevision: 0,
     studyPreferredTimeUnit: null,
     soaPreferredTimeUnit: null,
     soaPreferences: null,
@@ -74,7 +75,8 @@ export const useStudiesGeneralStore = defineStore('studiesGeneral', {
         return null
       }
       return state.selectedStudy.current_metadata
-        ? state.selectedStudy.current_metadata.version_metadata.study_status
+        ? (state.selectedStudy.current_metadata.version_metadata
+            ?.study_status ?? null)
         : state.selectedStudy.version_status
     },
     studyVersion: (state) => {
@@ -82,7 +84,8 @@ export const useStudiesGeneralStore = defineStore('studiesGeneral', {
         return null
       }
       return state.selectedStudy.current_metadata
-        ? state.selectedStudy.current_metadata.version_metadata.version_number
+        ? (state.selectedStudy.current_metadata.version_metadata
+            ?.version_number ?? null)
         : state.selectedStudy.version_number
     },
     studyUid: (state) => {
@@ -121,8 +124,12 @@ export const useStudiesGeneralStore = defineStore('studiesGeneral', {
 
   actions: {
     unselectStudy() {
+      this.selectionRevision++
       this.selectedStudy = null
       this.selectedStudyVersion = null
+      this.studyPreferredTimeUnit = null
+      this.soaPreferredTimeUnit = null
+      this.soaPreferences = null
       localStorage.removeItem('selectedStudy')
       this._syncAppStudyUid(null)
     },
@@ -143,7 +150,8 @@ export const useStudiesGeneralStore = defineStore('studiesGeneral', {
         }
         this.selectedStudy = parsedStudy
         this.selectedStudyVersion = parsedStudy.current_metadata
-          ? parsedStudy.current_metadata.version_metadata.version_number
+          ? (parsedStudy.current_metadata.version_metadata?.version_number ??
+            null)
           : parsedStudy.version_number
         this._syncAppStudyUid(parsedStudy.uid)
         return parsedStudy
@@ -156,7 +164,8 @@ export const useStudiesGeneralStore = defineStore('studiesGeneral', {
     _syncAppStudyUid(uid) {
       import('./app')
         .then(({ useAppStore }) => {
-          useAppStore().syncStudyMenuParams(uid)
+          if ((this.selectedStudy?.uid || null) === uid)
+            useAppStore().syncStudyMenuParams(uid)
         })
         .catch(() => {})
     },
@@ -166,14 +175,17 @@ export const useStudiesGeneralStore = defineStore('studiesGeneral', {
       if (!parsedStudy) {
         return
       }
+      const pending = this.selectStudy(parsedStudy)
+      const revision = this.selectionRevision
+      const version = this.selectedStudyVersion
+      await pending
+      if (this.selectionRevision !== revision) return
       try {
-        await this.selectStudy(parsedStudy)
-      } catch {
-        // Keep the hydrated study even if preference APIs fail.
-      }
-      try {
-        const resp = await study.getStudy(parsedStudy.uid, true)
-        if (resp?.data?.uid) {
+        const resp = await study.getStudy(parsedStudy.uid, true, version ?? '0')
+        if (
+          this.selectionRevision === revision &&
+          resp?.data?.uid === parsedStudy.uid
+        ) {
           this.selectedStudy = resp.data
           localStorage.setItem('selectedStudy', JSON.stringify(resp.data))
           this._syncAppStudyUid(resp.data.uid)
@@ -183,53 +195,57 @@ export const useStudiesGeneralStore = defineStore('studiesGeneral', {
       }
     },
     async selectStudy(studyObj, _forceReload) {
+      const revision = ++this.selectionRevision
       this.selectedStudy = studyObj
       if (!studyObj.current_metadata) {
         this.selectedStudyVersion = studyObj.version_number
       } else {
         this.selectedStudyVersion =
-          studyObj.current_metadata.version_metadata.version_number
+          studyObj.current_metadata.version_metadata?.version_number ?? null
       }
       localStorage.setItem('selectedStudy', JSON.stringify(studyObj))
       this._syncAppStudyUid(studyObj.uid)
-      try {
-        const resp = await study.getStudyPreferredTimeUnit(studyObj.uid)
-        this.studyPreferredTimeUnit = resp.data
-      } catch {
-        this.studyPreferredTimeUnit = null
-      }
-      try {
-        const resp = await study.getSoAPreferredTimeUnit(studyObj.uid)
-        this.soaPreferredTimeUnit = resp.data
-      } catch {
-        this.soaPreferredTimeUnit = null
-      }
-      try {
-        const resp = await study.getSoAPreferences(studyObj.uid)
-        this.soaPreferences = resp.data
-      } catch {
-        this.soaPreferences = null
-      }
+      this.studyPreferredTimeUnit = null
+      this.soaPreferredTimeUnit = null
+      this.soaPreferences = null
+      const preferences = await Promise.allSettled([
+        study.getStudyPreferredTimeUnit(studyObj.uid),
+        study.getSoAPreferredTimeUnit(studyObj.uid),
+        study.getSoAPreferences(studyObj.uid),
+      ])
+      if (this.selectionRevision === revision)
+        [
+          this.studyPreferredTimeUnit,
+          this.soaPreferredTimeUnit,
+          this.soaPreferences,
+        ] = preferences.map((result) =>
+          result.status === 'fulfilled' ? result.value.data : null
+        )
     },
     setStudyPreferredTimeUnit({ timeUnitUid, protocolSoa }) {
+      const revision = this.selectionRevision
       const data = { unit_definition_uid: timeUnitUid }
       return study
         .updateStudyPreferredTimeUnit(this.selectedStudy.uid, data, protocolSoa)
         .then((resp) => {
+          if (this.selectionRevision !== revision) return
           protocolSoa
             ? (this.soaPreferredTimeUnit = resp.data)
             : (this.studyPreferredTimeUnit = resp.data)
         })
     },
     getSoaPreferences() {
+      const revision = this.selectionRevision
       study.getSoAPreferredTimeUnit(this.selectedStudy.uid).then((resp) => {
-        this.soaPreferredTimeUnit = resp.data
+        if (this.selectionRevision === revision)
+          this.soaPreferredTimeUnit = resp.data
       })
       study.getSoAPreferences(this.selectedStudy.uid).then((resp) => {
-        this.soaPreferences = resp.data
+        if (this.selectionRevision === revision) this.soaPreferences = resp.data
       })
     },
     setSoaPreferences(soaPreferences) {
+      const revision = this.selectionRevision
       const payload = Object.fromEntries(
         Object.entries(soaPreferences).filter(
           ([, value]) => value !== undefined
@@ -239,7 +255,8 @@ export const useStudiesGeneralStore = defineStore('studiesGeneral', {
       return study
         .updateSoaPreferences(this.selectedStudy.uid, payload)
         .then((resp) => {
-          this.soaPreferences = resp.data
+          if (this.selectionRevision === revision)
+            this.soaPreferences = resp.data
         })
     },
     fetchUnits() {

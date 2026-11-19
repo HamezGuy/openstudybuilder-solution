@@ -18,7 +18,10 @@
           <CompoundDosingTable />
         </v-window-item>
         <v-window-item value="other_interventions">
-          <UnderConstruction />
+          <h2 class="text-title-large ma-4">
+            {{ $t('InterventionOverview.design_by_epoch') }}
+          </h2>
+          <StudyStructureOverview />
         </v-window-item>
       </template>
     </NavigationTabs>
@@ -30,7 +33,7 @@ import { useI18n } from 'vue-i18n'
 import CompoundDosingTable from '@/components/studies/CompoundDosingTable.vue'
 import CompoundTable from '@/components/studies/CompoundTable.vue'
 import InterventionOverview from '@/components/studies/InterventionOverview.vue'
-import UnderConstruction from '@/components/layout/UnderConstruction.vue'
+import StudyStructureOverview from '@/components/studies/StudyStructureOverview.vue'
 import HelpButton from '@/components/tools/HelpButton.vue'
 import NavigationTabs from '@/components/tools/NavigationTabs.vue'
 import { useStudiesGeneralStore } from '@/stores/studies-general'

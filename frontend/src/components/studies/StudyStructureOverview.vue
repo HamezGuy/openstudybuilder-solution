@@ -1,11 +1,15 @@
 <template>
   <div class="pa-4 bg-white" style="overflow-x: auto">
     <v-skeleton-loader
-      v-if="cellsLoading || armsLoading"
+      v-if="designLoading"
       class="mx-auto"
       max-width="800px"
       type="table-heading, table-thead, table-tbody"
     />
+    <v-alert v-else-if="designError" type="error" variant="tonal">
+      {{ $t('StudyStructureOverview.design_load_failed') }}
+      <v-btn variant="text" @click="loadDesign">{{ $t('_global.retry') }}</v-btn>
+    </v-alert>
     <template v-else>
       <v-sheet
         :elevation="4"
@@ -99,8 +103,8 @@
               {{ $t('StudyStructureOverview.study_structure') }}
             </th>
             <th
-              v-if="studyEpochs.length > 0"
-              :colspan="studyEpochs.length"
+              v-if="visibleStudyEpochs.length > 0"
+              :colspan="visibleStudyEpochs.length"
               scope="col"
               style="color: white"
             >
@@ -219,21 +223,19 @@ import armsApi from '@/api/arms'
 import cohortsApi from '@/api/cohorts'
 import visitConstants from '@/constants/visits'
 import { useStudiesGeneralStore } from '@/stores/studies-general'
-import { useEpochsStore } from '@/stores/studies-epochs'
+import studyEpochsApi from '@/api/studyEpochs'
 import { onMounted, ref, computed } from 'vue'
-import { useI18n } from 'vue-i18n'
 import studyApi from '@/api/study'
 import { studyPopulationTarget } from '@/utils/studyPopulationTarget'
 
-const { t } = useI18n()
 const studiesGeneralStore = useStudiesGeneralStore()
-const epochsStore = useEpochsStore()
+const studyUid = studiesGeneralStore.selectedStudy.uid
 
 const arms = ref([])
-const branches = ref([])
+const branches = computed(() => arms.value.flatMap(arm => arm.arm_connected_branch_arms || []))
 const cells = ref([])
-const armsLoading = ref(true)
-const cellsLoading = ref(true)
+const designLoading = ref(true)
+const designError = ref(false)
 const elementCount = ref(null)
 const elementsLoading = ref(true)
 const cohorts = ref([])
@@ -243,9 +245,7 @@ const population = ref(null)
 const populationLoading = ref(true)
 const populationError = ref(false)
 
-const studyEpochs = computed(() => {
-  return epochsStore.studyEpochs
-})
+const studyEpochs = ref([])
 const plannedNumberOfSubjects = computed(() =>
   studyPopulationTarget(population.value, arms.value)
 )
@@ -257,7 +257,7 @@ const visibleStudyEpochs = computed(() => {
 
 onMounted(() => {
   armsApi
-    .getStudyElements(studiesGeneralStore.selectedStudy.uid, {
+    .getStudyElements(studyUid, {
       page_size: 1,
       total_count: true,
     })
@@ -273,7 +273,7 @@ onMounted(() => {
       elementsLoading.value = false
     })
   studyApi
-    .getStudyPopulationMetadata(studiesGeneralStore.selectedStudy.uid)
+    .getStudyPopulationMetadata(studyUid)
     .then((response) => {
       population.value = response.data.current_metadata.study_population
     })
@@ -283,61 +283,36 @@ onMounted(() => {
     .finally(() => {
       populationLoading.value = false
     })
-  try {
-    epochsStore.fetchStudyEpochs({
-      studyUid: studiesGeneralStore.selectedStudy.uid,
-    })
-    cellsLoading.value = true
-    armsApi
-      .getAllStudyCells(studiesGeneralStore.selectedStudy.uid)
-      .then((resp) => {
-        cells.value = resp.data
-        cellsLoading.value = false
-      })
-    armsLoading.value = true
-    const params = {
-      page_size: 0,
-    }
-    armsApi
-      .getAllForStudy(studiesGeneralStore.selectedStudy.uid, { params })
-      .then((resp) => {
-        arms.value = resp.data.items
-        arms.value.forEach((arm) => {
-          if (arm.arm_connected_branch_arms) {
-            branches.value = [
-              ...branches.value,
-              ...arm.arm_connected_branch_arms,
-            ]
-          }
-        })
-        armsLoading.value = false
-      })
-    armsApi
-      .getAllCohorts(studiesGeneralStore.selectedStudy.uid, params)
-      .then((resp) => {
-        cohorts.value = resp.data.items
-      })
-    cohortsApi
-      .getStudyDesignClass(studiesGeneralStore.selectedStudy.uid)
-      .then((resp) => {
-        designClass.value = resp.data.value
-      })
-      .catch((error) => {
-        if (error.response.status === 404) {
-          console.error(error)
-        }
-      })
-    cohortsApi
-      .getSourceVariable(studiesGeneralStore.selectedStudy.uid)
-      .then((resp) => {
-        if (resp.data) {
-          sourceVariable.value = resp.data
-        }
-      })
-  } catch (error) {
-    console.error(error)
-  }
+  loadDesign()
+  cohortsApi.getStudyDesignClass(studyUid)
+    .then(({ data }) => { designClass.value = data.value })
+    .catch(error => { designClass.value = error.response?.status === 404 ? '' : 'Unavailable' })
+  cohortsApi.getSourceVariable(studyUid)
+    .then(({ data }) => { sourceVariable.value = data || {} })
+    .catch(() => { sourceVariable.value = {} })
 })
+
+async function loadDesign() {
+  designLoading.value = true
+  designError.value = false
+  const params = { page_size: 0 }
+  try {
+    const [armRows, cohortRows, epochRows, cellRows] = await Promise.all([
+      armsApi.getAllForStudy(studyUid, { params }),
+      armsApi.getAllCohorts(studyUid, params),
+      studyEpochsApi.getStudyEpochs(studyUid),
+      armsApi.getAllStudyCells(studyUid),
+    ])
+    arms.value = armRows.data.items
+    cohorts.value = cohortRows.data.items
+    studyEpochs.value = epochRows.data.items
+    cells.value = cellRows.data
+  } catch {
+    designError.value = true
+  } finally {
+    designLoading.value = false
+  }
+}
 
 function getDesignCellByBranch(studyEpochUid, branchArmUid) {
   try {
