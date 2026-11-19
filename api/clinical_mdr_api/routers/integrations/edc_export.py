@@ -19,13 +19,22 @@ from clinical_mdr_api.routers import _generic_descriptions
 
 # Prefixed with "/integrations/edc"
 from clinical_mdr_api.routers.studies.study_access import enforce_visible_study
+from clinical_mdr_api.services.integrations.candidate_set import (
+    OsbCandidateSetError,
+    active_osb_binding,
+)
+from clinical_mdr_api.services.integrations.edc_draft_preview import (
+    DraftPreviewRequest,
+    preview_draft,
+)
 from clinical_mdr_api.services.integrations.edc_export import (
     EdcExportError,
     EdcExportService,
 )
 from common.auth import rbac
 from common.auth.dependencies import security
-from common.exceptions import ValidationException
+from common.auth.user import user
+from common.exceptions import ForbiddenException, ValidationException
 
 router = APIRouter(dependencies=[Depends(enforce_visible_study)])
 
@@ -40,11 +49,39 @@ class EdcSendInput(BaseModel):
     ] = True
 
 
+@router.post(
+    "/studies/{study_uid}/draft-ecrf",
+    dependencies=[security, rbac.STUDY_WRITE],
+    summary="Preview exact CSL collection definitions and native Draft holds",
+    status_code=200,
+)
+def preview_edc_draft(
+    study_uid: Annotated[str, Path(description="OSB study uid")],
+    body: Annotated[DraftPreviewRequest, Body()],
+) -> dict[str, Any]:
+    if study_uid != body.definition.osbStudyUid:
+        raise ValidationException(msg="OSB_DRAFT_PREVIEW_STUDY_MISMATCH")
+    platform_tenant = user().tenant_id
+    if not platform_tenant:
+        raise ForbiddenException(msg="An authenticated platform tenant is required.")
+    try:
+        binding = active_osb_binding(platform_tenant, body.definition.platformStudyId)
+    except OsbCandidateSetError as error:
+        if error.code != "OSB_NATIVE_IDENTITY_BINDING_REQUIRED":
+            raise
+        binding_status = "EXACT_NATIVE_BINDING_REQUIRED"
+    else:
+        if binding["nativeIdentity"] != study_uid:
+            raise ForbiddenException(msg="The native study differs from the registered platform binding.")
+        binding_status = "verified"
+    return preview_draft(study_uid, body, binding_status)
+
+
 @router.get(
     "/studies/{study_uid}/study-bundle",
     dependencies=[security, rbac.STUDY_READ],
     summary="Export an AccuraTrial EDC V2 draft (.ecrfstudy)",
-    description="The response body IS the importable file â€” save it as "
+    description="The response body IS the importable file — save it as "
     "`study.ecrfstudy`. `extensions._osbExport` retains native observations, "
     "reconciliation and authority constraints. The canonical definition is "
     "preserved unchanged; this preview does not authorize release or deployment.",

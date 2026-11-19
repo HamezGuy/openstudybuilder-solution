@@ -3,7 +3,7 @@
   "info": {
     "title": "OpenStudyBuilder API",
     "description": "\n## NOTICE\n\nThis license information is applicable to the swagger documentation of the clinical-mdr-api, that is the openapi.json.\n\n## License Terms (MIT)\n\nCopyright (C) 2025 Novo Nordisk A/S, Danish company registration no. 24256790\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies\nof the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS\nFOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER\nIN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\n\n## Licenses and Acknowledgements for Incorporated Software\n\nThis component contains software licensed under different licenses when compiled, please refer to the third-party-licenses.md file for further information and full license texts.\n\n## Authentication\n\nSupports OAuth2 [Authorization Code Flow](https://datatracker.ietf.org/doc/html/rfc6749#section-4.1),\nat paths described in the OpenID Connect Discovery metadata document (whose URL is defined by the `OAUTH_METADATA_URL` environment variable).\n\nMicrosoft Identity Platform documentation can be read \n([here](https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-auth-code-flow)).\n\nAuthentication can be turned off with `OAUTH_ENABLED=false` environment variable. \n\nWhen authentication is turned on, all requests to protected API endpoints must provide a valid bearer (JWT) token inside the `Authorization` http header. \n",
-    "version": "3.0.721"
+    "version": "3.0.722"
   },
   "paths": {
     "/": {
@@ -114094,6 +114094,67 @@
         }
       }
     },
+    "/integrations/edc/studies/{study_uid}/draft-ecrf": {
+      "post": {
+        "tags": [
+          "AccuraTrial EDC integration"
+        ],
+        "summary": "Preview exact CSL collection definitions and native Draft holds",
+        "operationId": "preview_edc_draft_integrations_edc_studies__study_uid__draft_ecrf_post",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "study_uid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "OSB study uid",
+              "title": "Study Uid"
+            },
+            "description": "OSB study uid"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftPreviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Preview Edc Draft Integrations Edc Studies  Study Uid  Draft Ecrf Post"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/integrations/edc/studies/{study_uid}/study-bundle": {
       "get": {
         "tags": [
@@ -132359,6 +132420,29 @@
         ],
         "title": "Code"
       },
+      "Codelist": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Name"
+          },
+          "terms": {
+            "items": {
+              "$ref": "#/components/schemas/CodelistTerm"
+            },
+            "type": "array",
+            "title": "Terms"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "terms"
+        ],
+        "title": "Codelist"
+      },
       "CodelistChangeItem": {
         "properties": {
           "uid": {
@@ -132406,6 +132490,30 @@
           "count"
         ],
         "title": "CodelistCount"
+      },
+      "CodelistTerm": {
+        "properties": {
+          "decode": {
+            "type": "string",
+            "title": "Decode"
+          },
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "order": {
+            "type": "integer",
+            "title": "Order"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "decode",
+          "value",
+          "order"
+        ],
+        "title": "CodelistTerm"
       },
       "CommentAnnotation": {
         "properties": {
@@ -143806,6 +143914,87 @@
         ],
         "title": "DocumentBinding"
       },
+      "DraftDefinition": {
+        "properties": {
+          "schemaVersion": {
+            "type": "string",
+            "const": "osb-draft-ecrf/1",
+            "title": "Schemaversion"
+          },
+          "platformStudyId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$",
+            "title": "Platformstudyid"
+          },
+          "tenantId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$",
+            "title": "Tenantid"
+          },
+          "semanticStudyId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$",
+            "title": "Semanticstudyid"
+          },
+          "osbStudyUid": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Osbstudyuid"
+          },
+          "buildHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Buildhash"
+          },
+          "odm": {
+            "$ref": "#/components/schemas/Odm"
+          },
+          "formVisitMatrix": {
+            "items": {
+              "$ref": "#/components/schemas/VisitAssignment"
+            },
+            "type": "array",
+            "title": "Formvisitmatrix"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "schemaVersion",
+          "platformStudyId",
+          "tenantId",
+          "semanticStudyId",
+          "osbStudyUid",
+          "buildHash",
+          "odm",
+          "formVisitMatrix"
+        ],
+        "title": "DraftDefinition"
+      },
+      "DraftPreviewRequest": {
+        "properties": {
+          "sourceDigest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sourcedigest"
+          },
+          "dryRun": {
+            "type": "boolean",
+            "title": "Dryrun"
+          },
+          "definition": {
+            "$ref": "#/components/schemas/DraftDefinition"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "sourceDigest",
+          "dryRun",
+          "definition"
+        ],
+        "title": "DraftPreviewRequest"
+      },
       "DurationJsonModel": {
         "properties": {
           "duration_value": {
@@ -146462,6 +146651,37 @@
         ],
         "title": "FeatureFlagVersion"
       },
+      "FieldVisitScope": {
+        "properties": {
+          "fieldRef": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Fieldref"
+          },
+          "fieldLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fieldlabel"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "fieldRef",
+          "text"
+        ],
+        "title": "FieldVisitScope"
+      },
       "FlowchartMetadataAdamListing": {
         "properties": {
           "SOURCE_SCHEDULE_UID": {
@@ -148810,6 +149030,69 @@
         ],
         "title": "FootnoteWithType"
       },
+      "Form": {
+        "properties": {
+          "refKey": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Refkey"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "orderNumber": {
+            "type": "integer",
+            "title": "Ordernumber"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "repeating": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repeating"
+          },
+          "itemGroups": {
+            "items": {
+              "$ref": "#/components/schemas/Group"
+            },
+            "type": "array",
+            "title": "Itemgroups"
+          },
+          "vendorExtensions": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Vendorextensions"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "refKey",
+          "name",
+          "orderNumber",
+          "itemGroups",
+          "vendorExtensions"
+        ],
+        "title": "Form"
+      },
       "Formulation": {
         "properties": {
           "external_id": {
@@ -149503,6 +149786,75 @@
         ],
         "title": "GraphUser"
       },
+      "Group": {
+        "properties": {
+          "refKey": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Refkey"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "orderNumber": {
+            "type": "integer",
+            "title": "Ordernumber"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "repeating": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repeating"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Item"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "vendorExtensions": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendorextensions"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "refKey",
+          "name",
+          "orderNumber",
+          "items"
+        ],
+        "title": "Group"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -150103,6 +150455,164 @@
         ],
         "title": "IntegrityCheckResult",
         "description": "Result of a single integrity check for a study."
+      },
+      "Item": {
+        "properties": {
+          "refKey": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Refkey"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "orderNumber": {
+            "type": "integer",
+            "title": "Ordernumber"
+          },
+          "datatype": {
+            "type": "string",
+            "title": "Datatype"
+          },
+          "datatypeHint": {
+            "type": "string",
+            "title": "Datatypehint"
+          },
+          "vendorExtensions": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Vendorextensions"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "length": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Length"
+          },
+          "significantDigits": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Significantdigits"
+          },
+          "lengthBasis": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "stated",
+                  "finiteOptionDomainCapacity",
+                  "literalReferenceCapacity"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lengthbasis"
+          },
+          "sdsVarName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sdsvarname"
+          },
+          "mandatory": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mandatory"
+          },
+          "unitName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unitname"
+          },
+          "codelistRef": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codelistref"
+          },
+          "allowsMultiChoice": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowsmultichoice"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "refKey",
+          "name",
+          "orderNumber",
+          "datatype",
+          "datatypeHint",
+          "vendorExtensions"
+        ],
+        "title": "Item"
       },
       "ItemCounts": {
         "properties": {
@@ -155630,6 +156140,81 @@
           "excludedPaths"
         ],
         "title": "ObservationHash"
+      },
+      "Odm": {
+        "properties": {
+          "forms": {
+            "items": {
+              "$ref": "#/components/schemas/Form"
+            },
+            "type": "array",
+            "title": "Forms"
+          },
+          "codelists": {
+            "items": {
+              "$ref": "#/components/schemas/Codelist"
+            },
+            "type": "array",
+            "title": "Codelists"
+          },
+          "units": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Units"
+          },
+          "unitGovernance": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/UnitGovernance"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unitgovernance"
+          },
+          "unitGovernanceVersion": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "measured-unit/1",
+                  "measured-unit/2"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unitgovernanceversion"
+          },
+          "unitGovernanceKernel": {
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "governed-unit/3"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unitgovernancekernel"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "forms",
+          "codelists",
+          "units"
+        ],
+        "title": "Odm"
       },
       "OdmAliasModel": {
         "properties": {
@@ -194132,6 +194717,51 @@
         ],
         "title": "UnitDefinitionSimpleModel"
       },
+      "UnitGovernance": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Key"
+          },
+          "spellings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Spellings"
+          },
+          "catalogueTerm": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Catalogueterm"
+          },
+          "identity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identity"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "spellings"
+        ],
+        "title": "UnitGovernance"
+      },
       "UnlockInput": {
         "properties": {
           "reason_for_change_uid": {
@@ -194800,6 +195430,204 @@
         },
         "type": "object",
         "title": "VersionInfo"
+      },
+      "VisitAssignment": {
+        "properties": {
+          "visitRef": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Visitref"
+          },
+          "formRef": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Formref"
+          },
+          "formName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Formname"
+          },
+          "required": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Required"
+          },
+          "doubleEntry": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doubleentry"
+          },
+          "hideCrf": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hidecrf"
+          },
+          "ordinal": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ordinal"
+          },
+          "electronicSignature": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Electronicsignature"
+          },
+          "nullValues": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nullvalues"
+          },
+          "_fieldVisitScope": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FieldVisitScope"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fieldvisitscope"
+          },
+          "_derivedFrom": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "_derivedFromItem": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "_derivedFromTiming": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "_derivedFromVisitAlias": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "_derivedFromActivityCandidateId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Derivedfromactivitycandidateid"
+          },
+          "_derivedFromStatedVisit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "_conditionalNote": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conditionalnote"
+          },
+          "extensions": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extensions"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "visitRef",
+          "formRef"
+        ],
+        "title": "VisitAssignment"
       },
       "VisitClass": {
         "type": "string",
