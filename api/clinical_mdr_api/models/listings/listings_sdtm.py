@@ -5,6 +5,11 @@ from pydantic import Field
 from clinical_mdr_api.models.utils import BaseModel
 
 
+def _listing_element_code(code: str | None) -> str | None:
+    """Keep the authored value intact when it fits the downstream SDTM field."""
+    return code if code and code.strip() and len(code.encode("utf-8")) <= 8 else None
+
+
 class StudyVisitListing(BaseModel):
     STUDYID: Annotated[str, Field()]
     DOMAIN: Annotated[
@@ -177,7 +182,7 @@ class StudyArmListing(BaseModel):
             ARMCD=query_result["ARMCD"],
             ARM=query_result["ARM"],
             TAETORD=str(query_result["TAETORD"]),
-            ETCD=str(query_result["ETCD"]),
+            ETCD=_listing_element_code(query_result["ETCD"]),
             ELEMENT=query_result["ELEMENT"],
             TABRANCH=query_result["TABRANCH"],
             TATRANS=query_result["TATRANS"],
@@ -404,7 +409,7 @@ class StudyElementListing(BaseModel):
         return cls(
             STUDYID=query_result["STUDYID"],
             DOMAIN=query_result["DOMAIN"],
-            ETCD=str(query_result["ETCD"]),
+            ETCD=_listing_element_code(query_result["ETCD"]),
             ELEMENT=query_result["ELEMENT"],
             TESTRL=query_result["TESTRL"],
             TEENRL=query_result["TEENRL"],

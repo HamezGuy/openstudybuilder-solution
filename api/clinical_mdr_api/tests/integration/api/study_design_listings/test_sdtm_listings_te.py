@@ -148,7 +148,7 @@ def test_data():
         unit_subsets=[study_time_subset.uid],
     )
     create_study_element_with_planned_duration(
-        element_subtype_term_uid1, study.uid, unit_definition_uid=unit_def.uid
+        element_subtype_term_uid1, study.uid, unit_definition_uid=unit_def.uid, code="SCRN"
     )
     create_study_element_with_planned_duration(
         element_subtype_term_uid1, study.uid, unit_definition_uid=unit_def.uid
@@ -178,7 +178,7 @@ def test_te_listing(api_client):
         StudyElementListing(
             DOMAIN="TE",
             ELEMENT="Element_Name_1",
-            ETCD="1",
+            ETCD="SCRN",
             STUDYID="SOME_ID-0",
             TEDUR="P70H",
             TEENRL="stop_rule",
@@ -188,7 +188,7 @@ def test_te_listing(api_client):
         StudyElementListing(
             DOMAIN="TE",
             ELEMENT="Element_Name_1",
-            ETCD="2",
+            ETCD=None,
             STUDYID="SOME_ID-0",
             TEDUR="P70H",
             TEENRL="stop_rule",

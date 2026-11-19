@@ -94,7 +94,7 @@ def test_data():
         ],
     )
     study_elements = [
-        create_study_element(element_type_term.uid, study_uid),
+        create_study_element(element_type_term.uid, study_uid, code="SCRN"),
         create_study_element(element_type_term_2.uid, study_uid),
     ]
 
@@ -230,7 +230,7 @@ def test_ta_listing(api_client):
             DOMAIN="TA",
             ELEMENT="Element_Name_1",
             EPOCH="Epoch Subtype 2",
-            ETCD="2",
+            ETCD=None,
             STUDYID="SOME_ID-0",
             TABRANCH=None,
             TAETORD="2",
@@ -243,7 +243,7 @@ def test_ta_listing(api_client):
             DOMAIN="TA",
             ELEMENT="Element_Name_1",
             EPOCH="Epoch Subtype 1",
-            ETCD="1",
+            ETCD="SCRN",
             STUDYID="SOME_ID-0",
             TABRANCH="Branch_Arm_Name_1_edit",
             TAETORD="1",
@@ -256,7 +256,7 @@ def test_ta_listing(api_client):
             DOMAIN="TA",
             ELEMENT="Element_Name_1",
             EPOCH="Epoch Subtype 2",
-            ETCD="1",
+            ETCD="SCRN",
             STUDYID="SOME_ID-0",
             TABRANCH="Branch_Arm_Name_1_edit",
             TAETORD="2",
@@ -269,7 +269,7 @@ def test_ta_listing(api_client):
             DOMAIN="TA",
             ELEMENT="Element_Name_1",
             EPOCH="Epoch Subtype 2",
-            ETCD="1",
+            ETCD="SCRN",
             STUDYID="SOME_ID-0",
             TABRANCH=None,
             TAETORD="2",

@@ -3591,6 +3591,7 @@
         "arm_desc": "Description of Planned Arm",
         "planned_order_of_elem": "Planned Order of Element within Arm",
         "elem_code": "Element Code",
+        "review_element_code": "Review element code (1–8 bytes)",
         "elem_desc": "Description of Element",
         "branch": "Branch",
         "transition_rule": "Transition Rule",

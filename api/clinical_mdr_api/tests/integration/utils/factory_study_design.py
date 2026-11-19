@@ -75,12 +75,15 @@ def add_parent_ct_term(element_subtype_term_uid1, element_type_term_uid1):
 
 
 def create_study_element_with_planned_duration(
-    element_subtype_uid: str, study_uid: str, unit_definition_uid: str
+    element_subtype_uid: str,
+    study_uid: str,
+    unit_definition_uid: str,
+    code: str = "Element_code_1",
 ):
     study_selection_element_create_input = StudySelectionElementCreateInput(
         name="Element_Name_1",
         short_name="Element_Short_Name_1",
-        code="Element_code_1",
+        code=code,
         description="desc...",
         start_rule="start_rule",
         end_rule="stop_rule",

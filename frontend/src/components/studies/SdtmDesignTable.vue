@@ -14,7 +14,17 @@
     disable-filtering
     :export-config="{ objectLabel: type, dataUrl: exportDataUrl }"
     @filter="fetchData"
-  />
+  >
+    <template #[`item.ETCD`]="{ item }">
+      <span v-if="item.ETCD">{{ item.ETCD }}</span>
+      <router-link
+        v-else
+        :to="{ name: 'StudyStructure', params: { study_id: selectedStudy.uid, tab: 'elements' } }"
+      >
+        {{ $t('SdtmDesignTable.review_element_code') }}
+      </router-link>
+    </template>
+  </NNTable>
 </template>
 
 <script>
