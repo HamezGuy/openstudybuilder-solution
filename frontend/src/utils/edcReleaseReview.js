@@ -73,9 +73,13 @@ export function readFailure(error) {
     (value) => typeof value === 'string'
   )
   const hold =
-    status === 422 &&
-    message?.match(/^(USDM_[A-Z0-9_]+_REQUIRED)\b\s*:?\s*([\s\S]*)$/)
-  if (hold) {
+    status === 422 && message?.match(/^(USDM_[A-Z0-9_]+)\b\s*:?\s*([\s\S]*)$/)
+  if (
+    hold &&
+    (body.type === 'USDMMappingAuthorityRequired' ||
+      hold[1] === 'USDM_REQUIRED_SOURCE_VALUE_MISSING' ||
+      hold[1].endsWith('_REQUIRED'))
+  ) {
     return { state: 'held', blockers: [{ code: hold[1], detail: hold[2] }] }
   }
   return { state: 'unavailable', status }

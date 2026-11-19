@@ -47,6 +47,14 @@
             @click="refresh++"
             >Refresh review</v-btn
           >
+          <v-btn
+            v-if="snapshot"
+            class="mt-4 ml-2"
+            variant="outlined"
+            @click="downloadSnapshot"
+          >
+            Download review snapshot
+          </v-btn>
         </v-card-text>
       </v-card>
       <v-card
@@ -85,9 +93,10 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import { useStudiesGeneralStore } from '@/stores/studies-general'
 import edcExport from '@/api/edcExport'
+import exportLoader from '@/utils/exportLoader'
 import EdcLegacyComparison from '@/components/studies/EdcLegacyComparison.vue'
 import {
   loadWorkingCounts,
@@ -107,6 +116,7 @@ const versionLabel = computed(() =>
 )
 const refresh = ref(0)
 const review = ref(null)
+const snapshot = shallowRef(null)
 const counts = ref({})
 
 const presentations = {
@@ -155,6 +165,15 @@ function displayCount(key) {
   )
 }
 
+function downloadSnapshot() {
+  if (!snapshot.value) return
+  exportLoader.downloadFile(
+    JSON.stringify(snapshot.value, null, 2),
+    'application/json',
+    `OpenStudyBuilder-${snapshot.value.study_uid}-${snapshot.value.content_hash}.json`
+  )
+}
+
 watch(
   [studyUid, studyVersion, refresh],
   async ([uid, version], previous, onCleanup) => {
@@ -162,6 +181,7 @@ watch(
     const { signal } = controller
     onCleanup(() => controller.abort())
     review.value = null
+    snapshot.value = null
     counts.value = {}
     if (!uid) return
     let result
@@ -172,6 +192,7 @@ watch(
         signal
       )
       result = reviewSnapshot(data, uid, version)
+      if (!signal.aborted) snapshot.value = data
     } catch (error) {
       result = readFailure(error)
     }

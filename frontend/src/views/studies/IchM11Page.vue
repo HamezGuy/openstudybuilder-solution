@@ -97,11 +97,28 @@
         <v-progress-circular size="64" color="primary" indeterminate />
         <p class="mt-4">{{ $t('IchM11Page.loading') }}</p>
       </div>
-      <v-alert v-else-if="loadError" type="error" role="alert">
-        <p>{{ $t('IchM11Page.load_error') }}</p>
+      <v-alert
+        v-else-if="loadError"
+        :type="sourceHeld ? 'warning' : 'error'"
+        role="alert"
+      >
+        <p>
+          {{ $t(sourceHeld ? 'EdcExport.m11_held' : 'IchM11Page.load_error') }}
+        </p>
         <p v-if="typeof loadError === 'string'">{{ loadError }}</p>
         <v-btn class="mt-4" @click="retryCount++">
           {{ $t('IchM11Page.retry') }}
+        </v-btn>
+        <v-btn
+          v-if="sourceHeld && studiesGeneralStore.selectedStudy?.uid"
+          class="mt-4 ml-2"
+          variant="outlined"
+          :to="{
+            name: 'EdcExport',
+            params: { study_id: studiesGeneralStore.selectedStudy.uid },
+          }"
+        >
+          {{ $t('EdcExport.working_design_link') }}
         </v-btn>
       </v-alert>
       <v-alert
@@ -129,11 +146,13 @@
 import { computed, ref, watch } from 'vue'
 import { useStudiesGeneralStore } from '@/stores/studies-general'
 import study from '@/api/study'
+import { readFailure } from '@/utils/edcReleaseReview'
 
 const studiesGeneralStore = useStudiesGeneralStore()
 
 const loading = ref(false)
 const loadError = ref(false)
+const sourceHeld = ref(false)
 const previewHtml = ref('')
 const retryCount = ref(0)
 const documentId = ref(null)
@@ -308,6 +327,7 @@ watch(
 
     previewHtml.value = ''
     loadError.value = false
+    sourceHeld.value = false
     loading.value = Boolean(studyUid)
     if (!studyUid) return
 
@@ -323,7 +343,10 @@ watch(
         previewHtml.value = response.data.trim()
       }
     } catch (error) {
-      if (current) loadError.value = error.response?.data?.message || true
+      if (current) {
+        sourceHeld.value = readFailure(error).state === 'held'
+        loadError.value = error.response?.data?.message || true
+      }
     } finally {
       if (current) loading.value = false
     }

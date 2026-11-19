@@ -58,6 +58,22 @@ test('handles native source decisions, access and unrelated API failures separat
     'USDM_ARM_DATA_ORIGIN_AUTHORITY_REQUIRED: study-arms/arm-1; select a documented origin.'
   const hold = readFailure(error(422, msg))
   assert.equal(hold.state, 'held')
+  const missing = error(
+    422,
+    'USDM_REQUIRED_SOURCE_VALUE_MISSING: current_metadata.version_metadata; No authoritative native value is available for versionIdentifier.'
+  )
+  missing.response.data.type = 'USDMMappingAuthorityRequired'
+  assert.equal(
+    readFailure(missing).blockers[0].code,
+    'USDM_REQUIRED_SOURCE_VALUE_MISSING'
+  )
+  const unrecognized = error(
+    422,
+    'USDM_UNRECOGNIZED: opaque validation failure'
+  )
+  assert.equal(readFailure(unrecognized).state, 'unavailable')
+  unrecognized.response.data.type = 'USDMMappingAuthorityRequired'
+  assert.equal(readFailure(unrecognized).state, 'held')
   assert.deepEqual(hold.blockers, [
     {
       code: 'USDM_ARM_DATA_ORIGIN_AUTHORITY_REQUIRED',

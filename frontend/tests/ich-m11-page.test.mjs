@@ -30,6 +30,19 @@ const style = compileStyle({
 assert.deepEqual(style.errors, [])
 
 const routes = new Map([
+  [
+    '/release-review.js',
+    ['text/javascript', await read('../src/utils/edcReleaseReview.js')],
+  ],
+  [
+    '/router.js',
+    [
+      'text/javascript',
+      await read(
+        '../node_modules/vue-router/dist/vue-router.esm-browser.prod.js'
+      ),
+    ],
+  ],
   ['/component.js', ['text/javascript', component]],
   ['/component.css', ['text/css', style.code]],
   [
@@ -90,6 +103,7 @@ const routes = new Map([
     [
       'text/javascript',
       `import { createApp } from 'vue'
+       import { createMemoryHistory, createRouter } from '/router.js'
        import { createVuetify, components, directives } from '/vuetify.js'
        import IchM11Page from '/component.js'
        import { store } from '/store.js'
@@ -105,6 +119,10 @@ const routes = new Map([
          mount() {
            IchM11Page.__scopeId = 'data-v-m11-page'
            const app = createApp(IchM11Page)
+           app.use(createRouter({ history: createMemoryHistory(), routes: [
+             { path: '/', component: { template: '<div />' } },
+             { name: 'EdcExport', path: '/studies/:study_id/edc_export', component: { template: '<div />' } }
+           ] }))
            app.config.globalProperties.$t = (key) => key.split('.').reduce((v, p) => v[p], messages)
            app.use(createVuetify({ components, directives }))
            app.mount('#app')
@@ -126,6 +144,7 @@ const routes = new Map([
            vue: '/vue.js',
            '@/stores/studies-general': '/store.js',
            '@/api/study': '/api/study.js',
+           '@/utils/edcReleaseReview': '/release-review.js',
            '@/constants/study': '/constants.js',
          },
        })}</script></head><body>
@@ -596,6 +615,37 @@ test('study and version changes clear old HTML and ignore out-of-order successes
   )
   await expect(preview(page).contentFrame().getByRole('heading')).toHaveText(
     'Version 5'
+  )
+})
+
+test('an authoritative source hold links to the working design for the same study and preserves the selected version', async (t) => {
+  const page = await openPage(t)
+  await select(page, 'Study_2', '2.0', 1)
+  await page.evaluate(() =>
+    window.m11Test.requests[0].reject({
+      response: {
+        status: 422,
+        data: {
+          type: 'USDMMappingAuthorityRequired',
+          message:
+            'USDM_ARM_DATA_ORIGIN_AUTHORITY_REQUIRED: study-arms/arm-1; provide its source description.',
+        },
+      },
+    })
+  )
+  await expect(page.getByRole('alert')).toContainText(
+    translations.EdcExport.m11_held
+  )
+  const link = page.getByRole('link', {
+    name: translations.EdcExport.working_design_link,
+  })
+  await expect(link).toHaveAttribute('href', '/studies/Study_2/edc_export')
+  await link.click()
+  assert.equal(
+    await page.evaluate(
+      async () => (await import('/store.js')).store.selectedStudyVersion
+    ),
+    '2.0'
   )
 })
 

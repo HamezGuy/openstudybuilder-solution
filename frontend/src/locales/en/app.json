@@ -1921,6 +1921,9 @@
         "label": "Unit"
     },
     "EdcExport": {
+        "usdm_held": "USDM export held",
+        "m11_held": "ICH M11 export held",
+        "working_design_link": "Open working study design",
         "title": "EDC Export",
         "preview_title": "Legacy migration comparison",
         "preview_help": "Build a version 2 comparison file from this study for the configured migration environment.",

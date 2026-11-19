@@ -78,10 +78,28 @@
       color="primary"
       indeterminate
     />
-    <v-alert v-else-if="loadError" type="error" role="alert" class="mt-4">
-      <p>{{ $t('UsdmPage.load_failed') }}</p>
+    <v-alert
+      v-else-if="loadError"
+      :type="sourceHeld ? 'warning' : 'error'"
+      role="alert"
+      class="mt-4"
+    >
+      <p>
+        {{ $t(sourceHeld ? 'EdcExport.usdm_held' : 'UsdmPage.load_failed') }}
+      </p>
       <p v-if="loadError !== true">{{ loadError }}</p>
       <v-btn class="mt-4" @click="retry++">{{ $t('_global.retry') }}</v-btn>
+      <v-btn
+        v-if="sourceHeld && studiesGeneralStore.selectedStudy?.uid"
+        class="mt-4 ml-2"
+        variant="outlined"
+        :to="{
+          name: 'EdcExport',
+          params: { study_id: studiesGeneralStore.selectedStudy.uid },
+        }"
+      >
+        {{ $t('EdcExport.working_design_link') }}
+      </v-btn>
     </v-alert>
     <v-card v-else-if="data" variant="outlined" class="mt-4">
       <div ref="treeEl" class="json-tree pa-4">
@@ -95,6 +113,7 @@
 import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import study from '@/api/study'
+import { readFailure } from '@/utils/edcReleaseReview'
 import { useStudiesGeneralStore } from '@/stores/studies-general'
 import HelpButtonWithPanels from '@/components/tools/HelpButtonWithPanels.vue'
 import JsonNode from '@/components/studies/JsonNode.vue'
@@ -128,6 +147,7 @@ const copied = ref(false)
 const treeEl = ref(null)
 
 const loadError = ref(false)
+const sourceHeld = ref(false)
 const retry = ref(0)
 watch(
   [
@@ -140,6 +160,7 @@ watch(
     onCleanup(() => controller.abort())
     loading.value = Boolean(uid)
     loadError.value = false
+    sourceHeld.value = false
     data.value = version.value = null
     rawJson.value = ''
     copied.value = false
@@ -155,8 +176,10 @@ watch(
       rawJson.value = JSON.stringify(resp.data, null, 2)
       version.value = resp.data.usdmVersion
     } catch (error) {
-      if (!controller.signal.aborted)
+      if (!controller.signal.aborted) {
+        sourceHeld.value = readFailure(error).state === 'held'
         loadError.value = error.response?.data?.message || true
+      }
     } finally {
       if (!controller.signal.aborted) loading.value = false
     }
