@@ -458,22 +458,23 @@ class QueryService:
         // We use optional matches for the visit name, day, and week to avoid errors in case these fields are missing.
         // We also add a condition to handle the situation when only one of these fields is present.
         MATCH (sv)-[:HAS_STUDY_VISIT]->(v:StudyVisit)
-        OPTIONAL MATCH  (v)-->(nr:VisitNameRoot)-[:LATEST]->(nv:VisitNameValue),
-                        (v)-->(dr:StudyDayRoot)-[:LATEST]->(dv:StudyDayValue),
-                        (v)-->(wr:StudyWeekRoot)-[:LATEST]->(wv:StudyWeekValue)
+        OPTIONAL MATCH (v)-->(:VisitNameRoot)-[:LATEST]->(nv:VisitNameValue)
+        OPTIONAL MATCH (v)-->(:StudyDayRoot)-[:LATEST]->(dv:StudyDayValue)
+        OPTIONAL MATCH (v)-->(:StudyWeekRoot)-[:LATEST]->(wv:StudyWeekValue)
         OPTIONAL MATCH (udv:UnitDefinitionValue)-[:LATEST_FINAL]-(udr:UnitDefinitionRoot)--(stf:StudyTimeField {field_name: "soa_preferred_time_unit"}),
             (stf)--(sv)
 
         RETURN toUpper(sv.study_id_prefix + '-' + sv.study_number) AS STUDYID,
             'TV' AS DOMAIN,
             toInteger(v.unique_visit_number) AS VISITNUM,
-            CASE
+            toUpper(CASE
+                WHEN v.timing_mode = "UNTIMED" THEN coalesce(v.visit_name_label, nv.name)
                 // WEEK
-                WHEN udv.name = "week" THEN toUpper(nv.name + " (" +udv.name + " "+toInteger(wv.value)+")")
+                WHEN udv.name = "week" AND wv.value IS NOT NULL THEN coalesce(nv.name, v.visit_name_label) + " (week " + toString(toInteger(wv.value)) + ")"
                 // DAY
-                WHEN udv.name = "day" THEN toUpper(nv.name + " (" +udv.name + " "+toInteger(dv.value)+")")
-            ELSE toUpper(nv.name)
-            END AS VISIT,
+                WHEN udv.name = "day" AND dv.value IS NOT NULL THEN coalesce(nv.name, v.visit_name_label) + " (day " + toString(toInteger(dv.value)) + ")"
+                ELSE coalesce(nv.name, v.visit_name_label)
+            END) AS VISIT,
             toInteger(dv.value) AS VISITDY,
             NULL AS ARMCD,
             NULL AS ARM,

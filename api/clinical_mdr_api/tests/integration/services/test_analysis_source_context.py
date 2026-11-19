@@ -10,6 +10,7 @@ from uuid import uuid4
 import pytest
 from neomodel import db
 
+from clinical_mdr_api.listings.query_service import QueryService
 from clinical_mdr_api.services.listings.listings_adam import ADAMListingsService
 from common.config import settings
 
@@ -69,6 +70,10 @@ def source_study():
 
 
 def test_untimed_visit_keeps_name_description_and_null_fixed_times(source_study):
+    trial_visits = QueryService().get_tv(source_study)
+    trial_visit = next(item for item in trial_visits if item["VISITNUM"] == 100)
+    assert trial_visit["VISIT"] == "MONTHLY FOLLOW-UP"
+    assert trial_visit["VISITDY"] is None
     visits = ADAMListingsService().list_mdvisit(source_study)
     manual = next(item for item in visits if item.AVISITN == 100)
     assert manual.SOURCE_VISIT_UID == source_study + "-manual"
