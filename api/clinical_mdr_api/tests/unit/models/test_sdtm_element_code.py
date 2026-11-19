@@ -34,4 +34,5 @@ def test_ta_and_te_keep_the_same_authored_code(source, expected):
         dict(shared, DOMAIN="TE", TESTRL=None, TEENRL=None, TEDUR=None)
     )
     assert arm.TAETORD == "14"
+    assert arm.SOURCE_ELEMENT_CODE == element.SOURCE_ELEMENT_CODE == source
     assert arm.ETCD == element.ETCD == expected

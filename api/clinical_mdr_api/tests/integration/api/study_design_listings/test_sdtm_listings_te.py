@@ -178,6 +178,7 @@ def test_te_listing(api_client):
         StudyElementListing(
             DOMAIN="TE",
             ELEMENT="Element_Name_1",
+            SOURCE_ELEMENT_CODE="SCRN",
             ETCD="SCRN",
             STUDYID="SOME_ID-0",
             TEDUR="P70H",
@@ -188,6 +189,7 @@ def test_te_listing(api_client):
         StudyElementListing(
             DOMAIN="TE",
             ELEMENT="Element_Name_1",
+            SOURCE_ELEMENT_CODE="Element_code_1",
             ETCD=None,
             STUDYID="SOME_ID-0",
             TEDUR="P70H",

@@ -17,12 +17,14 @@
   >
     <template #[`item.ETCD`]="{ item }">
       <span v-if="item.ETCD">{{ item.ETCD }}</span>
-      <router-link
-        v-else
-        :to="{ name: 'StudyStructure', params: { study_id: selectedStudy.uid, tab: 'elements' } }"
-      >
-        {{ $t('SdtmDesignTable.review_element_code') }}
-      </router-link>
+      <template v-else>
+        <span v-if="item.SOURCE_ELEMENT_CODE" class="d-block">{{ item.SOURCE_ELEMENT_CODE }}</span>
+        <router-link
+          :to="{ name: 'StudyStructure', params: { study_id: selectedStudy.uid, tab: 'elements' } }"
+        >
+          {{ $t('SdtmDesignTable.review_element_code') }}
+        </router-link>
+      </template>
     </template>
   </NNTable>
 </template>

@@ -125,6 +125,9 @@ class StudyArmListing(BaseModel):
             json_schema_extra={"nullable": True},
         ),
     ] = None
+    SOURCE_ELEMENT_CODE: str | None = Field(
+        default=None, description="Original element code from the selected study design."
+    )
     ETCD: Annotated[
         str | None,
         Field(
@@ -182,6 +185,7 @@ class StudyArmListing(BaseModel):
             ARMCD=query_result["ARMCD"],
             ARM=query_result["ARM"],
             TAETORD=str(query_result["TAETORD"]),
+            SOURCE_ELEMENT_CODE=query_result["ETCD"],
             ETCD=_listing_element_code(query_result["ETCD"]),
             ELEMENT=query_result["ELEMENT"],
             TABRANCH=query_result["TABRANCH"],
@@ -362,6 +366,9 @@ class StudyElementListing(BaseModel):
             description="Two-character abbreviation for the domain",
         ),
     ]
+    SOURCE_ELEMENT_CODE: str | None = Field(
+        default=None, description="Original element code from the selected study design."
+    )
     ETCD: Annotated[
         str | None,
         Field(
@@ -409,6 +416,7 @@ class StudyElementListing(BaseModel):
         return cls(
             STUDYID=query_result["STUDYID"],
             DOMAIN=query_result["DOMAIN"],
+            SOURCE_ELEMENT_CODE=query_result["ETCD"],
             ETCD=_listing_element_code(query_result["ETCD"]),
             ELEMENT=query_result["ELEMENT"],
             TESTRL=query_result["TESTRL"],
