@@ -58,7 +58,7 @@
               {{ $t('StudyStructureOverview.number_elements') }}
             </div>
             <div class="text-headline-small font-weight-bold mt-1">
-              {{ elementsLoading ? 'Loading…' : (elementCount ?? 'Unavailable') }}
+              {{ elementsLoading ? 'Loadingâ€¦' : (elementCount ?? 'Unavailable') }}
             </div>
           </v-col>
         </v-row>
