@@ -123,8 +123,25 @@
           </tr>
         </thead>
         <tbody>
+          <tr v-if="arms.length === 0">
+            <td :colspan="3 + visibleStudyEpochs.length" class="py-3">
+              {{ $t('StudyStructureOverview.no_arms') }}
+              <router-link
+                class="ms-3"
+                :to="{ name: 'StudyStructure', params: { tab: 'visits' } }"
+              >
+                {{ $t('Sidebar.study.study_visits') }}
+              </router-link>
+              <router-link
+                class="ms-3"
+                :to="{ name: 'StudyActivities', params: { tab: 'list' } }"
+              >
+                {{ $t('Sidebar.study.study_activities') }}
+              </router-link>
+            </td>
+          </tr>
           <template v-for="arm in arms">
-            <template v-if="arm.arm_connected_branch_arms">
+            <template v-if="arm.arm_connected_branch_arms?.length">
               <tr
                 v-for="(branchArm, index) in arm.arm_connected_branch_arms"
                 :key="branchArm.branch_arm_uid"
@@ -221,8 +238,8 @@ const epochsStore = useEpochsStore()
 const arms = ref([])
 const branches = ref([])
 const cells = ref([])
-const armsLoading = ref(false)
-const cellsLoading = ref(false)
+const armsLoading = ref(true)
+const cellsLoading = ref(true)
 const cohorts = ref([])
 const designClass = ref('')
 const sourceVariable = ref({})

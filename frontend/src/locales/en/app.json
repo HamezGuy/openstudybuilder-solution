@@ -1840,6 +1840,7 @@
     },
     "StudyStructureOverview": {
         "arms": "Arms",
+        "no_arms": "No study arms have been configured.",
         "branch_arms": "Branch arms",
         "number_of_subjects": "Number of subjects",
         "epochs": "Epochs",
