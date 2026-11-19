@@ -1,6 +1,6 @@
 {
   "contractVersion": "OsbVocabularyRegistryV1@1.1.0",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "owner": "ClinicalSemanticLayer",
   "canonicalNames": "OpenStudyBuilder resource type names, as its proposal target taxonomy names them; the IL ruleset uses the same names from 1.17.0 (formerNames records what 1.16.0 and earlier called three of them)",
   "sources": {
@@ -693,10 +693,13 @@
       ],
       "apiPath": "/studies/{studyUid}/study-cohorts",
       "semanticMismatch": false,
-      "note": "OSB executes no cohort row by itself: cohorts are created inside its one-transaction regimen command (POST /studies/{study_uid}/regimens, OSB 199d4545), after the arms and branch arms they name. Its optional arm_uids and branch_arm_uids name existing StudyArm and StudyBranchArm selections. No IL rule asserts a cohort yet, so CSL routes no candidate to it and states no CSL capability.",
+      "note": "Working projection of a typed IL STUDY_DESIGN_ATTRIBUTE with attribute COHORT selects the native study-cohorts route after the exact referenced study arms resolve. The accepted candidate ruleset and native regimen transaction retain their separate routes.",
       "captureReadbackResourceType": null,
       "cslCandidateRouting": null,
-      "cslNativeRoute": null,
+      "cslNativeRoute": {
+        "route": "/studies/{study_uid}/study-cohorts",
+        "method": "POST"
+      },
       "uiSurface": "Cohorts",
       "dependencies": [
         "study-arm",
@@ -1765,5 +1768,5 @@
       "dependencies": []
     }
   ],
-  "registryHash": "sha256:0df18ae3fa2438d6c9eceef7c984bc96a883f17e3379b8dbbc149fb088186466"
+  "registryHash": "sha256:df6ae44b0afb21ef810ad75c7072e78fb5db88aebd017d81fd6754fe3b94b89e"
 }
