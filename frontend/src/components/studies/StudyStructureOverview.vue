@@ -58,7 +58,7 @@
               {{ $t('StudyStructureOverview.number_elements') }}
             </div>
             <div class="text-headline-small font-weight-bold mt-1">
-              {{ cells.length }}
+              {{ elementsLoading ? 'Loading…' : (elementCount ?? 'Unavailable') }}
             </div>
           </v-col>
         </v-row>
@@ -234,6 +234,8 @@ const branches = ref([])
 const cells = ref([])
 const armsLoading = ref(true)
 const cellsLoading = ref(true)
+const elementCount = ref(null)
+const elementsLoading = ref(true)
 const cohorts = ref([])
 const designClass = ref('')
 const sourceVariable = ref({})
@@ -254,6 +256,22 @@ const visibleStudyEpochs = computed(() => {
 })
 
 onMounted(() => {
+  armsApi
+    .getStudyElements(studiesGeneralStore.selectedStudy.uid, {
+      page_size: 1,
+      total_count: true,
+    })
+    .then(({ data }) => {
+      if (Number.isSafeInteger(data.total) && data.total >= 0) {
+        elementCount.value = data.total
+      }
+    })
+    .catch(() => {
+      elementCount.value = null
+    })
+    .finally(() => {
+      elementsLoading.value = false
+    })
   studyApi
     .getStudyPopulationMetadata(studiesGeneralStore.selectedStudy.uid)
     .then((response) => {
