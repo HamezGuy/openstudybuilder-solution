@@ -702,7 +702,7 @@ class QueryService:
             COLLECT(DISTINCT activity_group_tem_par_value.name) as activity_group_tem_par_root_uid_collected,
             COLLECT(DISTINCT activity_instance_tem_par_value.name) as activity_instance_tem_par_root_uid_collected
         return 
-            DISTINCT s_r.uid as STUDYID_OBJ, 
+            DISTINCT coalesce(toUpper(s_v.study_id_prefix + '-' + s_v.study_number), s_r.uid) AS STUDYID_OBJ,
             obj_lev.name AS OBJTVLVL,
             obj_val.name AS OBJTV,
             obj_val.name_plain AS OBJTVPT,

@@ -207,7 +207,7 @@ def test_adam_listing_mdendpnt(api_client):
     assert_response_status_code(response, 200)
 
     response = api_client.get(
-        "/listings/studies/Study_000002/adam/mdendpnt/",
+        f"/listings/studies/{study.uid}/adam/mdendpnt/",
     )
     assert_response_status_code(response, 200)
     res = response.json()["items"]
@@ -215,7 +215,7 @@ def test_adam_listing_mdendpnt(api_client):
     assert res is not None
 
     expected_output = StudyEndpntAdamListing(
-        STUDYID_OBJ="Study_000002",
+        STUDYID_OBJ=study.current_metadata.identification_metadata.study_id.upper(),
         OBJTVLVL="Objective Level 1",
         OBJTV="objective_1",
         OBJTVPT="objective_1",
@@ -241,7 +241,7 @@ def test_adam_listing_mdendpnt(api_client):
         value = res_objective[field_name]
         if value:
             expected_result.append(value)
-    url = "/listings/studies/Study_000002/adam/mdendpnt"
+    url = f"/listings/studies/{study.uid}/adam/mdendpnt"
     response = api_client.get(f"{url}/headers?field_name={field_name}&page_size=100")
     res_headers = response.json()
 
