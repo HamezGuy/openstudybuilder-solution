@@ -45,6 +45,7 @@ class StudySelectionActivityVO(study_selection_base.StudySelectionBaseVO):
     accepted_version: bool = False
     activity_name: str | None = None
     keep_old_version_date: datetime.datetime | None = None
+    soa_group_term_date_conflict: bool = False
 
     @classmethod
     def from_input_values(
@@ -79,6 +80,7 @@ class StudySelectionActivityVO(study_selection_base.StudySelectionBaseVO):
         generate_uid_callback: Callable[[], str] = lambda: "",
         keep_old_version: bool = False,
         keep_old_version_date: datetime.datetime | None = None,
+        soa_group_term_date_conflict: bool = False,
     ):
         if study_selection_uid is None:
             study_selection_uid = generate_uid_callback()
@@ -96,6 +98,7 @@ class StudySelectionActivityVO(study_selection_base.StudySelectionBaseVO):
             study_soa_group_order=study_soa_group_order,
             soa_group_term_uid=normalize_string(soa_group_term_uid),
             soa_group_term_name=normalize_string(soa_group_term_name),
+            soa_group_term_date_conflict=soa_group_term_date_conflict,
             show_activity_in_protocol_flowchart=show_activity_in_protocol_flowchart,
             show_activity_group_in_protocol_flowchart=show_activity_group_in_protocol_flowchart,
             show_activity_subgroup_in_protocol_flowchart=show_activity_subgroup_in_protocol_flowchart,

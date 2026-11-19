@@ -87,6 +87,7 @@ class StudySelectionActivityRepository(
             activity_library_name=selection["activity_library_name"],
             soa_group_term_uid=study_soa_group["soa_group_term_uid"],
             soa_group_term_name=study_soa_group.get("soa_group_term_name"),
+            soa_group_term_date_conflict=study_soa_group.get("date_conflict", False),
             study_soa_group_uid=study_soa_group["selection_uid"],
             study_soa_group_order=study_soa_group.get("order"),
             order=selection["order"],
@@ -134,11 +135,12 @@ class StudySelectionActivityRepository(
                 LIMIT 1
             
                 WITH soa_group_term_root, terms_at_specific_datetime, soa_group
-                MATCH (:Library)-[:CONTAINS_TERM]->(soa_group_term_root)-[:HAS_NAME_ROOT]->(term_name_root:CTTermNameRoot)-[term_version:HAS_VERSION]->(term_name_value:CTTermNameValue)
+                OPTIONAL MATCH (:Library)-[:CONTAINS_TERM]->(soa_group_term_root)-[:HAS_NAME_ROOT]->(term_name_root:CTTermNameRoot)-[term_version:HAS_VERSION]->(term_name_value:CTTermNameValue)
                 WHERE term_version.status IN ['Final', 'Retired'] AND ( terms_at_specific_datetime IS NULL
                       OR term_version.start_date <= datetime(terms_at_specific_datetime)
                       AND (term_version.end_date IS NULL OR term_version.end_date > datetime(terms_at_specific_datetime)) )
-                RETURN {uid: soa_group_term_root.uid, name: term_name_value.name} AS soa_group_term, soa_group
+                RETURN {uid: soa_group_term_root.uid, name: term_name_value.name,
+                        date_conflict: terms_at_specific_datetime IS NOT NULL AND term_name_value IS NULL} AS soa_group_term, soa_group
                 ORDER BY term_version.start_date DESC
                 LIMIT 1
             }
@@ -213,6 +215,7 @@ class StudySelectionActivityRepository(
                     selection_uid: soa_group.uid, 
                     soa_group_term_uid: soa_group_term.uid,
                     soa_group_term_name: soa_group_term.name,
+                    date_conflict: soa_group_term.date_conflict,
                     show_soa_group_in_protocol_flowchart: coalesce(soa_group.show_soa_group_in_protocol_flowchart, false),
                     order: soa_group.order
                 } AS study_soa_group,

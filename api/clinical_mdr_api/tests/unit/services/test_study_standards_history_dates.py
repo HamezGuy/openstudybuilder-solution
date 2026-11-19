@@ -6,6 +6,9 @@ from types import SimpleNamespace
 from unittest.mock import Mock, call
 
 from clinical_mdr_api.services.studies.study_selection_base import StudySelectionMixin
+from clinical_mdr_api.domains.study_selections.study_selection_activity import StudySelectionActivityVO
+from clinical_mdr_api.models.study_selections.study_selection import StudySelectionActivity
+from clinical_mdr_api.tests.unit.services.soa_test_data import STUDY_ACTIVITIES
 
 
 def version(uid, start, end=None, change_type="Edit"):
@@ -32,6 +35,38 @@ def service(versions, packages):
 
 
 class StudyStandardsHistoryDateTests(unittest.TestCase):
+    def test_selected_activity_survives_a_missing_group_name_at_the_pinned_date(self):
+        fixture = STUDY_ACTIVITIES[0]
+        activity = fixture.activity
+        group = fixture.study_soa_group
+        selected = StudySelectionActivityVO.from_input_values(
+            study_uid=fixture.study_uid,
+            study_selection_uid=fixture.study_activity_uid,
+            activity_uid=activity.uid,
+            activity_version=activity.version,
+            study_soa_group_uid=group.study_soa_group_uid,
+            soa_group_term_uid=group.soa_group_term_uid,
+            soa_group_term_date_conflict=True,
+            author_id="fixture",
+            author_username="fixture",
+            start_date=datetime(2024, 9, 27),
+        )
+        lookup = Mock(side_effect=AssertionError("A later label must not fill the dated gap"))
+        result = StudySelectionActivity.from_study_selection_activity_vo_and_order(
+            study_uid=fixture.study_uid,
+            study_selection=selected,
+            get_activity_by_uid_callback=lambda uid: activity,
+            get_activity_by_uid_version_callback=lambda uid, version: activity,
+            get_ct_term_flowchart_group=lookup,
+            terms_at_specific_datetime=datetime(2024, 9, 27),
+        )
+        assert result.study_activity_uid == fixture.study_activity_uid
+        assert result.study_soa_group.soa_group_term_uid == group.soa_group_term_uid
+        assert result.study_soa_group.soa_group_term_name == ""
+        assert result.study_soa_group.model_dump()["date_conflict"] is True
+        assert "date_conflict" not in group.model_dump()
+        lookup.assert_not_called()
+
     def test_visit_date_comes_from_catalogue_even_for_an_opaque_package_identifier(self):
         uid = "SDTM__CT__2024-09-27"
         instance = service([], {uid: SimpleNamespace(effective_date=date(2024, 9, 27))})

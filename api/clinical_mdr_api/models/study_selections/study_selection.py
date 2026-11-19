@@ -2202,6 +2202,11 @@ class SimpleStudySoAGroup(BaseModel):
     study_soa_group_uid: Annotated[str, Field()]
     soa_group_term_uid: Annotated[str, Field()]
     soa_group_term_name: Annotated[str, Field()]
+    date_conflict: bool = Field(
+        default=False,
+        exclude_if=lambda conflict: not conflict,
+        description="The selected group term has no name at the study terminology package date.",
+    )
     order: Annotated[int | None, Field(json_schema_extra={"nullable": True})] = None
 
 
@@ -2377,9 +2382,11 @@ class StudySelectionActivity(StudySelectionActivityCore):
             Mapping[str, Iterable[ActivityForStudyActivity]] | None
         ) = None,
     ) -> Self:
+        soa_group_term_name = study_selection.soa_group_term_name
         if (
-            not (soa_group_term_name := study_selection.soa_group_term_name)
+            not soa_group_term_name
             and study_selection.soa_group_term_uid
+            and not study_selection.soa_group_term_date_conflict
         ):
             soa_group_term = get_ct_term_flowchart_group(
                 study_selection.soa_group_term_uid,
@@ -2446,6 +2453,7 @@ class StudySelectionActivity(StudySelectionActivityCore):
                 study_soa_group_uid=study_selection.study_soa_group_uid,
                 soa_group_term_uid=study_selection.soa_group_term_uid,
                 soa_group_term_name=soa_group_term_name or "",
+                date_conflict=study_selection.soa_group_term_date_conflict,
                 order=study_selection.study_soa_group_order,
             ),
             activity=selected_activity,
