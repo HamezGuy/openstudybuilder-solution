@@ -153,7 +153,7 @@
                   <div class="text-body-large line-height-125">
                     {{ arm.name }}
                   </div>
-                  <div class="text-body-medium text-gray">
+                  <div v-if="arm.number_of_subjects != null" class="text-body-medium text-gray">
                     {{ arm.number_of_subjects }}
                     {{ $t('StudyStructureOverview.subjects') }}
                   </div>
@@ -162,23 +162,16 @@
                   <div class="text-body-large line-height-125">
                     {{ branchArm.name }}
                   </div>
-                  <div class="text-body-medium text-gray">
-                    {{
-                      branchArm.number_of_subjects
-                        ? branchArm.number_of_subjects
-                        : 0
-                    }}
+                  <div v-if="branchArm.number_of_subjects != null" class="text-body-medium text-gray">
+                    {{ branchArm.number_of_subjects }}
                     {{ $t('StudyStructureOverview.subjects') }}
                   </div>
                 </td>
-                <td>
-                  <div class="text-body-large line-height-125">
-                    {{ getCohortByBranch(branchArm.branch_arm_uid).name }}
-                  </div>
-                  <div class="text-body-medium text-gray">
-                    {{ getCohortByBranch(branchArm.branch_arm_uid).subjects }}
-                  </div>
-                </td>
+                <StudyStructureCohortCell
+                  :cohorts="cohorts"
+                  :arm-uid="arm.arm_uid"
+                  :branch-uid="branchArm.branch_arm_uid"
+                />
                 <td
                   v-for="studyEpoch in visibleStudyEpochs"
                   :key="`${studyEpoch.uid}-${branchArm.branch_arm_uid}`"
@@ -198,13 +191,13 @@
                   <div class="text-body-large line-height-125">
                     {{ arm.name }}
                   </div>
-                  <div class="text-body-medium text-gray">
+                  <div v-if="arm.number_of_subjects != null" class="text-body-medium text-gray">
                     {{ arm.number_of_subjects }}
                     {{ $t('StudyStructureOverview.subjects') }}
                   </div>
                 </td>
                 <td />
-                <td />
+                <StudyStructureCohortCell :cohorts="cohorts" :arm-uid="arm.arm_uid" />
                 <td
                   v-for="studyEpoch in visibleStudyEpochs"
                   :key="`${studyEpoch.uid}-${arm.arm_uid}`"
@@ -221,6 +214,7 @@
 </template>
 
 <script setup>
+import StudyStructureCohortCell from './StudyStructureCohortCell.vue'
 import armsApi from '@/api/arms'
 import cohortsApi from '@/api/cohorts'
 import visitConstants from '@/constants/visits'
@@ -358,28 +352,6 @@ function getDesignCellByArm(studyEpochUid, armUid) {
   }
 }
 
-function getCohortByBranch(branchUid) {
-  try {
-    for (const cohort of cohorts.value) {
-      if (
-        cohort.arm_roots?.length > 0 &&
-        cohort.branch_arm_roots?.some(
-          (branch) => branch.branch_arm_uid === branchUid
-        )
-      ) {
-        return {
-          name: cohort.name,
-          subjects:
-            cohort.number_of_subjects +
-            t('StudyStructureOverview.total_subjects'),
-        }
-      }
-    }
-    return ''
-  } catch (error) {
-    console.error(error)
-  }
-}
 </script>
 
 <style scoped lang="scss">
