@@ -99,6 +99,7 @@
       </div>
       <v-alert v-else-if="loadError" type="error" role="alert">
         <p>{{ $t('IchM11Page.load_error') }}</p>
+        <p v-if="typeof loadError === 'string'">{{ loadError }}</p>
         <v-btn class="mt-4" @click="retryCount++">
           {{ $t('IchM11Page.retry') }}
         </v-btn>
@@ -321,8 +322,8 @@ watch(
       } else {
         previewHtml.value = response.data.trim()
       }
-    } catch {
-      if (current) loadError.value = true
+    } catch (error) {
+      if (current) loadError.value = error.response?.data?.message || true
     } finally {
       if (current) loading.value = false
     }

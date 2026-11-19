@@ -1,5 +1,7 @@
 {
     "_global": {
+        "retry": "Retry",
+        "listing_read_failed": "The study listing could not be loaded.",
         "oid": "OID",
         "uid": "Uid",
         "advanced_search": "Advanced search",
@@ -2515,7 +2517,21 @@
         "title": "Data Standard Versions",
         "tab1_title": "Controlled Terminology",
         "tab2_title": "Dictionaries",
-        "tab3_title": "Data Exchange"
+        "tab3_title": "Data Exchange",
+        "dictionary_selections": "Dictionary terms selected for this study",
+        "dictionary_note": "The study records the selected term identifiers. Its selections do not specify a dictionary edition.",
+        "dictionary_empty": "This study version has no population dictionary terms.",
+        "study_field": "Study field",
+        "selected_term": "Selected term",
+        "exchange_outputs": "Study exchange outputs",
+        "exchange_note": "The counts come from the study design listings. Study-specific implementation guide versions are not recorded in these listings.",
+        "source_records": "Study records",
+        "format": "Output",
+        "trial_arm_rows": "SDTM trial arm records",
+        "analysis_visit_rows": "Analysis visit metadata records",
+        "usdm_export": "USDM protocol",
+        "document_available": "Version {version}",
+        "load_error": "The study data could not be loaded."
     },
     "CTStandardVersionsTable": {
         "ct_catalogue": "CT Catalogue",

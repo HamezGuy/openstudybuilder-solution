@@ -56,6 +56,7 @@
             color="nnBaseBlue"
             v-bind="props"
             :loading="loading || downloadLoading"
+            :disabled="!rawJson"
           >
             <v-icon>mdi-download-outline</v-icon>
             <v-tooltip activator="parent" location="top">
@@ -77,6 +78,11 @@
       color="primary"
       indeterminate
     />
+    <v-alert v-else-if="loadError" type="error" role="alert" class="mt-4">
+      <p>{{ $t('UsdmPage.load_failed') }}</p>
+      <p v-if="loadError !== true">{{ loadError }}</p>
+      <v-btn class="mt-4" @click="retry++">{{ $t('_global.retry') }}</v-btn>
+    </v-alert>
     <v-card v-else-if="data" variant="outlined" class="mt-4">
       <div ref="treeEl" class="json-tree pa-4">
         <JsonNode :value="data" :is-last="true" :depth="0" />
@@ -86,7 +92,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import study from '@/api/study'
 import { useStudiesGeneralStore } from '@/stores/studies-general'
@@ -121,22 +127,42 @@ const rawJson = ref('')
 const copied = ref(false)
 const treeEl = ref(null)
 
-onMounted(() => {
-  loading.value = true
-  study
-    .getDdfUsdmJson(studiesGeneralStore.selectedStudy.uid)
-    .then((resp) => {
+const loadError = ref(false)
+const retry = ref(0)
+watch(
+  [
+    () => studiesGeneralStore.selectedStudy?.uid,
+    () => studiesGeneralStore.selectedStudyVersion,
+    retry,
+  ],
+  async ([uid, selectedVersion], _previous, onCleanup) => {
+    const controller = new AbortController()
+    onCleanup(() => controller.abort())
+    loading.value = Boolean(uid)
+    loadError.value = false
+    data.value = version.value = null
+    rawJson.value = ''
+    copied.value = false
+    if (!uid) return
+    try {
+      const resp = await study.getDdfUsdmJson(
+        uid,
+        selectedVersion,
+        controller.signal
+      )
+      if (controller.signal.aborted) return
       data.value = resp.data
       rawJson.value = JSON.stringify(resp.data, null, 2)
       version.value = resp.data.usdmVersion
-    })
-    .catch(() => {
-      notificationHub.add({ msg: t('UsdmPage.load_failed'), type: 'error' })
-    })
-    .finally(() => {
-      loading.value = false
-    })
-})
+    } catch (error) {
+      if (!controller.signal.aborted)
+        loadError.value = error.response?.data?.message || true
+    } finally {
+      if (!controller.signal.aborted) loading.value = false
+    }
+  },
+  { immediate: true }
+)
 
 function copyAll() {
   navigator.clipboard

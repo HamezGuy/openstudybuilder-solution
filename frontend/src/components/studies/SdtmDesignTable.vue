@@ -1,4 +1,9 @@
 <template>
+  <v-alert v-if="listingError" type="error" role="alert">
+    <p>{{ $t('_global.listing_read_failed') }}</p>
+    <p v-if="typeof listingError === 'string'">{{ listingError }}</p>
+    <v-btn class="mt-2" @click="retryListing">{{ $t('_global.retry') }}</v-btn>
+  </v-alert>
   <NNTable
     table-id="studies-sdtm-design-table"
     :headers="headers"
@@ -16,6 +21,7 @@
 import _isEmpty from 'lodash/isEmpty'
 import NNTable from '@/components/tools/NNTable.vue'
 import listings from '@/api/listings'
+import { useStudyListing } from '@/composables/useStudyListing'
 import { useStudiesGeneralStore } from '@/stores/studies-general'
 import { computed } from 'vue'
 import filteringParameters from '@/utils/filteringParameters'
@@ -30,9 +36,17 @@ export default {
       default: 'TA',
     },
   },
-  setup() {
+  setup(props) {
     const studiesGeneralStore = useStudiesGeneralStore()
     return {
+      ...useStudyListing(
+        () => [
+          studiesGeneralStore.selectedStudy?.uid,
+          studiesGeneralStore.selectedStudyVersion,
+          props.type,
+        ],
+        (uid, type, params) => listings.getAllSdtm(uid, params, type)
+      ),
       selectedStudy: computed(() => studiesGeneralStore.selectedStudy),
     }
   },
@@ -140,8 +154,6 @@ export default {
           key: 'TMRPT',
         },
       ],
-      items: [],
-      total: 0,
     }
   },
   computed: {
@@ -191,15 +203,10 @@ export default {
         filters,
         filtersUpdated
       )
-      if (this.type === 'TV' && _isEmpty(options.sortBy)) {
+      if (this.type === 'TV' && _isEmpty(options?.sortBy)) {
         params.sort_by = JSON.stringify({ VISITNUM: true })
       }
-      listings
-        .getAllSdtm(this.selectedStudy.uid, params, this.type)
-        .then((resp) => {
-          this.items = resp.data.items
-          this.total = resp.data.total
-        })
+      return this.load(params)
     },
   },
 }

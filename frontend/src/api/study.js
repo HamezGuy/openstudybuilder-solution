@@ -938,8 +938,12 @@ export default {
       `${resource}/${studyUid}/study-soa-footnotes/${studyFootnoteUid}/accept-version`
     )
   },
-  getDdfUsdmJson(studyUid) {
-    return repository.get(`usdm/v4/studyDefinitions/${studyUid}`)
+  getDdfUsdmJson(studyUid, studyValueVersion = null, signal) {
+    return repository.get(`usdm/v4/studyDefinitions/${studyUid}`, {
+      params: { study_value_version: studyValueVersion },
+      ignoreErrors: true,
+      signal,
+    })
   },
   getDdfIchM11(
     studyUid,

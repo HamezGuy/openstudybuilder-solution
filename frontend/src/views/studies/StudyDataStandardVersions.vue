@@ -11,10 +11,10 @@
           />
         </v-window-item>
         <v-window-item value="dictionaries">
-          <UnderConstruction />
+          <StudyStandardEvidence kind="dictionaries" />
         </v-window-item>
         <v-window-item value="data_exchange">
-          <UnderConstruction />
+          <StudyStandardEvidence kind="data_exchange" />
         </v-window-item>
       </template>
     </NavigationTabs>
@@ -25,7 +25,7 @@
 import { useI18n } from 'vue-i18n'
 import CTStandardVersionsTable from '@/components/studies/dataStandardVersions/CTStandardVersionsTable.vue'
 import NavigationTabs from '@/components/tools/NavigationTabs.vue'
-import UnderConstruction from '@/components/layout/UnderConstruction.vue'
+import StudyStandardEvidence from '@/components/studies/dataStandardVersions/StudyStandardEvidence.vue'
 
 const { t } = useI18n()
 

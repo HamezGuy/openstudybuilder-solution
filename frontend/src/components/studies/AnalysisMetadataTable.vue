@@ -1,4 +1,9 @@
 <template>
+  <v-alert v-if="listingError" type="error" role="alert">
+    <p>{{ $t('_global.listing_read_failed') }}</p>
+    <p v-if="typeof listingError === 'string'">{{ listingError }}</p>
+    <v-btn class="mt-2" @click="retryListing">{{ $t('_global.retry') }}</v-btn>
+  </v-alert>
   <NNTable
     table-id="studies-analysis-metadata-table"
     :headers="headers"
@@ -26,6 +31,7 @@
 import { computed } from 'vue'
 import filteringParameters from '@/utils/filteringParameters'
 import listings from '@/api/listings'
+import { useStudyListing } from '@/composables/useStudyListing'
 import NNTable from '@/components/tools/NNTable.vue'
 import { useStudiesGeneralStore } from '@/stores/studies-general'
 import {
@@ -47,17 +53,19 @@ export default {
       default: () => [],
     },
   },
-  setup() {
+  setup(props) {
     const studiesGeneralStore = useStudiesGeneralStore()
     return {
+      ...useStudyListing(
+        () => [
+          studiesGeneralStore.selectedStudy?.uid,
+          studiesGeneralStore.selectedStudyVersion,
+          props.type,
+        ],
+        (uid, type, params) => listings.getAllAdam(uid, type, params)
+      ),
       selectedStudy: computed(() => studiesGeneralStore.selectedStudy),
       analysisMetadataValue,
-    }
-  },
-  data() {
-    return {
-      items: [],
-      total: 0,
     }
   },
   computed: {
@@ -84,12 +92,7 @@ export default {
         filters,
         filtersUpdated
       )
-      listings
-        .getAllAdam(this.selectedStudy.uid, this.type, params)
-        .then((resp) => {
-          this.items = resp.data.items
-          this.total = resp.data.total
-        })
+      return this.load(params)
     },
   },
 }
