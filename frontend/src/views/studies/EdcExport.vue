@@ -1,316 +1,199 @@
 <template>
   <div class="px-4">
-    <div class="page-title d-flex align-center">
-      {{ $t('EdcExport.title') }} ({{ studyId }})
-    </div>
-
-    <v-card class="mb-4" elevation="1">
-      <v-card-title>{{ $t('EdcExport.preview_title') }}</v-card-title>
-      <v-card-text>
-        <p class="mb-4">{{ $t('EdcExport.preview_help') }}</p>
-        <v-btn
-          color="primary"
-          :loading="loadingBundle"
-          :disabled="!studyUid"
-          data-cy="edc-preview-bundle"
-          @click="loadBundle"
-        >
-          {{ $t('EdcExport.preview_action') }}
-        </v-btn>
-        <v-btn
-          v-if="bundle"
-          class="ml-4"
-          variant="outlined"
-          data-cy="edc-download-bundle"
-          @click="downloadBundle"
-        >
-          {{ $t('EdcExport.download_action') }}
-        </v-btn>
-        <v-alert
-          v-if="bundleError"
-          type="error"
-          class="mt-4"
-          :text="bundleError"
-          role="alert"
-        />
-
-        <template v-if="bundle && review">
-          <v-alert type="info" class="mt-4">
-            USDM 4.0.0 draft for the selected study version. Mapping
-            completeness, clinical approval and EDC activation have separate
-            review steps.
-          </v-alert>
-          <v-table class="mt-6" density="compact">
+    <h1 class="page-title">
+      {{ $t('EdcExport.title') }}
+      <span v-if="studyUid">({{ studyId || studyUid }})</span>
+    </h1>
+    <p v-if="!studyUid">Select a study to review its EDC export.</p>
+    <template v-else>
+      <v-card class="mb-4" elevation="1">
+        <v-card-title>Release snapshot</v-card-title>
+        <v-card-text>
+          <p class="mb-3">{{ versionLabel }}</p>
+          <v-progress-linear
+            v-if="!review"
+            indeterminate
+            aria-label="Reading release snapshot"
+          />
+          <template v-else>
+            <v-alert
+              :type="presentation.type"
+              :title="presentation.title"
+              role="status"
+              data-cy="edc-release-state"
+            >
+              {{ presentation.detail }}
+            </v-alert>
+            <ul v-if="review.blockers?.length" class="ml-5 mt-3">
+              <li
+                v-for="(blocker, index) in review.blockers"
+                :key="index"
+                class="mb-2"
+              >
+                <strong>{{ blocker.code }}</strong>
+                <div v-if="blocker.path">{{ blocker.path }}</div>
+                <div>{{ blocker.detail }}</div>
+              </li>
+            </ul>
+            <div v-if="review.hash" class="mt-3 text-wrap">
+              Snapshot SHA-256
+              <code class="snapshot-hash">{{ review.hash }}</code>
+            </div>
+          </template>
+          <v-btn
+            class="mt-4"
+            variant="outlined"
+            :disabled="!review"
+            @click="refresh++"
+            >Refresh review</v-btn
+          >
+        </v-card-text>
+      </v-card>
+      <v-card
+        v-if="review && !['denied', 'signed-out'].includes(review.state)"
+        class="mb-4"
+        elevation="1"
+      >
+        <v-card-title>Study design in OpenStudyBuilder</v-card-title>
+        <v-card-text>
+          <p>
+            These counts describe the study design at the selected version. EDC
+            release requires a separate approval.
+          </p>
+          <v-table density="compact" class="mt-3" data-cy="edc-working-counts">
+            <thead>
+              <tr>
+                <th scope="col">Design record</th>
+                <th scope="col">Count</th>
+              </tr>
+            </thead>
             <tbody>
-              <tr>
-                <td>{{ $t('EdcExport.study_name') }}</td>
-                <td>{{ review.name }}</td>
-              </tr>
-              <tr>
-                <td>Selected study version</td>
-                <td>{{ review.version ?? 'Selection required' }}</td>
-              </tr>
-              <tr>
-                <td>Selected design</td>
-                <td>{{ review.design ?? 'Selection required' }}</td>
-              </tr>
-              <tr>
-                <td>{{ $t('EdcExport.visits') }}</td>
-                <td>{{ review.counts.visits }}</td>
-              </tr>
-              <tr>
-                <td>{{ $t('EdcExport.forms') }}</td>
-                <td>{{ review.counts.forms }}</td>
-              </tr>
-              <tr>
-                <td>Acquisition fields</td>
-                <td>{{ review.counts.fields }}</td>
-              </tr>
-              <tr>
-                <td>{{ $t('EdcExport.assignments') }}</td>
-                <td>{{ review.counts.assignments }}</td>
+              <tr v-for="resource in workingResources" :key="resource.key">
+                <th scope="row">{{ resource.label }}</th>
+                <td>{{ displayCount(resource.key) }}</td>
               </tr>
             </tbody>
           </v-table>
-          <v-alert v-if="!review.selectionComplete" type="warning" class="mt-4">
-            This document retains {{ review.counts.versions }} versions and
-            {{ review.counts.designs }} designs. Select the intended version and
-            design during EDC build review; the export has not selected the
-            first.
-          </v-alert>
-          <v-alert
-            v-if="review.mappingReport?.issues?.length"
-            type="warning"
-            class="mt-4"
-            data-cy="edc-mapping-issues"
-          >
-            <p>Resolve these source facts before releasing the study:</p>
-            <ul>
-              <li
-                v-for="(issue, index) in review.mappingReport.issues"
-                :key="index"
-              >
-                <strong>{{ issue.code }}</strong
-                >: {{ issue.message }}
-                <div v-if="issue.sourcePath">
-                  Source: {{ issue.sourcePath }}
-                </div>
-                <div v-if="issue.targetPath">
-                  Study field: {{ issue.targetPath }}
-                </div>
-                <div v-if="issue.resolution">{{ issue.resolution }}</div>
-              </li>
-            </ul>
-          </v-alert>
-          <v-expansion-panels class="mt-4">
-            <v-expansion-panel title="Complete canonical study content">
-              <v-expansion-panel-text>
-                <p>
-                  All versions and designs are retained in the download. These
-                  counts describe canonical content, not installed EDC behavior.
-                </p>
-                <v-table density="compact">
-                  <thead>
-                    <tr>
-                      <th scope="col">Study element</th>
-                      <th scope="col">Count</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="entity in review.entities" :key="entity.name">
-                      <td>{{ entity.name }}</td>
-                      <td>{{ entity.count }}</td>
-                    </tr>
-                  </tbody>
-                </v-table>
-              </v-expansion-panel-text>
-            </v-expansion-panel>
-          </v-expansion-panels>
-
-          <v-alert
-            v-if="censusRows.length === 0"
-            type="info"
-            class="mt-4"
-            :text="$t('EdcExport.census_clean')"
-          />
-          <v-alert v-else type="warning" class="mt-4">
-            <div class="mb-2">
-              {{
-                $t('EdcExport.census_warnings', { count: censusRows.length })
-              }}
-            </div>
-            <ul>
-              <li v-for="(row, index) in censusRows" :key="index">
-                <strong>{{ row.kind }}</strong> — {{ row.ref }}:
-                {{ row.detail }}
-              </li>
-            </ul>
-          </v-alert>
-        </template>
-      </v-card-text>
-    </v-card>
-
-    <v-card elevation="1">
-      <v-card-title>{{ $t('EdcExport.send_title') }}</v-card-title>
-      <v-card-text>
-        <p class="mb-4">{{ $t('EdcExport.send_help') }}</p>
-        <v-btn
-          color="secondary"
-          :loading="sendingDryRun"
-          :disabled="!review || review.authority?.mode !== 'legacy'"
-          data-cy="edc-dry-run"
-          @click="send(true)"
-        >
-          {{ $t('EdcExport.dry_run_action') }}
-        </v-btn>
-        <p class="mt-4">
-          This endpoint supports a comparison dry run in an explicitly
-          configured migration environment. Release and deployment use the
-          native study approval workflow.
-        </p>
-
-        <v-alert v-if="sendError" type="error" class="mt-4" :text="sendError" />
-        <template v-if="sendResult">
-          <v-alert
-            :type="sendResult.statusCode < 300 ? 'success' : 'error'"
-            class="mt-4"
-          >
-            <div>
-              {{
-                sendResult.dryRun
-                  ? $t('EdcExport.dry_run_result', {
-                      status: sendResult.statusCode,
-                    })
-                  : $t('EdcExport.send_result', {
-                      status: sendResult.statusCode,
-                    })
-              }}
-            </div>
-            <div v-if="quarantineStudyId" class="mt-2">
-              {{ $t('EdcExport.quarantine_notice', { id: quarantineStudyId }) }}
-            </div>
-          </v-alert>
-          <v-expansion-panels class="mt-4">
-            <v-expansion-panel :title="$t('EdcExport.edc_response')">
-              <v-expansion-panel-text>
-                <pre class="edc-response">{{
-                  JSON.stringify(sendResult.edcResponse, null, 2)
-                }}</pre>
-              </v-expansion-panel-text>
-            </v-expansion-panel>
-          </v-expansion-panels>
-        </template>
-      </v-card-text>
-    </v-card>
+        </v-card-text>
+      </v-card>
+      <EdcLegacyComparison
+        v-if="review?.mode === 'legacy'"
+        :key="studyUid + '/' + studyVersion"
+      />
+    </template>
   </div>
 </template>
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import edcExport from '@/api/edcExport'
 import { useStudiesGeneralStore } from '@/stores/studies-general'
-import { edcStudyReview } from '@/utils/edcStudyReview'
+import edcExport from '@/api/edcExport'
+import EdcLegacyComparison from '@/components/studies/EdcLegacyComparison.vue'
+import {
+  loadWorkingCounts,
+  readFailure,
+  reviewSnapshot,
+  workingResources,
+} from '@/utils/edcReleaseReview'
 
-const studiesGeneralStore = useStudiesGeneralStore()
-const studyId = computed(() => studiesGeneralStore.studyId)
-const studyUid = computed(() => studiesGeneralStore.selectedStudy?.uid)
-const studyVersion = computed(() => studiesGeneralStore.selectedStudyVersion)
-
-const bundle = ref(null)
+const store = useStudiesGeneralStore()
+const studyUid = computed(() => store.selectedStudy?.uid)
+const studyId = computed(() => store.studyId)
+const studyVersion = computed(() => store.selectedStudyVersion)
+const versionLabel = computed(() =>
+  studyVersion.value == null || Number(studyVersion.value) === 0
+    ? 'Current working version'
+    : 'Selected study version ' + studyVersion.value
+)
+const refresh = ref(0)
 const review = ref(null)
-const bundleError = ref(null)
-const loadingBundle = ref(false)
-const sendingDryRun = ref(false)
-const sendResult = ref(null)
-const sendError = ref(null)
-let requestGeneration = 0
+const counts = ref({})
 
-const censusRows = computed(() => review.value?.censusRows ?? [])
-const quarantineStudyId = computed(() => {
-  const response = sendResult.value?.edcResponse
+const presentations = {
+  eligible: {
+    type: 'success',
+    title: 'Eligible for release review',
+    detail:
+      'OpenStudyBuilder reports that this version passed its release checks. The controlled approval and EDC deployment steps follow separately.',
+  },
+  held: {
+    type: 'warning',
+    title: 'Release held',
+    detail:
+      'Resolve the source requirements reported by OpenStudyBuilder before exporting this version.',
+  },
+  denied: {
+    type: 'error',
+    title: 'Access denied',
+    detail:
+      'Your account does not have permission to read this study snapshot.',
+  },
+  'signed-out': {
+    type: 'warning',
+    title: 'Sign in required',
+    detail: 'Sign in again to read the selected study.',
+  },
+  unavailable: {
+    type: 'error',
+    title: 'Release snapshot unavailable',
+    detail:
+      'OpenStudyBuilder could not return a verified snapshot for this study and version. Refresh to retry.',
+  },
+}
+const presentation = computed(() => presentations[review.value?.state])
+
+function displayCount(key) {
+  const count = review.value?.counts?.[key] ?? counts.value[key]?.count
+  if (count != null) return count
+  const state = counts.value[key]?.state
   return (
-    response?.newStudyId ??
-    response?.data?.newStudyId ??
-    response?.studyId ??
-    response?.data?.studyId ??
-    null
+    {
+      denied: 'Access denied',
+      'signed-out': 'Sign in required',
+      unavailable: 'Unavailable',
+    }[state] ?? 'Loading…'
   )
-})
+}
 
-watch([studyUid, studyVersion], () => {
-  requestGeneration++
-  bundle.value = null
-  review.value = null
-  bundleError.value = null
-  sendResult.value = null
-  sendError.value = null
-  loadingBundle.value = false
-  sendingDryRun.value = false
-})
-
-async function loadBundle() {
-  const generation = ++requestGeneration
-  loadingBundle.value = true
-  bundle.value = null
-  review.value = null
-  bundleError.value = null
-  sendResult.value = null
-  sendError.value = null
-  try {
-    const resp = await edcExport.getStudyBundle(
-      studyUid.value,
-      studyVersion.value
+watch(
+  [studyUid, studyVersion, refresh],
+  async ([uid, version], previous, onCleanup) => {
+    const controller = new AbortController()
+    const { signal } = controller
+    onCleanup(() => controller.abort())
+    review.value = null
+    counts.value = {}
+    if (!uid) return
+    let result
+    try {
+      const { data } = await edcExport.getAuthoritySnapshot(
+        uid,
+        version,
+        signal
+      )
+      result = reviewSnapshot(data, uid, version)
+    } catch (error) {
+      result = readFailure(error)
+    }
+    if (signal.aborted) return
+    review.value = result
+    await loadWorkingCounts(
+      edcExport,
+      uid,
+      version,
+      result,
+      signal,
+      (key, value) => {
+        counts.value[key] = value
+      }
     )
-    const projection = edcStudyReview(resp.data)
-    if (generation !== requestGeneration) return
-    bundle.value = resp.data
-    review.value = projection
-  } catch (error) {
-    if (generation === requestGeneration) {
-      bundleError.value =
-        error.response?.data?.message ?? error.message ?? String(error)
-    }
-  } finally {
-    if (generation === requestGeneration) loadingBundle.value = false
-  }
-}
-
-function downloadBundle() {
-  const blob = new Blob([JSON.stringify(bundle.value, null, 2)], {
-    type: 'application/json',
-  })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = 'study.ecrfstudy'
-  link.click()
-  URL.revokeObjectURL(url)
-}
-
-async function send(dryRun) {
-  if (!dryRun || !review.value) return
-  const generation = requestGeneration
-  sendingDryRun.value = true
-  sendError.value = null
-  try {
-    const resp = await edcExport.send(studyUid.value, true, studyVersion.value)
-    if (generation !== requestGeneration) return
-    sendResult.value = resp.data
-  } catch (error) {
-    if (generation === requestGeneration) {
-      sendError.value =
-        error.response?.data?.message ?? error.message ?? String(error)
-    }
-  } finally {
-    if (generation === requestGeneration) sendingDryRun.value = false
-  }
-}
+  },
+  { immediate: true }
+)
 </script>
 
 <style scoped>
-.edc-response {
-  max-height: 400px;
-  overflow: auto;
-  font-size: 0.8rem;
+.snapshot-hash {
+  overflow-wrap: anywhere;
 }
 </style>
