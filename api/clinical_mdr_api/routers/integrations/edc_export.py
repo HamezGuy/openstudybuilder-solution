@@ -81,7 +81,7 @@ def preview_edc_draft(
     "/studies/{study_uid}/study-bundle",
     dependencies=[security, rbac.STUDY_READ],
     summary="Export an AccuraTrial EDC V2 draft (.ecrfstudy)",
-    description="The response body IS the importable file — save it as "
+    description="The response body IS the importable file â€” save it as "
     "`study.ecrfstudy`. `extensions._osbExport` retains native observations, "
     "reconciliation and authority constraints. The canonical definition is "
     "preserved unchanged; this preview does not authorize release or deployment.",
