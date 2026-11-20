@@ -376,25 +376,21 @@ async function fetchStudies(panel, filters, options, filtersUpdated) {
       const { data } = await pending.read
       if (version !== readVersion || navigationTabs.value?.tab !== panel) return
       pending = null
-      rows.value =
-        panel === 'active'
-          ? data.map((study) => {
-              const row = { ...study }
-              for (const key of [
-                'latest_locked_version',
-                'latest_released_version',
-              ]) {
-                if (row[key])
-                  row[key] = [
-                    row[key].version_number,
-                    row[key].change_description,
-                  ]
-                    .filter((value) => value != null && value !== '')
-                    .join(' ')
-              }
-              return row
-            })
-          : data
+      rows.value = data.map((study) => {
+        const row = { ...study }
+        for (const key of [
+          'latest_locked_version',
+          'latest_released_version',
+        ]) {
+          const version = row[key]
+          if (version && typeof version === 'object')
+            row[key] = [
+              version.version_number,
+              version.change_description || '',
+            ].join(' ')
+        }
+        return row
+      })
       fullRefresh.value = false
     }
     filteredStudies.value = rows.value

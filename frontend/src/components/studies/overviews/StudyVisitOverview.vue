@@ -12,6 +12,9 @@
         @click="close"
       />
     </div>
+    <v-alert v-if="readError" type="warning" variant="tonal">{{
+      $t('Workspace.detail_unavailable')
+    }}</v-alert>
     <v-card elevation="0" class="rounded-0">
       <v-card-text>
         <v-row>
@@ -21,9 +24,9 @@
           <v-col cols="2">
             {{
               visit.visit_class
-                ? visitClasses.find((cl) => cl.value === visit.visit_class)
-                    .label
-                : ''
+                ? (visitClasses.find((cl) => cl.value === visit.visit_class)
+                    ?.label ?? visit.visit_class)
+                : '—'
             }}
           </v-col>
         </v-row>
@@ -32,12 +35,7 @@
             {{ $t('StudyVisitForm.period') }}
           </v-col>
           <v-col cols="2">
-            {{
-              visit.study_epoch_uid && epochs.length
-                ? epochs.find((epoch) => epoch.uid === visit.study_epoch_uid)
-                    .epoch_name
-                : ''
-            }}
+            {{ epoch?.epoch_name || visit.study_epoch_uid || '—' }}
           </v-col>
         </v-row>
         <v-row>
@@ -194,21 +192,18 @@
 import studyEpochs from '@/api/studyEpochs'
 import { isUntimedVisit, untimedTimingText } from '@/utils/visitTiming'
 import visitConstants from '@/constants/visits'
-import { computed } from 'vue'
-import { useStudiesGeneralStore } from '@/stores/studies-general'
 
 export default {
   setup() {
-    const studiesGeneralStore = useStudiesGeneralStore()
     return {
       isUntimedVisit,
       untimedTimingText,
-      selectedStudy: computed(() => studiesGeneralStore.selectedStudy),
     }
   },
   data() {
     return {
       visit: {},
+      readError: false,
       visitClasses: [
         {
           label: this.$t('StudyVisitForm.scheduled_visit'),
@@ -231,18 +226,23 @@ export default {
           value: visitConstants.CLASS_INSERTION_VISIT,
         },
       ],
-      epochs: [],
+      epoch: null,
     }
   },
   mounted() {
+    const uid = this.$route.params.study_id
     studyEpochs
-      .getStudyVisit(this.$route.params.study_id, this.$route.params.id)
-      .then((resp) => {
-        this.visit = resp.data
+      .getStudyVisit(uid, this.$route.params.id)
+      .then(async ({ data }) => {
+        this.visit = data
+        if (data.study_epoch_uid)
+          this.epoch = (
+            await studyEpochs.getStudyEpoch(uid, data.study_epoch_uid)
+          ).data
       })
-    studyEpochs.getStudyEpochs(this.selectedStudy.uid).then((resp) => {
-      this.epochs = resp.data.items
-    })
+      .catch(() => {
+        this.readError = true
+      })
   },
   methods: {
     close() {

@@ -88,6 +88,7 @@
           !accessGuard.checkPermission($roles.STUDY_WRITE) ||
           studiesGeneralStore.selectedStudyVersion !== null
         "
+        :loading="loadingOptions"
         @click="openEditMode()"
       >
         <v-icon>mdi-pencil-outline</v-icon>
@@ -298,6 +299,7 @@
     </template>
   </NNTable>
   <StudyActivityInstancesEditForm
+    v-if="showEditForm"
     :open="showEditForm"
     :edited-activity="activeActivity"
     @close="closeEditForm"
@@ -326,7 +328,7 @@
   <ConfirmDialog ref="confirmRef" :text-cols="6" :action-cols="5" />
 </template>
 <script setup>
-import { computed, inject, onMounted, ref } from 'vue'
+import { computed, inject, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useStudiesGeneralStore } from '@/stores/studies-general'
 import { useStudyActivitiesStore } from '@/stores/studies-activities'
@@ -783,8 +785,32 @@ function onStatusTabChange() {
   }
 }
 // Edit mode functions
-function openEditMode() {
-  editMode.value = true
+const loadingOptions = ref(false)
+async function openEditMode() {
+  if (loadingOptions.value) return
+  loadingOptions.value = true
+  try {
+    const [suppliers, library, types, sources] = await Promise.all([
+      study.getStudyDataSuppliers(studiesGeneralStore.selectedStudy.uid, {
+        page_size: 0,
+      }),
+      dataSuppliers.get({ params: { page_size: 1000 } }),
+      terms.getTermsByCodelist('originType'),
+      terms.getTermsByCodelist('originSource'),
+    ])
+    studyDataSuppliers.value = suppliers.data.items
+    libraryDataSuppliers.value = library.data.items
+    originTypes.value = types.data.items
+    originSources.value = sources.data.items
+    editMode.value = true
+  } catch {
+    notificationHub.add({
+      type: 'error',
+      msg: t('Workspace.detail_unavailable'),
+    })
+  } finally {
+    loadingOptions.value = false
+  }
 }
 
 function closeEditMode() {
@@ -926,33 +952,6 @@ async function loadBaselineVisitsForItem(item) {
   }
   item._loadingBaselineVisits = false
 }
-
-// Load dropdown data
-onMounted(() => {
-  // Load study data suppliers for current study
-  study
-    .getStudyDataSuppliers(studiesGeneralStore.selectedStudy.uid, {
-      page_size: 0,
-    })
-    .then((resp) => {
-      studyDataSuppliers.value = resp.data.items || []
-    })
-
-  // Load library data suppliers (for default origin values)
-  dataSuppliers.get({ params: { page_size: 1000 } }).then((resp) => {
-    libraryDataSuppliers.value = resp.data.items || []
-  })
-
-  // Load origin type CT terms
-  terms.getTermsByCodelist('originType').then((resp) => {
-    originTypes.value = resp.data.items || []
-  })
-
-  // Load origin source CT terms
-  terms.getTermsByCodelist('originSource').then((resp) => {
-    originSources.value = resp.data.items || []
-  })
-})
 </script>
 <style scoped>
 .cellWidth {

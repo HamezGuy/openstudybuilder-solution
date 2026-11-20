@@ -5,11 +5,17 @@
     :help-items="helpItems"
     :open="open"
     :scrollable="false"
+    :save-disabled="formRead !== 'ready'"
+    :save-disabled-tooltip="$t('Workspace.detail_unavailable')"
     @close="close"
     @submit="submit"
   >
     <template #body>
-      <v-form ref="observer">
+      <v-progress-linear v-if="formRead === 'loading'" indeterminate />
+      <v-alert v-if="formRead === 'error'" type="warning" variant="tonal">{{
+        $t('Workspace.detail_unavailable')
+      }}</v-alert>
+      <v-form ref="observer" :disabled="formRead !== 'ready'">
         <v-row>
           <v-col cols="12">
             <v-autocomplete
@@ -104,7 +110,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, inject, ref, watch } from 'vue'
+import { computed, inject, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import SimpleFormDialog from '@/components/tools/SimpleFormDialog.vue'
 import { useAppStore } from '@/stores/app'
@@ -132,6 +138,7 @@ const formRef = ref()
 const formStore = useFormStore()
 
 const form = ref({})
+const formRead = ref('loading')
 const project = ref({})
 const helpItems = [
   'StudyForm.project_id',
@@ -155,21 +162,28 @@ const studyId = computed(() => {
 })
 
 watch(
-  () => props.editedStudy,
-  (value) => {
-    if (value) {
-      studyApi.getStudy(value.uid).then((resp) => {
-        initForm(resp.data)
-      })
+  () => [props.open, props.editedStudy?.uid],
+  async ([open, uid], _, onCleanup) => {
+    if (!open) return
+    formRead.value = 'loading'
+    let current = true
+    onCleanup(() => {
+      current = false
+    })
+    try {
+      const [, study] = await Promise.all([
+        studiesManageStore.fetchProjects(),
+        uid ? studyApi.getStudy(uid) : null,
+      ])
+      if (!current) return
+      if (study) initForm(study.data)
+      formRead.value = 'ready'
+    } catch {
+      if (current) formRead.value = 'error'
     }
-  }
+  },
+  { immediate: true }
 )
-
-onMounted(() => {
-  if (props.editedStudy) {
-    initForm(props.editedStudy)
-  }
-})
 
 async function close() {
   notificationHub.clearErrors()
@@ -238,6 +252,7 @@ function getNumberTranslationContext() {
 }
 
 async function submit() {
+  if (formRead.value !== 'ready') return
   notificationHub.clearErrors()
 
   try {
@@ -253,5 +268,4 @@ async function submit() {
     formRef.value.working = false
   }
 }
-studiesManageStore.fetchProjects()
 </script>

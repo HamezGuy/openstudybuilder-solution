@@ -83,12 +83,6 @@ const params = [
 ]
 
 onMounted(() => {
-  studiesGeneralStore.fetchUnits()
-  studiesGeneralStore.fetchTrialBlindingSchemas()
-  studiesGeneralStore.fetchControlTypes()
-  studiesGeneralStore.fetchInterventionModels()
-  studiesGeneralStore.fetchTrialIntentTypes()
-  studiesGeneralStore.fetchInterventionTypes()
   fetchMetadata()
 })
 

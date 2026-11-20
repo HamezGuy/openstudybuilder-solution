@@ -12,7 +12,10 @@
         @click="close"
       />
     </div>
-    <v-card color="nnSeaBlue200" flat class="pl-4">
+    <v-alert v-if="readError" type="warning" variant="tonal">{{
+      $t('Workspace.detail_unavailable')
+    }}</v-alert>
+    <v-card v-if="loaded" color="nnSeaBlue200" flat class="pl-4">
       <v-card-text class="text-nnTrueBlue">
         <div class="d-flex align-start mb-10">
           <div style="width: 40%" class="mr-4">
@@ -20,7 +23,7 @@
               {{ $t('StudyCompoundTable.compound') }}
             </div>
             <div class="text-body-medium font-weight-bold">
-              {{ product.compound.name }}
+              {{ product.compound?.name || '—' }}
             </div>
           </div>
           <div style="width: 60%" class="mr-4">
@@ -28,7 +31,7 @@
               {{ $t('StudyCompoundTable.type_of_treatment') }}
             </div>
             <div class="text-body-3 font-weight-bold">
-              {{ compound.type_of_treatment.term_name }}
+              {{ compound.type_of_treatment?.term_name || '—' }}
             </div>
           </div>
         </div>
@@ -166,10 +169,11 @@ const product = ref({})
 const compound = ref({})
 const pharmaceuticalProducts = ref([])
 const loaded = ref(false)
+const readError = ref(false)
 const { getIngredientName } = usePharmaceuticalProducts()
 
 const doseValues = computed(() => {
-  const result = product.value.dose_values
+  const result = (product.value.dose_values || [])
     .map((dose) => `${dose.value} ${dose.unit_label}`)
     .join(', ')
   return result || '-'
@@ -187,18 +191,28 @@ const dispenser = computed(() => {
   return product.value.dispenser?.name || '-'
 })
 
-study.getStudyCompound(route.params.study_id, route.params.id).then((resp) => {
-  compound.value = resp.data
-  product.value = compound.value.medicinal_product
-  loaded.value = true
+study
+  .getStudyCompound(route.params.study_id, route.params.id)
+  .then((resp) => {
+    compound.value = resp.data
+    product.value = compound.value.medicinal_product || {}
+    loaded.value = true
 
-  pharmaceuticalProducts.value = []
-  for (const item of product.value.pharmaceutical_products) {
-    pharmaceuticalProductsApi.getObject(item.uid).then((resp) => {
-      pharmaceuticalProducts.value.push(resp.data)
-    })
-  }
-})
+    pharmaceuticalProducts.value = []
+    for (const item of product.value.pharmaceutical_products || []) {
+      pharmaceuticalProductsApi
+        .getObject(item.uid)
+        .then((resp) => {
+          pharmaceuticalProducts.value.push(resp.data)
+        })
+        .catch(() => {
+          readError.value = true
+        })
+    }
+  })
+  .catch(() => {
+    readError.value = true
+  })
 
 function close() {
   router.go(-1)
@@ -219,26 +233,30 @@ function getRoutesOfAdmin(pharmaProduct) {
 }
 
 function getPharmaProductIngredients(pharmaProduct) {
-  let productIngredients = pharmaProduct.formulations.map((formulation) => {
-    return formulation.ingredients?.map((ingredient) => {
-      return {
-        id: `${pharmaProduct.uid}-ingredient-${ingredient.active_substance.long_number}`,
-        title: getIngredientName(ingredient),
-        halfLife: ingredient.half_life
-          ? `${ingredient.half_life.value} ${ingredient.half_life.unit_label}`
-          : '-',
-        lagTimes: ingredient.lag_times
-          .map(
-            (lag_time) =>
-              `${lag_time?.value} ${lag_time?.unit_label} (${lag_time?.sdtm_domain_label})`
-          )
-          .join(', '),
-        strength: ingredient.strength
-          ? `${ingredient.strength.value} ${ingredient.strength.unit_label}`
-          : '-',
-      }
-    })
-  })
+  let productIngredients = (pharmaProduct.formulations || []).map(
+    (formulation) => {
+      return (formulation.ingredients || []).map((ingredient) => {
+        return {
+          id: `${pharmaProduct.uid}-ingredient-${ingredient.uid || ingredient.active_substance?.long_number || ingredient.active_substance?.uid}`,
+          title: ingredient.active_substance
+            ? getIngredientName(ingredient)
+            : '—',
+          halfLife: ingredient.half_life
+            ? `${ingredient.half_life.value} ${ingredient.half_life.unit_label}`
+            : '-',
+          lagTimes: (ingredient.lag_times || [])
+            .map(
+              (lag_time) =>
+                `${lag_time?.value} ${lag_time?.unit_label} (${lag_time?.sdtm_domain_label})`
+            )
+            .join(', '),
+          strength: ingredient.strength
+            ? `${ingredient.strength.value} ${ingredient.strength.unit_label}`
+            : '-',
+        }
+      })
+    }
+  )
 
   productIngredients = productIngredients
     .flatMap((x) => x)

@@ -118,9 +118,6 @@ const params = [
   },
 ]
 
-studiesGeneralStore.fetchUnits()
-studiesGeneralStore.fetchSnomedTerms()
-studiesGeneralStore.fetchSexOfParticipants()
 fetchMetadata()
 
 function onMetadataUpdated() {

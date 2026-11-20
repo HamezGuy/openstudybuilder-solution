@@ -4,6 +4,12 @@
       {{ $t('StudyStructuresOverview.title') }}
       <HelpButton :help-text="$t('_help.StudyStructuresOverview.general')" />
     </div>
+    <v-alert v-if="readError" type="warning" variant="tonal">
+      {{ $t('_global.listing_read_failed') }}
+      <v-btn variant="text" @click="table.filterTable()">{{
+        $t('_global.retry')
+      }}</v-btn>
+    </v-alert>
     <NNTable
       ref="table"
       table-id="library-study-structures-overview-table"
@@ -37,6 +43,8 @@ import { escapeHTML, sanitizeHTML } from '@/utils/sanitize'
 
 const { t } = useI18n()
 
+const table = ref()
+const readError = ref(false)
 const items = ref([])
 const total = ref(0)
 
@@ -80,15 +88,23 @@ function fetchStructures(filters, options, filtersUpdated) {
     filters,
     filtersUpdated
   )
-  studyApi.getStructureOverview(params).then((resp) => {
-    items.value = resp.data.items.map((elm) => ({
-      ...elm,
-      study_ids: elm.study_ids
-        .map(escapeHTML)
-        .map((x) => `<span style="white-space: nowrap;">${x}</span>`)
-        .join(', '),
-    }))
-    total.value = resp.data.total
-  })
+  readError.value = false
+  studyApi
+    .getStructureOverview(params)
+    .then((resp) => {
+      items.value = resp.data.items.map((elm) => ({
+        ...elm,
+        study_ids: elm.study_ids
+          .map(escapeHTML)
+          .map((x) => `<span style="white-space: nowrap;">${x}</span>`)
+          .join(', '),
+      }))
+      total.value = resp.data.total
+    })
+    .catch(() => {
+      readError.value = true
+      items.value = []
+      total.value = 0
+    })
 }
 </script>

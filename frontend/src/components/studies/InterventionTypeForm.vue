@@ -195,6 +195,12 @@ export default {
     }
   },
   mounted() {
+    this.studiesGeneralStore.fetchUnits()
+    this.studiesGeneralStore.fetchTrialBlindingSchemas()
+    this.studiesGeneralStore.fetchControlTypes()
+    this.studiesGeneralStore.fetchInterventionModels()
+    this.studiesGeneralStore.fetchTrialIntentTypes()
+    this.studiesGeneralStore.fetchInterventionTypes()
     if (_isEmpty(this.initialData)) {
       this.loading = true
       study

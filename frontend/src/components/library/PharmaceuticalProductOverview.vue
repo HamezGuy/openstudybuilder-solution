@@ -6,7 +6,11 @@
           {{ $t('PharmaceuticalProduct.dosage_form') }}
         </v-col>
         <v-col cols="2">
-          {{ props.pharmaceuticalProduct.dosage_forms[0].term_name }}
+          {{
+            (pharmaceuticalProduct?.dosage_forms || [])
+              .map((form) => form.term_name)
+              .join(', ') || '—'
+          }}
         </v-col>
       </v-row>
       <v-row>
@@ -14,7 +18,11 @@
           {{ $t('PharmaceuticalProduct.route_of_administration') }}
         </v-col>
         <v-col cols="2">
-          {{ pharmaceuticalProduct.routes_of_administration[0].term_name }}
+          {{
+            (pharmaceuticalProduct?.routes_of_administration || [])
+              .map((route) => route.term_name)
+              .join(', ') || '—'
+          }}
         </v-col>
       </v-row>
       <v-row>
@@ -41,8 +49,9 @@
             </thead>
             <tbody>
               <tr
-                v-for="ingredient in pharmaceuticalProduct.formulations[0]
-                  .ingredients"
+                v-for="ingredient in (
+                  pharmaceuticalProduct?.formulations || []
+                ).flatMap((form) => form.ingredients || [])"
                 :key="ingredient.uid"
               >
                 <td>
@@ -67,7 +76,7 @@
 </template>
 
 <script setup>
-const props = defineProps({
+defineProps({
   pharmaceuticalProduct: {
     type: Object,
     default: null,
@@ -75,11 +84,11 @@ const props = defineProps({
 })
 
 function getActiveSubstanceName(item) {
-  return item.inn || item.long_number
+  return item?.inn || item?.long_number || '—'
 }
 
 function displayLagTimes(item) {
-  return item.lag_times
+  return (item.lag_times || [])
     .map(
       (lag_time) =>
         `${lag_time?.value} ${lag_time?.unit_label} (${lag_time?.sdtm_domain_label})`

@@ -110,10 +110,16 @@ const resolveTabKey = (raw) => {
   return props.tabs[0][props.tabKey]
 }
 
+function activate(value) {
+  if (value === activePanel.value) return
+  if (value) updateTabKey(value)
+  activePanel.value = value
+}
+
 onMounted(() => {
   const initial = resolveTabKey(route.params.tab)
   tab.value = initial
-  activePanel.value = initial
+  activate(initial)
 })
 
 watch(tab, async (newValue) => {
@@ -142,7 +148,7 @@ watch(tab, async (newValue) => {
     route.params.tab !== newValue
   )
     return
-  activePanel.value = newValue
+  activate(newValue)
   appStore.addBreadcrumbsLevel(
     tabName,
     {
@@ -155,7 +161,6 @@ watch(tab, async (newValue) => {
     props.breadcrumbsLevel,
     true
   )
-  updateTabKey(newValue)
 })
 
 watch(
@@ -164,7 +169,7 @@ watch(
     if (route.name !== owningRoute) return
     const resolved = resolveTabKey(newValue)
     tab.value = resolved
-    activePanel.value = resolved
+    activate(resolved)
   }
 )
 

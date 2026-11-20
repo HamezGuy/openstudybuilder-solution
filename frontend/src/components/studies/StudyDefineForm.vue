@@ -213,6 +213,12 @@ const formRef = ref()
 const observer = ref()
 
 onMounted(() => {
+  studiesGeneralStore.fetchUnits()
+  studiesGeneralStore.fetchStudyTypes()
+  studiesGeneralStore.fetchTrialPhases()
+  studiesGeneralStore.fetchTrialTypes()
+  studiesGeneralStore.fetchNullValues()
+  studiesGeneralStore.fetchDevelopmentStageCodes()
   if (_isEmpty(props.initialData)) {
     loading.value = true
     study

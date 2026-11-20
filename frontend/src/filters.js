@@ -59,7 +59,7 @@ export default {
    ** Display a list of items separated by a comma
    */
   itemList(value) {
-    return value.join(', ')
+    return Array.isArray(value) ? value.join(', ') : (value ?? '—')
   },
 }
 
@@ -104,7 +104,7 @@ export default {
 // ** Display a list of items separated by a comma
 // */
 // Vue.filter('itemList', function (value) {
-//   return value.join(', ')
+//   return Array.isArray(value) ? value.join(', ') : value ?? '—'
 // })
 
 // /*

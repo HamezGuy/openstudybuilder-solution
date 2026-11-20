@@ -103,6 +103,7 @@
         </template>
       </v-data-table>
       <slot
+        v-if="showForm"
         name="form"
         :open-handler="showForm"
         :close-handler="closeForm"

@@ -58,6 +58,7 @@ const props = defineProps({
 const emit = defineEmits(['close', 'updated'])
 const notificationHub = inject('notificationHub')
 const studiesGeneralStore = useStudiesGeneralStore()
+studiesGeneralStore.fetchNullValues()
 const studiesManageStore = useStudiesManageStore()
 
 const form = ref({})

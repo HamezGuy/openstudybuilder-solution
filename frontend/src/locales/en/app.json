@@ -6,6 +6,8 @@
         "not_configured": "Not configured",
         "configure_arms": "Configure study arms",
         "arm_settings_unavailable": "Arm settings could not be loaded. Try again.",
+        "product_details": "Pharmaceutical products and ingredients",
+        "detail_unavailable": "Some record details could not be loaded.",
         "unavailable": "Unavailable",
         "settings_unavailable": "Schedule settings could not be loaded.",
         "design_details": "Review the design matrix and classification",

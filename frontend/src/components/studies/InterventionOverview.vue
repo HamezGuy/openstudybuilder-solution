@@ -199,95 +199,101 @@
           </td>
         </tr>
         <tr>
-          <td>{{ $t('InterventionOverview.pharmaceutical_dosage_form') }}</td>
-          <td
-            v-for="(
-              studyCompound, index
-            ) in studiesCompoundsStore.studyCompounds"
-            :key="`dosage-${index}`"
-          >
-            <template
-              v-if="pharmaceuticalProducts[studyCompound.medicinal_product.uid]"
+          <td :colspan="1 + studiesCompoundsStore.studyCompounds.length">
+            <v-btn
+              variant="text"
+              :aria-expanded="showProducts"
+              @click="toggleProducts"
             >
+              {{ $t('Workspace.product_details') }}
+              <v-icon
+                :icon="showProducts ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+              />
+            </v-btn>
+            <span v-if="productStatus === 'loading'" role="status">…</span>
+            <span v-if="productStatus === 'error'" role="alert">
+              {{ $t('Workspace.detail_unavailable') }}
+              <v-btn variant="text" @click="loadProducts">{{
+                $t('_global.retry')
+              }}</v-btn>
+            </span>
+          </td>
+        </tr>
+        <template v-if="showProducts">
+          <tr
+            v-for="attribute in ['dosage_forms', 'routes_of_administration']"
+            :key="attribute"
+          >
+            <td>
               {{
-                pharmaceuticalProducts[
-                  studyCompound.medicinal_product.uid
-                ].dosage_forms
-                  .map((form) => form.term_name)
-                  .join(', ')
+                $t(
+                  attribute === 'dosage_forms'
+                    ? 'InterventionOverview.pharmaceutical_dosage_form'
+                    : 'InterventionOverview.route_of_admin'
+                )
               }}
-            </template>
-          </td>
-        </tr>
-        <tr>
-          <td>{{ $t('InterventionOverview.route_of_admin') }}</td>
-          <td
-            v-for="(
-              studyCompound, index
-            ) in studiesCompoundsStore.studyCompounds"
-            :key="`roa-${index}`"
-          >
-            <template
-              v-if="pharmaceuticalProducts[studyCompound.medicinal_product.uid]"
+            </td>
+            <td
+              v-for="(compound, index) in studiesCompoundsStore.studyCompounds"
+              :key="index"
             >
-              {{
-                pharmaceuticalProducts[
-                  studyCompound.medicinal_product.uid
-                ].routes_of_administration
-                  .map((x) => x.term_name)
-                  .join(', ')
-              }}
-            </template>
-          </td>
-        </tr>
-        <tr>
-          <td>{{ $t('InterventionOverview.active_substances') }}</td>
-          <td
-            v-for="(
-              studyCompound, index
-            ) in studiesCompoundsStore.studyCompounds"
-            :key="`sub-${index}`"
-            class="no-padding"
-          >
-            <template
-              v-if="pharmaceuticalProducts[studyCompound.medicinal_product.uid]"
+              <div v-for="product in productsFor(compound)" :key="product.uid">
+                {{ product.derived_name || product.uid }} ·
+                {{
+                  (product[attribute] || [])
+                    .map((term) => term.term_name)
+                    .join(', ') || '—'
+                }}
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td>{{ $t('InterventionOverview.active_substances') }}</td>
+            <td
+              v-for="(
+                studyCompound, index
+              ) in studiesCompoundsStore.studyCompounds"
+              :key="`sub-${index}`"
+              class="no-padding"
             >
-              <table
-                v-for="(ingredient, ingrIndex) in getPharmaProductIngredients(
-                  pharmaceuticalProducts[studyCompound.medicinal_product.uid]
-                )"
-                :key="`ingredient-${index}-${ingredient.id}`"
-                :class="{ 'border-top': ingrIndex > 0 }"
-              >
-                <tbody class="ingredient">
-                  <tr>
-                    <td class="no-border half-size">
-                      {{ ingredient.title }}<br />
-                      <span>{{ $t('InterventionOverview.half_life') }}</span
-                      >: {{ ingredient.halfLife }}<br />
-                      <span>{{ $t('InterventionOverview.lag_time') }}</span
-                      >: {{ ingredient.lagTimes }}<br />
-                      <span>{{
-                        $t('InterventionOverview.analyte_number')
-                      }}</span
-                      >: {{ ingredient.analyte_number }}<br />
-                      <span>{{
-                        $t('InterventionOverview.compound_number_long')
-                      }}</span
-                      >: {{ ingredient.long_number }}<br />
-                      <span>{{
-                        $t('InterventionOverview.compound_number_short')
-                      }}</span
-                      >: {{ ingredient.short_number }}<br />
-                      <span>{{ $t('InterventionOverview.inn') }}</span
-                      >: {{ ingredient.inn }}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </template>
-          </td>
-        </tr>
+              <template v-if="productsFor(studyCompound).length">
+                <table
+                  v-for="(ingredient, ingrIndex) in productsFor(
+                    studyCompound
+                  ).flatMap(getPharmaProductIngredients)"
+                  :key="`ingredient-${index}-${ingredient.id}`"
+                  :class="{ 'border-top': ingrIndex > 0 }"
+                >
+                  <tbody class="ingredient">
+                    <tr>
+                      <td class="no-border half-size">
+                        {{ ingredient.title }}<br />
+                        <span>{{ $t('InterventionOverview.half_life') }}</span
+                        >: {{ ingredient.halfLife }}<br />
+                        <span>{{ $t('InterventionOverview.lag_time') }}</span
+                        >: {{ ingredient.lagTimes }}<br />
+                        <span>{{
+                          $t('InterventionOverview.analyte_number')
+                        }}</span
+                        >: {{ ingredient.analyte_number }}<br />
+                        <span>{{
+                          $t('InterventionOverview.compound_number_long')
+                        }}</span
+                        >: {{ ingredient.long_number }}<br />
+                        <span>{{
+                          $t('InterventionOverview.compound_number_short')
+                        }}</span
+                        >: {{ ingredient.short_number }}<br />
+                        <span>{{ $t('InterventionOverview.inn') }}</span
+                        >: {{ ingredient.inn }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </template>
+            </td>
+          </tr>
+        </template>
       </tbody>
     </table>
   </div>
@@ -314,7 +320,9 @@ export default {
   data() {
     return {
       compoundAliases: {},
-      pharmaceuticalProducts: [],
+      pharmaceuticalProducts: {},
+      productStatus: 'idle',
+      showProducts: false,
     }
   },
   computed: {
@@ -337,7 +345,6 @@ export default {
       })
       .then(() => {
         this.getAllCompoundAliases()
-        this.getAllPharmaProducts()
       })
     this.studiesCompoundsStore.fetchStudyCompoundDosings(
       this.selectedStudy.uid,
@@ -378,54 +385,73 @@ export default {
         this.getCompoundAliases(studyCompound.compound.uid)
       }
     },
-    getAllPharmaProducts() {
-      for (const studyCompound of this.studiesCompoundsStore.studyCompounds) {
-        if (!studyCompound.medicinal_product) {
-          continue
-        }
-
-        this.pharmaceuticalProducts = {}
-        for (const item of studyCompound.medicinal_product
-          .pharmaceutical_products) {
-          pharmaceuticalProductsApi.getObject(item.uid).then((resp) => {
-            this.pharmaceuticalProducts[studyCompound.medicinal_product.uid] =
-              resp.data
+    productsFor(compound) {
+      return (compound.medicinal_product?.pharmaceutical_products || [])
+        .map((item) => this.pharmaceuticalProducts[item.uid])
+        .filter(Boolean)
+    },
+    toggleProducts() {
+      this.showProducts = !this.showProducts
+      if (this.showProducts && this.productStatus === 'idle')
+        this.loadProducts()
+    },
+    async loadProducts() {
+      this.productStatus = 'loading'
+      const ids = new Set(
+        this.studiesCompoundsStore.studyCompounds.flatMap((compound) =>
+          (compound.medicinal_product?.pharmaceutical_products || []).map(
+            (item) => item.uid
+          )
+        )
+      )
+      const reads = await Promise.allSettled(
+        [...ids]
+          .filter((uid) => uid && !this.pharmaceuticalProducts[uid])
+          .map(async (uid) => {
+            const { data } = await pharmaceuticalProductsApi.getObject(uid)
+            this.pharmaceuticalProducts[uid] = data
           })
-        }
-      }
+      )
+      this.productStatus = reads.some((result) => result.status === 'rejected')
+        ? 'error'
+        : 'ready'
     },
     getPharmaProductIngredients(pharmaProduct) {
-      let productIngredients = pharmaProduct.formulations.map((formulation) => {
-        return formulation.ingredients?.map((ingredient) => {
-          return {
-            id: `${pharmaProduct.uid}-ingredient-${ingredient.active_substance.uid}`,
-            title: getIngredientName(ingredient),
-            halfLife:
-              ingredient.half_life?.value != null
-                ? `${ingredient.half_life.value} ${ingredient.half_life.unit_label}`
-                : '',
-            lagTimes: ingredient.lag_times
-              .map(
-                (lag_time) =>
-                  `${lag_time?.value} ${lag_time?.unit_label} (${lag_time?.sdtm_domain_label})`
-              )
-              .join(', '),
-            strength: `${ingredient.strength?.value} ${ingredient.strength?.unit_label}`,
-            long_number: ingredient.active_substance.long_number
-              ? ingredient.active_substance.long_number
-              : '-',
-            short_number: ingredient.active_substance.short_number
-              ? ingredient.active_substance.short_number
-              : '-',
-            inn: ingredient.active_substance.inn
-              ? ingredient.active_substance.inn
-              : '-',
-            analyte_number: ingredient.active_substance.analyte_number
-              ? ingredient.active_substance.analyte_number
-              : '-',
-          }
-        })
-      })
+      let productIngredients = (pharmaProduct.formulations || []).map(
+        (formulation) => {
+          return (formulation.ingredients || []).map((ingredient) => {
+            return {
+              id: `${pharmaProduct.uid}-ingredient-${ingredient.active_substance?.uid}`,
+              title: ingredient.active_substance
+                ? getIngredientName(ingredient)
+                : '—',
+              halfLife:
+                ingredient.half_life?.value != null
+                  ? `${ingredient.half_life.value} ${ingredient.half_life.unit_label}`
+                  : '',
+              lagTimes: (ingredient.lag_times || [])
+                .map(
+                  (lag_time) =>
+                    `${lag_time?.value} ${lag_time?.unit_label} (${lag_time?.sdtm_domain_label})`
+                )
+                .join(', '),
+              strength: `${ingredient.strength?.value} ${ingredient.strength?.unit_label}`,
+              long_number: ingredient.active_substance?.long_number
+                ? ingredient.active_substance?.long_number
+                : '-',
+              short_number: ingredient.active_substance?.short_number
+                ? ingredient.active_substance?.short_number
+                : '-',
+              inn: ingredient.active_substance?.inn
+                ? ingredient.active_substance?.inn
+                : '-',
+              analyte_number: ingredient.active_substance?.analyte_number
+                ? ingredient.active_substance?.analyte_number
+                : '-',
+            }
+          })
+        }
+      )
       productIngredients = productIngredients
         .flatMap((x) => x)
         .sort((a, b) => a.title.localeCompare(b.title))

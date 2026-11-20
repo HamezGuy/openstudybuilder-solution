@@ -272,6 +272,9 @@ export default {
     },
   },
   mounted() {
+    this.studiesGeneralStore.fetchUnits()
+    this.studiesGeneralStore.fetchSnomedTerms()
+    this.studiesGeneralStore.fetchSexOfParticipants()
     this.studiesGeneralStore.fetchNullValues()
     if (_isEmpty(this.initialData)) {
       study

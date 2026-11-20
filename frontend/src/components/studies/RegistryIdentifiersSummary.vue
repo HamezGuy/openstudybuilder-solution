@@ -53,7 +53,6 @@ function onIdentifiersUpdated() {
 }
 
 onMounted(() => {
-  studiesGeneralStore.fetchNullValues()
   fetchIdentifiers()
 })
 
