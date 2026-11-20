@@ -4,17 +4,23 @@
       {{ $t('StudyDataStandardVersionsView.title') }}
     </div>
     <NavigationTabs :tabs="tabs">
-      <template #default="{ tabKeys }">
+      <template #default="{ tabKeys, activePanel }">
         <v-window-item value="controlled_terminology">
-          <CTStandardVersionsTable
-            :key="`controlled_terminology-${tabKeys.controlled_terminology}`"
-          />
+          <template v-if="activePanel === 'controlled_terminology'">
+            <CTStandardVersionsTable
+              :key="`controlled_terminology-${tabKeys.controlled_terminology}`"
+            />
+          </template>
         </v-window-item>
         <v-window-item value="dictionaries">
-          <StudyStandardEvidence kind="dictionaries" />
+          <template v-if="activePanel === 'dictionaries'">
+            <StudyStandardEvidence kind="dictionaries" />
+          </template>
         </v-window-item>
         <v-window-item value="data_exchange">
-          <StudyStandardEvidence kind="data_exchange" />
+          <template v-if="activePanel === 'data_exchange'">
+            <StudyStandardEvidence kind="data_exchange" />
+          </template>
         </v-window-item>
       </template>
     </NavigationTabs>

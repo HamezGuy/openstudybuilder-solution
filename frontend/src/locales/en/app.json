@@ -1,4 +1,22 @@
 {
+    "Workspace": {
+        "administration": "Administration",
+        "elements": "Elements",
+        "enrollment_target": "Enrollment target",
+        "not_configured": "Not configured",
+        "configure_arms": "Configure study arms",
+        "arm_settings_unavailable": "Arm settings could not be loaded. Try again.",
+        "unavailable": "Unavailable",
+        "settings_unavailable": "Schedule settings could not be loaded.",
+        "design_details": "Review the design matrix and classification",
+        "sections": "Page sections",
+        "choose": "Choose a workspace",
+        "open_study": "Open a study",
+        "study_work": "Select a study to review or edit its design.",
+        "library_work": "Find reusable design standards and terminology.",
+        "admin_work": "Manage configuration and access.",
+        "more": "More about this section"
+    },
     "_global": {
         "retry": "Retry",
         "listing_read_failed": "The study listing could not be loaded.",

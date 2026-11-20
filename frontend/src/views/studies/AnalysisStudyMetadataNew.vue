@@ -5,49 +5,55 @@
       <HelpButton :help-text="$t('_help.SdtmSpecificationTable.general')" />
     </div>
     <NavigationTabs :tabs="tabs">
-      <template #default="{ tabKeys }">
+      <template #default="{ tabKeys, activePanel }">
         <v-window-item :key="`mdvisit-${tabKeys.mdvisit}`" value="mdvisit">
-          <AnalysisMetadataTable
-            key="mdvisit"
-            type="mdvisit"
-            :headers="mdVisitHeaders"
-          />
+          <template v-if="activePanel === 'mdvisit'">
+            <AnalysisMetadataTable
+              key="mdvisit"
+              type="mdvisit"
+              :headers="mdVisitHeaders"
+            />
+          </template>
         </v-window-item>
         <v-window-item :key="`mdendpnt-${tabKeys.mdendpnt}`" value="mdendpnt">
-          <AnalysisMetadataTable
-            key="mdendpnt"
-            type="mdendpnt"
-            :headers="mdEndpntHeaders"
-          >
-            <template #[`item.OBJTV`]="{ item }">
-              <div v-html="sanitizeHTML(item.OBJTV)" />
-            </template>
-            <template #[`item.RACT`]="{ item }">
-              {{ $filters.itemList(item.RACT) }}
-            </template>
-            <template #[`item.ENDPNT`]="{ item }">
-              <div v-html="sanitizeHTML(item.ENDPNT)" />
-            </template>
-            <template #[`item.RACTSGRP`]="{ item }">
-              {{ $filters.itemList(item.RACTSGRP) }}
-            </template>
-            <template #[`item.RACTGRP`]="{ item }">
-              {{ $filters.itemList(item.RACTGRP) }}
-            </template>
-            <template #[`item.RACTINST`]="{ item }">
-              {{ $filters.itemList(item.RACTINST) }}
-            </template>
-            <template #[`item.TMFRM`]="{ item }">
-              <div v-html="sanitizeHTML(item.TMFRM)" />
-            </template>
-          </AnalysisMetadataTable>
+          <template v-if="activePanel === 'mdendpnt'">
+            <AnalysisMetadataTable
+              key="mdendpnt"
+              type="mdendpnt"
+              :headers="mdEndpntHeaders"
+            >
+              <template #[`item.OBJTV`]="{ item }">
+                <div v-html="sanitizeHTML(item.OBJTV)" />
+              </template>
+              <template #[`item.RACT`]="{ item }">
+                {{ $filters.itemList(item.RACT) }}
+              </template>
+              <template #[`item.ENDPNT`]="{ item }">
+                <div v-html="sanitizeHTML(item.ENDPNT)" />
+              </template>
+              <template #[`item.RACTSGRP`]="{ item }">
+                {{ $filters.itemList(item.RACTSGRP) }}
+              </template>
+              <template #[`item.RACTGRP`]="{ item }">
+                {{ $filters.itemList(item.RACTGRP) }}
+              </template>
+              <template #[`item.RACTINST`]="{ item }">
+                {{ $filters.itemList(item.RACTINST) }}
+              </template>
+              <template #[`item.TMFRM`]="{ item }">
+                <div v-html="sanitizeHTML(item.TMFRM)" />
+              </template>
+            </AnalysisMetadataTable>
+          </template>
         </v-window-item>
         <v-window-item :key="`mdflow-${tabKeys.mdflow}`" value="mdflow">
-          <AnalysisMetadataTable
-            key="mdflow"
-            type="mdflow"
-            :headers="mdFlowHeaders"
-          />
+          <template v-if="activePanel === 'mdflow'">
+            <AnalysisMetadataTable
+              key="mdflow"
+              type="mdflow"
+              :headers="mdFlowHeaders"
+            />
+          </template>
         </v-window-item>
       </template>
     </NavigationTabs>

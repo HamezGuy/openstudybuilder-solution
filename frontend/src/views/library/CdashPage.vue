@@ -5,24 +5,28 @@
       <HelpButton />
     </div>
     <NavigationTabs ref="nvTabs" :tabs="tabs">
-      <template #default="{ tabKeys }">
+      <template #default="{ tabKeys, activePanel }">
         <v-window-item value="models">
-          <DataExchangeStandardsModelsView
-            :key="`models-${tabKeys.models}`"
-            :headers="modelsHeaders"
-            uid="CDASH"
-            :redirect-model="redirectModel"
-            @redirect-to-guide="redirectToGuide"
-          />
+          <template v-if="activePanel === 'models'">
+            <DataExchangeStandardsModelsView
+              :key="`models-${tabKeys.models}`"
+              :headers="modelsHeaders"
+              uid="CDASH"
+              :redirect-model="redirectModel"
+              @redirect-to-guide="redirectToGuide"
+            />
+          </template>
         </v-window-item>
         <v-window-item value="guide">
-          <DataExchangeStandardsGuideView
-            :key="`guide-${tabKeys.guide}`"
-            :headers="igHeaders"
-            uid="CDASHIG"
-            :redirect-guide="redirectGuide"
-            @redirect-to-model="redirectToModel"
-          />
+          <template v-if="activePanel === 'guide'">
+            <DataExchangeStandardsGuideView
+              :key="`guide-${tabKeys.guide}`"
+              :headers="igHeaders"
+              uid="CDASHIG"
+              :redirect-guide="redirectGuide"
+              @redirect-to-model="redirectToModel"
+            />
+          </template>
         </v-window-item>
       </template>
     </NavigationTabs>

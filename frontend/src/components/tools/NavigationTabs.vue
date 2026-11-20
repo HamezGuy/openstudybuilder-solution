@@ -1,23 +1,34 @@
 <template>
-  <v-tabs v-model="tab" bg-color="white">
-    <slot name="header">
-      <v-tab
-        v-for="item of props.tabs"
-        :key="item[props.tabKey]"
-        :value="item[props.tabKey]"
-        :loading="item.loading ? item.loading() : false"
-      >
-        {{ item[props.tabTitle] }}
-      </v-tab>
-    </slot>
-  </v-tabs>
-  <v-window :model-value="activePanel" class="bg-white">
-    <slot name="default" :tab-keys="tabKeys"></slot>
+  <v-select
+    v-if="
+      choices.length > 1 &&
+      (smAndDown || !appStore.drawer || appStore.sidebarAutoMinimize)
+    "
+    v-model="tab"
+    class="section-picker"
+    density="compact"
+    variant="outlined"
+    :label="$t('Workspace.sections')"
+    :items="choices"
+    item-title="title"
+    item-value="value"
+    hide-details
+  />
+  <v-window v-if="activePanel" :model-value="activePanel" class="bg-white">
+    <slot name="default" :tab-keys="tabKeys" :active-panel="activePanel"></slot>
   </v-window>
 </template>
 
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import {
+  computed,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+  watchEffect,
+} from 'vue'
+import { useDisplay } from 'vuetify'
 import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 
@@ -49,6 +60,29 @@ const appStore = useAppStore()
 const route = useRoute()
 const router = useRouter()
 
+const { smAndDown } = useDisplay()
+const owningRoute = route.name
+const choices = computed(() =>
+  (props.tabs || []).map((item) => ({
+    title: item[props.tabTitle],
+    value: item[props.tabKey],
+    to: {
+      name: owningRoute,
+      params: { ...route.params, tab: item[props.tabKey] },
+      query: route.query,
+      hash: route.hash,
+    },
+  }))
+)
+watchEffect(() => {
+  if (route.name === owningRoute)
+    appStore.screenNavigation = { route: owningRoute, choices: choices.value }
+})
+onBeforeUnmount(() => {
+  if (appStore.screenNavigation?.route === owningRoute)
+    appStore.screenNavigation = null
+})
+
 const tab = ref(null)
 const activePanel = ref(null)
 const tabKeys = ref({})
@@ -68,6 +102,7 @@ const updateTabKey = (value) => {
 // a bookmarked URL like /library/activities/bogus would crash the watcher
 // at find(...)[props.tabTitle].
 const resolveTabKey = (raw) => {
+  if (!props.tabs?.length) return null
   if (raw && props.tabs.some((el) => el[props.tabKey] === raw)) return raw
   // Older study views stored the translated label in the URL and breadcrumbs.
   const legacy = props.tabs.find((el) => el[props.tabTitle] === raw)
@@ -82,6 +117,7 @@ onMounted(() => {
 })
 
 watch(tab, async (newValue) => {
+  if (!newValue || route.name !== owningRoute) return
   emit('tabChanged', newValue)
   // newValue should always match a tab key (resolveTabKey guards entry
   // points), but treat a miss as "drop back to the first tab" rather than
@@ -123,8 +159,9 @@ watch(tab, async (newValue) => {
 })
 
 watch(
-  () => route.params.tab,
-  (newValue) => {
+  () => [route.params.tab, choices.value.map((item) => item.value).join('|')],
+  ([newValue]) => {
+    if (route.name !== owningRoute) return
     const resolved = resolveTabKey(newValue)
     tab.value = resolved
     activePanel.value = resolved
@@ -135,3 +172,10 @@ defineExpose({
   tab,
 })
 </script>
+
+<style scoped>
+.section-picker {
+  max-width: 28rem;
+  margin-bottom: 12px;
+}
+</style>

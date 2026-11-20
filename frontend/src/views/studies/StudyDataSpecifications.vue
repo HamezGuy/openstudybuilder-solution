@@ -22,17 +22,21 @@
       </v-btn>
     </div>
     <NavigationTabs :tabs="tabs">
-      <template #default="{ tabKeys }">
+      <template #default="{ tabKeys, activePanel }">
         <v-window-item value="instances">
-          <StudyActivityInstancesTable
-            :key="`instances-${tabKeys.instances}`"
-          />
+          <template v-if="activePanel === 'instances'">
+            <StudyActivityInstancesTable
+              :key="`instances-${tabKeys.instances}`"
+            />
+          </template>
         </v-window-item>
         <v-window-item value="operational">
-          <OperationalSoa
-            :key="`operational-${tabKeys.operational}`"
-            :update="updateSoa"
-          />
+          <template v-if="activePanel === 'operational'">
+            <OperationalSoa
+              :key="`operational-${tabKeys.operational}`"
+              :update="updateSoa"
+            />
+          </template>
         </v-window-item>
       </template>
     </NavigationTabs>

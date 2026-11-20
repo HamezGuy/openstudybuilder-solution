@@ -4,24 +4,36 @@
     <HelpButton :help-text="$t('_help.SdtmSpecificationTable.general')" />
   </div>
   <NavigationTabs :tabs="tabs">
-    <template #default="{ tabKeys }">
+    <template #default="{ tabKeys, activePanel }">
       <v-window-item value="tab-0">
-        <SdtmDesignTable :key="`tab-0-${tabKeys['tab-0']}`" type="TA" />
+        <template v-if="activePanel === 'tab-0'">
+          <SdtmDesignTable :key="`tab-0-${tabKeys['tab-0']}`" type="TA" />
+        </template>
       </v-window-item>
       <v-window-item value="tab-1">
-        <SdtmDesignTable :key="`tab-1-${tabKeys['tab-1']}`" type="TE" />
+        <template v-if="activePanel === 'tab-1'">
+          <SdtmDesignTable :key="`tab-1-${tabKeys['tab-1']}`" type="TE" />
+        </template>
       </v-window-item>
       <v-window-item value="tab-2">
-        <SdtmDesignTable :key="`tab-2-${tabKeys['tab-2']}`" type="TV" />
+        <template v-if="activePanel === 'tab-2'">
+          <SdtmDesignTable :key="`tab-2-${tabKeys['tab-2']}`" type="TV" />
+        </template>
       </v-window-item>
       <v-window-item value="tab-3">
-        <SdtmDesignTable :key="`tab-3-${tabKeys['tab-3']}`" type="TI" />
+        <template v-if="activePanel === 'tab-3'">
+          <SdtmDesignTable :key="`tab-3-${tabKeys['tab-3']}`" type="TI" />
+        </template>
       </v-window-item>
       <v-window-item value="tab-4">
-        <SdtmDesignTable :key="`tab-4-${tabKeys['tab-4']}`" type="TDM" />
+        <template v-if="activePanel === 'tab-4'">
+          <SdtmDesignTable :key="`tab-4-${tabKeys['tab-4']}`" type="TDM" />
+        </template>
       </v-window-item>
       <v-window-item value="tab-5">
-        <SdtmDesignTable :key="`tab-5-${tabKeys['tab-5']}`" type="TS" />
+        <template v-if="activePanel === 'tab-5'">
+          <SdtmDesignTable :key="`tab-5-${tabKeys['tab-5']}`" type="TS" />
+        </template>
       </v-window-item>
     </template>
   </NavigationTabs>

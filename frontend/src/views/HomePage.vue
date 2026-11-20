@@ -1,138 +1,107 @@
 <template>
-  <div class="text-center mt-16">
-    <h1
-      class="text-display-small"
-      v-html="
-        sanitizeHTMLHandler(
-          $t(
-            'HomeView.title',
-            appEnv
-              ? {
-                  env: `<strong style='color: rgb(var(--v-theme-nnSeaBlue400)); font-size: 64px;'>${appEnv}</strong> <strong>environment</strong>`,
-                }
-              : ''
-          )
-        )
-      "
-    ></h1>
-    <h2 class="text-headline-large mt-2">
-      {{ $t('HomeView.subtitle') }}
-    </h2>
-    <div class="d-flex justify-center container">
-      <img
-        class="mt-16"
-        :src="logoUrl"
-        alt="StudyBuilder"
-        style="
-          max-width: 1200px;
-          width: 100%;
-          height: auto;
-          object-fit: contain;
-        "
-      />
-      <div class="mt-6 env-center">{{ appEnv }}</div>
+  <section class="workspace-home">
+    <h1>{{ $t('Workspace.choose') }}</h1>
+    <div class="workspace-grid">
+      <router-link
+        v-for="item in destinations"
+        :key="item.name"
+        :to="{ name: item.name }"
+        class="workspace-card"
+      >
+        <v-icon :icon="item.icon" />
+        <div>
+          <strong>{{ $t(item.title) }}</strong>
+          <p>{{ $t(item.hint) }}</p>
+        </div>
+        <v-icon icon="mdi-arrow-right" size="small" />
+      </router-link>
     </div>
-
-    <div class="mt-16 d-flex justify-center text-headline-small">
-      <div class="mx-12">
-        {{ $t('HomeView.design') }}<br />
-        {{ $t('HomeView.design_text1') }}<br />
-        {{ $t('HomeView.design_text2') }}
-      </div>
-      <div class="mx-12">
-        {{ $t('HomeView.comply') }}<br />
-        {{ $t('HomeView.comply_text1') }}<br />
-        {{ $t('HomeView.comply_text2') }}
-      </div>
-      <div class="mx-12">
-        {{ $t('HomeView.reuse') }}<br />
-        {{ $t('HomeView.reuse_text1') }}<br />
-        {{ $t('HomeView.reuse_text2') }}
-      </div>
-      <div class="mx-12">
-        {{ $t('HomeView.get_insights') }}<br />
-        {{ $t('HomeView.get_insights_text1') }}<br />
-        {{ $t('HomeView.get_insights_text2') }}
-      </div>
-      <div class="mx-12">
-        {{ $t('HomeView.integrate') }}<br />
-        {{ $t('HomeView.integrate_text1') }}<br />
-        {{ $t('HomeView.integrate_text2') }}
-      </div>
-    </div>
-
-    <div class="mt-10 d-flex justify-center">
-      <v-btn text color="white" rounded @click="showLicense = true">
-        {{ $t('_global.license') }}
-      </v-btn>
-    </div>
-
+    <v-btn variant="text" size="small" @click="showLicense = true">{{
+      $t('_global.license')
+    }}</v-btn>
     <v-dialog v-model="showLicense" scrollable max-width="800">
       <AboutLicense
+        v-if="showLicense"
         :raw-markdown="licenseContent"
         :title="$t('License.title')"
         @close="showLicense = false"
       />
     </v-dialog>
-  </div>
+  </section>
 </template>
-
-<script>
-import licenseContent from '../../LICENSE.md?raw'
+<script setup>
+import { computed, ref } from 'vue'
 import AboutLicense from '@/components/layout/AboutLicense.vue'
-import { getAppEnv } from '@/utils/generalUtils'
-import { sanitizeHTML } from '@/utils/sanitize'
-
-export default {
-  components: {
-    AboutLicense,
-  },
-  setup() {
-    const logoUrl = new URL(
-      '../assets/study_builder_homepage_logo.png',
-      import.meta.url
-    ).href
-
-    const appEnv = getAppEnv()
-
-    return {
-      logoUrl,
-      appEnv,
-    }
-  },
-  data() {
-    return {
-      showLicense: false,
-    }
-  },
-  beforeCreate() {
-    this.licenseContent = licenseContent
-  },
-  methods: {
-    sanitizeHTMLHandler(html) {
-      return sanitizeHTML(html)
+import licenseContent from '../../LICENSE.md?raw'
+import { useAccessGuard } from '@/composables/accessGuard'
+import roles from '@/constants/roles'
+const showLicense = ref(false)
+const { checkPermission } = useAccessGuard()
+const destinations = computed(() =>
+  [
+    {
+      name: 'SelectOrAddStudy',
+      title: 'Workspace.open_study',
+      hint: 'Workspace.study_work',
+      icon: 'mdi-clipboard-text-outline',
+      permission: roles.STUDY_READ,
     },
-  },
-}
+    {
+      name: 'LibrarySummary',
+      title: '_global.library',
+      hint: 'Workspace.library_work',
+      icon: 'mdi-bookshelf',
+      permission: roles.LIBRARY_READ,
+    },
+    {
+      name: 'Administration',
+      title: 'Workspace.administration',
+      hint: 'Workspace.admin_work',
+      icon: 'mdi-cog-outline',
+      permission: roles.ADMIN_READ,
+    },
+  ].filter((item) => checkPermission(item.permission))
+)
 </script>
 <style scoped>
-.container {
-  position: relative;
-  text-align: center;
-  color: white;
-  z-index: 0;
+.workspace-home {
+  max-width: 66rem;
+  padding: clamp(24px, 4vw, 56px) 24px;
+  margin: auto;
 }
-.v-img {
-  z-index: 0;
+h1 {
+  font-size: clamp(1.8rem, 4vw, 2.7rem);
+  line-height: 1.18;
+  margin: 0 0 24px;
 }
-.env-center {
-  position: absolute;
-  top: 50%;
-  left: 60%;
-  transform: translate(-50%, -50%);
-  font-weight: bold;
-  font-size: 128px;
-  z-index: 0;
-  pointer-events: none;
+.workspace-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.workspace-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: white;
+  color: rgb(var(--v-theme-primary));
+  padding: 18px;
+  border-radius: 8px;
+  text-decoration: none;
+}
+.workspace-card p {
+  font-size: 0.88rem;
+  line-height: 1.4;
+  color: #3f5064;
+  margin: 3px 0 0;
+}
+.workspace-card strong {
+  font-size: 1.12rem;
+}
+.workspace-card:hover,
+.workspace-card:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
 }
 </style>

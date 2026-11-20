@@ -208,9 +208,6 @@ export default {
       selectedStudyVersion: computed(
         () => studiesGeneralStore.selectedStudyVersion
       ),
-      studyPreferredTimeUnit: computed(
-        () => studiesGeneralStore.studyPreferredTimeUnit
-      ),
       ...accessGuard,
       soaContentLoadingStore,
     }

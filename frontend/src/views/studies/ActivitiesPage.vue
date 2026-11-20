@@ -20,19 +20,23 @@
       </v-btn>
     </div>
     <NavigationTabs :tabs="tabs" @tab-changed="onTabChanged">
-      <template #default="{ tabKeys }">
+      <template #default="{ tabKeys, activePanel }">
         <v-window-item value="soa">
-          <ScheduleOfActivities
-            :key="`soa-${tabKeys.soa}`"
-            :update="updateFlowchart"
-          />
+          <template v-if="activePanel === 'soa'">
+            <ScheduleOfActivities
+              :key="`soa-${tabKeys.soa}`"
+              :update="updateFlowchart"
+            />
+          </template>
         </v-window-item>
         <v-window-item value="list">
-          <StudyActivityTable
-            ref="activitiesTable"
-            :key="`activities-${tabKeys.activities}`"
-            :update="updateActivitiesTable"
-          />
+          <template v-if="activePanel === 'list'">
+            <StudyActivityTable
+              ref="activitiesTable"
+              :key="`activities-${tabKeys.activities}`"
+              :update="updateActivitiesTable"
+            />
+          </template>
         </v-window-item>
       </template>
     </NavigationTabs>

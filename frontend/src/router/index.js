@@ -10,7 +10,10 @@ import { useFeatureFlagsStore } from '@/stores/feature-flags'
 import roles from '@/constants/roles'
 import study from '@/api/study'
 import { DEMO_MODE } from '@/demo/isDemoMode'
-import { clearRouteChunkRetry, retryRouteChunk } from '@/utils/routeChunkRecovery'
+import {
+  clearRouteChunkRetry,
+  retryRouteChunk,
+} from '@/utils/routeChunkRecovery'
 
 const routes = [
   {
@@ -1312,13 +1315,23 @@ router.beforeEach(async (to, from, next) => {
     // identity and roles even when the standalone OAuth UI is off.
     await authStore.initialize()
 
-    // Feature flags require read permissions when OAuth is enabled (2.10).
-    if (!$config.OAUTH_ENABLED || authStore.userInfo) {
-      try {
-        await featureFlagsStore.fetchFeatureFlags()
-      } catch {
-        // Feature flags are optional chrome. A 401 here must not blank the app.
-      }
+    // Gate protected pages on a fresh result; ordinary navigation can paint while
+    // the sidebar loads the small set of flags for this signed-in audience.
+    if (
+      (!$config.OAUTH_ENABLED || authStore.userInfo) &&
+      (to.meta.featureFlag ||
+        ['Library', 'Studies', 'Administration'].includes(to.matched[0]?.name))
+    ) {
+      const identity = JSON.stringify([
+        authStore.userInfo?.sub,
+        authStore.userInfo?.preferred_username,
+        authStore.userInfo?.roles,
+      ])
+      const read = featureFlagsStore.fetchFeatureFlags(
+        identity,
+        Boolean(to.meta.featureFlag)
+      )
+      if (to.meta.featureFlag) await read
     }
     if (
       to.meta.featureFlag &&

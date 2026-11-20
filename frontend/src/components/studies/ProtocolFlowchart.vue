@@ -15,7 +15,9 @@
           :loading="loading ? 'warning' : null"
         />
         <v-switch
-          v-show="switchIsEnabled(['protocol'])"
+          v-if="
+            studiesGeneralStore.soaPreferences && switchIsEnabled(['protocol'])
+          "
           v-model="studiesGeneralStore.soaPreferences.show_epochs"
           :label="$t('ProtocolFlowchart.show_epochs')"
           hide-details
@@ -25,7 +27,9 @@
           @update:model-value="updateSoaPreferences('show_epochs')"
         />
         <v-switch
-          v-show="switchIsEnabled(['protocol'])"
+          v-if="
+            studiesGeneralStore.soaPreferences && switchIsEnabled(['protocol'])
+          "
           v-model="studiesGeneralStore.soaPreferences.show_milestones"
           :label="$t('ProtocolFlowchart.show_milestones')"
           hide-details
@@ -35,7 +39,10 @@
           @update:model-value="updateSoaPreferences('show_milestones')"
         />
         <v-switch
-          v-show="switchIsEnabled(['protocol_lab_table'])"
+          v-if="
+            studiesGeneralStore.soaPreferences &&
+            switchIsEnabled(['protocol_lab_table'])
+          "
           v-model="studiesGeneralStore.soaPreferences.show_all_visits_lab_table"
           :label="$t('ProtocolFlowchart.show_all_visits_lab_table')"
           hide-details
@@ -305,6 +312,16 @@ function switchIsEnabled(layouts = []) {
     (!layouts || layouts.includes(props.layout))
   )
 }
+watch(
+  () => [
+    switchIsEnabled(['protocol', 'protocol_lab_table']),
+    studiesGeneralStore.selectedStudyUid,
+  ],
+  ([visible]) => {
+    if (visible) studiesGeneralStore.readSchedulePreference('soaPreferences')
+  },
+  { immediate: true }
+)
 function updateSoaPreferences(key) {
   loading.value = true
   studiesGeneralStore

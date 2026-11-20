@@ -4,9 +4,11 @@
       {{ $t('CRFViewer.title') }}
     </div>
     <NavigationTabs :tabs="tabs" :breadcrumbs-level="2">
-      <template #default>
+      <template #default="{ activePanel }">
         <v-window-item value="odm-viewer">
-          <OdmViewer />
+          <template v-if="activePanel === 'odm-viewer'">
+            <OdmViewer />
+          </template>
         </v-window-item>
       </template>
     </NavigationTabs>

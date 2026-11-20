@@ -19,11 +19,14 @@ export default {
       { params }
     )
   },
-  getAllList(options = {}) {
+  getAllList(options = {}, signal) {
     const params = {
       ...options,
     }
-    return repository.get(`${resource}/list?minimal_response=false`, { params })
+    return repository.get(`${resource}/list?minimal_response=false`, {
+      params,
+      signal,
+    })
   },
   /**
    * Studies for copy-from-study selectors (StudyMinimal fields).

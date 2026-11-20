@@ -8,15 +8,21 @@
       />
     </div>
     <NavigationTabs :tabs="tabs" @tab-changed="tab = $event">
-      <template #default="{ tabKeys }">
+      <template #default="{ tabKeys, activePanel }">
         <v-window-item value="objectives">
-          <ObjectiveTable :key="`objectives-${tabKeys.objectives}`" />
+          <template v-if="activePanel === 'objectives'">
+            <ObjectiveTable :key="`objectives-${tabKeys.objectives}`" />
+          </template>
         </v-window-item>
         <v-window-item value="endpoints">
-          <EndpointTable :key="`endpoints-${tabKeys.endpoints}`" />
+          <template v-if="activePanel === 'endpoints'">
+            <EndpointTable :key="`endpoints-${tabKeys.endpoints}`" />
+          </template>
         </v-window-item>
         <v-window-item value="estimands">
-          <UnderConstruction />
+          <template v-if="activePanel === 'estimands'">
+            <UnderConstruction />
+          </template>
         </v-window-item>
       </template>
     </NavigationTabs>

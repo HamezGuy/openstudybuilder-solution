@@ -8,58 +8,76 @@
       />
     </div>
     <NavigationTabs :tabs="tabs">
-      <template #default="{ tabKeys }">
+      <template #default="{ tabKeys, activePanel }">
         <v-window-item value="activities">
-          <ActivitiesTable
-            :key="`activities-${tabKeys['activities']}`"
-            source="activities"
-          />
+          <template v-if="activePanel === 'activities'">
+            <ActivitiesTable
+              :key="`activities-${tabKeys['activities']}`"
+              source="activities"
+            />
+          </template>
         </v-window-item>
         <v-window-item value="activity-groups">
-          <ActivitiesTable
-            :key="`activities-${tabKeys['activity-groups']}`"
-            source="activity-groups"
-          />
+          <template v-if="activePanel === 'activity-groups'">
+            <ActivitiesTable
+              :key="`activities-${tabKeys['activity-groups']}`"
+              source="activity-groups"
+            />
+          </template>
         </v-window-item>
         <v-window-item value="activity-subgroups">
-          <ActivitiesTable
-            :key="`activities-${tabKeys['activity-subgroups']}`"
-            source="activity-sub-groups"
-          />
+          <template v-if="activePanel === 'activity-subgroups'">
+            <ActivitiesTable
+              :key="`activities-${tabKeys['activity-subgroups']}`"
+              source="activity-sub-groups"
+            />
+          </template>
         </v-window-item>
         <v-window-item value="activities-by-grouping">
-          <ActivitiesTable
-            :key="`activities-${tabKeys['activities-by-grouping']}`"
-            source="activities-by-grouping"
-          />
+          <template v-if="activePanel === 'activities-by-grouping'">
+            <ActivitiesTable
+              :key="`activities-${tabKeys['activities-by-grouping']}`"
+              source="activities-by-grouping"
+            />
+          </template>
         </v-window-item>
         <v-window-item value="activity-instances">
-          <ActivitiesTable
-            :key="`activities-${tabKeys['activity-instances']}`"
-            source="activity-instances"
-          />
+          <template v-if="activePanel === 'activity-instances'">
+            <ActivitiesTable
+              :key="`activities-${tabKeys['activity-instances']}`"
+              source="activity-instances"
+            />
+          </template>
         </v-window-item>
         <v-window-item value="requested-activities">
-          <ActivitiesTable
-            :key="`activities-${tabKeys['requested-activities']}`"
-            source="activities"
-            requested
-          />
+          <template v-if="activePanel === 'requested-activities'">
+            <ActivitiesTable
+              :key="`activities-${tabKeys['requested-activities']}`"
+              source="activities"
+              requested
+            />
+          </template>
         </v-window-item>
         <v-window-item value="activity-instance-classes">
-          <Suspense>
-            <ActivityInstanceClassTable />
-          </Suspense>
+          <template v-if="activePanel === 'activity-instance-classes'">
+            <Suspense>
+              <ActivityInstanceClassTable />
+            </Suspense>
+          </template>
         </v-window-item>
         <v-window-item value="activity-item-classes">
-          <Suspense>
-            <ActivityItemClassTable />
-          </Suspense>
+          <template v-if="activePanel === 'activity-item-classes'">
+            <Suspense>
+              <ActivityItemClassTable />
+            </Suspense>
+          </template>
         </v-window-item>
         <v-window-item v-if="nsvsLibrary" value="non-standard-variables">
-          <Suspense>
-            <NonStandardVariablesTable />
-          </Suspense>
+          <template v-if="activePanel === 'non-standard-variables'">
+            <Suspense>
+              <NonStandardVariablesTable />
+            </Suspense>
+          </template>
         </v-window-item>
       </template>
     </NavigationTabs>

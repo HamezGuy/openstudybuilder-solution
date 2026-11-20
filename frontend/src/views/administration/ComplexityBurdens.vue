@@ -5,95 +5,108 @@
     </div>
 
     <NavigationTabs :tabs="tabs">
-      <template #default="{ tabKeys }">
+      <template #default="{ tabKeys, activePanel }">
         <v-window-item value="study-complexity-scores">
-          <StudyComplexityScoreDetails show-study-select />
+          <template v-if="activePanel === 'study-complexity-scores'">
+            <StudyComplexityScoreDetails show-study-select />
+          </template>
         </v-window-item>
         <v-window-item value="activity-burdens">
-          <!-- Activity Subgroup Burdens Table -->
-          <v-card :key="`burdens-${tabKeys['activity-burdens']}`" class="mt-0">
-            <v-card-text>
-              <v-alert
-                color="nnLightBlue200"
-                icon="mdi-information-outline"
-                class="text-nnTrueBlue mx-4 my-2 mb-6"
-              >
-                {{ $t('ComplexityScore.admin_activity_burdens_info') }}
-              </v-alert>
-              <div class="d-flex justify-space-between align-center mb-4 px-4">
-                <v-text-field
-                  v-model="searchActivityBurdens"
-                  prepend-inner-icon="mdi-magnify"
-                  :label="$t('_global.search')"
-                  single-line
-                  hide-details
-                  clearable
-                  clear-icon="mdi-close"
-                  class="mr-4"
-                  style="max-width: 300px"
-                />
-                <DataTableExportButton
-                  :object-label="'Activity Subgroup Burdens'"
-                  :data-url="`admin/complexity-scores/activity-burdens`"
-                  :headers="headersActivityBurdens"
-                  data-cy="export-data-button"
-                  @export="confirmExport"
-                />
-              </div>
+          <template v-if="activePanel === 'activity-burdens'">
+            <!-- Activity Subgroup Burdens Table -->
+            <v-card
+              :key="`burdens-${tabKeys['activity-burdens']}`"
+              class="mt-0"
+            >
+              <v-card-text>
+                <v-alert
+                  color="nnLightBlue200"
+                  icon="mdi-information-outline"
+                  class="text-nnTrueBlue mx-4 my-2 mb-6"
+                >
+                  {{ $t('ComplexityScore.admin_activity_burdens_info') }}
+                </v-alert>
+                <div
+                  class="d-flex justify-space-between align-center mb-4 px-4"
+                >
+                  <v-text-field
+                    v-model="searchActivityBurdens"
+                    prepend-inner-icon="mdi-magnify"
+                    :label="$t('_global.search')"
+                    single-line
+                    hide-details
+                    clearable
+                    clear-icon="mdi-close"
+                    class="mr-4"
+                    style="max-width: 300px"
+                  />
+                  <DataTableExportButton
+                    :object-label="'Activity Subgroup Burdens'"
+                    :data-url="`admin/complexity-scores/activity-burdens`"
+                    :headers="headersActivityBurdens"
+                    data-cy="export-data-button"
+                    @export="confirmExport"
+                  />
+                </div>
 
-              <v-data-table
-                :headers="headersActivityBurdens"
-                :items="activityBurdens"
-                :search="searchActivityBurdens"
-                class="mx-4 my-6"
-                :loading="loadingActivityBurdens"
-              >
-              </v-data-table>
-            </v-card-text>
-          </v-card>
+                <v-data-table
+                  :headers="headersActivityBurdens"
+                  :items="activityBurdens"
+                  :search="searchActivityBurdens"
+                  class="mx-4 my-6"
+                  :loading="loadingActivityBurdens"
+                >
+                </v-data-table>
+              </v-card-text>
+            </v-card>
+          </template>
         </v-window-item>
         <v-window-item value="burdens">
-          <!-- Burdens Table -->
-          <v-card :key="`burdens-${tabKeys['burdens']}`" class="mt-0">
-            <v-card-text>
-              <v-alert
-                color="nnLightBlue200"
-                icon="mdi-information-outline"
-                class="text-nnTrueBlue mx-4 my-2 mb-6"
-              >
-                {{ $t('ComplexityScore.admin_burdens_info') }}
-              </v-alert>
-              <div class="d-flex justify-space-between align-center mb-4 px-4">
-                <v-text-field
-                  v-model="searchBurdens"
-                  prepend-inner-icon="mdi-magnify"
-                  :label="$t('_global.search')"
-                  single-line
-                  hide-details
-                  clearable
-                  clear-icon="mdi-close"
-                  class="mr-4"
-                  style="max-width: 300px"
-                />
-                <DataTableExportButton
-                  :object-label="'Burdens'"
-                  :data-url="`admin/complexity-scores/burdens`"
-                  :headers="headersBurdens"
-                  data-cy="export-data-button"
-                  @export="confirmExport"
-                />
-              </div>
+          <template v-if="activePanel === 'burdens'">
+            <!-- Burdens Table -->
+            <v-card :key="`burdens-${tabKeys['burdens']}`" class="mt-0">
+              <v-card-text>
+                <v-alert
+                  color="nnLightBlue200"
+                  icon="mdi-information-outline"
+                  class="text-nnTrueBlue mx-4 my-2 mb-6"
+                >
+                  {{ $t('ComplexityScore.admin_burdens_info') }}
+                </v-alert>
+                <div
+                  class="d-flex justify-space-between align-center mb-4 px-4"
+                >
+                  <v-text-field
+                    v-model="searchBurdens"
+                    prepend-inner-icon="mdi-magnify"
+                    :label="$t('_global.search')"
+                    single-line
+                    hide-details
+                    clearable
+                    clear-icon="mdi-close"
+                    class="mr-4"
+                    style="max-width: 300px"
+                  />
+                  <DataTableExportButton
+                    :object-label="'Burdens'"
+                    :data-url="`admin/complexity-scores/burdens`"
+                    :headers="headersBurdens"
+                    data-cy="export-data-button"
+                    @export="confirmExport"
+                  />
+                </div>
 
-              <v-data-table
-                :headers="headersBurdens"
-                :items="burdens"
-                :search="searchBurdens"
-                class="mx-4 my-6"
-                :loading="loadingBurdens"
-              >
-              </v-data-table>
-            </v-card-text>
-          </v-card>
+                <v-data-table
+                  :headers="headersBurdens"
+                  :items="burdens"
+                  :search="searchBurdens"
+                  class="mx-4 my-6"
+                  :loading="loadingBurdens"
+                >
+                </v-data-table>
+              </v-card-text>
+            </v-card>
+          </template>
         </v-window-item>
       </template>
     </NavigationTabs>

@@ -4,9 +4,9 @@ import { seedDemoAuth } from '../helpers/seedAuth.js'
 
 const ROUTES = [
   ['Home', '/', 'h1'],
-  ['Studies Summary', '/studies/summary', 'h1.text-display-medium'],
+  ['Studies Summary', '/studies/summary', 'h1.page-title'],
   ['Studies SelectOrAdd', '/studies/select_or_add_study', '.page-title'],
-  ['Library Summary', '/library/summary', 'h1.text-display-medium'],
+  ['Library Summary', '/library/summary', 'h1.page-title'],
   ['Library Activities', '/library/activities', '.page-title'],
   ['Library CRF Viewer', '/library/crf-viewer', '.page-title'],
 ]

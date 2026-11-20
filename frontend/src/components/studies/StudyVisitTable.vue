@@ -1088,7 +1088,7 @@ watch(studyVisits, () => {
   getTimeLineVisits()
 })
 
-onMounted(() => {
+onMounted(async () => {
   getTimeLineVisits()
   epochsStore.fetchStudyEpochs({
     studyUid: studiesGeneralStore.selectedStudy.uid,
@@ -1111,6 +1111,7 @@ onMounted(() => {
   codelists.getTermsByCodelist('epochAllocations').then((resp) => {
     epochAllocations.value = resp.data.items
   })
+  await studiesGeneralStore.readSchedulePreference('studyPreferredTimeUnit')
   if (studiesGeneralStore.studyPreferredTimeUnit) {
     preferredTimeUnit.value =
       studiesGeneralStore.studyPreferredTimeUnit.time_unit_name

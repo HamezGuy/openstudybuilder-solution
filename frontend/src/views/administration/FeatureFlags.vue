@@ -123,6 +123,7 @@
 <script setup>
 import { computed, inject, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useFeatureFlagsStore } from '@/stores/feature-flags'
 import featureFlagsApi from '@/api/featureFlags'
 import ActionsMenu from '@/components/tools/ActionsMenu.vue'
 import ConfirmDialog from '@/components/tools/ConfirmDialog.vue'
@@ -133,6 +134,7 @@ const { t } = useI18n()
 const notificationHub = inject('notificationHub')
 const roles = inject('roles')
 
+const featureFlagsStore = useFeatureFlagsStore()
 const flags = ref([])
 const search = ref('')
 const selectedSection = ref('studies')
@@ -207,7 +209,16 @@ async function toggleFlagState(flag, value) {
   if (flag.status !== 'Final') {
     return
   }
-  await featureFlagsApi.update(flag.uid, { enabled: value })
+  try {
+    await featureFlagsApi.update(flag.uid, { enabled: value })
+    featureFlagsStore.applyFlag({ ...flag, enabled: value })
+  } catch {
+    flag.enabled = !value
+    notificationHub.add({
+      msg: t('FeatureFlagsView.lifecycle_error'),
+      type: 'error',
+    })
+  }
 }
 
 async function openHistory(flag) {
@@ -246,6 +257,8 @@ async function inactivateFlag(flag) {
       type: 'success',
     })
     await loadFlags()
+    const updated = flags.value.find((row) => row.uid === flag.uid)
+    if (updated) featureFlagsStore.applyFlag(updated)
   } catch (_error) {
     notificationHub.add({
       msg: t('FeatureFlagsView.lifecycle_error'),
@@ -276,6 +289,8 @@ async function reactivateFlag(flag) {
       type: 'success',
     })
     await loadFlags()
+    const updated = flags.value.find((row) => row.uid === flag.uid)
+    if (updated) featureFlagsStore.applyFlag(updated)
   } catch (_error) {
     notificationHub.add({
       msg: t('FeatureFlagsView.lifecycle_error'),

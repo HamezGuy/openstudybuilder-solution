@@ -111,7 +111,7 @@ test('smoke: sidebar navigates to a dynamically-fetched CT library page', async 
   await page.addInitScript(seedDemoAuth)
   const spy = setupConsoleSpy(page)
 
-  // SideBar.vue calls appStore.fetchCtLibraries() on mount, which GETs
+  // Opening the Code Lists section calls appStore.fetchCtLibraries(), which GETs
   // /libraries and splices one menu entry per editable, non-excluded library
   // into the Code Lists tile (stores/app.js). Land on a Code Lists page so
   // that tile is expanded, then wait for the dynamic entry rather than
@@ -145,7 +145,11 @@ test('smoke: sidebar navigates to a dynamically-fetched CT library page', async 
   expect(crumbs.slice(0, 3)).toEqual(['Library', 'Code Lists', linkLabel])
 
   // CtLibraryTable.vue renders an "All" tab plus one per CT catalogue.
-  await expect(page.getByRole('tab', { name: 'All' })).toBeVisible({
+  await expect(
+    page
+      .getByRole('navigation', { name: 'Page sections' })
+      .getByRole('link', { name: 'All', exact: true })
+  ).toBeVisible({
     timeout: 10_000,
   })
 

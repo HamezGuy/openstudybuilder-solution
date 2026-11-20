@@ -195,7 +195,7 @@ export const useStudiesGeneralStore = defineStore('studiesGeneral', {
       }
     },
     async selectStudy(studyObj, _forceReload) {
-      const revision = ++this.selectionRevision
+      this.selectionRevision++
       this.selectedStudy = studyObj
       if (!studyObj.current_metadata) {
         this.selectedStudyVersion = studyObj.version_number
@@ -208,19 +208,25 @@ export const useStudiesGeneralStore = defineStore('studiesGeneral', {
       this.studyPreferredTimeUnit = null
       this.soaPreferredTimeUnit = null
       this.soaPreferences = null
-      const preferences = await Promise.allSettled([
-        study.getStudyPreferredTimeUnit(studyObj.uid),
-        study.getSoAPreferredTimeUnit(studyObj.uid),
-        study.getSoAPreferences(studyObj.uid),
-      ])
-      if (this.selectionRevision === revision)
-        [
-          this.studyPreferredTimeUnit,
-          this.soaPreferredTimeUnit,
-          this.soaPreferences,
-        ] = preferences.map((result) =>
-          result.status === 'fulfilled' ? result.value.data : null
-        )
+    },
+    async readSchedulePreference(key) {
+      const reads = {
+        studyPreferredTimeUnit: study.getStudyPreferredTimeUnit,
+        soaPreferredTimeUnit: study.getSoAPreferredTimeUnit,
+        soaPreferences: study.getSoAPreferences,
+      }
+      const revision = this.selectionRevision
+      if (!this.selectedStudy || !Object.hasOwn(reads, key)) return null
+      try {
+        const response = await reads[key](this.selectedStudy.uid)
+        if (this.selectionRevision === revision) {
+          this[key] = response.data
+          return response.data
+        }
+      } catch {
+        /* The repository reports the owner error; the value stays unavailable. */
+      }
+      return null
     },
     setStudyPreferredTimeUnit({ timeUnitUid, protocolSoa }) {
       const revision = this.selectionRevision
@@ -235,14 +241,10 @@ export const useStudiesGeneralStore = defineStore('studiesGeneral', {
         })
     },
     getSoaPreferences() {
-      const revision = this.selectionRevision
-      study.getSoAPreferredTimeUnit(this.selectedStudy.uid).then((resp) => {
-        if (this.selectionRevision === revision)
-          this.soaPreferredTimeUnit = resp.data
-      })
-      study.getSoAPreferences(this.selectedStudy.uid).then((resp) => {
-        if (this.selectionRevision === revision) this.soaPreferences = resp.data
-      })
+      return Promise.all([
+        this.readSchedulePreference('soaPreferredTimeUnit'),
+        this.readSchedulePreference('soaPreferences'),
+      ])
     },
     setSoaPreferences(soaPreferences) {
       const revision = this.selectionRevision

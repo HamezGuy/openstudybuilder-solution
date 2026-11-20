@@ -1,18 +1,20 @@
 <template>
   <div v-if="allCatalogues.length">
     <NavigationTabs :tabs="allCatalogues" tab-key="name">
-      <template #default="{ tabKeys }">
+      <template #default="{ tabKeys, activePanel }">
         <v-window-item
           v-for="catalogue in allCatalogues"
           :key="`${catalogue.name}-${tabKeys[catalogue.name]}`"
           :value="catalogue.name"
         >
-          <CodelistTable
-            :catalogue="catalogue.name"
-            column-data-resource="ct/codelists"
-            library="Sponsor"
-            @open-codelist-terms="openCodelistTerms"
-          />
+          <template v-if="activePanel === catalogue.name">
+            <CodelistTable
+              :catalogue="catalogue.name"
+              column-data-resource="ct/codelists"
+              library="Sponsor"
+              @open-codelist-terms="openCodelistTerms"
+            />
+          </template>
         </v-window-item>
       </template>
     </NavigationTabs>

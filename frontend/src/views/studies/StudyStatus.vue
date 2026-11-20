@@ -73,22 +73,30 @@
       </HelpButton>
     </div>
     <NavigationTabs :tabs="tabs">
-      <template #default="{ tabKeys }">
+      <template #default="{ tabKeys, activePanel }">
         <v-window-item value="core_attributes">
-          <StudyIdentificationSummary
-            :key="`core_attributes-${tabKeys.core_attributes}`"
-          />
+          <template v-if="activePanel === 'core_attributes'">
+            <StudyIdentificationSummary
+              :key="`core_attributes-${tabKeys.core_attributes}`"
+            />
+          </template>
         </v-window-item>
         <v-window-item value="study_status">
-          <StudyStatusTable :key="`study_status-${tabKeys.study_status}`" />
+          <template v-if="activePanel === 'study_status'">
+            <StudyStatusTable :key="`study_status-${tabKeys.study_status}`" />
+          </template>
         </v-window-item>
         <v-window-item value="subparts">
-          <StudySubpartsTable :key="`subparts-${tabKeys.subparts}`" />
+          <template v-if="activePanel === 'subparts'">
+            <StudySubpartsTable :key="`subparts-${tabKeys.subparts}`" />
+          </template>
         </v-window-item>
         <v-window-item value="protocolversions">
-          <ProtocolVersionsTable
-            :key="`protocolversions-${tabKeys.protocolversions}`"
-          />
+          <template v-if="activePanel === 'protocolversions'">
+            <ProtocolVersionsTable
+              :key="`protocolversions-${tabKeys.protocolversions}`"
+            />
+          </template>
         </v-window-item>
       </template>
     </NavigationTabs>

@@ -51,6 +51,7 @@ export const useAppStore = defineStore('app', {
     sidebarAutoMinimize: false,
     theme: DEFAULT_THEME,
     section: '',
+    screenNavigation: null,
     breadcrumbs: [],
     helpPath: '',
     studyUid: 'none',

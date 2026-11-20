@@ -101,7 +101,6 @@ watch(
 )
 onMounted(async () => {
   await appStore.initialize()
-  authStore.initialize()
   try {
     const resp = await notifications.getActive()
     if (resp?.data?.length) {

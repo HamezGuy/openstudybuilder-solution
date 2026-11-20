@@ -8,35 +8,55 @@
       />
     </div>
     <NavigationTabs :tabs="tabs" @tab-changed="onTabChanged">
-      <template #default="{ tabKeys }">
+      <template #default="{ tabKeys, activePanel }">
         <v-window-item value="overview">
-          <StudyStructureOverview :key="`overview-${tabKeys.overview}`" />
+          <template v-if="activePanel === 'overview'">
+            <StudyStructureOverview :key="`overview-${tabKeys.overview}`" />
+          </template>
         </v-window-item>
         <v-window-item value="arms">
-          <StudyArmsTable :key="`arms-${tabKeys.arms}`" />
+          <template v-if="activePanel === 'arms'">
+            <StudyArmsTable :key="`arms-${tabKeys.arms}`" />
+          </template>
         </v-window-item>
         <v-window-item value="branches">
-          <StudyBranchesTable :key="`branches-${tabKeys.branches}`" />
+          <template v-if="activePanel === 'branches'">
+            <StudyBranchesTable :key="`branches-${tabKeys.branches}`" />
+          </template>
         </v-window-item>
         <v-window-item value="cohorts">
-          <StudyCohortsTable :key="`cohorts-${tabKeys.cohorts}`" />
+          <template v-if="activePanel === 'cohorts'">
+            <StudyCohortsTable :key="`cohorts-${tabKeys.cohorts}`" />
+          </template>
         </v-window-item>
         <v-window-item value="epochs">
-          <StudyEpochTable :key="`epochs-${tabKeys.epochs}`" />
+          <template v-if="activePanel === 'epochs'">
+            <StudyEpochTable :key="`epochs-${tabKeys.epochs}`" />
+          </template>
         </v-window-item>
         <v-window-item value="elements">
-          <StudyElementsTable :key="`elements-${tabKeys.elements}`" />
+          <template v-if="activePanel === 'elements'">
+            <StudyElementsTable :key="`elements-${tabKeys.elements}`" />
+          </template>
         </v-window-item>
         <v-window-item value="visits">
-          <StudyVisitTable :key="`visits-${tabKeys.visits}`" />
+          <template v-if="activePanel === 'visits'">
+            <StudyVisitTable :key="`visits-${tabKeys.visits}`" />
+          </template>
         </v-window-item>
         <v-window-item value="design_matrix">
-          <DesignMatrixTable :key="`design_matrix-${tabKeys.design_matrix}`" />
+          <template v-if="activePanel === 'design_matrix'">
+            <DesignMatrixTable
+              :key="`design_matrix-${tabKeys.design_matrix}`"
+            />
+          </template>
         </v-window-item>
         <v-window-item value="disease_milestones">
-          <DiseaseMilestoneTable
-            :key="`disease_milestones-${tabKeys.disease_milestones}`"
-          />
+          <template v-if="activePanel === 'disease_milestones'">
+            <DiseaseMilestoneTable
+              :key="`disease_milestones-${tabKeys.disease_milestones}`"
+            />
+          </template>
         </v-window-item>
       </template>
     </NavigationTabs>

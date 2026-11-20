@@ -22,47 +22,61 @@
       </v-btn>
     </div>
     <NavigationTabs :tabs="tabs" @tab-changed="tab = $event">
-      <template #default="{ tabKeys }">
+      <template #default="{ tabKeys, activePanel }">
         <v-window-item value="tab-0">
-          <ProtocolTitlePage :key="`tab-0-${tabKeys['tab-0']}`" />
+          <template v-if="activePanel === 'tab-0'">
+            <ProtocolTitlePage :key="`tab-0-${tabKeys['tab-0']}`" />
+          </template>
         </v-window-item>
         <v-window-item value="tab-1">
-          <ProtocolFlowchart
-            :key="`tab-1-${tabKeys['tab-1']}`"
-            :study-uid="selectedStudy.uid"
-            :update="updateFlowchart"
-          />
+          <template v-if="activePanel === 'tab-1'">
+            <ProtocolFlowchart
+              :key="`tab-1-${tabKeys['tab-1']}`"
+              :study-uid="selectedStudy.uid"
+              :update="updateFlowchart"
+            />
+          </template>
         </v-window-item>
         <v-window-item value="tab-2">
-          <ProtocolElementsObjectiveTable
-            :key="`tab-2-${tabKeys['tab-2']}`"
-            :study-uid="selectedStudy.uid"
-            :update="updateObjectives"
-          />
+          <template v-if="activePanel === 'tab-2'">
+            <ProtocolElementsObjectiveTable
+              :key="`tab-2-${tabKeys['tab-2']}`"
+              :study-uid="selectedStudy.uid"
+              :update="updateObjectives"
+            />
+          </template>
         </v-window-item>
         <v-window-item value="tab-3">
-          <ProtocolElementsStudyDesign
-            :key="`tab-3-${tabKeys['tab-3']}`"
-            :study-uid="selectedStudy.uid"
-            :update="updateDesign"
-          />
+          <template v-if="activePanel === 'tab-3'">
+            <ProtocolElementsStudyDesign
+              :key="`tab-3-${tabKeys['tab-3']}`"
+              :study-uid="selectedStudy.uid"
+              :update="updateDesign"
+            />
+          </template>
         </v-window-item>
         <v-window-item value="tab-4">
-          <ProtocolElementsStudyPopulationSummary
-            :key="`tab-4-${tabKeys['tab-4']}`"
-          />
+          <template v-if="activePanel === 'tab-4'">
+            <ProtocolElementsStudyPopulationSummary
+              :key="`tab-4-${tabKeys['tab-4']}`"
+            />
+          </template>
         </v-window-item>
         <v-window-item value="tab-5">
-          <ProtocolElementsStudyInterventions
-            :key="`tab-5-${tabKeys['tab-5']}`"
-            :study-uid="selectedStudy.uid"
-            :update="updateInterventions"
-          />
+          <template v-if="activePanel === 'tab-5'">
+            <ProtocolElementsStudyInterventions
+              :key="`tab-5-${tabKeys['tab-5']}`"
+              :study-uid="selectedStudy.uid"
+              :update="updateInterventions"
+            />
+          </template>
         </v-window-item>
         <v-window-item value="tab-6">
-          <ProtocolElementsProceduresAndActivities
-            :key="`tab-6-${tabKeys['tab-6']}`"
-          />
+          <template v-if="activePanel === 'tab-6'">
+            <ProtocolElementsProceduresAndActivities
+              :key="`tab-6-${tabKeys['tab-6']}`"
+            />
+          </template>
         </v-window-item>
       </template>
     </NavigationTabs>

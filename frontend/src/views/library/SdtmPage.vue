@@ -5,85 +5,101 @@
       <HelpButton />
     </div>
     <NavigationTabs ref="nvTabs" :tabs="tabs">
-      <template #default="{ tabKeys }">
+      <template #default="{ tabKeys, activePanel }">
         <v-window-item value="models">
-          <DataExchangeStandardsModelsView
-            :key="`models-${tabKeys.models}`"
-            :headers="modelsHeaders"
-            uid="SDTM"
-            :redirect-model="redirectModel"
-            @redirect-to-guide="redirectToGuide"
-          />
+          <template v-if="activePanel === 'models'">
+            <DataExchangeStandardsModelsView
+              :key="`models-${tabKeys.models}`"
+              :headers="modelsHeaders"
+              uid="SDTM"
+              :redirect-model="redirectModel"
+              @redirect-to-guide="redirectToGuide"
+            />
+          </template>
         </v-window-item>
         <v-window-item value="SDTMIG">
-          <DataExchangeStandardsGuideView
-            :key="`SDTMIG-${tabKeys.SDTMIG}`"
-            :headers="igHeaders"
-            uid="SDTMIG"
-            :redirect-guide="redirectGuide"
-            @redirect-to-model="redirectToModel"
-            @redirect-to-model-with-variable="redirectToModelWithVariable"
-          />
+          <template v-if="activePanel === 'SDTMIG'">
+            <DataExchangeStandardsGuideView
+              :key="`SDTMIG-${tabKeys.SDTMIG}`"
+              :headers="igHeaders"
+              uid="SDTMIG"
+              :redirect-guide="redirectGuide"
+              @redirect-to-model="redirectToModel"
+              @redirect-to-model-with-variable="redirectToModelWithVariable"
+            />
+          </template>
         </v-window-item>
         <v-window-item value="SDTMIG__AP">
-          <DataExchangeStandardsGuideView
-            :key="`SDTMIG__AP-${tabKeys.SDTMIG__AP}`"
-            :headers="igHeaders"
-            uid="SDTMIG__AP"
-            :redirect-guide="redirectGuide"
-            @redirect-to-model="redirectToModel"
-            @redirect-to-model-with-variable="redirectToModelWithVariable"
-          />
+          <template v-if="activePanel === 'SDTMIG__AP'">
+            <DataExchangeStandardsGuideView
+              :key="`SDTMIG__AP-${tabKeys.SDTMIG__AP}`"
+              :headers="igHeaders"
+              uid="SDTMIG__AP"
+              :redirect-guide="redirectGuide"
+              @redirect-to-model="redirectToModel"
+              @redirect-to-model-with-variable="redirectToModelWithVariable"
+            />
+          </template>
         </v-window-item>
         <v-window-item value="SDTMIG__MD">
-          <DataExchangeStandardsGuideView
-            :key="`SDTMIG__MD-${tabKeys.SDTMIG__MD}`"
-            :headers="igHeaders"
-            uid="SDTMIG__MD"
-            :redirect-guide="redirectGuide"
-            @redirect-to-model="redirectToModel"
-            @redirect-to-model-with-variable="redirectToModelWithVariable"
-          />
+          <template v-if="activePanel === 'SDTMIG__MD'">
+            <DataExchangeStandardsGuideView
+              :key="`SDTMIG__MD-${tabKeys.SDTMIG__MD}`"
+              :headers="igHeaders"
+              uid="SDTMIG__MD"
+              :redirect-guide="redirectGuide"
+              @redirect-to-model="redirectToModel"
+              @redirect-to-model-with-variable="redirectToModelWithVariable"
+            />
+          </template>
         </v-window-item>
         <v-window-item value="SENDIG">
-          <DataExchangeStandardsGuideView
-            :key="`SENDIG-${tabKeys.SENDIG}`"
-            :headers="igHeaders"
-            uid="SENDIG"
-            :redirect-guide="redirectGuide"
-            @redirect-to-model="redirectToModel"
-            @redirect-to-model-with-variable="redirectToModelWithVariable"
-          />
+          <template v-if="activePanel === 'SENDIG'">
+            <DataExchangeStandardsGuideView
+              :key="`SENDIG-${tabKeys.SENDIG}`"
+              :headers="igHeaders"
+              uid="SENDIG"
+              :redirect-guide="redirectGuide"
+              @redirect-to-model="redirectToModel"
+              @redirect-to-model-with-variable="redirectToModelWithVariable"
+            />
+          </template>
         </v-window-item>
         <v-window-item value="SENDIG__AR">
-          <DataExchangeStandardsGuideView
-            :key="`SENDIG__AR-${tabKeys.SENDIG__AR}`"
-            :headers="igHeaders"
-            uid="SENDIG__AR"
-            :redirect-guide="redirectGuide"
-            @redirect-to-model="redirectToModel"
-            @redirect-to-model-with-variable="redirectToModelWithVariable"
-          />
+          <template v-if="activePanel === 'SENDIG__AR'">
+            <DataExchangeStandardsGuideView
+              :key="`SENDIG__AR-${tabKeys.SENDIG__AR}`"
+              :headers="igHeaders"
+              uid="SENDIG__AR"
+              :redirect-guide="redirectGuide"
+              @redirect-to-model="redirectToModel"
+              @redirect-to-model-with-variable="redirectToModelWithVariable"
+            />
+          </template>
         </v-window-item>
         <v-window-item value="SENDIG__DART">
-          <DataExchangeStandardsGuideView
-            :key="`SENDIG__DART-${tabKeys.SENDIG__DART}`"
-            :headers="igHeaders"
-            uid="SENDIG__DART"
-            :redirect-guide="redirectGuide"
-            @redirect-to-model="redirectToModel"
-            @redirect-to-model-with-variable="redirectToModelWithVariable"
-          />
+          <template v-if="activePanel === 'SENDIG__DART'">
+            <DataExchangeStandardsGuideView
+              :key="`SENDIG__DART-${tabKeys.SENDIG__DART}`"
+              :headers="igHeaders"
+              uid="SENDIG__DART"
+              :redirect-guide="redirectGuide"
+              @redirect-to-model="redirectToModel"
+              @redirect-to-model-with-variable="redirectToModelWithVariable"
+            />
+          </template>
         </v-window-item>
         <v-window-item value="SENDIG__GENETOX">
-          <DataExchangeStandardsGuideView
-            :key="`SENDIG__GENETOX-${tabKeys.SENDIG__GENETOX}`"
-            :headers="igHeaders"
-            uid="SENDIG__GENETOX"
-            :redirect-guide="redirectGuide"
-            @redirect-to-model="redirectToModel"
-            @redirect-to-model-with-variable="redirectToModelWithVariable"
-          />
+          <template v-if="activePanel === 'SENDIG__GENETOX'">
+            <DataExchangeStandardsGuideView
+              :key="`SENDIG__GENETOX-${tabKeys.SENDIG__GENETOX}`"
+              :headers="igHeaders"
+              uid="SENDIG__GENETOX"
+              :redirect-guide="redirectGuide"
+              @redirect-to-model="redirectToModel"
+              @redirect-to-model-with-variable="redirectToModelWithVariable"
+            />
+          </template>
         </v-window-item>
       </template>
     </NavigationTabs>

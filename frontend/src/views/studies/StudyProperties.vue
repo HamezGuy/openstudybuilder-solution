@@ -8,17 +8,25 @@
       />
     </div>
     <NavigationTabs :tabs="tabs">
-      <template #default="{ tabKeys }">
+      <template #default="{ tabKeys, activePanel }">
         <v-window-item value="type">
-          <StudyTypeSummary :key="`type-${tabKeys.type}`" />
+          <template v-if="activePanel === 'type'">
+            <StudyTypeSummary :key="`type-${tabKeys.type}`" />
+          </template>
         </v-window-item>
         <v-window-item value="attributes">
-          <InterventionTypeSummary :key="`attributes-${tabKeys.attributes}`" />
+          <template v-if="activePanel === 'attributes'">
+            <InterventionTypeSummary
+              :key="`attributes-${tabKeys.attributes}`"
+            />
+          </template>
         </v-window-item>
         <v-window-item value="other_study_attributes">
-          <OtherStudyAttributesTable
-            :key="`other_study_attributes-${tabKeys.other_study_attributes}`"
-          />
+          <template v-if="activePanel === 'other_study_attributes'">
+            <OtherStudyAttributesTable
+              :key="`other_study_attributes-${tabKeys.other_study_attributes}`"
+            />
+          </template>
         </v-window-item>
       </template>
     </NavigationTabs>

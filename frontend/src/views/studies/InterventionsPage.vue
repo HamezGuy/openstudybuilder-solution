@@ -7,21 +7,29 @@
       <HelpButton :help-text="$t('_help.StudyInterventionsTable.general')" />
     </div>
     <NavigationTabs :tabs="tabs">
-      <template #default>
+      <template #default="{ activePanel }">
         <v-window-item value="overview">
-          <InterventionOverview />
+          <template v-if="activePanel === 'overview'">
+            <InterventionOverview />
+          </template>
         </v-window-item>
         <v-window-item value="study_compounds">
-          <CompoundTable />
+          <template v-if="activePanel === 'study_compounds'">
+            <CompoundTable />
+          </template>
         </v-window-item>
         <v-window-item value="study_compound_dosings">
-          <CompoundDosingTable />
+          <template v-if="activePanel === 'study_compound_dosings'">
+            <CompoundDosingTable />
+          </template>
         </v-window-item>
         <v-window-item value="other_interventions">
-          <h2 class="text-title-large ma-4">
-            {{ $t('InterventionOverview.design_by_epoch') }}
-          </h2>
-          <StudyStructureOverview />
+          <template v-if="activePanel === 'other_interventions'">
+            <h2 class="text-title-large ma-4">
+              {{ $t('InterventionOverview.design_by_epoch') }}
+            </h2>
+            <StudyStructureOverview />
+          </template>
         </v-window-item>
       </template>
     </NavigationTabs>

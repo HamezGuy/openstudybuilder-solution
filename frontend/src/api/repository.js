@@ -93,6 +93,7 @@ const responseInterceptors = {
     return response
   },
   onRejected: function (error) {
+    if (axios.isCancel(error)) return Promise.reject(error)
     console.log(error)
     if (error.config && !error.config.ignoreErrors) {
       if (!error.response) {

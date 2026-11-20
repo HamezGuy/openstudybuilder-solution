@@ -20,6 +20,22 @@
         @click="toggleMenu"
       />
     </template>
+    <nav
+      v-if="sections.length > 1"
+      :aria-label="$t('Workspace.sections')"
+      class="section-navigation"
+    >
+      <div class="section-label">{{ $t('Workspace.sections') }}</div>
+      <router-link
+        v-for="entry in sections"
+        :key="entry.value"
+        :to="entry.to"
+        :aria-current="route.params.tab === entry.value ? 'page' : undefined"
+        class="section-link"
+      >
+        {{ entry.title }}
+      </router-link>
+    </nav>
     <v-list
       v-if="appStore.menuItems"
       v-model:opened="open"
@@ -83,7 +99,8 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import { useFeatureFlagsStore } from '@/stores/feature-flags'
 import RedirectHandler from '@/components/tools/RedirectHandler.vue'
@@ -91,15 +108,25 @@ import RedirectHandler from '@/components/tools/RedirectHandler.vue'
 const appStore = useAppStore()
 const featureFlagsStore = useFeatureFlagsStore()
 
-onMounted(() => {
-  appStore.fetchCtLibraries()
-})
+const route = useRoute()
+const sections = computed(() =>
+  appStore.screenNavigation && appStore.screenNavigation.route === route.name
+    ? appStore.screenNavigation.choices
+    : []
+)
 
 const drawerRefreshKey = ref(1)
 const refreshNeeded = ref(false)
 const mini = ref(false)
 const target = ref({})
 const open = ref([])
+watch(
+  () => appStore.section === 'Library' && open.value.includes('codelists_tile'),
+  (visible) => {
+    if (visible) appStore.fetchCtLibraries()
+  },
+  { immediate: true }
+)
 
 const menuExpandedIcon = computed(() => {
   return mini.value ? 'mdi-chevron-double-right' : 'mdi-chevron-double-left'
@@ -146,6 +173,36 @@ function checkFeatureFlag(item) {
 </script>
 
 <style scoped lang="scss">
+.section-navigation {
+  padding: 8px 12px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.28);
+}
+.section-label {
+  font-size: 0.78rem;
+  margin: 2px 8px 6px;
+  opacity: 0.85;
+}
+.section-link {
+  display: block;
+  padding: 5px 9px;
+  border-radius: 5px;
+  color: inherit;
+  text-decoration: none;
+  line-height: 1.35;
+}
+.section-link:hover,
+.section-link:focus-visible {
+  text-decoration: underline;
+}
+.section-link[aria-current='page'] {
+  background: white;
+  color: rgb(var(--v-theme-primary));
+  font-weight: 700;
+}
+.v-navigation-drawer--rail:not(:hover) .section-navigation {
+  display: none;
+}
+
 .top-logo {
   height: 64px;
   cursor: pointer;

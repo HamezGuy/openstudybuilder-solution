@@ -47,8 +47,8 @@ test('study pages bind to the selected study and version across late responses a
       getStudyElements() { return response({total:1}) },
       getStudyPopulationMetadata() { return response({current_metadata:{study_population:{}}}) },
       getAllForStudy(uid) { return response({items:[{arm_uid:uid,name:'Arm '+uid+' v'+fixture.store.selectedStudyVersion}]}) },
-      getAllCohorts() { return fixture.fail ? Promise.reject(new Error('offline')) : response({items:[]}) },
-      getStudyEpochs(uid) { return response({items:[{uid,epoch_name:'Epoch '+uid}]}) },
+      getAllCohorts(uid, options) { fixture.cohortPages ??= []; fixture.cohortPages.push(options.page_size); return fixture.fail ? Promise.reject(new Error('offline')) : response({items:[], total:0}) },
+      getStudyEpochs(uid) { fixture.epochReads=(fixture.epochReads||0)+1; return response({items:[{uid,epoch_name:'Epoch '+uid}]}) },
       getAllStudyCells() { return response([]) }, getSourceVariable() {return response({})},
       getStudyDesignClass() {return response({value:'Parallel'})}
     } `
@@ -107,6 +107,12 @@ test('study pages bind to the selected study and version across late responses a
   const errors = []
   page.on('pageerror', (e) => errors.push(e.message))
   await page.goto(server.resolvedUrls.local[0] + 'index.html')
+  await expect(page.locator('summary')).toBeVisible()
+  assert.deepEqual(
+    await page.evaluate(() => [fixture.epochReads || 0, fixture.cohortPages]),
+    [0, [1]]
+  )
+  await page.locator('summary').click()
   await expect(page.getByText('Arm A v1')).toBeVisible()
   await page.evaluate(() => {
     fixture.initializing = fixture.store.initialize()
@@ -115,14 +121,17 @@ test('study pages bind to the selected study and version across late responses a
   assert.equal(await page.evaluate(() => fixture.versionRead), '1')
   await page.evaluate(async () => {
     fixture.holdPreferences = 'B'
-    fixture.selectingB = fixture.store.selectStudy({
-      uid: 'B',
-      version_number: '1',
-    })
+    await fixture.store.selectStudy({ uid: 'B', version_number: '1' })
+    fixture.selectingB = fixture.store.readSchedulePreference('soaPreferences')
   })
   await expect(page.getByText('Arm A v1')).toHaveCount(0)
   await page.evaluate(() => fixture.select('C', '2'))
+  await page.locator('summary').click()
   await expect(page.getByText('Arm C v2')).toBeVisible()
+  assert.equal(await page.evaluate(() => fixture.store.soaPreferences), null)
+  await page.evaluate(() =>
+    fixture.store.readSchedulePreference('soaPreferences')
+  )
   await page.evaluate(async () => {
     fixture.preferences()
     fixture.release()
@@ -137,6 +146,7 @@ test('study pages bind to the selected study and version across late responses a
     ['C', 'C', 'C']
   )
   await page.evaluate(() => fixture.select('C', '3'))
+  await page.locator('summary').click()
   await expect(page.getByText('Arm C v3')).toBeVisible()
   await expect(page.getByText('Arm C v2')).toHaveCount(0)
   await page.evaluate(() => {
@@ -151,6 +161,7 @@ test('study pages bind to the selected study and version across late responses a
     fixture.fail = false
   })
   await page.getByRole('button', { name: 'Retry' }).click()
+  await page.locator('summary').click()
   await expect(page.getByText('Epoch D')).toBeVisible()
   assert.deepEqual(errors, [])
 })

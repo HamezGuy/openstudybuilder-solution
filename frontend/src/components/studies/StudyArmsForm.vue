@@ -225,7 +225,7 @@
 </template>
 
 <script setup>
-import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
 import arms from '@/api/arms'
 import codelists from '@/api/controlledTerminology/terms'
 import SimpleFormDialog from '@/components/tools/SimpleFormDialog.vue'
@@ -321,6 +321,10 @@ watch(
     if (isOpen) {
       loadArm()
       loadArmDataOrigins()
+      if (!props.originOnly && !armTypes.value.length)
+        codelists.getTermsByCodelist('armTypes').then(({ data }) => {
+          if (active) armTypes.value = data.items
+        })
     } else {
       armLoadSequence++
     }
@@ -334,12 +338,6 @@ watch(
     originPairError.value = null
   }
 )
-
-onMounted(() => {
-  codelists.getTermsByCodelist('armTypes').then((resp) => {
-    armTypes.value = resp.data.items
-  })
-})
 
 onBeforeUnmount(() => {
   active = false

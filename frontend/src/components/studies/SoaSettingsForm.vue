@@ -17,7 +17,7 @@
             v-model="preferredTimeUnit"
             class="ml-4"
             hide-details
-            :disabled="!accessGuard.checkPermission($roles.STUDY_WRITE)"
+            :disabled="!editable"
           >
             <v-radio :label="$t('ProtocolFlowchart.day')" value="day" />
             <v-radio :label="$t('ProtocolFlowchart.week')" value="week" />
@@ -29,9 +29,15 @@
             :label="$t('ProtocolFlowchart.baseline_as_time_zero')"
             hide-details
             class="ml-6"
-            :disabled="!accessGuard.checkPermission($roles.STUDY_WRITE)"
+            :disabled="!editable"
           />
         </v-row>
+        <v-alert v-if="settingsError" type="warning" variant="tonal">
+          {{ $t('Workspace.settings_unavailable') }}
+          <v-btn variant="text" @click="loadSettings">{{
+            $t('_global.retry')
+          }}</v-btn>
+        </v-alert>
         <v-alert
           density="compact"
           type="info"
@@ -59,6 +65,7 @@
         rounded
         elevation="1"
         width="120px"
+        :disabled="!editable || !preferredTimeUnit || baselineAsZero === null"
         @click="submit"
       >
         {{ $t('_global.save') }}
@@ -69,7 +76,7 @@
 <script setup>
 import { useStudiesGeneralStore } from '@/stores/studies-general'
 import { useAccessGuard } from '@/composables/accessGuard'
-import { watch, computed, onMounted, ref } from 'vue'
+import { computed, inject, onMounted, ref } from 'vue'
 import units from '@/api/units'
 import unitConstants from '@/constants/units'
 
@@ -84,26 +91,37 @@ const baselineAsZero = ref(null)
 const soaPreferredTimeUnit = computed(() => {
   return studiesGeneralStore.soaPreferredTimeUnit
 })
-const soaPreferences = computed(() => {
-  return studiesGeneralStore.soaPreferences
-})
 
-watch(soaPreferences, () => {
-  units
-    .getBySubset(unitConstants.TIME_UNIT_SUBSET_STUDY_PREFERRED_TIME_UNIT)
-    .then((resp) => {
-      preferredTimeUnits.value = resp.data.items
-    })
-  if (soaPreferredTimeUnit.value) {
-    preferredTimeUnit.value = soaPreferredTimeUnit.value.time_unit_name
+const roles = inject('roles')
+const loading = ref(true)
+const settingsError = ref(false)
+const editable = computed(
+  () =>
+    !loading.value &&
+    !settingsError.value &&
+    accessGuard.checkPermission(roles.STUDY_WRITE)
+)
+async function loadSettings() {
+  loading.value = true
+  settingsError.value = false
+  try {
+    const [[preferred, settings], unitOptions] = await Promise.all([
+      studiesGeneralStore.getSoaPreferences(),
+      units.getBySubset(
+        unitConstants.TIME_UNIT_SUBSET_STUDY_PREFERRED_TIME_UNIT
+      ),
+    ])
+    if (!preferred || !settings) throw Error('Settings unavailable')
+    preferredTimeUnits.value = unitOptions.data.items
+    preferredTimeUnit.value = preferred.time_unit_name
+    baselineAsZero.value = settings.baseline_as_time_zero
+  } catch {
+    settingsError.value = true
+  } finally {
+    loading.value = false
   }
-  baselineAsZero.value = soaPreferences.value.baseline_as_time_zero
-})
-
-onMounted(() => {
-  studiesGeneralStore.getSoaPreferences()
-})
-
+}
+onMounted(loadSettings)
 async function submit() {
   await updatePreferredTimeUnit()
   await updateSoaPreferences()
@@ -114,7 +132,7 @@ function cancel() {
 }
 
 async function updatePreferredTimeUnit() {
-  if (soaPreferredTimeUnit.value.time_unit_name === preferredTimeUnit.value) {
+  if (soaPreferredTimeUnit.value?.time_unit_name === preferredTimeUnit.value) {
     return
   }
   for (const timeUnit of preferredTimeUnits.value) {

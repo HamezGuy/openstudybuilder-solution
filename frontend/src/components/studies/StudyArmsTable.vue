@@ -95,14 +95,13 @@
             !accessGuard.checkPermission($roles.STUDY_WRITE) ||
             studiesGeneralStore.selectedStudyVersion !== null
           "
-          @click.stop="showCohortsStepper = true"
-          @close="showCohortsStepper = false"
+          :aria-label="$t('Workspace.configure_arms')"
+          :loading="configuringArms"
+          @click.stop="configureArms()"
         >
-          <v-icon left>{{
-            editStepper ? 'mdi-pencil-outline' : 'mdi-plus'
-          }}</v-icon>
+          <v-icon>mdi-sitemap-outline</v-icon>
           <v-tooltip activator="parent" location="top">
-            {{ $t('StudyArmsTable.create_arm') }}
+            {{ $t('Workspace.configure_arms') }}
           </v-tooltip>
         </v-btn>
       </template>
@@ -157,7 +156,7 @@ import HistoryTable from '@/components/tools/HistoryTable.vue'
 import CohortsStepper from './CohortsStepper.vue'
 import { useAccessGuard } from '@/composables/accessGuard'
 import { useStudiesGeneralStore } from '@/stores/studies-general'
-import { computed, inject, ref, onMounted } from 'vue'
+import { computed, inject, ref, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useDragAndDrop } from '@formkit/drag-and-drop/vue'
 import cohortConstants from '@/constants/cohorts'
@@ -179,23 +178,49 @@ const [parent, arms] = useDragAndDrop([], {
   },
 })
 
-onMounted(() => {
-  cohortsApi
-    .checkDesignClassEditable(studiesGeneralStore.selectedStudy.uid)
-    .then((resp) => {
-      editStepper.value = !resp.data
-    })
-  cohortsApi
-    .getStudyDesignClass(studiesGeneralStore.selectedStudy.uid)
-    .then((resp) => {
-      designClass.value = resp.data.value
-    })
-    .catch((error) => {
-      if (error.response.status === 404) {
-        console.error(error)
-      }
-    })
+const configuringArms = ref(false)
+let active = true
+onBeforeUnmount(() => {
+  active = false
 })
+
+async function configureArms(item) {
+  if (
+    configuringArms.value ||
+    studiesGeneralStore.selectedStudyVersion !== null ||
+    !accessGuard.checkPermission(roles.STUDY_WRITE)
+  )
+    return
+  configuringArms.value = true
+  const uid = studiesGeneralStore.selectedStudy.uid
+  try {
+    const [editable, classification] = await Promise.all([
+      cohortsApi.checkDesignClassEditable(uid),
+      cohortsApi.getStudyDesignClass(uid).catch((error) => {
+        if (error.response?.status === 404) return { data: { value: '' } }
+        throw error
+      }),
+    ])
+    if (!active || studiesGeneralStore.selectedStudy?.uid !== uid) return
+    editStepper.value = !editable.data
+    designClass.value = classification.data.value
+    if (item && designClass.value === cohortConstants.MANUAL) {
+      editOriginOnly.value = false
+      armToEdit.value = item
+      showArmsForm.value = true
+    } else {
+      showCohortsStepper.value = true
+    }
+  } catch {
+    if (active)
+      notificationHub.add({
+        type: 'error',
+        msg: t('Workspace.arm_settings_unavailable'),
+      })
+  } finally {
+    configuringArms.value = false
+  }
+}
 
 const headers = [
   { title: '', key: 'actions', width: '1%' },
@@ -236,7 +261,7 @@ const actions = [
     icon: 'mdi-pencil-outline',
     iconColor: 'primary',
     condition: () => !studiesGeneralStore.selectedStudyVersion,
-    click: editArm,
+    click: configureArms,
     accessRole: roles.STUDY_WRITE,
   },
   {
@@ -322,21 +347,6 @@ function fetchStudyArms(filters, options, filtersUpdated) {
 
 function closeCohortStepper() {
   showCohortsStepper.value = false
-  cohortsApi
-    .checkDesignClassEditable(studiesGeneralStore.selectedStudy.uid)
-    .then((resp) => {
-      editStepper.value = !resp.data
-    })
-  cohortsApi
-    .getStudyDesignClass(studiesGeneralStore.selectedStudy.uid)
-    .then((resp) => {
-      designClass.value = resp.data.value
-    })
-    .catch((error) => {
-      if (error.response.status === 404) {
-        console.error(error)
-      }
-    })
   table.value.filterTable()
 }
 
@@ -345,16 +355,6 @@ function closeForm() {
   showArmsForm.value = false
   editOriginOnly.value = false
   table.value.filterTable()
-}
-
-function editArm(item) {
-  if (designClass.value === cohortConstants.MANUAL) {
-    editOriginOnly.value = false
-    armToEdit.value = item
-    showArmsForm.value = true
-  } else {
-    showCohortsStepper.value = true
-  }
 }
 
 function editArmOrigin(item) {
