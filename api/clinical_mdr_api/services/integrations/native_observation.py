@@ -7,13 +7,18 @@ nativeStudyAsOf), never arbitrary nested clinical metadata.
 
 import hashlib
 import re
+from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import asdict, dataclass, is_dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from importlib import import_module
-from typing import Any, Callable
+from typing import Any
 
 from clinical_mdr_api.services.integrations.canonical_json import canonical_json
+from clinical_mdr_api.services.integrations.edc_native_study_records import (
+    COLLECTIONS as STUDY_RECORD_COLLECTIONS,
+    collect_study_native_records,
+)
 from common.exceptions import NotFoundException
 
 
@@ -84,9 +89,85 @@ class NativeCollection:
     paginated: bool = True
     no_brackets: bool = False
     query_scope_only: bool = False
+    record_kind: str | None = None
+
+
+def study_record_collection(kind, collection, resource_type, audit=None):
+    """Use the study export's exact native method, scope and selection identity."""
+    source = next(item for item in STUDY_RECORD_COLLECTIONS if item.kind == kind)
+    return NativeCollection(
+        collection,
+        resource_type,
+        source.identity,
+        source.module,
+        source.service,
+        source.method,
+        audit,
+        record_kind=kind,
+    )
 
 
 COLLECTIONS = (
+    NativeCollection(
+        "study_control_pools",
+        "StudyControlPool",
+        "uid",
+        "study_control_pool",
+        "StudyControlPoolService",
+        "get_control_pools",
+        audit=None,
+        paginated=False,
+    ),
+    NativeCollection(
+        "study_adaptation_references",
+        "StudyAdaptationReference",
+        "uid",
+        "study_control_pool",
+        "StudyControlPoolService",
+        "get_adaptation_references",
+        audit=None,
+        paginated=False,
+    ),
+    NativeCollection(
+        "study_definition_documents",
+        "StudyDefinitionDocument",
+        "uid",
+        "study_definition_document",
+        "StudyDefinitionDocumentService",
+        "get_native_selections",
+        audit=None,
+        paginated=False,
+    ),
+    study_record_collection("studySoAGroup", "study_soa_groups", "StudySoAGroup"),
+    study_record_collection(
+        "studySoAFootnote",
+        "study_soa_footnotes",
+        "StudySoAFootnote",
+        "audit_trail_all_soa_footnotes",
+    ),
+    study_record_collection(
+        "studyDiseaseMilestone",
+        "study_disease_milestones",
+        "StudyDiseaseMilestone",
+        "audit_trail_all_disease_milestones",
+    ),
+    study_record_collection(
+        "studyDataSupplier",
+        "study_data_suppliers",
+        "StudySelectionDataSupplier",
+        "get_audit_trail",
+    ),
+    study_record_collection(
+        "studyDesignClass", "study_design_class", "StudyDesignClass"
+    ),
+    study_record_collection(
+        "studySourceVariable", "study_source_variable", "StudySourceVariable"
+    ),
+    study_record_collection(
+        "studyOperationalActivitySchedule",
+        "study_operational_activity_schedules",
+        "StudyOperationalActivitySchedule",
+    ),
     NativeCollection(
         "study_arm_lifecycle_events",
         "StudyArmLifecycleEvent",
@@ -405,10 +486,39 @@ def _verified_user_projection(rows: list[Any]) -> list[dict[str, Any]]:
                 raise NativeObservationError(
                     "NATIVE_OBSERVATION_USER_PROJECTION_INVALID"
                 )
-            entry[field] = value if value else None
+            entry[field] = value or None
         seen.add(entry["userId"])
         result.append(entry)
     return sorted(result, key=lambda entry: entry["userId"])
+
+
+def _current_readings(spec: NativeCollection, reader: Callable, study_uid: str):
+    if spec.record_kind:
+        entries, census = collect_study_native_records(
+            study_uid, readers={spec.record_kind: reader}
+        )
+        issues = [row for row in census if row["kind"] == "ambiguous_native_reading"]
+        if spec.record_kind == "studyOperationalActivitySchedule":
+            # The operational SoA fans one schedule UID out to its selected instances.
+            # Preserve every reading. List order must not manufacture a schedule edit.
+            schedules: dict[str, list] = {}
+            for entry in entries:
+                schedules.setdefault(entry["uid"], []).append(entry["record"])
+            return [
+                {
+                    "study_uid": study_uid,
+                    spec.uid_field: uid,
+                    "readings": sorted(rows, key=canonical_json),
+                }
+                for uid, rows in schedules.items()
+            ], issues
+        return [entry["record"] for entry in entries], issues
+    options: dict[str, Any] = {"study_uid": study_uid}
+    if spec.paginated:
+        options["page_size"] = 0
+    if spec.no_brackets:
+        options["no_brackets"] = False
+    return [_json(row) for row in _rows(reader(**options), spec.collection)], []
 
 
 def collect_native_observation(
@@ -572,7 +682,11 @@ def collect_native_observation(
             audit_reader = (
                 service.repository.find_selection_history
                 if spec.collection
-                in ("study_activity_groups", "study_activity_subgroups")
+                in (
+                    "study_activity_groups",
+                    "study_activity_subgroups",
+                    "study_soa_groups",
+                )
                 else getattr(service, spec.audit) if spec.audit else None
             )
             if spec.collection == "study_endpoints":
@@ -581,14 +695,7 @@ def collect_native_observation(
                 )
         else:
             current_reader, audit_reader = readers[spec.collection]
-        options: dict[str, Any] = {"study_uid": study_uid}
-        if spec.paginated:
-            options["page_size"] = 0
-        if spec.no_brackets:
-            options["no_brackets"] = False
-        current = [
-            _json(row) for row in _rows(current_reader(**options), spec.collection)
-        ]
+        current, reading_issues = _current_readings(spec, current_reader, study_uid)
         seen = set()
         for row in current:
             if ("study_uid" in row and row["study_uid"] != study_uid) or (
@@ -653,7 +760,11 @@ def collect_native_observation(
             if uid is None and (
                 audit_projection_error
                 or spec.collection
-                in ("study_activity_groups", "study_activity_subgroups")
+                in (
+                    "study_activity_groups",
+                    "study_activity_subgroups",
+                    "study_soa_groups",
+                )
             ):
                 uid = row.get("study_selection_uid")
             if not isinstance(uid, str) or not uid:
@@ -678,8 +789,10 @@ def collect_native_observation(
         coverage.append(
             {
                 "collection": spec.collection,
+                "resourceType": spec.resource_type,
                 "complete": True,
                 "recordCount": len(current),
+                **({"readingIssues": reading_issues} if reading_issues else {}),
                 "auditStatus": (
                     "raw-retained"
                     if audit_projection_error
@@ -774,7 +887,7 @@ def collect_native_observation(
     content = {
         "schemaVersion": "osb-native-observation/1.0",
         "nativeStudyId": study_uid,
-        "capturedAt": datetime.now(timezone.utc).isoformat(),
+        "capturedAt": datetime.now(UTC).isoformat(),
         "comparisonProfile": COMPARISON_PROFILE,
         "records": records,
         "auditRecords": history,

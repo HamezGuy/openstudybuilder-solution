@@ -280,25 +280,9 @@ class StudyElementSelectionService(
             ## sync with DB and save the update
             repos.study_element_repository.save(selection_aggregate, self.author)
 
-            # Fetch the new selection which was just added
-            (
-                new_selection,
-                order,
-            ) = selection_aggregate.get_specific_element_selection(
-                new_selection.study_selection_uid
-            )
-            terms_at_specific_datetime = self._extract_study_standards_effective_date(
-                study_uid=study_uid
-            )
-            # add the element and return
-            return StudySelectionElement.from_study_selection_element_ar_and_order(
-                study_uid=study_uid,
-                selection=new_selection,
-                order=order,
-                get_term_element_type_by_element_subtype=repos.study_element_repository.get_element_type_term_uid_by_element_subtype_term_uid,
-                find_codelist_term_by_uid_and_submval=self._repos.ct_codelist_name_repository.get_codelist_term_by_uid_and_submval,
-                find_all_study_time_units=self._repos.unit_definition_repository.find_all,
-                terms_at_specific_datetime=terms_at_specific_datetime,
+            # Return the dates and values actually stored on the audit revision.
+            return self.get_specific_selection(
+                study_uid, new_selection.study_selection_uid
             )
         finally:
             repos.close()
@@ -390,7 +374,7 @@ class StudyElementSelectionService(
         finally:
             repos.close()
 
-    @db.transaction
+    @ensure_transaction(db)
     def get_specific_selection(
         self,
         study_uid: str,
@@ -484,11 +468,26 @@ class StudyElementSelectionService(
             assert selection_aggregate is not None
 
             # Load the current VO for updates
-            current_vo, order = selection_aggregate.get_specific_object_selection(
+            current_vo, _ = selection_aggregate.get_specific_object_selection(
                 study_selection_uid=study_selection_uid
             )
 
             # merge current with updates
+            expected = selection_update_input.expected_start_date
+            if expected is not None and expected != current_vo.start_date:
+                raise exceptions.VersionConflictException(
+                    code="STUDY_ELEMENT_VERSION_CONFLICT",
+                    msg="The study element changed. Reload its current revision before editing.",
+                    field="expected_start_date",
+                    current={
+                        "study_element_uid": study_selection_uid,
+                        "current_start_date": (
+                            current_vo.start_date.isoformat()
+                            if current_vo.start_date
+                            else None
+                        ),
+                    },
+                )
             updated_selection = self._patch_prepare_new_study_element(
                 request_study_element=selection_update_input,
                 current_study_element=current_vo,
@@ -504,23 +503,8 @@ class StudyElementSelectionService(
             # sync with DB and save the update
             repos.study_element_repository.save(selection_aggregate, self.author)
 
-            # Fetch the new selection which was just updated
-            new_selection, order = selection_aggregate.get_specific_object_selection(
-                study_selection_uid
-            )
-            terms_at_specific_datetime = self._extract_study_standards_effective_date(
-                study_uid=study_uid
-            )
-            # add the element and return
-            return StudySelectionElement.from_study_selection_element_ar_and_order(
-                study_uid=study_uid,
-                selection=new_selection,
-                order=order,
-                get_term_element_type_by_element_subtype=repos.study_element_repository.get_element_type_term_uid_by_element_subtype_term_uid,
-                find_codelist_term_by_uid_and_submval=self._repos.ct_codelist_name_repository.get_codelist_term_by_uid_and_submval,
-                find_all_study_time_units=self._repos.unit_definition_repository.find_all,
-                terms_at_specific_datetime=terms_at_specific_datetime,
-            )
+            # Return the dates and values actually stored on the audit revision.
+            return self.get_specific_selection(study_uid, study_selection_uid)
         finally:
             repos.close()
 

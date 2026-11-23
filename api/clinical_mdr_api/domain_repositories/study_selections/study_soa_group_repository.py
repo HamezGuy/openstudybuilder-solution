@@ -139,30 +139,13 @@ class StudySoAGroupRepository(StudySelectionActivityBaseRepository[StudySoAGroup
         )
 
     def get_audit_trail_query(self, study_selection_uid: str | None):
-        if study_selection_uid:
-            audit_trail_cypher = """
-            MATCH (sr:StudyRoot { uid: $study_uid})-[:AUDIT_TRAIL]->(:StudyAction)-[:BEFORE|AFTER]->(sa:StudySoAGroup {uid: $study_selection_uid})
-                <-[:STUDY_ACTIVITY_HAS_STUDY_SOA_GROUP]-(study_activity:StudyActivity)
-            WITH sa, study_activity
-            MATCH (sa)-[:AFTER|BEFORE*0..]-(all_sa:StudySoAGroup)
-            WITH distinct(all_sa), study_activity
-            """
-        else:
-            audit_trail_cypher = """
-            MATCH (sr:StudyRoot { uid: $study_uid})-[:AUDIT_TRAIL]->(:StudySoAGroup)-[:BEFORE|AFTER]->(all_sa:StudySoAGroup)
-                <-[:STUDY_ACTIVITY_HAS_STUDY_SOA_GROUP]-(study_activity:StudyActivity)
-            WITH DISTINCT all_sa, study_activity
-            """
-        audit_trail_cypher += """
-
-                    WITH DISTINCT all_sa, study_activity
+        return """
+                    MATCH (sr:StudyRoot {uid:$study_uid})-[:AUDIT_TRAIL]->(asa:StudyAction)-[:AFTER]->(all_sa:StudySoAGroup)
+                    WHERE $study_selection_uid IS NULL OR all_sa.uid = $study_selection_uid
                     OPTIONAL MATCH (all_sa)-[:HAS_FLOWCHART_GROUP]->(:CTTermContext)-[:HAS_SELECTED_TERM]->
                         (fgr:CTTermRoot)-[:HAS_NAME_ROOT]->(:CTTermNameRoot)-[:LATEST]->
                         (soa_group_term_name:CTTermNameValue)
-                    WITH DISTINCT all_sa, fgr, soa_group_term_name, study_activity
-                    ORDER BY study_activity.order ASC
-                    MATCH (all_sa)<-[:AFTER]-(asa:StudyAction)
-                    OPTIONAL MATCH (all_sa)<-[:BEFORE]-(bsa:StudyAction)
+                    OPTIONAL MATCH (sr)-[:AUDIT_TRAIL]->(bsa:StudyAction)-[:BEFORE]->(all_sa)
                     WITH all_sa, asa, bsa, fgr, soa_group_term_name
                     ORDER BY all_sa.uid, asa.date DESC
                     RETURN
@@ -172,13 +155,12 @@ class StudySoAGroupRepository(StudySelectionActivityBaseRepository[StudySoAGroup
                         soa_group_term_name.name AS soa_group_term_name,
                         apoc.coll.toSet([(all_sa)<-[:STUDY_ACTIVITY_HAS_STUDY_SOA_GROUP]-(:StudyActivity)-[:STUDY_ACTIVITY_HAS_STUDY_ACTIVITY_GROUP]->(study_activity_group:StudyActivityGroup) 
                             | study_activity_group.uid]) as study_activity_group_uids,
-                        sa.order AS order,
+                        all_sa.order AS order,
                         asa.date AS start_date,
                         asa.author_id AS author_id,
                         labels(asa) AS change_type,
                         bsa.date AS end_date
                     """
-        return audit_trail_cypher
 
     def get_study_selection_node_from_latest_study_value(
         self, study_value: StudyValue, study_selection: StudySelection

@@ -4660,6 +4660,13 @@ class StudyActivityInstructionBatchOutput(BaseModel):
 
 
 class StudySelectionElement(StudySelection):
+    edit_revision: Annotated[
+        AwareDatetime | None,
+        Field(
+            description="Pass this revision as expected_start_date for a conditional element edit."
+        ),
+    ] = None
+
     element_uid: Annotated[
         str | None,
         Field(description=ELEMENT_UID_DESC, json_schema_extra={"nullable": True}),
@@ -4842,6 +4849,7 @@ class StudySelectionElement(StudySelection):
             element_subtype=element_subtype,
             element_type=element_type,
             study_compound_dosing_count=selection.study_compound_dosing_count,
+            edit_revision=selection.start_date if study_value_version is None else None,
             start_date=selection.start_date,
             author_username=selection.author_username,
             end_date=selection.end_date,
@@ -4967,6 +4975,13 @@ class StudySelectionElementCreateInput(PostInputModel):
 
 
 class StudySelectionElementInput(PatchInputModel):
+    expected_start_date: Annotated[
+        AwareDatetime | None,
+        Field(
+            description="Start date of the element revision used to prepare this edit."
+        ),
+    ] = None
+
     name: Annotated[str | None, Field(description="name for the study element")] = None
 
     short_name: Annotated[

@@ -11,6 +11,7 @@ import pytest
 from neomodel import db
 
 from clinical_mdr_api.routers.integrations import study_authority
+from clinical_mdr_api.routers.studies import study_source_variables
 from clinical_mdr_api.services.studies.study_version_snapshot import (
     StudyVersionSnapshotService,
 )
@@ -137,6 +138,91 @@ def _clinical_result(diff):
         "structurally_equal": diff["structurally_equal"],
         "semantic_comparison_complete": diff["semantic_comparison_complete"],
     }
+
+
+def test_authored_selections_return_with_their_native_values(
+    protocol_graph, lifecycle_client  # noqa: F811 - imported pytest fixtures
+):
+    fixture, _ = protocol_graph
+    study_uid = _create_protocol_study(
+        fixture, lifecycle_client, title="Synthetic reconciliation"
+    )
+    lifecycle_client.app.include_router(
+        study_authority.router, prefix="/integrations/study-authority"
+    )
+    lifecycle_client.app.include_router(study_source_variables.router)
+    path = f"/studies/{study_uid}"
+
+    def observe():
+        response = lifecycle_client.get(
+            f"/integrations/study-authority{path}/native-observation"
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    def selection(observation, collection):
+        matches = [
+            row for row in observation["records"] if row["collection"] == collection
+        ]
+        assert len(matches) == 1
+        return matches[0]
+
+    initial = observe()
+    content, content_hash = _author_first_protocol_documents(
+        fixture, lifecycle_client, study_uid
+    )
+    source = {
+        "source_variable": "Cohort",
+        "source_variable_description": "Original strata",
+    }
+    created = lifecycle_client.post(path + "/study-source-variables", json=source)
+    assert created.status_code == 201, created.text
+    initial_element = {
+        "name": "Run-in",
+        "short_name": "Run-in",
+        "description": "Original period",
+    }
+    element = lifecycle_client.post(path + "/study-elements", json=initial_element)
+    assert element.status_code == 201, element.text
+    element_uid = element.json()["element_uid"]
+    baseline = observe()
+    document = selection(baseline, "study_definition_documents")["record"]
+    assert document["content_hash"] == content_hash
+    assert document["content"] == content.model_dump(mode="json")
+    assert {"accepted_version", "order"} <= document.keys()
+    assert document["reason_for_change"] == "Synthetic master and regimen authoring"
+    assert selection(baseline, "study_source_variable")["record"] == created.json()
+    assert selection(baseline, "study_elements")["nativeUid"] == element_uid
+
+    revised = {**source, "source_variable_description": None}
+    updated = lifecycle_client.put(path + "/study-source-variables", json=revised)
+    assert updated.status_code == 200, updated.text
+    patch_path = path + "/study-elements/" + element_uid
+    revision = element.json()["edit_revision"]
+    assert revision == element.json()["start_date"]
+    edit = lifecycle_client.patch(
+        patch_path,
+        json={"description": "Revised period", "expected_start_date": revision},
+    )
+    assert edit.status_code == 200, edit.text
+    stale = lifecycle_client.patch(
+        patch_path,
+        json={"description": "Concurrent stale value", "expected_start_date": revision},
+    )
+    assert stale.status_code == 409, stale.text
+    changed = observe()
+    current = selection(changed, "study_source_variable")
+    assert current["record"]["source_variable_description"] is None
+    assert current["nativeUid"] == study_uid
+    assert (
+        selection(changed, "study_elements")["record"]["description"]
+        == "Revised period"
+    )
+    assert selection(changed, "study_elements")["nativeUid"] == element_uid
+    if destination := os.environ.get("OSB_TEST_DESIGN_OBSERVATIONS_OUT"):
+        Path(destination).write_text(
+            json.dumps([initial, baseline, changed, observe()]), encoding="utf-8"
+        )
 
 
 def test_http_amendment_relock_can_reference_removed_arm_without_history_leak(

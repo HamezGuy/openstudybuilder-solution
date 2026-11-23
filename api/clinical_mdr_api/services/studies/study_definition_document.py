@@ -140,6 +140,41 @@ class StudyDefinitionDocumentService:
     def __init__(self):
         self.repository = StudyDefinitionDocumentRepository()
 
+    def _read_selection(self, study_uid: str, study_value_version: str | None):
+        selection = self.repository.get_authored_documents(
+            study_uid, study_value_version
+        )
+        content = authored_content_from_json(
+            getattr(selection, "authored_documents_json", None)
+        )
+        if (content.content_hash() if content else None) != getattr(
+            selection, "authored_documents_hash", None
+        ):
+            raise ValidationException(
+                msg="Authored content does not match its retained native hash"
+            )
+        return selection, content
+
+    @ensure_transaction(db)
+    def get_native_selections(self, study_uid: str) -> list[dict[str, Any]]:
+        selection, content = self._read_selection(study_uid, None)
+        if selection is None:
+            return []
+        return [
+            {
+                "study_uid": study_uid,
+                "uid": selection.uid,
+                "order": selection.order,
+                "accepted_version": selection.accepted_version,
+                "protocol_header_major_version": selection.protocol_header_major_version,
+                "protocol_header_minor_version": selection.protocol_header_minor_version,
+                "content_hash": selection.authored_documents_hash,
+                "content": content.model_dump(mode="json") if content else None,
+                "author_id": selection.authored_documents_author,
+                "reason_for_change": selection.authored_documents_reason,
+            }
+        ]
+
     @ensure_transaction(db)
     def get(
         self, study_uid: str, study_value_version: str | None = None
@@ -147,18 +182,7 @@ class StudyDefinitionDocumentService:
         study = StudyService().get_by_uid(
             study_uid, study_value_version=study_value_version
         )
-        selection = self.repository.get_authored_documents(
-            study_uid, study_value_version
-        )
-        content = authored_content_from_json(
-            getattr(selection, "authored_documents_json", None)
-        )
-        if content is not None and content.content_hash() != getattr(
-            selection, "authored_documents_hash", None
-        ):
-            raise ValidationException(
-                msg="Authored content does not match its retained native hash"
-            )
+        selection, content = self._read_selection(study_uid, study_value_version)
         version = study.current_metadata.version_metadata
         return {
             "study_uid": study_uid,

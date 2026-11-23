@@ -1,5 +1,6 @@
 import unittest
 from copy import deepcopy
+from unittest.mock import patch
 
 from clinical_mdr_api.services.integrations import (
     native_observation as native_observation_module,
@@ -14,6 +15,92 @@ from common.exceptions import NotFoundException
 
 
 class NativeObservationTests(unittest.TestCase):
+    def test_study_export_families_retain_fields_history_and_operational_instances(
+        self,
+    ):
+        schedule = {
+            "study_activity_schedule_uid": "Cell1",
+            "study_activity_uid": "Activity1",
+            "study_visit_uid": "Visit1",
+            "study_activity_instance_uid": None,
+        }
+
+        def operational(*, study_uid, operational):
+            self.assertEqual((study_uid, operational), ("S1", True))
+            return [
+                dict(schedule, study_activity_instance_uid="Instance2"),
+                schedule,
+                schedule,
+            ]
+
+        def paged(record):
+            def read(*, study_uid, page_size):
+                self.assertEqual((study_uid, page_size), ("S1", 0))
+                return {"items": [record], "total": 1}
+
+            return read
+
+        footnote = {
+            "study_uid": "S1",
+            "uid": "F1",
+            "referenced_items": [
+                {"item_type": "StudyActivitySchedule", "item_uid": "Cell1"},
+            ],
+        }
+        supplier = {
+            "study_uid": "S1",
+            "study_data_supplier_uid": "D1",
+            "blinded": False,
+        }
+        milestone = {"study_uid": "S1", "uid": "M1", "repetition_indicator": False}
+        group = {"study_uid": "S1", "study_soa_group_uid": "G1", "order": 0}
+        variable = {"study_uid": "S1", "source_variable_description": None}
+        audit = {**footnote, "change_type": "Edit", "author_username": "reviewer"}
+        result = collect_native_observation(
+            "S1",
+            native_study={"uid": "S1"},
+            readers={
+                "study_soa_groups": (paged(group), None),
+                "study_soa_footnotes": (paged(footnote), lambda **_: [audit]),
+                "study_disease_milestones": (paged(milestone), None),
+                "study_data_suppliers": (paged(supplier), None),
+                "study_source_variable": (lambda *, study_uid: variable, None),
+                "study_design_class": (lambda *, study_uid: None, None),
+                "study_operational_activity_schedules": (operational, None),
+            },
+        )
+        records = {row["collection"]: row["record"] for row in result["records"]}
+        for kind, value in [
+            ("study_soa_groups", group),
+            ("study_soa_footnotes", footnote),
+            ("study_data_suppliers", supplier),
+            ("study_disease_milestones", milestone),
+            ("study_source_variable", variable),
+        ]:
+            self.assertEqual(records[kind], value)
+        self.assertNotIn("study_design_class", records)
+        self.assertCountEqual(
+            records["study_operational_activity_schedules"]["readings"],
+            [schedule, dict(schedule, study_activity_instance_uid="Instance2")],
+        )
+        self.assertEqual(result["auditRecords"][0]["record"], audit)
+        coverage = {row["collection"]: row for row in result["coverage"]["collections"]}
+        self.assertEqual(coverage["study_design_class"]["recordCount"], 0)
+        self.assertEqual(
+            coverage["study_soa_footnotes"]["resourceType"], "StudySoAFootnote"
+        )
+        with self.assertRaisesRegex(ValueError, "scope mismatch"):
+            collect_native_observation(
+                "S1",
+                native_study={"uid": "S1"},
+                readers={
+                    "study_data_suppliers": (
+                        paged({**supplier, "study_uid": "other"}),
+                        None,
+                    ),
+                },
+            )
+
     def test_locked_version_decision_retains_authored_source_and_distinguishes_drafts(
         self,
     ):
@@ -558,7 +645,7 @@ class NativeObservationUserProjectionTests(unittest.TestCase):
                 ],
             )
 
-        with unittest.mock.patch("neomodel.db.cypher_query", fake_cypher):
+        with patch("neomodel.db.cypher_query", fake_cypher):
             rows = native_observation_module.collect_user_projection(
                 {"edc:2"}, {"james", "other"}
             )
