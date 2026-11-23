@@ -39,6 +39,39 @@
       </v-form>
     </template>
     <template #[`step.details`]>
+      <v-alert
+        v-if="isEdit && (editConflict || revisionUnavailable)"
+        type="warning"
+        variant="tonal"
+        role="status"
+      >
+        <template v-if="revisionUnavailable">{{
+          $t('StudyElements.revision_unavailable')
+        }}</template>
+        <template v-else-if="editConflict.needsReload">{{
+          $t('StudyElements.revision_changed')
+        }}</template>
+        <template v-else>
+          {{ $t('StudyElements.compare_saved') }}
+          <dl>
+            <template v-for="(value, field) in editConflict.saved" :key="field">
+              <dt>{{ $t(editableFields[field]) }}</dt>
+              <dd v-if="field === 'planned_duration' && value">
+                {{ value.duration_value }} {{ value.duration_unit_code?.name }}
+              </dd>
+              <dd v-else>{{ value ?? $t('StudyElements.no_saved_value') }}</dd>
+            </template>
+          </dl>
+        </template>
+        <v-btn
+          v-if="revisionUnavailable || editConflict?.needsReload"
+          variant="text"
+          :loading="loading"
+          @click="reloadForReview"
+        >
+          {{ $t('StudyElements.reload_for_review') }}
+        </v-btn>
+      </v-alert>
       <v-form ref="observer">
         <v-row>
           <v-col>
@@ -238,6 +271,7 @@
 
 <script setup>
 import { computed, inject, onMounted, ref, watch } from 'vue'
+import isEqual from 'lodash/isEqual'
 import { useI18n } from 'vue-i18n'
 import armsApi from '@/api/arms'
 import study from '@/api/study'
@@ -274,6 +308,21 @@ const selectStudyForm = ref()
 
 const form = ref({ planned_duration: {} })
 const editData = ref({})
+const originalValues = ref(null)
+const editRevision = ref(null)
+const revisionUnavailable = ref(false)
+const editConflict = ref(null)
+const editableFields = {
+  code: 'StudyElements.el_type',
+  element_subtype_uid: 'StudyElements.el_sub_type',
+  name: 'StudyElements.el_name',
+  short_name: 'StudyElements.el_short_name',
+  planned_duration: 'StudyElements.planned_duration_time',
+  start_rule: 'StudyElements.el_start_rule',
+  end_rule: 'StudyElements.el_end_rule',
+  description: '_global.description',
+  element_colour: 'StudyElements.colour',
+}
 const colorHash = ref(null)
 const allowedConfigs = ref([])
 const loading = ref(false)
@@ -341,6 +390,11 @@ const continueLabel = computed(() => {
 
 const checkContinueDisabled = computed(() => {
   if (
+    isEdit.value &&
+    (!editRevision.value || editConflict.value?.needsReload || loading.value)
+  )
+    return true
+  if (
     currentStepName.value === 'method' &&
     creationMethod.value === methods.SELECT &&
     !selectedSourceStudy.value
@@ -385,21 +439,7 @@ onMounted(async () => {
     allowedConfigs.value = resp.data
   })
   if (isEdit.value) {
-    const resp = await armsApi.getStudyElement(
-      selectedStudy.uid,
-      props.editedElement.element_uid
-    )
-    form.value = JSON.parse(JSON.stringify(resp.data))
-    if (!form.value.planned_duration) {
-      form.value.planned_duration = {}
-    }
-    if (resp.data.element_subtype) {
-      form.value.element_subtype_uid = resp.data.element_subtype.term_uid
-    }
-    if (form.value.element_colour) {
-      colorHash.value = form.value.element_colour
-    }
-    editData.value = JSON.parse(JSON.stringify(form.value))
+    await readElement()
   } else {
     // Load the studies an element may be copied from (all but the current).
     studiesLoading.value = true
@@ -468,8 +508,14 @@ function previousStep() {
 // Resolve the colour and planned duration into the shape the API expects.
 function buildPayload(source) {
   const payload = JSON.parse(JSON.stringify(source))
-  if (!payload.planned_duration || !payload.planned_duration.duration_value) {
+  const duration = payload.planned_duration?.duration_value
+  if (duration == null || duration === '') {
     payload.planned_duration = null
+  } else if (
+    typeof duration === 'string' &&
+    Number.isSafeInteger(Number(duration))
+  ) {
+    payload.planned_duration.duration_value = Number(duration)
   }
   payload.element_colour = colorHash.value
     ? colorHash.value.hexa !== undefined
@@ -493,22 +539,92 @@ function create() {
     })
 }
 
-function edit() {
+function authoredChanges() {
+  if (!originalValues.value) return {}
+  const values = buildPayload(form.value)
+  return Object.fromEntries(
+    Object.keys(editableFields)
+      .filter((key) => !isEqual(values[key], originalValues.value[key]))
+      .map((key) => [key, values[key]])
+  )
+}
+
+async function readElement(keepEdits = false) {
+  loading.value = true
+  try {
+    const { data } = await armsApi.getStudyElement(
+      selectedStudy.uid,
+      props.editedElement.element_uid
+    )
+    if (keepEdits && !data.edit_revision) {
+      editRevision.value = null
+      revisionUnavailable.value = true
+      return
+    }
+    // Capture the draft after the request returns, including typing while it was in flight.
+    const edits = keepEdits ? authoredChanges() : {}
+    form.value = {
+      ...data,
+      planned_duration: data.planned_duration ?? {},
+      element_subtype_uid:
+        data.element_subtype?.term_uid ?? data.element_subtype_uid,
+    }
+    colorHash.value = data.element_colour ?? null
+    editRevision.value = data.edit_revision ?? null
+    revisionUnavailable.value = !editRevision.value
+    originalValues.value = buildPayload(form.value)
+    editData.value = JSON.parse(JSON.stringify(form.value))
+    if (keepEdits) {
+      editConflict.value = {
+        needsReload: false,
+        saved: Object.fromEntries(
+          Object.keys(edits).map((key) => [key, originalValues.value[key]])
+        ),
+      }
+      Object.assign(form.value, edits)
+      if (Object.hasOwn(edits, 'element_colour'))
+        colorHash.value = edits.element_colour
+    }
+  } catch {
+    // The repository reports failed reads. Keep the draft and its existing retry action.
+    if (!editConflict.value) revisionUnavailable.value = true
+  } finally {
+    loading.value = false
+  }
+}
+
+function reloadForReview() {
+  if (!loading.value) return readElement(Boolean(originalValues.value))
+}
+
+async function edit() {
+  if (checkContinueDisabled.value) return
+  const changes = authoredChanges()
+  if (!Object.keys(changes).length) {
+    close()
+    return
+  }
   notificationHub.clearErrors()
   loading.value = true
-  armsApi
-    .editStudyElement(
+  try {
+    await armsApi.editStudyElement(
       selectedStudy.uid,
       props.editedElement.element_uid,
-      buildPayload(form.value)
+      { ...changes, expected_start_date: editRevision.value }
     )
-    .then(() => {
-      notificationHub.add({ msg: t('StudyElements.el_edited') })
-      close()
-    })
-    .finally(() => {
-      loading.value = false
-    })
+    notificationHub.add({ msg: t('StudyElements.el_edited') })
+    close()
+  } catch (error) {
+    if (
+      error.response?.status === 409 &&
+      error.response.data?.code === 'STUDY_ELEMENT_VERSION_CONFLICT'
+    ) {
+      editConflict.value = { needsReload: true }
+    }
+    // Other write errors are displayed by the repository. The form remains open.
+  } finally {
+    loading.value = false
+  }
 }
 
 async function loadSourceStudyElements() {

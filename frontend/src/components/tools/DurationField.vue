@@ -133,7 +133,7 @@ export default {
   },
   methods: {
     update(key, val) {
-      if (val) {
+      if (val != null && val !== '') {
         this.$emit('update:modelValue', {
           ...this.form,
           [key]: val.uid ? { uid: val.uid, name: val.name } : val,
