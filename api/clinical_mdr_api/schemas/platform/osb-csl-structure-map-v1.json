@@ -2224,6 +2224,15 @@
       "note": "Versioned content of Activity; CSL keeps one entity with entity_revision rows where OSB keeps a Root and Value pair."
     },
     {
+      "osbClass": "Archive",
+      "file": "study_audit_trail.py",
+      "base": "StudyAction",
+      "cslObjectType": null,
+      "cslLinkType": null,
+      "correspondence": "audit",
+      "note": "Records the study archive action against the current native study value. CSL retains changes in its audit history."
+    },
+    {
       "osbClass": "Brand",
       "file": "brand.py",
       "base": "ClinicalMdrNodeWithUID",
@@ -4382,6 +4391,15 @@
       "cslLinkType": null,
       "correspondence": "narrower",
       "note": "Versioned content of Code; UNII term; a Code of that system."
+    },
+    {
+      "osbClass": "Unarchive",
+      "file": "study_audit_trail.py",
+      "base": "StudyAction",
+      "cslObjectType": null,
+      "cslLinkType": null,
+      "correspondence": "audit",
+      "note": "Records restoration against the current native study value. CSL retains changes in its audit history."
     },
     {
       "osbClass": "UnitDefinitionRoot",
@@ -7695,5 +7713,5 @@
       "note": "Domain audit export bundle; no CSL table."
     }
   ],
-  "mapHash": "sha256:ea38b7de8b613f7c9758d7144f84d7af4d1222778078f231d81546a3545f21b1"
+  "mapHash": "sha256:3753ac6eb070bc4671ad1042927fe4237e7dca47e36ac8e311aa2139aa75cfdd"
 }

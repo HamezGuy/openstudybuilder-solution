@@ -140,7 +140,9 @@ def _phase_for_edc(value: Any) -> str | None:
     name = _term_name(value)
     if not name:
         return None
-    match = re.search(r"\b(?:phase\s*)?([1-4]|I{1,3}|IV)\b", name, re.IGNORECASE)
+    # Only shorten a whole, unqualified single phase. A combined or qualified
+    # source term is the display value a reviewer needs to distinguish versions.
+    match = re.fullmatch(r"(?:phase\s*)?([1-4]|I{1,3}|IV)", name, re.IGNORECASE)
     if not match:
         return name
     token = match.group(1).upper()
@@ -201,7 +203,8 @@ def _native_study_projection(study: dict[str, Any]) -> dict[str, Any]:
     ):
         duration = population.get(source)
         if isinstance(duration, dict) and duration.get("duration_value") is not None:
-            result[target] = str(duration["duration_value"])
+            unit = _term_name(duration.get("duration_unit_code"))
+            result[target] = f"{duration['duration_value']} {unit or '(unit unknown)'}"
     healthy = population.get("healthy_subject_indicator")
     if isinstance(healthy, bool):
         result["healthyVolunteerAccepted"] = healthy

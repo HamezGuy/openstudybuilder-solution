@@ -13,6 +13,7 @@ from clinical_mdr_api.models.study_selections.study_selection import (
     StudySelectionEndpoint,
     StudySelectionObjective,
 )
+from clinical_mdr_api.models.study_selections.study_visit import StudyVisit
 from clinical_mdr_api.models.syntax_instances.criteria import Criteria
 from clinical_mdr_api.models.syntax_instances.endpoint import Endpoint
 from clinical_mdr_api.models.syntax_instances.objective import Objective
@@ -103,6 +104,90 @@ def test_native_age_unit_without_a_magnitude_remains_a_partial_quantity():
     assert any(
         issue["targetPath"] == "Quantity/value"
         for issue in report["mappingReport"]["issues"]
+    )
+
+
+@pytest.mark.parametrize("unit", [None, "fortnight"])
+def test_unresolved_window_unit_retains_native_bounds_and_holds_draft(unit):
+    source = NativeStudySource()
+    visit = source.graph["visits"][1]
+    fields = visit.model_dump()
+    fields["visit_window_unit_name"] = unit
+    source.graph["visits"][1] = StudyVisit(**fields)
+    report = mapped(source.graph)
+    timeline = design(report)["scheduleTimelines"][0]
+    timing = next(
+        row for row in timeline["timings"] if row["name"] == f"Timing {visit.uid}"
+    )
+    assert timing["value"] == "P14D"
+    assert all(
+        timing.get(key) is None for key in ("windowLower", "windowUpper", "windowLabel")
+    )
+    issues = report["mappingReport"]["issues"]
+    assert any(
+        issue["code"] == "USDM_VISIT_WINDOW_UNIT_UNRESOLVED"
+        and issue["sourcePath"] == f"study-visits/{visit.uid}/visit_window_unit_name"
+        for issue in issues
+    )
+    assert report["mappingReport"]["state"] == "incomplete"
+    native = next(
+        row["record"]
+        for row in report["nativeRecords"]
+        if row["kind"] == "studyVisit" and row["record"]["uid"] == visit.uid
+    )
+    assert native["min_visit_window_value"] == -2
+    assert native["max_visit_window_value"] == 3
+    assert native["visit_window_unit_name"] == unit
+
+
+@pytest.mark.parametrize("value,unit", [(14, None), (14, "fortnight"), (None, "days")])
+def test_unrepresentable_nominal_timing_retains_scheduled_visit(value, unit):
+    source = NativeStudySource()
+    visit = source.graph["visits"][1]
+    fields = visit.model_dump()
+    fields.update(time_value=value, time_unit_name=unit)
+    source.graph["visits"][1] = StudyVisit(**fields)
+    report = mapped(source.graph)
+    timeline = design(report)["scheduleTimelines"][0]
+    assert all(row["name"] != f"Timing {visit.uid}" for row in timeline["timings"])
+    assert any(f"[{visit.uid}]" in row["name"] for row in timeline["instances"])
+    code = (
+        "USDM_VISIT_TIMING_VALUE_UNRESOLVED"
+        if value is None
+        else "USDM_VISIT_TIMING_UNIT_UNRESOLVED"
+    )
+    assert any(issue["code"] == code for issue in report["mappingReport"]["issues"])
+
+
+@pytest.mark.parametrize(
+    "age_unit,phase,age_display,phase_display",
+    [
+        ("years", "Phase II", "18 years", "II"),
+        ("months", "Phase II/III", "18 months", "Phase II/III"),
+        (None, "Early Phase 1", "18 (unit unknown)", "Early Phase 1"),
+    ],
+)
+def test_archived_review_summary_retains_age_unit_and_complete_phase(
+    age_unit, phase, age_display, phase_display
+):
+    source = NativeStudySource()
+    study = source.graph["study"]
+    fields = study.model_dump()
+    metadata = fields["current_metadata"]
+    metadata["study_population"]["planned_minimum_age_of_subjects"][
+        "duration_unit_code"
+    ] = {"uid": f"Unit_{age_unit}", "name": age_unit} if age_unit else None
+    metadata["high_level_study_design"]["trial_phase_code"] = {
+        "term_uid": "SyntheticPhase",
+        "sponsor_preferred_name": phase,
+    }
+    source.graph["study"] = type(study)(**fields)
+    bundle = source.export(native_odm_graph())
+    summary = bundle["extensions"]["_osbExport"]["native"]["studyProjection"]
+    assert (summary["ageMin"], summary["ageMax"], summary["phase"]) == (
+        age_display,
+        "75 years",
+        phase_display,
     )
 
 

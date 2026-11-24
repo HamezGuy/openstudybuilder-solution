@@ -616,6 +616,29 @@ class NativeObservationUserProjectionTests(unittest.TestCase):
                     user_projection=invalid,
                 )
 
+    def test_projection_excludes_reassigned_names_for_historical_ids(self):
+        history = [
+            {"record": {"author_id": "retired-user", "author_username": "reassigned"}},
+            {
+                "record": {
+                    "author_id": " ",
+                    "user_id": "native-2",
+                    "version_author": "renamed",
+                }
+            },
+            {"record": {"author_username": "name-only"}},
+        ]
+        records = [
+            {
+                "collection": "study_version_decisions",
+                "record": {"modified_by": "legacy"},
+            }
+        ]
+        self.assertEqual(
+            native_observation_module._editor_projection_keys(history, records),
+            ({"retired-user", "native-2", "legacy"}, {"name-only", "legacy"}),
+        )
+
     def test_user_projection_reads_exactly_the_editors_the_history_names(self):
         captured = {}
 

@@ -3,7 +3,7 @@
   "info": {
     "title": "OpenStudyBuilder API",
     "description": "\n## NOTICE\n\nThis license information is applicable to the swagger documentation of the clinical-mdr-api, that is the openapi.json.\n\n## License Terms (MIT)\n\nCopyright (C) 2025 Novo Nordisk A/S, Danish company registration no. 24256790\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies\nof the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS\nFOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER\nIN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\n\n## Licenses and Acknowledgements for Incorporated Software\n\nThis component contains software licensed under different licenses when compiled, please refer to the third-party-licenses.md file for further information and full license texts.\n\n## Authentication\n\nSupports OAuth2 [Authorization Code Flow](https://datatracker.ietf.org/doc/html/rfc6749#section-4.1),\nat paths described in the OpenID Connect Discovery metadata document (whose URL is defined by the `OAUTH_METADATA_URL` environment variable).\n\nMicrosoft Identity Platform documentation can be read \n([here](https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-auth-code-flow)).\n\nAuthentication can be turned off with `OAUTH_ENABLED=false` environment variable. \n\nWhen authentication is turned on, all requests to protected API endpoints must provide a valid bearer (JWT) token inside the `Authorization` http header. \n",
-    "version": "3.0.722"
+    "version": "3.0.723"
   },
   "paths": {
     "/": {
@@ -116274,6 +116274,55 @@
         ]
       }
     },
+    "/integrations/platform-control/native-study-roots/intents/{intent_id}/receipt": {
+      "get": {
+        "tags": [
+          "Platform control (disabled)"
+        ],
+        "summary": "Recover the original signed create receipt for the same study and actor",
+        "operationId": "get_created_root_receipt_integrations_platform_control_native_study_roots_intents__intent_id__receipt_get",
+        "security": [
+          {
+            "OAuth2AuthorizationCodeBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "intent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Intent Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Created Root Receipt Integrations Platform Control Native Study Roots Intents  Intent Id  Receipt Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/integrations/platform-control/native-study-bindings/{receipt_id}": {
       "get": {
         "tags": [
@@ -166686,6 +166735,12 @@
             "type": "string",
             "title": "Soa Group Term Name"
           },
+          "date_conflict": {
+            "type": "boolean",
+            "title": "Date Conflict",
+            "description": "The selected group term has no name at the study terminology package date.",
+            "default": false
+          },
           "order": {
             "anyOf": [
               {
@@ -168993,6 +169048,18 @@
             "title": "Taetord",
             "description": "Number that gives the order of the Element within the Arm",
             "nullable": true
+          },
+          "SOURCE_ELEMENT_CODE": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Element Code",
+            "description": "Original element code from the selected study design."
           },
           "ETCD": {
             "anyOf": [
@@ -172274,6 +172341,18 @@
             "type": "string",
             "title": "Domain",
             "description": "Two-character abbreviation for the domain"
+          },
+          "SOURCE_ELEMENT_CODE": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Element Code",
+            "description": "Original element code from the selected study design."
           },
           "ETCD": {
             "anyOf": [
@@ -184804,6 +184883,19 @@
             "description": "Name property of the project that the study belongs to",
             "nullable": true
           },
+          "edit_revision": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edit Revision",
+            "description": "Pass this revision as expected_start_date for a conditional element edit."
+          },
           "element_uid": {
             "anyOf": [
               {
@@ -185114,6 +185206,19 @@
       },
       "StudySelectionElementBatchUpdateInput": {
         "properties": {
+          "expected_start_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Start Date",
+            "description": "Start date of the element revision used to prepare this edit."
+          },
           "name": {
             "anyOf": [
               {
@@ -185348,6 +185453,19 @@
       },
       "StudySelectionElementInput": {
         "properties": {
+          "expected_start_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Start Date",
+            "description": "Start date of the element revision used to prepare this edit."
+          },
           "name": {
             "anyOf": [
               {
@@ -185553,6 +185671,19 @@
             "title": "Project Name",
             "description": "Name property of the project that the study belongs to",
             "nullable": true
+          },
+          "edit_revision": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edit Revision",
+            "description": "Pass this revision as expected_start_date for a conditional element edit."
           },
           "element_uid": {
             "anyOf": [

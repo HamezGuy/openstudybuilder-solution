@@ -442,6 +442,29 @@ USER_PROJECTION_FIELDS = (
 )
 
 
+def _editor_projection_keys(history, records) -> tuple[set[str], set[str]]:
+    ids: set[str] = set()
+    names: set[str] = set()
+    for entry in history:
+        row = entry.get("record")
+        if not isinstance(row, dict):
+            continue
+        for key in ("author_id", "user_id", "author_username", "version_author"):
+            value = row.get(key)
+            if isinstance(value, str) and value.strip():
+                target = ids if key in ("author_id", "user_id") else names
+                target.add(value)
+                break
+    for entry in records:
+        if entry["collection"] == "study_version_decisions":
+            # Snapshot history has only modified_by, which can be a name or an ID.
+            modified_by = entry["record"].get("modified_by")
+            if isinstance(modified_by, str) and modified_by:
+                ids.add(modified_by)
+                names.add(modified_by)
+    return ids, names
+
+
 def collect_user_projection(
     user_ids: set[str], usernames: set[str]
 ) -> list[dict[str, Any]]:
@@ -849,25 +872,8 @@ def collect_native_observation(
                 "scope": "StudyRoot AUDIT_TRAIL actions and directly linked BEFORE/AFTER values",
             }
         )
-    editor_ids, editor_names = set(), set()
-    for entry in history:
-        record = entry.get("record")
-        if not isinstance(record, dict):
-            record = {}
-        for field in ("author_id", "user_id"):
-            if isinstance(record.get(field), str) and record[field]:
-                editor_ids.add(record[field])
-        for field in ("author_username", "version_author"):
-            if isinstance(record.get(field), str) and record[field]:
-                editor_names.add(record[field])
-    for entry in records:
-        if entry["collection"] == "study_version_decisions":
-            modified_by = entry["record"].get("modified_by")
-            # Native snapshot history states a username, or the underlying id if no user joined.
-            if isinstance(modified_by, str) and modified_by:
-                editor_ids.add(modified_by)
-                editor_names.add(modified_by)
     if readers is None and user_projection is None:
+        editor_ids, editor_names = _editor_projection_keys(history, records)
         user_projection = collect_user_projection(editor_ids, editor_names)
     users = (
         _verified_user_projection(user_projection)

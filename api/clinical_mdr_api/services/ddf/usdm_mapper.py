@@ -88,8 +88,11 @@ DDF_TIME_RELATIVE_TO_FROM_START_TO_START = "C201355"
 OSB_USDM_EXTENSION_BASE = "https://openstudybuilder.org/usdm/extensions"
 
 
-def get_ddf_timing_iso_duration_value(time_value: int, time_unit_name: str) -> str:
-    unit = time_unit_name.strip().lower()
+def get_ddf_timing_iso_duration_value(
+    time_value: int, time_unit_name: str | None
+) -> str | None:
+    """Return an ISO duration only when the native unit has a known representation."""
+    unit = (time_unit_name or "").strip().lower()
     magnitude = abs(time_value)
     if unit in {"week", "weeks"}:
         return f"P{magnitude}W"
@@ -105,7 +108,7 @@ def get_ddf_timing_iso_duration_value(time_value: int, time_unit_name: str) -> s
         return f"P{magnitude}M"
     if unit in {"year", "years"}:
         return f"P{magnitude}Y"
-    raise ValueError(f"Unsupported time unit {time_unit_name}")
+    return None
 
 
 def extract_c_code_from_simple_term(term_uid: str | None) -> str | None:

@@ -1094,6 +1094,58 @@ class NativeStudyMapping:
             )
         return list(groups.values())
 
+    def _timing_window(self, visit, fixed) -> dict[str, str]:
+        from clinical_mdr_api.services.ddf.usdm_mapper import (
+            get_ddf_timing_iso_duration_value,
+        )
+
+        lower = visit.min_visit_window_value
+        upper = visit.max_visit_window_value
+        lower = None if lower == -9999 else lower
+        upper = None if upper == 9999 else upper
+        if (lower, upper) in {(None, None), (0, 0)}:
+            return {}
+        source = f"study-visits/{visit.uid}/visit_window"
+        unit = visit.visit_window_unit_name
+        window: dict[str, str] = {}
+        for target, bound in (("windowLower", lower), ("windowUpper", upper)):
+            if bound is not None:
+                duration = get_ddf_timing_iso_duration_value(bound, unit)
+                if duration is None:
+                    self.issue(
+                        "USDM_VISIT_WINDOW_UNIT_UNRESOLVED",
+                        f"study-visits/{visit.uid}/visit_window_unit_name",
+                        f"Timing/{target}",
+                        "The native visit window unit is absent or has no supported ISO duration.",
+                        "Resolve the window unit; scheduledVisit retains the signed bounds and native unit.",
+                    )
+                    return {}
+                window[target] = duration
+        if (
+            fixed
+            or (lower is not None and lower > 0)
+            or (upper is not None and upper < 0)
+        ):
+            self.issue(
+                "USDM_VISIT_WINDOW_UNREPRESENTABLE",
+                source,
+                "Timing/windowLower",
+                "This native window cannot be represented as bounds around a non-anchor timing.",
+                "Review the native anchor/window definition; original signed bounds remain in source metadata.",
+            )
+            return {}
+        if lower is None or upper is None:
+            self.issue(
+                "USDM_VISIT_WINDOW_INCOMPLETE",
+                source,
+                "Timing/windowLower" if lower is None else "Timing/windowUpper",
+                "The native window has an unbounded or unknown limit. DDF00006 requires a fully defined canonical window.",
+                "Review the missing bound before validation and release; the known limit and exact native values are preserved.",
+            )
+        else:
+            window["windowLabel"] = f"{lower}..{upper} {unit}"
+        return window
+
     def timelines(self, study):
         from clinical_mdr_api.services.ddf.usdm_mapper import (
             _accepts_keyword,
@@ -1250,10 +1302,29 @@ class NativeStudyMapping:
             value, unit = getattr(visit, "time_value", None), getattr(
                 visit, "time_unit_name", None
             )
-            if value is None or not unit:
-                continue
             anchor_uid = getattr(visit, "resolved_anchor_visit_uid", None)
             fixed = visit.is_global_anchor_visit or (anchor_uid == visit.uid)
+            window = self._timing_window(visit, fixed)
+            if value is None:
+                if window:
+                    self.issue(
+                        "USDM_VISIT_TIMING_VALUE_UNRESOLVED",
+                        f"study-visits/{visit.uid}/time_value",
+                        "Timing/value",
+                        "The source window has no nominal timing value.",
+                        "Resolve the nominal timing; the native bounds are retained in scheduledVisit.",
+                    )
+                continue
+            duration = get_ddf_timing_iso_duration_value(value, unit)
+            if duration is None:
+                self.issue(
+                    "USDM_VISIT_TIMING_UNIT_UNRESOLVED",
+                    f"study-visits/{visit.uid}/time_unit_name",
+                    "Timing/value",
+                    "The nominal timing unit is absent or has no supported ISO duration.",
+                    "Resolve the native timing unit; scheduledVisit retains the source timing and window.",
+                )
+                continue
             if fixed:
                 anchor_uid = visit.uid
             elif anchor_uid not in by_uid:
@@ -1276,57 +1347,13 @@ class NativeStudyMapping:
                         else self.mapper.get_ddf_timing_type_code_after()
                     )
                 ),
-                "value": get_ddf_timing_iso_duration_value(value, unit),
+                "value": duration,
                 "valueLabel": f"{abs(value)} {unit}",
                 "relativeToFrom": self.mapper.get_ddf_timing_relative_to_from(),
                 "relativeFromScheduledInstanceId": ids[visit.uid],
                 "relativeToScheduledInstanceId": ids.get(anchor_uid),
+                **window,
             }
-            lower, upper = visit.min_visit_window_value, visit.max_visit_window_value
-            lower = None if lower == -9999 else lower
-            upper = None if upper == 9999 else upper
-            window_unit = visit.visit_window_unit_name
-            has_window = (
-                window_unit
-                and (lower is not None or upper is not None)
-                and (lower != 0 or upper != 0)
-            )
-            if has_window:
-                if (
-                    fixed
-                    or (lower is not None and lower > 0)
-                    or (upper is not None and upper < 0)
-                ):
-                    self.issue(
-                        "USDM_VISIT_WINDOW_UNREPRESENTABLE",
-                        f"study-visits/{visit.uid}/visit_window",
-                        "Timing/windowLower",
-                        "This native window cannot be represented as bounds around a non-anchor timing.",
-                        "Review the native anchor/window definition; original signed bounds remain in source metadata.",
-                    )
-                else:
-                    if lower is not None:
-                        timing_values["windowLower"] = (
-                            get_ddf_timing_iso_duration_value(lower, window_unit)
-                        )
-                    if upper is not None:
-                        timing_values["windowUpper"] = (
-                            get_ddf_timing_iso_duration_value(upper, window_unit)
-                        )
-                    if lower is not None and upper is not None:
-                        timing_values["windowLabel"] = f"{lower}..{upper} {window_unit}"
-                    else:
-                        self.issue(
-                            "USDM_VISIT_WINDOW_INCOMPLETE",
-                            f"study-visits/{visit.uid}/visit_window",
-                            (
-                                "Timing/windowLower"
-                                if lower is None
-                                else "Timing/windowUpper"
-                            ),
-                            "The native window has an unbounded or unknown limit. DDF00006 requires a fully defined canonical window.",
-                            "Review the missing bound before validation and release; the known limit and exact native values are preserved.",
-                        )
             timings.append(Timing(**timing_values))
         for row in [*schedules, *operational]:
             if row.study_visit_uid not in by_uid:
